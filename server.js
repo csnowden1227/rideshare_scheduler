@@ -140,6 +140,20 @@ function addPeakTimeRow(label = '', start = '', end = '', mult = '1.5') {
     container.appendChild(tr);
 }
 
+// 1. Generate the code when the page loads
+window.onload = () => {
+    const embedCode = `<script src="${BACKEND_URL}/widget.js?loc=${locationId}"><\/script>`;
+    document.getElementById('embed-code-box').innerText = embedCode;
+};
+
+// 2. Add the Copy to Clipboard logic
+function copyEmbedCode() {
+    const code = document.getElementById('embed-code-box').innerText;
+    navigator.clipboard.writeText(code).then(() => {
+        alert("Embed code copied to clipboard!");
+    });
+}
+
 async function syncFleet() {
     const res = await fetch(`${BACKEND_URL}/api/sync-fleet`, {
         method: 'POST',
