@@ -164,20 +164,8 @@ async function saveSettings() {
 
     if (res.ok) alert("✅ Peak Windows & Settings Saved!");
 
-};
-
-    // 3. Build the Master Payload
-    const payload = {
-        userId: locationId,
-        maps_api_key: document.getElementById('maps_key').value,
-        peak_multiplier: document.getElementById('peak_multiplier').value || 1.5, // RESTORED
-        tax_rate: document.getElementById('tax_rate').value || 0,
-        peak_windows: peakWindows, // ADD THIS
-        fixed_rates: routes,
-        events: events
-
-        
-    };
+}    
+    
 
     const res = await fetch(`${BACKEND_URL}/api/update-profile-full`, {
         method: 'POST',
@@ -208,55 +196,64 @@ app.post("/api/update-profile", async (req, res) => {
   const { 
     userId, 
     business_name, 
-    address, 
-    phone, 
     maps_api_key, 
-    CRM_One_Source_api_key, 
     tax_rate, 
-    is_booking_enabled,
-    peak_windows, // From your new Daily Peak section
-    events        // From your Special Events section
+    peak_windows, 
+    events 
   } = req.body;
 
-  if (!userId) {
-    return res.status(400).json({ error: "Missing userId (Location ID)" });
-  }
+  if (!userId) return res.status(400).json({ error: "Missing userId" });
 
-  // Use a client from the pool to run everything in one "transaction"
   const client = await pool.connect();
 
   try {
-    await client.query('BEGIN'); // Start the transaction
+    await client.query('BEGIN');
 
-    // 1. UPDATE CORE PROFILE (The UPSERT you already had)
-    const profileQuery = `
-      INSERT INTO users (id, business_name, address, phone, maps_api_key, CRM_One_Source_api_key, tax_rate, is_booking_enabled)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+    // 1. Update User Table
+    await client.query(`
+      INSERT INTO users (id, business_name, maps_api_key, tax_rate)
+      VALUES ($1, $2, $3, $4)
       ON CONFLICT (id) DO UPDATE SET
         business_name = EXCLUDED.business_name,
-        address = EXCLUDED.address,
-        phone = EXCLUDED.phone,
         maps_api_key = EXCLUDED.maps_api_key,
-        CRM_One_Source_api_key = EXCLUDED.CRM_One_Source_api_key,
-        tax_rate = EXCLUDED.tax_rate,
-        is_booking_enabled = EXCLUDED.is_booking_enabled
-      RETURNING *;
-    `;
-    const profileValues = [userId, business_name || null, address || null, phone || null, maps_api_key || null, CRM_One_Source_api_key || null, tax_rate || 0, is_booking_enabled ?? true];
-    await client.query(profileQuery, profileValues);
+        tax_rate = EXCLUDED.tax_rate
+    `, [userId, business_name, maps_api_key, tax_rate]);
 
-    // 2. UPDATE DAILY PEAK WINDOWS (Rush Hours)
-    // Wipe old ones for this location and insert new ones
+    // 2. Update Peak Windows (Rush Hours)
     await client.query('DELETE FROM service_peak_multipliers WHERE location_id = $1', [userId]);
     if (peak_windows && Array.isArray(peak_windows)) {
       for (const window of peak_windows) {
-        await client.query(
-          `INSERT INTO service_peak_multipliers (location_id, label, start_time, end_time, multiplier) 
-           VALUES ($1, $2, $3, $4, $5)`,
-          [userId, window.label, window.start_time, window.end_time, window.multiplier]
-        );
+        if (!window.start_time || !window.end_time) continue;
+        await client.query(`
+          INSERT INTO service_peak_multipliers (location_id, label, start_time, end_time, multiplier) 
+          VALUES ($1, $2, $3, $4, $5)
+        `, [userId, window.label, window.start_time, window.end_time, window.multiplier]);
       }
     }
+
+    // 3. Update Special Events
+    await client.query('DELETE FROM event_multipliers WHERE location_id = $1', [userId]);
+    if (events && Array.isArray(events)) {
+      for (const event of events) {
+        if (!event.date) continue;
+        await client.query(`
+          INSERT INTO event_multipliers (location_id, event_name, event_date, multiplier) 
+          VALUES ($1, $2, $3, $4)
+        `, [userId, event.name, event.date, event.multiplier]);
+      }
+    }
+
+    await client.query('COMMIT');
+    res.json({ success: true });
+
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error("Save Error:", err.message);
+    res.status(500).json({ error: "Failed to save settings" });
+  } finally {
+    client.release();
+  }
+});
 
     // 3. UPDATE SPECIAL EVENTS
     // Wipe old ones and insert new ones
@@ -271,18 +268,13 @@ app.post("/api/update-profile", async (req, res) => {
       }
     }
 
-    await client.query('COMMIT'); // Finalize all changes
-    res.json({ success: true, message: "Profile, Peak Windows, and Events updated successfully" });
+  await client.query('COMMIT'); // Finalize all changes
+    res.json({ 
+      success: true, 
+      message: "Profile, Peak Windows, and Events updated successfully" 
+    });
 
-  } catch (err) {
-    await client.query('ROLLBACK'); // Undo everything if one step fails
-    console.error("Error updating profile:", err.message);
-    res.status(500).json({ error: "Server error while saving settings." });
-  } finally {
-    client.release(); // Return the connection to the pool
-  }
-});
-
+  
 /*****************************************************
  5️⃣ AVAILABILITY ENGINE
 *****************************************************/
