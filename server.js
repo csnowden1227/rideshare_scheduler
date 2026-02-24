@@ -126,23 +126,45 @@ function getPeakMultiplier(dateISO, customMultiplier) {
   return 1.0;
 }
 
+function addPeakTimeRow(label = '', start = '', end = '', mult = '1.5') {
+    const container = document.getElementById('peak-times-body');
+    const tr = document.createElement('tr');
+    tr.className = "peak-time-row border-b border-gray-50";
+    tr.innerHTML = `
+        <td class="py-4 pr-2"><input type="text" class="peak-label input-mini" value="${label}" placeholder="Morning Rush"></td>
+        <td class="py-4 pr-2"><input type="time" class="peak-start input-mini" value="${start}"></td>
+        <td class="py-4 pr-2"><input type="time" class="peak-end input-mini" value="${end}"></td>
+        <td class="py-4 pr-2"><input type="number" step="0.1" class="peak-multiplier input-mini" value="${mult}"></td>
+        <td class="py-4 text-right"><button type="button" onclick="this.closest('tr').remove()" class="text-red-400 font-bold">×</button></td>
+    `;
+    container.appendChild(tr);
+}
+
 async function saveSettings() {
-    const btn = document.getElementById('save-settings-btn');
-    btn.innerText = "SAVING...";
-    
-    // 1. Collect Routes
-    const routes = Array.from(document.querySelectorAll('.route-row')).map(row => ({
-        pickup: row.querySelector('.route-from').value,
-        dropoff: row.querySelector('.route-to').value,
-        price: row.querySelector('.route-price').value
+    // Collect the Peak Time Rows
+    const peakTimes = Array.from(document.querySelectorAll('.peak-time-row')).map(row => ({
+        label: row.querySelector('.peak-label').value,
+        start_time: row.querySelector('.peak-start').value,
+        end_time: row.querySelector('.peak-end').value,
+        multiplier: row.querySelector('.peak-multiplier').value
     }));
 
-    // 2. Collect Events
-    const events = Array.from(document.querySelectorAll('.event-row')).map(row => ({
-        name: row.querySelector('.event-name').value,
-        date: row.querySelector('.event-date').value,
-        multiplier: row.querySelector('.event-multiplier').value
-    }));
+    const payload = {
+        userId: locationId,
+        peak_windows: peakTimes,
+        // ... include your other fields like maps_key, tax_rate, etc.
+    };
+
+    const res = await fetch(`${BACKEND_URL}/api/update-profile-full`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    });
+    
+
+    if (res.ok) alert("✅ Peak Windows & Settings Saved!");
+
+};
 
     // 3. Build the Master Payload
     const payload = {
@@ -150,8 +172,11 @@ async function saveSettings() {
         maps_api_key: document.getElementById('maps_key').value,
         peak_multiplier: document.getElementById('peak_multiplier').value || 1.5, // RESTORED
         tax_rate: document.getElementById('tax_rate').value || 0,
+        peak_windows: peakWindows, // ADD THIS
         fixed_rates: routes,
         events: events
+
+        
     };
 
     const res = await fetch(`${BACKEND_URL}/api/update-profile-full`, {
@@ -162,7 +187,6 @@ async function saveSettings() {
 
     if (res.ok) alert("✅ All settings, fleet info, and events saved!");
     btn.innerText = "SAVE ALL SETTINGS";
-}
 
 /* 🛣️ Fixed Rate Check Engine */
 async function checkFixedRate(userId, serviceId, pickup, dropoff) {
@@ -189,28 +213,24 @@ app.post("/api/update-profile", async (req, res) => {
     maps_api_key, 
     CRM_One_Source_api_key, 
     tax_rate, 
-    is_booking_enabled 
+    is_booking_enabled,
+    peak_windows, // From your new Daily Peak section
+    events        // From your Special Events section
   } = req.body;
 
   if (!userId) {
     return res.status(400).json({ error: "Missing userId (Location ID)" });
   }
 
+  // Use a client from the pool to run everything in one "transaction"
+  const client = await pool.connect();
+
   try {
-    // We use an "UPSERT" style query (INSERT ... ON CONFLICT) 
-    // This ensures that if the user doesn't exist yet, they are created.
-    // If they do exist, their settings are updated.
-    const query = `
-      INSERT INTO users (
-        id, 
-        business_name, 
-        address, 
-        phone, 
-        maps_api_key, 
-        CRM_One_Source_api_key, 
-        tax_rate, 
-        is_booking_enabled
-      )
+    await client.query('BEGIN'); // Start the transaction
+
+    // 1. UPDATE CORE PROFILE (The UPSERT you already had)
+    const profileQuery = `
+      INSERT INTO users (id, business_name, address, phone, maps_api_key, CRM_One_Source_api_key, tax_rate, is_booking_enabled)
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
       ON CONFLICT (id) DO UPDATE SET
         business_name = EXCLUDED.business_name,
@@ -222,29 +242,44 @@ app.post("/api/update-profile", async (req, res) => {
         is_booking_enabled = EXCLUDED.is_booking_enabled
       RETURNING *;
     `;
+    const profileValues = [userId, business_name || null, address || null, phone || null, maps_api_key || null, CRM_One_Source_api_key || null, tax_rate || 0, is_booking_enabled ?? true];
+    await client.query(profileQuery, profileValues);
 
-    const values = [
-      userId, 
-      business_name || null, 
-      address || null, 
-      phone || null, 
-      maps_api_key || null, 
-      CRM_One_Source_api_key || null, 
-      tax_rate || 0, 
-      is_booking_enabled ?? true
-    ];
+    // 2. UPDATE DAILY PEAK WINDOWS (Rush Hours)
+    // Wipe old ones for this location and insert new ones
+    await client.query('DELETE FROM service_peak_multipliers WHERE location_id = $1', [userId]);
+    if (peak_windows && Array.isArray(peak_windows)) {
+      for (const window of peak_windows) {
+        await client.query(
+          `INSERT INTO service_peak_multipliers (location_id, label, start_time, end_time, multiplier) 
+           VALUES ($1, $2, $3, $4, $5)`,
+          [userId, window.label, window.start_time, window.end_time, window.multiplier]
+        );
+      }
+    }
 
-    const result = await pool.query(query, values);
+    // 3. UPDATE SPECIAL EVENTS
+    // Wipe old ones and insert new ones
+    await client.query('DELETE FROM event_multipliers WHERE location_id = $1', [userId]);
+    if (events && Array.isArray(events)) {
+      for (const event of events) {
+        await client.query(
+          `INSERT INTO event_multipliers (location_id, event_name, event_date, multiplier) 
+           VALUES ($1, $2, $3, $4)`,
+          [userId, event.name, event.date, event.multiplier]
+        );
+      }
+    }
 
-    res.json({ 
-      success: true, 
-      message: "Profile updated successfully", 
-      data: result.rows[0] 
-    });
+    await client.query('COMMIT'); // Finalize all changes
+    res.json({ success: true, message: "Profile, Peak Windows, and Events updated successfully" });
 
   } catch (err) {
+    await client.query('ROLLBACK'); // Undo everything if one step fails
     console.error("Error updating profile:", err.message);
-    res.status(500).json({ error: "Server error while saving profile settings." });
+    res.status(500).json({ error: "Server error while saving settings." });
+  } finally {
+    client.release(); // Return the connection to the pool
   }
 });
 
@@ -343,6 +378,34 @@ app.post("/api/calculate-quote", async (req, res) => {
     if (!userRes.rows.length || !serviceRes.rows.length) {
       return res.status(404).json({ error: "Config not found" });
     }
+
+async function getCurrentMultiplier(locationId) {
+    try {
+        // 1. Check for Special Events First (Date-based)
+        const eventResult = await pool.query(
+            "SELECT multiplier FROM event_multipliers WHERE location_id = $1 AND event_date = CURRENT_DATE",
+            [locationId]
+        );
+        if (eventResult.rows.length > 0) return parseFloat(eventResult.rows[0].multiplier);
+
+        // 2. Check for Daily Peak Windows (Time-based Rush Hours)
+        const peakResult = await pool.query(
+            `SELECT multiplier FROM service_peak_multipliers 
+             WHERE location_id = $1 
+             AND CURRENT_TIME AT TIME ZONE 'UTC' BETWEEN start_time AND end_time`, 
+             [locationId]
+        );
+        // Note: Change 'UTC' to the SaaS owner's timezone if needed!
+
+        if (peakResult.rows.length > 0) return parseFloat(peakResult.rows[0].multiplier);
+
+        // 3. Default Multiplier if nothing matches
+        return 1.0; 
+    } catch (err) {
+        console.error("Error fetching multiplier:", err);
+        return 1.0;
+    }
+}
 
     const user = userRes.rows[0];
     const service = serviceRes.rows[0];
@@ -575,6 +638,25 @@ app.get("/api/get-profile/:userId", async (req, res) => {
     console.error("Error fetching profile:", err.message);
     res.status(500).json({ error: "Failed to load settings." });
   }
+
+  app.post('/api/get-quote', async (req, res) => {
+    const { locationId, distance, serviceType } = req.body;
+    
+    // Get the base rate from service_types table
+    const baseRate = 2.50; // (or fetch from DB)
+    
+    // Get the active multiplier (Rush Hour or Event)
+    const multiplier = await getCurrentMultiplier(locationId);
+    
+    // Calculate final price
+    const totalPrice = (distance * baseRate) * multiplier;
+    
+    res.json({ 
+        quote: totalPrice.toFixed(2), 
+        appliedMultiplier: multiplier 
+    });
+});
+
 });
 
 /*****************************************************
