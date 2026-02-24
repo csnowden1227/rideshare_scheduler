@@ -140,6 +140,19 @@ function addPeakTimeRow(label = '', start = '', end = '', mult = '1.5') {
     container.appendChild(tr);
 }
 
+async function syncFleet() {
+    const res = await fetch(`${BACKEND_URL}/api/sync-fleet`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: locationId })
+    });
+    const data = await resp.json();
+    if (data.success) {
+        alert(`Synced ${data.count} vehicles from CRM!`);
+        location.reload(); // Refresh to show new rows
+    }
+}
+
 async function saveSettings() {
     // Collect the Peak Time Rows
     const peakTimes = Array.from(document.querySelectorAll('.peak-time-row')).map(row => ({
@@ -148,6 +161,16 @@ async function saveSettings() {
         end_time: row.querySelector('.peak-end').value,
         multiplier: row.querySelector('.peak-multiplier').value
     }));
+
+    // Add this inside saveSettings()
+const fleet = Array.from(document.querySelectorAll('.fleet-row')).map(row => ({
+    serviceId: row.dataset.id,
+    base_rate: row.querySelector('.base-rate').value,
+    per_mile: row.querySelector('.per-mile').value,
+    min_fare: row.querySelector('.min-fare').value
+}));
+
+// Add 'fleet: fleet' to your payload object
 
     const payload = {
         userId: locationId,
