@@ -39,23 +39,45 @@
 
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div class="lg:col-span-2 space-y-6">
-            
-            <div class="bg-white p-8 rounded-2xl shadow-sm border border-gray-200">
-                <h2 class="text-xl font-bold mb-6 flex items-center">
-                    <span class="bg-black text-white w-8 h-8 rounded-lg flex items-center justify-center mr-3 text-sm">1</span>
-                    Business Configuration
-                </h2>
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div>
-                        <label class="block text-sm font-semibold text-gray-700 mb-2">Google Maps API Key</label>
-                        <input type="password" id="maps_key" class="w-full p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-black outline-none transition" placeholder="AIzaSy...">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-semibold text-gray-700 mb-2">CRM API Key</label>
-                        <input type="password" id="CRM_One_Source_key" class="w-full p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-black outline-none transition" placeholder="Your CRM Key">
-                    </div>
-                </div>
+    <div class="bg-white p-8 rounded-2xl shadow-sm border border-gray-200">
+        <h2 class="text-xl font-bold mb-6 flex items-center">
+            <span class="bg-black text-white w-8 h-8 rounded-lg flex items-center justify-center mr-3 text-sm">1</span>
+            API Configuration
+        </h2>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+                <label class="block text-sm font-semibold text-gray-700 mb-2">Google Maps API Key</label>
+                <input type="password" id="maps_key" class="input-mini" placeholder="AIzaSy...">
             </div>
+            <div>
+                <label class="block text-sm font-semibold text-gray-700 mb-2">CRM API Key</label>
+                <input type="password" id="CRM_key" class="input-mini" placeholder="Your CRM Key">
+            </div>
+        </div>
+    </div>
+
+    <div class="bg-white p-8 rounded-2xl shadow-sm border border-gray-200">
+        <div class="flex justify-between items-center mb-6">
+            <h2 class="text-xl font-bold flex items-center">
+                <span class="bg-black text-white w-8 h-8 rounded-lg flex items-center justify-center mr-3 text-sm">2</span>
+                Fleet & Base Pricing
+            </h2>
+            <button type="button" onclick="syncFleet()" class="text-xs font-bold bg-green-600 text-white px-3 py-1 rounded-lg">🔄 Sync Fleet</button>
+        </div>
+        <table class="w-full text-left">
+            <thead>
+                <tr class="text-xs uppercase text-gray-400 border-b border-gray-100">
+                    <th class="pb-4">Vehicle</th>
+                    <th class="pb-4 w-24">Base $</th>
+                    <th class="pb-4 w-24">Mile $</th>
+                    <th class="pb-4 w-24">Min $</th>
+                </tr>
+            </thead>
+            <tbody id="fleet-body"></tbody>
+        </table>
+    </div>
+
+    </div>
 
             <div class="bg-white p-8 rounded-2xl shadow-sm border border-gray-200">
                 <div class="flex justify-between items-center mb-6">
@@ -78,6 +100,73 @@
                 </table>
             </div>
 
+            <div class="bg-white p-8 rounded-2xl shadow-sm border border-gray-200 mt-6">
+    <div class="flex justify-between items-center mb-6">
+        <h2 class="text-xl font-bold flex items-center">
+            <span class="bg-black text-white w-8 h-8 rounded-lg flex items-center justify-center mr-3 text-sm">4</span>
+            Daily Peak Hour Windows
+        </h2>
+        <button type="button" onclick="addPeakTimeRow()" class="text-xs font-bold bg-blue-600 text-white px-3 py-1 rounded-lg hover:bg-blue-700">+ Add Time Window</button>
+    </div>
+    <p class="text-xs text-gray-500 mb-4">Set recurring surge pricing for Morning and Evening rush hours.</p>
+    <table class="w-full text-left">
+        <thead>
+            <tr class="text-xs uppercase text-gray-400 border-b border-gray-100">
+                <th class="pb-4">Label (e.g. Morning Rush)</th>
+                <th class="pb-4">Start Time</th>
+                <th class="pb-4">End Time</th>
+                <th class="pb-4">Multiplier</th>
+                <th class="pb-4"></th>
+            </tr>
+        </thead>
+        <tbody id="peak-times-body"></tbody>
+    </table>
+</div>
+
+<div class="bg-white p-8 rounded-2xl shadow-sm border border-gray-200 mt-6">
+    <div class="flex justify-between items-center mb-6">
+        <h2 class="text-xl font-bold flex items-center">
+            <span class="bg-black text-white w-8 h-8 rounded-lg flex items-center justify-center mr-3 text-sm">4</span>
+            Daily Peak Hour Windows
+        </h2>
+        <button type="button" onclick="addPeakTimeRow()" class="text-xs font-bold bg-blue-600 text-white px-3 py-1 rounded-lg hover:bg-blue-700">+ Add Time Window</button>
+    </div>
+    <table class="w-full text-left">
+        <thead>
+            <tr class="text-xs uppercase text-gray-400 border-b border-gray-100">
+                <th class="pb-4">Label</th>
+                <th class="pb-4">Start Time</th>
+                <th class="pb-4">End Time</th>
+                <th class="pb-4">Multiplier</th>
+                <th class="pb-4"></th>
+            </tr>
+        </thead>
+        <tbody id="peak-times-body">
+            </tbody>
+    </table>
+</div>
+<div class="bg-white p-8 rounded-2xl shadow-sm border border-gray-200 mt-6">
+    <div class="flex justify-between items-center mb-6">
+        <h2 class="text-xl font-bold flex items-center">
+            <span class="bg-black text-white w-8 h-8 rounded-lg flex items-center justify-center mr-3 text-sm">5</span>
+            Fleet & Base Pricing
+        </h2>
+        <button type="button" onclick="syncFleet()" class="text-xs font-bold bg-green-600 text-white px-3 py-1 rounded-lg hover:bg-green-700">🔄 Sync from CRM</button>
+    </div>
+    <p class="text-xs text-gray-500 mb-4">Set your base rates and per-mile charges for each vehicle type.</p>
+    <table class="w-full text-left">
+        <thead>
+            <tr class="text-xs uppercase text-gray-400 border-b border-gray-100">
+                <th class="pb-4">Vehicle/Service</th>
+                <th class="pb-4">Base Rate ($)</th>
+                <th class="pb-4">Per Mile ($)</th>
+                <th class="pb-4">Min. Fare ($)</th>
+            </tr>
+        </thead>
+        <tbody id="fleet-body">
+            </tbody>
+    </table>
+</div>
             <div class="bg-white p-8 rounded-2xl shadow-sm border border-gray-200">
                 <div class="flex justify-between items-center mb-6">
                     <h2 class="text-xl font-bold flex items-center">
