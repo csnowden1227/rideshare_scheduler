@@ -154,7 +154,18 @@ async function syncFleet() {
 }
 
 async function saveSettings() {
-    // Collect the Peak Time Rows
+    const btn = document.getElementById('save-settings-btn');
+    btn.innerText = "SAVING...";
+
+    // 1. Collect Fleet / Service Pricing
+    const fleet = Array.from(document.querySelectorAll('.fleet-row')).map(row => ({
+        serviceId: row.dataset.id,
+        base_rate: row.querySelector('.base-rate').value,
+        per_mile: row.querySelector('.per-mile').value,
+        min_fare: row.querySelector('.min-fare').value
+    }));
+
+    // 2. Collect Daily Peak Windows
     const peakTimes = Array.from(document.querySelectorAll('.peak-time-row')).map(row => ({
         label: row.querySelector('.peak-label').value,
         start_time: row.querySelector('.peak-start').value,
@@ -162,54 +173,51 @@ async function saveSettings() {
         multiplier: row.querySelector('.peak-multiplier').value
     }));
 
-    // Add this inside saveSettings()
-const fleet = Array.from(document.querySelectorAll('.fleet-row')).map(row => ({
-    serviceId: row.dataset.id,
-    base_rate: row.querySelector('.base-rate').value,
-    per_mile: row.querySelector('.per-mile').value,
-    min_fare: row.querySelector('.min-fare').value
-}));
+    // 3. Collect Special Events
+    const events = Array.from(document.querySelectorAll('.event-row')).map(row => ({
+        name: row.querySelector('.event-name').value,
+        date: row.querySelector('.event-date').value,
+        multiplier: row.querySelector('.event-multiplier').value
+    }));
 
-// Add 'fleet: fleet' to your payload object
+    // 4. Collect Fixed Routes (Geofencing)
+    const routes = Array.from(document.querySelectorAll('.route-row')).map(row => ({
+        pickup: row.querySelector('.route-from').value,
+        dropoff: row.querySelector('.route-to').value,
+        price: row.querySelector('.route-price').value
+    }));
 
+    // 5. Construct Final Payload
     const payload = {
         userId: locationId,
+        maps_api_key: document.getElementById('maps_key').value,
+        crm_api_key: document.getElementById('CRM_key')?.value, // Added safety
+        tax_rate: document.getElementById('tax_rate')?.value || 0,
+        fleet: fleet,
         peak_windows: peakTimes,
-        // ... include your other fields like maps_key, tax_rate, etc.
+        events: events,
+        fixed_rates: routes
     };
 
-    const res = await fetch(`${BACKEND_URL}/api/update-profile-full`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-    });
-    
+    try {
+        const res = await fetch(`${BACKEND_URL}/api/update-profile`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
 
-    if (res.ok) alert("✅ Peak Windows & Settings Saved!");
-
-}    
-    
-
-    const res = await fetch(`${BACKEND_URL}/api/update-profile-full`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-    });
-
-    if (res.ok) alert("✅ All settings, fleet info, and events saved!");
-    btn.innerText = "SAVE ALL SETTINGS";
-
-/* 🛣️ Fixed Rate Check Engine */
-async function checkFixedRate(userId, serviceId, pickup, dropoff) {
-  const res = await pool.query(
-    `SELECT fixed_price FROM fixed_rates 
-     WHERE user_id = $1 AND service_id = $2 
-     AND ($3 ILIKE '%' || pickup_keyword || '%') 
-     AND ($4 ILIKE '%' || dropoff_keyword || '%')
-     AND is_active = true LIMIT 1`,
-    [userId, serviceId, pickup, dropoff]
-  );
-  return res.rows.length > 0 ? parseFloat(res.rows[0].fixed_price) : null;
+        if (res.ok) {
+            alert("✅ All settings, fleet info, and surge pricing saved!");
+        } else {
+            const errorData = await res.json();
+            alert("❌ Save failed: " + errorData.error);
+        }
+    } catch (err) {
+        console.error("Save Error:", err);
+        alert("❌ Network error. Check if backend is running.");
+    } finally {
+        btn.innerText = "SAVE ALL SETTINGS";
+    }
 }
 
 /*****************************************************
