@@ -23,7 +23,7 @@ async function runMigrations() {
         address TEXT,
         phone TEXT,
         maps_api_key TEXT,
-        ghl_api_key TEXT,
+        CRM_One_Source_api_key TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `);

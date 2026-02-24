@@ -149,7 +149,7 @@ app.post("/api/update-profile", async (req, res) => {
     address, 
     phone, 
     maps_api_key, 
-    ghl_api_key, 
+    CRM_One_Source_api_key, 
     tax_rate, 
     is_booking_enabled 
   } = req.body;
@@ -169,7 +169,7 @@ app.post("/api/update-profile", async (req, res) => {
         address, 
         phone, 
         maps_api_key, 
-        ghl_api_key, 
+        CRM_One_Source_api_key, 
         tax_rate, 
         is_booking_enabled
       )
@@ -179,7 +179,7 @@ app.post("/api/update-profile", async (req, res) => {
         address = EXCLUDED.address,
         phone = EXCLUDED.phone,
         maps_api_key = EXCLUDED.maps_api_key,
-        ghl_api_key = EXCLUDED.ghl_api_key,
+        CRM_One_Source_api_key = EXCLUDED.CRM_One_Source_api_key,
         tax_rate = EXCLUDED.tax_rate,
         is_booking_enabled = EXCLUDED.is_booking_enabled
       RETURNING *;
@@ -191,7 +191,7 @@ app.post("/api/update-profile", async (req, res) => {
       address || null, 
       phone || null, 
       maps_api_key || null, 
-      ghl_api_key || null, 
+      CRM_One_Source_api_key || null, 
       tax_rate || 0, 
       is_booking_enabled ?? true
     ];
@@ -471,33 +471,33 @@ app.post("/api/book", async (req, res) => {
 });
 
 /*****************************************************
- 8️⃣ GHL STAFF SYNC (FLEET GENERATION)
+ 8️⃣ CRM_One_Source STAFF SYNC (FLEET GENERATION)
 *****************************************************/
 app.post("/api/sync-fleet", async (req, res) => {
     const { userId } = req.body;
 
     try {
-        // 1. Get the user's GHL API Key/Access Token from DB
-        const userRes = await pool.query("SELECT ghl_api_key FROM users WHERE id = $1", [userId]);
-        const apiKey = userRes.rows[0]?.ghl_api_key;
+        // 1. Get the user's CRM_One_Sourcece API Key/Access Token from DB
+        const userRes = await pool.query("SELECT CRM_One_Source_api_key FROM users WHERE id = $1", [userId]);
+        const apiKey = userRes.rows[0]?.CRM_One_Source_api_key;
 
         if (!apiKey) {
-            return res.status(400).json({ error: "GHL API Key not found. Please connect GHL first." });
+            return res.status(400).json({ error: "CRM_One_Source API Key not found. Please connect CRM_One_Source first." });
         }
 
-        // 2. Fetch Staff from GHL API
-        const ghlResponse = await fetch(`https://services.leadconnectorhq.com/staff/?locationId=${userId}`, {
+        // 2. Fetch Staff from CRM_One_Source API
+        const CRM_One_SourceResponse = await fetch(`https://services.leadconnectorhq.com/staff/?locationId=${userId}`, {
             headers: { 
                 'Authorization': `Bearer ${apiKey}`,
                 'Version': '2021-07-28' 
             }
         });
-        const ghlData = await ghlResponse.json();
+        const CRM_One_SourceData = await CRM_One_SourceResponse.json();
 
-        if (!ghlData.staff) throw new Error("Could not retrieve staff list.");
+        if (!CRM_One_SourceData.staff) throw new Error("Could not retrieve staff list.");
 
         // 3. Sync each staff member as a "Service/Vehicle"
-        for (const staff of ghlData.staff) {
+        for (const staff of CRM_One_SourceData.staff) {
             const staffId = `${userId}_${staff.id}`;
             await pool.query(
                 `INSERT INTO services (saas_location_staff_id, name, base_rate, per_mile_rate)
@@ -508,7 +508,7 @@ app.post("/api/sync-fleet", async (req, res) => {
             );
         }
 
-        res.json({ success: true, count: ghlData.staff.length });
+        res.json({ success: true, count: CRM_One_SourceData.staff.length });
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: "Fleet sync failed: " + err.message });
@@ -526,7 +526,7 @@ app.get("/api/get-profile/:userId", async (req, res) => {
       // If user doesn't exist yet, send back empty defaults
       return res.json({ 
         maps_api_key: "", 
-        ghl_api_key: "", 
+        CRM_One_Source_api_key: "", 
         tax_rate: 0, 
         is_booking_enabled: true 
       });
