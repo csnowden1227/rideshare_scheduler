@@ -126,6 +126,44 @@ function getPeakMultiplier(dateISO, customMultiplier) {
   return 1.0;
 }
 
+async function saveSettings() {
+    const btn = document.getElementById('save-settings-btn');
+    btn.innerText = "SAVING...";
+    
+    // 1. Collect Routes
+    const routes = Array.from(document.querySelectorAll('.route-row')).map(row => ({
+        pickup: row.querySelector('.route-from').value,
+        dropoff: row.querySelector('.route-to').value,
+        price: row.querySelector('.route-price').value
+    }));
+
+    // 2. Collect Events
+    const events = Array.from(document.querySelectorAll('.event-row')).map(row => ({
+        name: row.querySelector('.event-name').value,
+        date: row.querySelector('.event-date').value,
+        multiplier: row.querySelector('.event-multiplier').value
+    }));
+
+    // 3. Build the Master Payload
+    const payload = {
+        userId: locationId,
+        maps_api_key: document.getElementById('maps_key').value,
+        peak_multiplier: document.getElementById('peak_multiplier').value || 1.5, // RESTORED
+        tax_rate: document.getElementById('tax_rate').value || 0,
+        fixed_rates: routes,
+        events: events
+    };
+
+    const res = await fetch(`${BACKEND_URL}/api/update-profile-full`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    });
+
+    if (res.ok) alert("✅ All settings, fleet info, and events saved!");
+    btn.innerText = "SAVE ALL SETTINGS";
+}
+
 /* 🛣️ Fixed Rate Check Engine */
 async function checkFixedRate(userId, serviceId, pickup, dropoff) {
   const res = await pool.query(

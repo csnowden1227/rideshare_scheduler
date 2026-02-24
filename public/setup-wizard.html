@@ -8,6 +8,15 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
     <style>
         body { font-family: 'Inter', sans-serif; }
+        .input-mini {
+            width: 100%;
+            padding: 0.5rem;
+            border: 1px solid #e2e8f0;
+            border-radius: 0.5rem;
+            font-size: 0.875rem;
+            outline: none;
+        }
+        .input-mini:focus { border-color: #000; outline: none; box-shadow: 0 0 0 2px #f3f4f6; }
     </style>
 </head>
 <body class="bg-gray-50 text-gray-900">
@@ -16,7 +25,7 @@
     <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-4">
         <div>
             <h1 class="text-4xl font-extrabold tracking-tight">Setup Wizard</h1>
-            <p class="text-gray-500 mt-1">Configure your fleet and booking preferences.</p>
+            <p class="text-gray-500 mt-1">Configure your fleet, special events, and route pricing.</p>
         </div>
         
         <div class="bg-white p-4 rounded-2xl shadow-sm border border-gray-200 flex items-center space-x-4">
@@ -42,13 +51,8 @@
                         <input type="password" id="maps_key" class="w-full p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-black outline-none transition" placeholder="AIzaSy...">
                     </div>
                     <div>
-                        <label class="block text-sm font-semibold text-gray-700 mb-2">CRM_One_Source API Key / Access Token</label>
-                        <input type="password" id="CRM_One_Source_key" class="w-full p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-black outline-none transition" placeholder="Your CRM_One_Source API Key">
-                        <p class="text-[10px] text-gray-400 mt-1">Found in CRM_One_Source Settings > Business Profile</p>
-                    </div>
-                    <div>
-                        <label class="block text-sm font-semibold text-gray-700 mb-2">Sales Tax Rate (%)</label>
-                        <input type="number" id="tax_rate" step="0.01" class="w-full p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-black outline-none transition" placeholder="8.25">
+                        <label class="block text-sm font-semibold text-gray-700 mb-2">CRM API Key</label>
+                        <input type="password" id="CRM_One_Source_key" class="w-full p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-black outline-none transition" placeholder="Your CRM Key">
                     </div>
                 </div>
             </div>
@@ -57,35 +61,53 @@
                 <div class="flex justify-between items-center mb-6">
                     <h2 class="text-xl font-bold flex items-center">
                         <span class="bg-black text-white w-8 h-8 rounded-lg flex items-center justify-center mr-3 text-sm">2</span>
-                        Fleet & Pricing
+                        Fixed Route Geofencing
                     </h2>
-                    <button onclick="syncFleet()" id="sync-btn" class="text-sm font-semibold text-indigo-600 hover:text-indigo-800 flex items-center">
-                        <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
-                        Sync Fleet
-                    </button>
+                    <button type="button" onclick="addRouteRow()" class="text-xs font-bold bg-blue-600 text-white px-3 py-1 rounded-lg hover:bg-blue-700">+ Add Route</button>
                 </div>
-                <div id="fleet-container" class="space-y-4">
-                    <div class="text-center py-10 border-2 border-dashed border-gray-100 rounded-2xl">
-                        <p class="text-gray-400">Click "Sync Fleet" to pull your vehicles from GoHiCRM_One_Sourceevel.</p>
-                    </div>
+                <table class="w-full text-left">
+                    <thead>
+                        <tr class="text-xs uppercase text-gray-400 border-b border-gray-100">
+                            <th class="pb-4">From (Keyword)</th>
+                            <th class="pb-4">To (Keyword)</th>
+                            <th class="pb-4">Flat Price</th>
+                            <th class="pb-4"></th>
+                        </tr>
+                    </thead>
+                    <tbody id="routes-body"></tbody>
+                </table>
+            </div>
+
+            <div class="bg-white p-8 rounded-2xl shadow-sm border border-gray-200">
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-xl font-bold flex items-center">
+                        <span class="bg-black text-white w-8 h-8 rounded-lg flex items-center justify-center mr-3 text-sm">3</span>
+                        Special Event Multipliers
+                    </h2>
+                    <button type="button" onclick="addEventRow()" class="text-xs font-bold bg-blue-600 text-white px-3 py-1 rounded-lg hover:bg-blue-700">+ Add Event</button>
                 </div>
+                <table class="w-full text-left">
+                    <thead>
+                        <tr class="text-xs uppercase text-gray-400 border-b border-gray-100">
+                            <th class="pb-4">Event Name</th>
+                            <th class="pb-4">Date</th>
+                            <th class="pb-4">Multiplier</th>
+                            <th class="pb-4"></th>
+                        </tr>
+                    </thead>
+                    <tbody id="events-body"></tbody>
+                </table>
             </div>
         </div>
 
         <div class="space-y-6">
             <div class="bg-gray-900 text-white p-8 rounded-3xl shadow-2xl sticky top-6">
-                <h2 class="text-xl font-bold mb-4">Widget Embed</h2>
-                <p class="text-gray-400 text-sm mb-6">Copy this code into your CRM_One_Source Funnel "Tracking Code" or HTML element.</p>
-                
-                <div class="relative group">
-                    <pre id="embed-code-box" class="bg-black p-5 rounded-xl text-xs text-green-400 overflow-x-auto border border-gray-700 leading-relaxed"></pre>
-                    <button onclick="copyEmbed()" class="absolute top-2 right-2 bg-gray-800 hover:bg-gray-700 p-2 rounded-lg text-white text-xs transition">Copy</button>
-                </div>
-
+                <h2 class="text-xl font-bold mb-4">Actions</h2>
+                <button onclick="saveSettings()" id="save-settings-btn" class="w-full bg-white text-black font-bold py-4 rounded-xl hover:bg-gray-200 transition-all shadow-lg transform hover:-translate-y-1">
+                    SAVE ALL SETTINGS
+                </button>
                 <div class="mt-8 pt-8 border-t border-gray-800">
-                    <button onclick="saveSettings()" id="save-settings-btn" class="w-full bg-white text-black font-bold py-4 rounded-xl hover:bg-gray-200 transition-all shadow-lg transform hover:-translate-y-1">
-                        SAVE ALL SETTINGS
-                    </button>
+                    <pre id="embed-code-box" class="bg-black p-5 rounded-xl text-[10px] text-green-400 overflow-x-auto border border-gray-700"></pre>
                 </div>
             </div>
         </div>
@@ -97,125 +119,75 @@
     const urlParams = new URLSearchParams(window.location.search);
     const locationId = urlParams.get('location_id') || 'TEST_LOC';
 
-    // 1. Generate Embed Code View
-    function updateEmbedCode() {
-        const code = `<div id="chauffeur-booking-widget"></div>\n<script src="${BACKEND_URL}/widget.js?loc=${locationId}"><\/script>`;
-        document.getElementById('embed-code-box').innerText = code;
+    // --- Dynamic Row Logic ---
+
+    function addRouteRow(from = '', to = '', price = '') {
+        const container = document.getElementById('routes-body');
+        const tr = document.createElement('tr');
+        tr.className = "route-row border-b border-gray-50";
+        tr.innerHTML = `
+            <td class="py-4"><input type="text" class="route-from input-mini" value="${from}" placeholder="e.g. JFK"></td>
+            <td class="py-4"><input type="text" class="route-to input-mini" value="${to}" placeholder="e.g. Manhattan"></td>
+            <td class="py-4"><input type="number" class="route-price input-mini" value="${price}" placeholder="150"></td>
+            <td class="py-4 text-right"><button type="button" onclick="this.closest('tr').remove()" class="text-red-400">×</button></td>
+        `;
+        container.appendChild(tr);
     }
 
-    // 2. Load Existing Settings from Backend (Runs on page open)
-    async function loadSettings() {
-        try {
-            const res = await fetch(`${BACKEND_URL}/api/get-profile/${locationId}`);
-            if (!res.ok) throw new Error("Could not fetch profile");
-            
-            const data = await res.json();
-
-            if (data) {
-                if (data.maps_api_key) document.getElementById('maps_key').value = data.maps_api_key;
-                if (data.CRM_One_Source_api_key) document.getElementById('CRM_One_Source_key').value = data.CRM_One_Source_api_key;
-                if (data.tax_rate) document.getElementById('tax_rate').value = data.tax_rate;
-                document.getElementById('booking_enabled').checked = data.is_booking_enabled ?? true;
-            }
-            
-            updateEmbedCode();
-            loadFleetDisplay();
-        } catch (err) {
-            console.error("Error loading settings:", err);
-            updateEmbedCode(); // Still run this even if fetch fails
-        }
+    function addEventRow(name = '', date = '', mult = '2.0') {
+        const container = document.getElementById('events-body');
+        const tr = document.createElement('tr');
+        tr.className = "event-row border-b border-gray-50";
+        tr.innerHTML = `
+            <td class="py-4"><input type="text" class="event-name input-mini" value="${name}" placeholder="Super Bowl"></td>
+            <td class="py-4"><input type="date" class="event-date input-mini" value="${date}"></td>
+            <td class="py-4"><input type="number" step="0.1" class="event-multiplier input-mini" value="${mult}"></td>
+            <td class="py-4 text-right"><button type="button" onclick="this.closest('tr').remove()" class="text-red-400">×</button></td>
+        `;
+        container.appendChild(tr);
     }
 
-    // 3. Save Settings to Backend
+    // --- Save Logic ---
+
     async function saveSettings() {
         const btn = document.getElementById('save-settings-btn');
-        const originalText = btn.innerText;
         btn.innerText = "SAVING...";
-        btn.disabled = true;
         
+        // Collect Routes
+        const routes = Array.from(document.querySelectorAll('.route-row')).map(row => ({
+            pickup: row.querySelector('.route-from').value,
+            dropoff: row.querySelector('.route-to').value,
+            price: row.querySelector('.route-price').value
+        }));
+
+        // Collect Events
+        const events = Array.from(document.querySelectorAll('.event-row')).map(row => ({
+            name: row.querySelector('.event-name').value,
+            date: row.querySelector('.event-date').value,
+            multiplier: row.querySelector('.event-multiplier').value
+        }));
+
         const payload = {
             userId: locationId,
             maps_api_key: document.getElementById('maps_key').value,
-            CRM_One_Source_api_key: document.getElementById('CRM_One_Source_key').value, // Key included here
-            tax_rate: document.getElementById('tax_rate').value,
-            is_booking_enabled: document.getElementById('booking_enabled').checked
+            tax_rate: document.getElementById('tax_rate')?.value || 0,
+            fixed_rates: routes,
+            events: events
         };
 
-        try {
-            const res = await fetch(`${BACKEND_URL}/api/update-profile`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
-            
-            if (res.ok) {
-                alert("✅ Settings saved successfully!");
-            } else {
-                const errData = await res.json();
-                alert("❌ Failed to save: " + (errData.error || "Unknown error"));
-            }
-        } catch (err) {
-            console.error(err);
-            alert("💥 Connection error. Is the server running?");
-        } finally {
-            btn.innerText = originalText;
-            btn.disabled = false;
-        }
-    }
-
-    // 4. Copy Embed Code Utility
-    function copyEmbed() {
-        const text = document.getElementById('embed-code-box').innerText;
-        navigator.clipboard.writeText(text).then(() => {
-            alert("📋 Embed code copied to clipboard!");
+        const res = await fetch(`${BACKEND_URL}/api/update-profile-full`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
         });
+
+        if (res.ok) alert("✅ Saved!");
+        btn.innerText = "SAVE ALL SETTINGS";
     }
 
-    // 5. Fleet Sync Logic
-    async function syncFleet() {
-        const syncBtn = document.getElementById('sync-btn');
-        const originalHtml = syncBtn.innerHTML;
-        syncBtn.innerText = "Syncing...";
-        syncBtn.disabled = true;
-
-        try {
-            const res = await fetch(`${BACKEND_URL}/api/sync-fleet`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ userId: locationId })
-            });
-            
-            const data = await res.json();
-            
-            if (data.success) {
-                alert(`✅ Success! Synced ${data.count} vehicles from your staff list.`);
-                loadFleetDisplay(); 
-            } else {
-                alert("❌ Sync Error: " + data.error);
-            }
-        } catch (err) {
-            alert("💥 Connection error during sync.");
-        } finally {
-            syncBtn.innerHTML = originalHtml;
-            syncBtn.disabled = false;
-        }
-    }
-
-    // 6. Load Fleet Display
-    async function loadFleetDisplay() {
-        const container = document.getElementById('fleet-container');
-        // Simple indicator for now
-        container.innerHTML = `
-            <div class="flex items-center justify-between p-4 bg-gray-50 rounded-xl border border-gray-100">
-                <span class="font-bold text-gray-700">Vehicles Active</span>
-                <span class="text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full uppercase font-bold">Connected</span>
-            </div>
-            <p class="text-xs text-gray-400 mt-2">Rates use global defaults. Customize individual service rates in your database if needed.</p>
-        `;
-    }
-
-    // Initialize the page on load
-    window.onload = loadSettings;
+    window.onload = () => {
+        document.getElementById('embed-code-box').innerText = `<script src="${BACKEND_URL}/widget.js?loc=${locationId}"><\/script>`;
+    };
 </script>
 </body>
 </html>
