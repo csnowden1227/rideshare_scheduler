@@ -1,0 +1,14 @@
+test.js
+import fetch from "node-fetch"; // If using Node 18+, native fetch works too
+
+async function test() {
+  const response = await fetch("https://inseparable-figureless-karrie.ngrok-free.dev/api", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name: "test" }),
+  });
+  const data = await response.json();
+  console.log(data);
+}
+
+test();

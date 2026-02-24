@@ -1,0 +1,38 @@
+
+Save.
+
+---
+
+## 4) Connect PostgreSQL (your next real milestone)
+You have `pg` installed already — now we need:
+1) a database
+2) tables (schema)
+3) seed data (services/drivers)
+
+### Option A: Local Postgres (on your computer)
+If Postgres is installed, we’ll create DB and run schema.
+
+### Option B: Hosted Postgres (Render / Supabase / Neon)
+This is usually easiest if you plan to deploy soon.
+
+**Tell me which one you want: Local or Hosted?**  
+(If you pick Hosted, I’ll give you the exact clicks + values for Render.)
+
+---
+
+## 5) Google Maps + Google Calendar + GoHighLevel
+After DB is running, the order is:
+
+1) **DB schema + seed**
+2) **Google Maps Routes API key** in `.env`
+3) **Google OAuth** credentials + redirect URL
+4) **GoHighLevel webhook** endpoint in your API
+5) Connect GHL workflow → webhook → store lead/booking in DB
+
+---
+
+# Quick answer: “Where should ‘API running on port 8080’ show?”
+It shows **in the same PowerShell window** where you ran:
+
+```powershell
+node server.js

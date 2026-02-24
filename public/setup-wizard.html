@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chauffeur Deluxe | Setup Wizard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-900">
+
+<div class="max-w-5xl mx-auto p-6 md:p-12">
+    <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-4">
+        <div>
+            <h1 class="text-4xl font-extrabold tracking-tight">Setup Wizard</h1>
+            <p class="text-gray-500 mt-1">Configure your fleet and booking preferences.</p>
+        </div>
+        
+        <div class="bg-white p-4 rounded-2xl shadow-sm border border-gray-200 flex items-center space-x-4">
+            <span class="text-sm font-bold uppercase tracking-wider text-gray-600">Live Booking:</span>
+            <label class="relative inline-flex items-center cursor-pointer">
+                <input type="checkbox" id="booking_enabled" class="sr-only peer" checked>
+                <div class="w-14 h-7 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[4px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-green-600"></div>
+            </label>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <div class="lg:col-span-2 space-y-6">
+            
+            <div class="bg-white p-8 rounded-2xl shadow-sm border border-gray-200">
+                <h2 class="text-xl font-bold mb-6 flex items-center">
+                    <span class="bg-black text-white w-8 h-8 rounded-lg flex items-center justify-center mr-3 text-sm">1</span>
+                    Business Configuration
+                </h2>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-2">Google Maps API Key</label>
+                        <input type="password" id="maps_key" class="w-full p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-black outline-none transition" placeholder="AIzaSy...">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-2">GHL API Key / Access Token</label>
+                        <input type="password" id="ghl_key" class="w-full p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-black outline-none transition" placeholder="Your GHL API Key">
+                        <p class="text-[10px] text-gray-400 mt-1">Found in GHL Settings > Business Profile</p>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-2">Sales Tax Rate (%)</label>
+                        <input type="number" id="tax_rate" step="0.01" class="w-full p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-black outline-none transition" placeholder="8.25">
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-white p-8 rounded-2xl shadow-sm border border-gray-200">
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-xl font-bold flex items-center">
+                        <span class="bg-black text-white w-8 h-8 rounded-lg flex items-center justify-center mr-3 text-sm">2</span>
+                        Fleet & Pricing
+                    </h2>
+                    <button onclick="syncFleet()" id="sync-btn" class="text-sm font-semibold text-indigo-600 hover:text-indigo-800 flex items-center">
+                        <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                        Sync Fleet
+                    </button>
+                </div>
+                <div id="fleet-container" class="space-y-4">
+                    <div class="text-center py-10 border-2 border-dashed border-gray-100 rounded-2xl">
+                        <p class="text-gray-400">Click "Sync Fleet" to pull your vehicles from GoHighLevel.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="space-y-6">
+            <div class="bg-gray-900 text-white p-8 rounded-3xl shadow-2xl sticky top-6">
+                <h2 class="text-xl font-bold mb-4">Widget Embed</h2>
+                <p class="text-gray-400 text-sm mb-6">Copy this code into your GHL Funnel "Tracking Code" or HTML element.</p>
+                
+                <div class="relative group">
+                    <pre id="embed-code-box" class="bg-black p-5 rounded-xl text-xs text-green-400 overflow-x-auto border border-gray-700 leading-relaxed"></pre>
+                    <button onclick="copyEmbed()" class="absolute top-2 right-2 bg-gray-800 hover:bg-gray-700 p-2 rounded-lg text-white text-xs transition">Copy</button>
+                </div>
+
+                <div class="mt-8 pt-8 border-t border-gray-800">
+                    <button onclick="saveSettings()" id="save-settings-btn" class="w-full bg-white text-black font-bold py-4 rounded-xl hover:bg-gray-200 transition-all shadow-lg transform hover:-translate-y-1">
+                        SAVE ALL SETTINGS
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const BACKEND_URL = "https://chauffeur.crmonesource.com";
+    const urlParams = new URLSearchParams(window.location.search);
+    const locationId = urlParams.get('location_id') || 'TEST_LOC';
+
+    // 1. Generate Embed Code View
+    function updateEmbedCode() {
+        const code = `<div id="chauffeur-booking-widget"></div>\n<script src="${BACKEND_URL}/widget.js?loc=${locationId}"><\/script>`;
+        document.getElementById('embed-code-box').innerText = code;
+    }
+
+    // 2. Load Existing Settings from Backend (Runs on page open)
+    async function loadSettings() {
+        try {
+            const res = await fetch(`${BACKEND_URL}/api/get-profile/${locationId}`);
+            if (!res.ok) throw new Error("Could not fetch profile");
+            
+            const data = await res.json();
+
+            if (data) {
+                if (data.maps_api_key) document.getElementById('maps_key').value = data.maps_api_key;
+                if (data.ghl_api_key) document.getElementById('ghl_key').value = data.ghl_api_key;
+                if (data.tax_rate) document.getElementById('tax_rate').value = data.tax_rate;
+                document.getElementById('booking_enabled').checked = data.is_booking_enabled ?? true;
+            }
+            
+            updateEmbedCode();
+            loadFleetDisplay();
+        } catch (err) {
+            console.error("Error loading settings:", err);
+            updateEmbedCode(); // Still run this even if fetch fails
+        }
+    }
+
+    // 3. Save Settings to Backend
+    async function saveSettings() {
+        const btn = document.getElementById('save-settings-btn');
+        const originalText = btn.innerText;
+        btn.innerText = "SAVING...";
+        btn.disabled = true;
+        
+        const payload = {
+            userId: locationId,
+            maps_api_key: document.getElementById('maps_key').value,
+            ghl_api_key: document.getElementById('ghl_key').value, // Key included here
+            tax_rate: document.getElementById('tax_rate').value,
+            is_booking_enabled: document.getElementById('booking_enabled').checked
+        };
+
+        try {
+            const res = await fetch(`${BACKEND_URL}/api/update-profile`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            
+            if (res.ok) {
+                alert("✅ Settings saved successfully!");
+            } else {
+                const errData = await res.json();
+                alert("❌ Failed to save: " + (errData.error || "Unknown error"));
+            }
+        } catch (err) {
+            console.error(err);
+            alert("💥 Connection error. Is the server running?");
+        } finally {
+            btn.innerText = originalText;
+            btn.disabled = false;
+        }
+    }
+
+    // 4. Copy Embed Code Utility
+    function copyEmbed() {
+        const text = document.getElementById('embed-code-box').innerText;
+        navigator.clipboard.writeText(text).then(() => {
+            alert("📋 Embed code copied to clipboard!");
+        });
+    }
+
+    // 5. Fleet Sync Logic
+    async function syncFleet() {
+        const syncBtn = document.getElementById('sync-btn');
+        const originalHtml = syncBtn.innerHTML;
+        syncBtn.innerText = "Syncing...";
+        syncBtn.disabled = true;
+
+        try {
+            const res = await fetch(`${BACKEND_URL}/api/sync-fleet`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId: locationId })
+            });
+            
+            const data = await res.json();
+            
+            if (data.success) {
+                alert(`✅ Success! Synced ${data.count} vehicles from your staff list.`);
+                loadFleetDisplay(); 
+            } else {
+                alert("❌ Sync Error: " + data.error);
+            }
+        } catch (err) {
+            alert("💥 Connection error during sync.");
+        } finally {
+            syncBtn.innerHTML = originalHtml;
+            syncBtn.disabled = false;
+        }
+    }
+
+    // 6. Load Fleet Display
+    async function loadFleetDisplay() {
+        const container = document.getElementById('fleet-container');
+        // Simple indicator for now
+        container.innerHTML = `
+            <div class="flex items-center justify-between p-4 bg-gray-50 rounded-xl border border-gray-100">
+                <span class="font-bold text-gray-700">Vehicles Active</span>
+                <span class="text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full uppercase font-bold">Connected</span>
+            </div>
+            <p class="text-xs text-gray-400 mt-2">Rates use global defaults. Customize individual service rates in your database if needed.</p>
+        `;
+    }
+
+    // Initialize the page on load
+    window.onload = loadSettings;
+</script>
+</body>
+</html>

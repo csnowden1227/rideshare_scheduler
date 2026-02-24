@@ -1,0 +1,12 @@
+$config = "version: '3'
+agent:
+  authtoken: 39V8icALQdQ8MWisONfqtCBrsgi_7UbPo7i5yv8Bk6NxudUQ
+tunnels:
+  rideshare_scheduler:
+    proto: http
+    addr: 127.0.0.1:8080
+    domain: chauffeurdeluxe.crmonesource.com
+
+[System.IO.File]::WriteAllText("$env:LOCALAPPDATA\ngrok\ngrok.yml", $config)
+
+

@@ -1,0 +1,12 @@
+ngrok.yml
+
+version: 3
+agent:
+  authtoken: 39V8icALQdQ8MWisONfqtCBrsgi_7UbPo7i5yv8Bk6NxudUQ
+
+tunnels:
+  cli-quickstart:
+    addr: 8080
+    proto: http
+    # If you want HTTPS endpoint too, you can use:
+    # inspect: true
