@@ -1,37 +1,37 @@
 /*****************************************************
  🚀 SERVER.JS - GO HIGH LEVEL SAAS BACKEND
 *****************************************************/
-import dotenv from "dotenv";
+import express from 'express';
+import cors from 'cors';
+import pkg from 'pg';
+const { Pool } = pkg; 
+import dotenv from 'dotenv';
+import { Client as GoogleMapsClient } from "@googlemaps/google-maps-services-js";
+import { google } from 'googleapis'; // Add this to fix the OAuth error!
+import https from 'https'; // Required for your getTravelTime function
+
 dotenv.config();
 
-import express from "express";
-import cors from "cors";
-import https from "https";
-import pg from "pg";
-import fetch from "node-fetch";
-import { google } from "googleapis";
-import { Client } from "@microsoft/microsoft-graph-client";
-import "isomorphic-fetch";
-
-const { Pool } = pg;
 const app = express();
-app.use(cors());
-app.use(express.json());
-
-// This tells the server to look in the 'public' folder for HTML/JS files
-app.use(express.static('public'));
 
 /*****************************************************
  1️⃣ DATABASE CONFIGURATION
 *****************************************************/
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false },
+    connectionString: process.env.DATABASE_URL,
+    ssl: { rejectUnauthorized: false }
 });
+
+// Initialize the Google Maps Client for the Backend
+const googleMapsClient = new GoogleMapsClient({});
+
+app.use(cors());
+app.use(express.json());
 
 /*****************************************************
  2️⃣ GLOBAL OAUTH2 CLIENT FOR GOOGLE
 *****************************************************/
+// This allows your app to connect to users' Google Calendars
 const oauth2Client = new google.auth.OAuth2(
   process.env.GOOGLE_OAUTH_CLIENT_ID,
   process.env.GOOGLE_OAUTH_CLIENT_SECRET,
@@ -42,10 +42,10 @@ const oauth2Client = new google.auth.OAuth2(
  3️⃣ HELPER FUNCTIONS
 *****************************************************/
 
-// Travel time cache
+// Travel time cache to save money on API calls
 const travelTimeCache = new Map();
 
-/* 🔐 Get Maps API Key (Fail Hard) */
+/* 🔐 Get Maps API Key from Database */
 async function getMapsKey(locationId) {
   const res = await pool.query(
     "SELECT maps_api_key FROM users WHERE id = $1",
@@ -90,10 +90,7 @@ async function getTravelTime(origin, destination, mapsApiKey) {
         try {
           const json = JSON.parse(data);
           if (json.rows?.[0]?.elements?.[0]?.status === "OK") {
-            const minutes =
-              Math.ceil(
-                json.rows[0].elements[0].duration.value / 60 / 5
-              ) * 5;
+            const minutes = Math.ceil(json.rows[0].elements[0].duration.value / 60 / 5) * 5;
             travelTimeCache.set(cacheKey, minutes);
             resolve(minutes);
           } else resolve(15);
@@ -167,6 +164,51 @@ async function syncFleet() {
     }
 }
 
+/*****************************************************
+ 4️⃣ SAVE SETTINGS ROUTE
+*****************************************************/
+app.post('/api/save-settings', async (req, res) => {
+    const { userId, mapsApiKey, taxRate, businessName } = req.body;
+
+    try {
+        // 1. Validate the Maps Key before saving
+        const isValid = await validateMapsKey(mapsApiKey);
+        if (!isValid) {
+            return res.status(400).json({ 
+                success: false, 
+                error: "Invalid Google Maps API Key. Please check your console." 
+            });
+        }
+
+        // 2. Update the user record in the database
+        // We use COALESCE so we don't overwrite the business name with NULL if it's missing
+        const query = `
+            UPDATE users 
+            SET maps_api_key = $1, 
+                tax_rate = $2, 
+                business_name = COALESCE($3, business_name)
+            WHERE id = $4
+            RETURNING id;
+        `;
+
+        const result = await pool.query(query, [mapsApiKey, taxRate, businessName, userId]);
+
+        if (result.rows.length === 0) {
+            // If the user doesn't exist yet, create them
+            await pool.query(
+                "INSERT INTO users (id, maps_api_key, tax_rate, business_name) VALUES ($1, $2, $3, $4)",
+                [userId, mapsApiKey, taxRate, businessName]
+            );
+        }
+
+        res.json({ success: true, message: "Settings saved and API key validated!" });
+
+    } catch (error) {
+        console.error("❌ Save Settings Error:", error);
+        res.status(500).json({ success: false, error: "Internal Server Error" });
+    }
+});
+
 async function saveSettings() {
     const btn = document.getElementById('save-settings-btn');
     btn.innerText = "SAVING...";
@@ -213,6 +255,11 @@ async function saveSettings() {
         fixed_rates: routes
     };
 
+app.get('/api/test', (req, res) => {
+    const host = req.get('host'); 
+    const fullUrl = `${req.protocol}://${host}${req.originalUrl}`;
+});
+
     try {
         const res = await fetch(`${BACKEND_URL}/api/update-profile`, {
             method: 'POST',
@@ -237,89 +284,80 @@ async function saveSettings() {
 /*****************************************************
  4️⃣ BUSINESS PROFILE (MAPS API, TAX, & KILL SWITCH)
 *****************************************************/
-app.post("/api/update-profile", async (req, res) => {
-  const { 
-    userId, 
-    business_name, 
-    maps_api_key, 
-    tax_rate, 
-    peak_windows, 
-    events 
-  } = req.body;
+app.post('/api/update-profile', async (req, res) => {
+    const payload = req.body;
+    const { userId, fleet, fixed_rates, peak_windows, events, maps_api_key, tax_rate } = payload;
 
-  if (!userId) return res.status(400).json({ error: "Missing userId" });
+    try {
+        // Start a Transaction (All or nothing)
+        await client.query('BEGIN');
 
-  const client = await pool.connect();
+        // 1. UPDATE FLEET (The 'services' table)
+        for (const vehicle of fleet) {
+            await client.query(`
+                UPDATE services 
+                SET base_rate = $1, 
+                    per_mile_rate = $2, 
+                    minimum_fare = $3 
+                WHERE saas_location_vehicle_id = $4 AND user_id = $5`, 
+                [vehicle.base, vehicle.mile, vehicle.min, vehicle.id, userId]
+            );
+        }
 
-  try {
-    await client.query('BEGIN');
+        // 2. REFRESH FIXED ROUTES
+        // We delete old ones and re-insert to handle removals easily
+        await client.query('DELETE FROM fixed_rates WHERE user_id = $1', [userId]);
+        for (const route of fixed_rates) {
+            await client.query(`
+                INSERT INTO fixed_rates (pickup, dropoff, price, user_id)
+                VALUES ($1, $2, $3, $4)`,
+                [route.pickup, route.dropoff, route.price, userId]
+            );
+        }
 
-    // 1. Update User Table
-    await client.query(`
-      INSERT INTO users (id, business_name, maps_api_key, tax_rate)
-      VALUES ($1, $2, $3, $4)
-      ON CONFLICT (id) DO UPDATE SET
-        business_name = EXCLUDED.business_name,
-        maps_api_key = EXCLUDED.maps_api_key,
-        tax_rate = EXCLUDED.tax_rate
-    `, [userId, business_name, maps_api_key, tax_rate]);
+        // 3. REFRESH PEAK WINDOWS
+        await client.query('DELETE FROM peak_windows WHERE user_id = $1', [userId]);
+        for (const window of peak_windows) {
+            await client.query(`
+                INSERT INTO peak_windows (label, start_time, end_time, multiplier, user_id)
+                VALUES ($1, $2, $3, $4, $5)`,
+                [window.label, window.start_time, window.end_time, window.multiplier, userId]
+            );
+        }
 
-    // 2. Update Peak Windows (Rush Hours)
-    await client.query('DELETE FROM service_peak_multipliers WHERE location_id = $1', [userId]);
-    if (peak_windows && Array.isArray(peak_windows)) {
-      for (const window of peak_windows) {
-        if (!window.start_time || !window.end_time) continue;
+        // 4. REFRESH SPECIAL EVENTS
+        await client.query('DELETE FROM events WHERE user_id = $1', [userId]);
+        for (const event of events) {
+            await client.query(`
+                INSERT INTO events (name, event_date, multiplier, user_id)
+                VALUES ($1, $2, $3, $4)`,
+                [event.name, event.date, event.multiplier, userId]
+            );
+        }
+
+        // 5. UPDATE USER CONFIG (Maps Key and Tax)
         await client.query(`
-          INSERT INTO service_peak_multipliers (location_id, label, start_time, end_time, multiplier) 
-          VALUES ($1, $2, $3, $4, $5)
-        `, [userId, window.label, window.start_time, window.end_time, window.multiplier]);
-      }
+            UPDATE users 
+            SET maps_api_key = $1, tax_rate = $2 
+            WHERE id = $3`, 
+            [maps_api_key, tax_rate, userId]
+        );
+
+        // Commit the transaction
+        await client.query('COMMIT');
+        
+        console.log(`✅ Profile updated for user: ${userId}`);
+        res.json({ success: true, message: "Settings saved successfully!" });
+
+    } catch (error) {
+        // If anything fails, undo everything to keep data safe
+        await client.query('ROLLBACK');
+        console.error("❌ Error updating profile:", error);
+        res.status(500).json({ success: false, error: "Internal Server Error" });
     }
-
-    // 3. Update Special Events
-    await client.query('DELETE FROM event_multipliers WHERE location_id = $1', [userId]);
-    if (events && Array.isArray(events)) {
-      for (const event of events) {
-        if (!event.date) continue;
-        await client.query(`
-          INSERT INTO event_multipliers (location_id, event_name, event_date, multiplier) 
-          VALUES ($1, $2, $3, $4)
-        `, [userId, event.name, event.date, event.multiplier]);
-      }
-    }
-
-    await client.query('COMMIT');
-    res.json({ success: true });
-
-  } catch (err) {
-    await client.query('ROLLBACK');
-    console.error("Save Error:", err.message);
-    res.status(500).json({ error: "Failed to save settings" });
-  } finally {
-    client.release();
-  }
 });
 
-    // 3. UPDATE SPECIAL EVENTS
-    // Wipe old ones and insert new ones
-    await client.query('DELETE FROM event_multipliers WHERE location_id = $1', [userId]);
-    if (events && Array.isArray(events)) {
-      for (const event of events) {
-        await client.query(
-          `INSERT INTO event_multipliers (location_id, event_name, event_date, multiplier) 
-           VALUES ($1, $2, $3, $4)`,
-          [userId, event.name, event.date, event.multiplier]
-        );
-      }
-    }
-
-  await client.query('COMMIT'); // Finalize all changes
-    res.json({ 
-      success: true, 
-      message: "Profile, Peak Windows, and Events updated successfully" 
-    });
-
-  
+   
 /*****************************************************
  5️⃣ AVAILABILITY ENGINE
 *****************************************************/
@@ -394,6 +432,8 @@ app.post("/api/availability", async (req, res) => {
         startISO: start.toISOString(),
       });
     }
+
+    
 
     res.json({ slots, waitlist: slots.length === 0 });
   } catch (err) {
@@ -611,45 +651,48 @@ app.post("/api/book", async (req, res) => {
 /*****************************************************
  8️⃣ CRM_One_Source STAFF SYNC (FLEET GENERATION)
 *****************************************************/
-app.post("/api/sync-fleet", async (req, res) => {
-    const { userId } = req.body;
+app.post('/api/sync-fleet', async (req, res) => {
+    const { userId, token } = req.body;
+
+    if (!userId || !token) {
+        return res.status(400).json({ success: false, error: "Missing Location ID or Access Token" });
+    }
 
     try {
-        // 1. Get the user's CRM_One_Sourcece API Key/Access Token from DB
-        const userRes = await pool.query("SELECT CRM_One_Source_api_key FROM users WHERE id = $1", [userId]);
-        const apiKey = userRes.rows[0]?.CRM_One_Source_api_key;
-
-        if (!apiKey) {
-            return res.status(400).json({ error: "CRM_One_Source API Key not found. Please connect CRM_One_Source first." });
-        }
-
-        // 2. Fetch Staff from CRM_One_Source API
-        const CRM_One_SourceResponse = await fetch(`https://services.leadconnectorhq.com/staff/?locationId=${userId}`, {
-            headers: { 
-                'Authorization': `Bearer ${apiKey}`,
-                'Version': '2021-07-28' 
+        // 1. CALL THE CRM API (GHL Example)
+        // Adjust the URL based on your specific CRM's vehicle/custom field endpoint
+        const crmResponse = await fetch(`https://services.leadconnectorhq.com/locations/${userId}/customFields`, {
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Version': '2021-07-28',
+                'Accept': 'application/json'
             }
         });
-        const CRM_One_SourceData = await CRM_One_SourceResponse.json();
 
-        if (!CRM_One_SourceData.staff) throw new Error("Could not retrieve staff list.");
+        const data = await crmResponse.json();
+        
+        // This is where you filter for your specific "Vehicles" custom field or object
+        // For this example, we assume 'data.vehicles' is an array of { id, name }
+        const vehicles = data.customFields || []; 
 
-        // 3. Sync each staff member as a "Service/Vehicle"
-        for (const staff of CRM_One_SourceData.staff) {
-            const staffId = `${userId}_${staff.id}`;
-            await pool.query(
-                `INSERT INTO services (saas_location_staff_id, name, base_rate, per_mile_rate)
-                 VALUES ($1, $2, 50, 3)
-                 ON CONFLICT (saas_location_staff_id) 
-                 DO UPDATE SET name = EXCLUDED.name`,
-                [staffId, staff.name]
-            );
+        // 2. SYNC TO DATABASE
+        for (const v of vehicles) {
+            // We use 'ON CONFLICT' to avoid duplicate errors
+            await client.query(`
+                INSERT INTO services (name, saas_location_vehicle_id, user_id, is_active)
+                VALUES ($1, $2, $3, true)
+                ON CONFLICT (saas_location_vehicle_id) 
+                DO UPDATE SET name = EXCLUDED.name
+            `, [v.name, v.id, userId]);
         }
 
-        res.json({ success: true, count: CRM_One_SourceData.staff.length });
-    } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: "Fleet sync failed: " + err.message });
+        console.log(`✅ Fleet synced for Location: ${userId}`);
+        res.json({ success: true, message: "Fleet synced successfully!" });
+
+    } catch (error) {
+        console.error("❌ Sync Error:", error);
+        res.status(500).json({ success: false, error: "Failed to sync fleet from CRM" });
     }
 });
 
@@ -692,6 +735,19 @@ app.get("/api/get-profile/:userId", async (req, res) => {
         quote: totalPrice.toFixed(2), 
         appliedMultiplier: multiplier 
     });
+
+    // Add this to server.js
+app.get('/api/db-check', async (req, res) => {
+    try {
+        const result = await client.query('SELECT NOW()'); // Asks DB for current time
+        res.json({ 
+            status: "Connected", 
+            timestamp: result.rows[0].now 
+        });
+    } catch (err) {
+        res.status(500).json({ status: "Error", error: err.message });
+    }
+});
 });
 
 });
