@@ -1,0 +1,424 @@
+<!doctype html>
+<html>
+  <head><meta charset="utf-8"><title>Test</title></head>
+  <body style="font-family:Arial;padding:20px;">
+    <h1>It works ✅</h1>
+    <p>If you see this, Express is serving your HTML.</p>
+  </body>
+</html>
+
+import express from "express";
+import cors from "cors";
+import fetch from "node-fetch";
+import dotenv from "dotenv";
+import { Pool } from "pg";
+import * as turf from "@turf/turf";
+import { google } from "googleapis";
+
+dotenv.config();
+
+const app = express();
+app.use(cors());
+app.use(express.json());
+
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+const TZ = process.env.BASE_TIMEZONE || "America/Los_Angeles";
+
+/* ---------------- Google OAuth for Calendar (per driver) ---------------- */
+
+function oauthClient() {
+  return new google.auth.OAuth2(
+    process.env.GOOGLE_OAUTH_CLIENT_ID,
+    process.env.GOOGLE_OAUTH_CLIENT_SECRET,
+    process.env.GOOGLE_OAUTH_REDIRECT_URL
+  );
+}
+
+// Step 1: send driver to Google connect
+app.get("/oauth/google/start", async (req, res) => {
+  const driverId = req.query.driverId;
+  if (!driverId) return res.status(400).send("Missing driverId");
+
+  const o = oauthClient();
+  const url = o.generateAuthUrl({
+    access_type: "offline",
+    prompt: "consent",
+    scope: [
+      "https://www.googleapis.com/auth/calendar"
+    ],
+    state: driverId
+  });
+
+  res.redirect(url);
+});
+
+// Step 2: callback saves tokens to driver
+app.get("/oauth/google/callback", async (req, res) => {
+  const code = req.query.code;
+  const driverId = req.query.state;
+  if (!code || !driverId) return res.status(400).send("Missing code/state");
+
+  const o = oauthClient();
+  const { tokens } = await o.getToken(code);
+
+  // Save tokens
+  await pool.query(
+    `update drivers
+     set google_refresh_token=$1,
+         google_access_token=$2,
+         google_token_expiry=to_timestamp($3/1000.0)
+     where id=$4`,
+    [tokens.refresh_token, tokens.access_token, tokens.expiry_date, driverId]
+  );
+
+  res.send("Google Calendar connected. You can close this window.");
+});
+
+async function getDriverCalendarClient(driverId) {
+  const { rows } = await pool.query(
+    `select google_refresh_token, google_access_token, google_token_expiry
+     from drivers where id=$1`,
+    [driverId]
+  );
+  if (!rows.length || !rows[0].google_refresh_token) {
+    throw new Error("Driver not connected to Google Calendar");
+  }
+
+  const o = oauthClient();
+  o.setCredentials({
+    refresh_token: rows[0].google_refresh_token,
+    access_token: rows[0].google_access_token
+  });
+
+  // Auto-refresh if needed
+  const now = new Date();
+  const exp = rows[0].google_token_expiry ? new Date(rows[0].google_token_expiry) : null;
+  if (!exp || exp <= now) {
+    const refreshed = await o.getAccessToken();
+    if (refreshed?.token) {
+      await pool.query(
+        `update drivers set google_access_token=$1, google_token_expiry=now() + interval '55 minutes' where id=$2`,
+        [refreshed.token, driverId]
+      );
+    }
+  }
+
+  return google.calendar({ version: "v3", auth: o });
+}
+
+/* ---------------- Google Maps: Routes API (traffic-aware) ---------------- */
+
+async function computeRoute({ origin, destination, departureISO }) {
+  const res = await fetch("https://routes.googleapis.com/directions/v2:computeRoutes", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Goog-Api-Key": process.env.GOOGLE_MAPS_SERVER_KEY,
+      "X-Goog-FieldMask": "routes.duration,routes.distanceMeters"
+    },
+    body: JSON.stringify({
+      origin: { address: origin },
+      destination: { address: destination },
+      travelMode: "DRIVE",
+      routingPreference: "TRAFFIC_AWARE",
+      departureTime: departureISO
+    })
+  });
+
+  const data = await res.json();
+  if (!data.routes?.length) throw new Error("No route returned");
+
+  const r = data.routes[0];
+  const minutes = parseDurationToMinutes(r.duration);
+  return { minutes, distanceMeters: r.distanceMeters };
+}
+
+function parseDurationToMinutes(iso) {
+  const s = String(iso || "");
+  const h = (s.match(/(\d+)H/) || [])[1];
+  const m = (s.match(/(\d+)M/) || [])[1];
+  return (h ? Number(h) * 60 : 0) + (m ? Number(m) : 0);
+}
+function roundToNearest(mins, step) {
+  return Math.round(mins / step) * step;
+}
+
+/* ---------------- Zones (pickup + dropoff) ---------------- */
+
+async function getZones() {
+  const { rows } = await pool.query("select id, name, geojson from zones");
+  return rows.map(z => ({ id: z.id, name: z.name, geojson: JSON.parse(z.geojson) }));
+}
+
+function zoneForPoint(lat, lng, zones) {
+  const pt = turf.point([lng, lat]);
+  for (const z of zones) {
+    if (turf.booleanPointInPolygon(pt, z.geojson)) return z;
+  }
+  return null;
+}
+
+/* ---------------- Services ---------------- */
+
+app.get("/api/services", async (req, res) => {
+  const { rows } = await pool.query("select * from services where is_active=true order by name asc");
+  res.json(rows);
+});
+
+/* ---------------- Hybrid Pricing (base + miles + minutes + pickup+dropoff zones) ---------------- */
+
+app.post("/api/pricing/quote", async (req, res) => {
+  const { serviceId, pickup, dropoff, departureISO, pickupLat, pickupLng, dropoffLat, dropoffLng } = req.body;
+
+  const svc = await pool.query("select * from services where id=$1 and is_active=true", [serviceId]);
+  if (!svc.rows.length) return res.status(400).json({ error: "Invalid service" });
+  const service = svc.rows[0];
+
+  const zones = await getZones();
+  const pickupZone = (Number.isFinite(pickupLat) && Number.isFinite(pickupLng)) ? zoneForPoint(pickupLat, pickupLng, zones) : null;
+  const dropoffZone = (Number.isFinite(dropoffLat) && Number.isFinite(dropoffLng)) ? zoneForPoint(dropoffLat, dropoffLng, zones) : null;
+
+  const route = await computeRoute({ origin: pickup, destination: dropoff, departureISO });
+  const miles = route.distanceMeters / 1609.34;
+  const minutes = route.minutes;
+
+  // Hybrid rates (edit any time)
+  const baseCents = Number(service.base_price_cents);
+  const perMileCents = 450; // $4.50/mi
+  const perMinCents  = 120; // $1.20/min
+
+  // pickup + dropoff zone adjustments
+  let multiplier = 1.0;
+  let fixedFeeCents = 0;
+
+  async function applyZone(zone) {
+    if (!zone) return;
+    const zp = await pool.query(
+      `select price_multiplier, fixed_fee_cents
+       from zone_pricing
+       where service_id=$1 and zone_id=$2 limit 1`,
+      [serviceId, zone.id]
+    );
+    if (zp.rows.length) {
+      multiplier *= Number(zp.rows[0].price_multiplier || 1.0);
+      fixedFeeCents += Number(zp.rows[0].fixed_fee_cents || 0);
+    }
+  }
+
+  await applyZone(pickupZone);
+  await applyZone(dropoffZone);
+
+  // base + variable
+  let totalCents =
+    baseCents +
+    Math.round(miles * perMileCents) +
+    Math.round(minutes * perMinCents);
+
+  // apply zone multiplier + fixed fees
+  totalCents = Math.round(totalCents * multiplier) + fixedFeeCents;
+
+  // after-hours example (10pm–5am)
+  const dep = new Date(departureISO);
+  const hr = dep.getHours();
+  const afterHours = (hr >= 22 || hr < 5);
+  if (afterHours) totalCents = Math.round(totalCents * 1.25);
+
+  // deposit is DIFFERENT by service (already stored per service)
+  const depositPct = Number(service.deposit_pct || 0);
+  const depositCents = Math.round(totalCents * (depositPct / 100));
+
+  res.json({
+    totalCents,
+    depositCents,
+    meta: {
+      miles: Number(miles.toFixed(2)),
+      minutes,
+      pickupZone: pickupZone ? pickupZone.name : null,
+      dropoffZone: dropoffZone ? dropoffZone.name : null,
+      zoneMultiplier: Number(multiplier.toFixed(3)),
+      zoneFixedFeeCents: fixedFeeCents,
+      afterHours
+    }
+  });
+});
+
+/* ---------------- Capacity rules ---------------- */
+
+async function driverCapacityOk(driverId, passengers, luggage) {
+  const q = `
+    select v.capacity_passengers, v.capacity_luggage
+    from drivers d join vehicles v on v.id = d.vehicle_id
+    where d.id = $1
+  `;
+  const { rows } = await pool.query(q, [driverId]);
+  if (!rows.length) return false;
+  return passengers <= rows[0].capacity_passengers && luggage <= rows[0].capacity_luggage;
+}
+
+function overlaps(aStart,aEnd,bStart,bEnd){ return aStart < bEnd && bStart < aEnd; }
+
+/* ---------------- Calendar fetch per driver (events) ---------------- */
+
+async function getDriverEvents(driverId, dateStr) {
+  const { rows } = await pool.query(`select google_calendar_id from drivers where id=$1`, [driverId]);
+  if (!rows.length || !rows[0].google_calendar_id) throw new Error("Missing google_calendar_id for driver");
+
+  const calId = rows[0].google_calendar_id;
+  const cal = await getDriverCalendarClient(driverId);
+
+  const timeMin = new Date(`${dateStr}T00:00:00-08:00`).toISOString();
+  const timeMax = new Date(`${dateStr}T23:59:59-08:00`).toISOString();
+
+  const resp = await cal.events.list({
+    calendarId: calId,
+    timeMin,
+    timeMax,
+    singleEvents: true,
+    orderBy: "startTime"
+  });
+
+  const items = resp.data.items || [];
+  // Normalize into blocks (ignore all-day unless you want them to block)
+  return items
+    .filter(e => e.start?.dateTime && e.end?.dateTime)
+    .map(e => ({
+      start: new Date(e.start.dateTime),
+      end: new Date(e.end.dateTime),
+      summary: e.summary || "",
+      location: e.location || ""
+    }));
+}
+
+/* ---------------- Availability Engine: multi-driver + travel feasibility ---------------- */
+
+app.post("/api/availability", async (req, res) => {
+  const { date, serviceId, pickup, dropoff, passengers = 1, luggage = 0 } = req.body;
+
+  if (!date || !serviceId || !pickup || !dropoff) {
+    return res.status(400).json({ error: "Missing required fields" });
+  }
+
+  const svc = await pool.query("select * from services where id=$1 and is_active=true", [serviceId]);
+  if (!svc.rows.length) return res.status(400).json({ error: "Invalid service" });
+  const service = svc.rows[0];
+
+  // Drivers (you have 5; this scales)
+  const drivers = await pool.query("select id, name, home_base_address from drivers where is_active=true");
+  if (!drivers.rows.length) return res.json({ slots: [] });
+
+  // Working window (adjust as needed)
+  const dayStart = new Date(`${date}T06:00:00-08:00`);
+  const dayEnd   = new Date(`${date}T22:00:00-08:00`);
+
+  const slotInterval = Number(service.slot_interval_min);
+  const durationMin  = Number(service.duration_min);
+  const inBuf        = Number(service.inbound_buffer_min);
+  const outBuf       = Number(service.outbound_buffer_min);
+  const roundToMin   = Number(service.round_to_min);
+  const minNoticeMin = Number(service.min_notice_min || 0);
+
+  // min notice filter
+  const now = new Date();
+  const earliestAllowed = new Date(now.getTime() + minNoticeMin*60000);
+
+  // build candidate slots
+  const candidates = [];
+  for (let t = new Date(dayStart); new Date(t.getTime() + durationMin*60000) <= dayEnd; t = new Date(t.getTime() + slotInterval*60000)) {
+    const start = new Date(t);
+    const end = new Date(t.getTime() + durationMin*60000);
+    if (start < earliestAllowed) continue; // enforce notice window
+    candidates.push({ start, end });
+  }
+
+  const feasibleSlots = [];
+
+  for (const c of candidates) {
+    let best = null;
+
+    for (const d of drivers.rows) {
+      // Capacity check
+      if (!(await driverCapacityOk(d.id, passengers, luggage))) continue;
+
+      // Pull calendar events for this driver (Google Calendar)
+      let events = [];
+      try {
+        events = await getDriverEvents(d.id, date);
+      } catch {
+        // If driver isn't connected, skip them (or treat as unavailable)
+        continue;
+      }
+
+      // Convert events to blocked windows with buffers
+      const blocks = events.map(e => ({
+        start: new Date(e.start.getTime() - inBuf*60000),
+        end: new Date(e.end.getTime() + outBuf*60000),
+        // NOTE: location is not always an address — if you store job addresses in event description, parse them here
+        location: e.location || ""
+      }));
+
+      // Block overlap
+      const candBlockStart = new Date(c.start.getTime() - inBuf*60000);
+      const candBlockEnd   = new Date(c.end.getTime() + outBuf*60000);
+      const conflict = blocks.some(b => overlaps(candBlockStart, candBlockEnd, b.start, b.end));
+      if (conflict) continue;
+
+      // Find nearest prev and next events (by time)
+      const prev = events.filter(e => e.end <= c.start).sort((a,b)=> b.end - a.end)[0];
+      const next = events.filter(e => e.start >= c.end).sort((a,b)=> a.start - b.start)[0];
+
+      // Determine prev dropoff address & next pickup address:
+      // In production, store real addresses in event.extendedProperties or description.
+      // For now we fall back to driver home base if location isn't usable.
+      const prevDrop = prev?.location || d.home_base_address || pickup;
+      const nextPick = next?.location || d.home_base_address || dropoff;
+
+      // Feasibility: prev -> pickup
+      let deadheadBefore = 0;
+      if (prev) {
+        const departPrev = new Date(prev.end.getTime() + outBuf*60000);
+        const r = await computeRoute({ origin: prevDrop, destination: pickup, departureISO: departPrev.toISOString() });
+        deadheadBefore = roundToNearest(r.minutes, roundToMin);
+        const arrive = new Date(departPrev.getTime() + deadheadBefore*60000);
+        const mustArriveBy = new Date(c.start.getTime() - inBuf*60000);
+        if (arrive > mustArriveBy) continue;
+      }
+
+      // Feasibility: dropoff -> next
+      let deadheadAfter = 0;
+      if (next) {
+        const departCand = new Date(c.end.getTime() + outBuf*60000);
+        const r = await computeRoute({ origin: dropoff, destination: nextPick, departureISO: departCand.toISOString() });
+        deadheadAfter = roundToNearest(r.minutes, roundToMin);
+        const arrive = new Date(departCand.getTime() + deadheadAfter*60000);
+        const mustArriveBy = new Date(next.start.getTime() - inBuf*60000);
+        if (arrive > mustArriveBy) continue;
+      }
+
+      // Score driver: minimal deadhead
+      const score = deadheadBefore + deadheadAfter;
+      if (!best || score < best.score) {
+        best = {
+          driverId: d.id,
+          driverName: d.name,
+          score,
+          deadheadBeforeMin: deadheadBefore,
+          deadheadAfterMin: deadheadAfter
+        };
+      }
+    }
+
+    if (best) {
+      feasibleSlots.push({
+        startISO: c.start.toISOString(),
+        endISO: c.end.toISOString(),
+        assignedDriver: best
+      });
+    }
+  }
+
+  res.json({ slots: feasibleSlots });
+});
+
+/* ---------------- Start server ---------------- */
+
+app.listen(process.env.PORT || 8080, () => console.log("API running on port 8080"));

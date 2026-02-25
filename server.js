@@ -1,3 +1,4 @@
+
 /*****************************************************
  🚀 SERVER.JS - GO HIGH LEVEL SAAS BACKEND
 *****************************************************/
@@ -277,79 +278,101 @@ app.get('/api/test', (req, res) => {
 /*****************************************************
  4️⃣ BUSINESS PROFILE (MAPS API, TAX, & KILL SWITCH)
 *****************************************************/
-app.post('/api/update-profile', async (req, res) => {
+app.post('/api/update-profile-full', async (req, res) => {
     const payload = req.body;
-    const { userId, fleet, fixed_rates, peak_windows, events, maps_api_key, tax_rate } = payload;
+    // Merging all fields from both versions
+    const { 
+        userId, 
+        fleet, 
+        fixed_rates, 
+        peak_windows, 
+        events, 
+        maps_api_key, 
+        ghl_api_key, 
+        tax_rate, 
+        is_booking_enabled 
+    } = payload;
 
     try {
-        // Start a Transaction (All or nothing)
-        await client.query('BEGIN');
+        // 1. Start Transaction (Safety first!)
+        await pool.query('BEGIN');
 
-        // 1. UPDATE FLEET (The 'services' table)
-        for (const vehicle of fleet) {
-            await client.query(`
-                UPDATE services 
-                SET base_rate = $1, 
-                    per_mile_rate = $2, 
-                    minimum_fare = $3 
-                WHERE saas_location_vehicle_id = $4 AND user_id = $5`, 
-                [vehicle.base, vehicle.mile, vehicle.min, vehicle.id, userId]
-            );
-        }
-
-        // 2. REFRESH FIXED ROUTES
-        // We delete old ones and re-insert to handle removals easily
-        await client.query('DELETE FROM fixed_rates WHERE user_id = $1', [userId]);
-        for (const route of fixed_rates) {
-            await client.query(`
-                INSERT INTO fixed_rates (pickup, dropoff, price, user_id)
-                VALUES ($1, $2, $3, $4)`,
-                [route.pickup, route.dropoff, route.price, userId]
-            );
-        }
-
-        // 3. REFRESH PEAK WINDOWS
-        await client.query('DELETE FROM peak_windows WHERE user_id = $1', [userId]);
-        for (const window of peak_windows) {
-            await client.query(`
-                INSERT INTO peak_windows (label, start_time, end_time, multiplier, user_id)
-                VALUES ($1, $2, $3, $4, $5)`,
-                [window.label, window.start_time, window.end_time, window.multiplier, userId]
-            );
-        }
-
-        // 4. REFRESH SPECIAL EVENTS
-        await client.query('DELETE FROM events WHERE user_id = $1', [userId]);
-        for (const event of events) {
-            await client.query(`
-                INSERT INTO events (name, event_date, multiplier, user_id)
-                VALUES ($1, $2, $3, $4)`,
-                [event.name, event.date, event.multiplier, userId]
-            );
-        }
-
-        // 5. UPDATE USER CONFIG (Maps Key and Tax)
-        await client.query(`
-            UPDATE users 
-            SET maps_api_key = $1, tax_rate = $2 
-            WHERE id = $3`, 
-            [maps_api_key, tax_rate, userId]
+        // 2. UPDATE MAIN LOCATION CONFIG
+        // We use locations table but keep the tax_rate and maps_key from the old logic
+        await pool.query(`
+            UPDATE locations 
+            SET maps_api_key = $1, 
+                ghl_api_key = $2, 
+                tax_rate = $3, 
+                is_booking_enabled = $4
+            WHERE location_id = $5`, 
+            [maps_api_key, ghl_api_key, tax_rate || 0, is_booking_enabled ?? true, userId]
         );
 
-        // Commit the transaction
-        await client.query('COMMIT');
-        
-        console.log(`✅ Profile updated for user: ${userId}`);
-        res.json({ success: true, message: "Settings saved successfully!" });
+        // 3. UPSERT FLEET SLOTS (New Slot Logic)
+        // This ensures vehicle_id (e.g., LOC-vehicle-1) is the permanent anchor
+        for (const vehicle of fleet) {
+            await pool.query(`
+                INSERT INTO fleet (location_id, vehicle_id, vehicle_type, base_rate, mile_rate)
+                VALUES ($1, $2, $3, $4, $5)
+                ON CONFLICT (vehicle_id) 
+                DO UPDATE SET 
+                    vehicle_type = EXCLUDED.vehicle_type, 
+                    base_rate = EXCLUDED.base_rate, 
+                    mile_rate = EXCLUDED.mile_rate`,
+                [userId, vehicle.vehicle_id, vehicle.vehicle_type, vehicle.base_rate, vehicle.mile_rate]
+            );
+        }
 
-    } catch (error) {
-        // If anything fails, undo everything to keep data safe
-        await client.query('ROLLBACK');
-        console.error("❌ Error updating profile:", error);
-        res.status(500).json({ success: false, error: "Internal Server Error" });
+        // 4. REFRESH FIXED ROUTES (Old Functionality)
+        await pool.query('DELETE FROM fixed_rates WHERE location_id = $1', [userId]);
+        if (fixed_rates && fixed_rates.length > 0) {
+            for (const route of fixed_rates) {
+                await pool.query(`
+                    INSERT INTO fixed_rates (pickup, dropoff, price, location_id)
+                    VALUES ($1, $2, $3, $4)`,
+                    [route.pickup, route.dropoff, route.price, userId]
+                );
+            }
+        }
+
+        // 5. REFRESH PEAK WINDOWS (Old Functionality)
+        await pool.query('DELETE FROM peak_windows WHERE location_id = $1', [userId]);
+        if (peak_windows && peak_windows.length > 0) {
+            for (const window of peak_windows) {
+                await pool.query(`
+                    INSERT INTO peak_windows (label, start_time, end_time, multiplier, location_id)
+                    VALUES ($1, $2, $3, $4, $5)`,
+                    [window.label, window.start_time, window.end_time, window.multiplier, userId]
+                );
+            }
+        }
+
+        // 6. REFRESH SPECIAL EVENTS (Old Functionality)
+        await pool.query('DELETE FROM events WHERE location_id = $1', [userId]);
+        if (events && events.length > 0) {
+            for (const event of events) {
+                await pool.query(`
+                    INSERT INTO events (name, event_date, multiplier, location_id)
+                    VALUES ($1, $2, $3, $4)`,
+                    [event.name, event.date, event.multiplier, userId]
+                );
+            }
+        }
+
+        // 7. COMMIT EVERYTHING
+        await pool.query('COMMIT');
+        
+        console.log(`✅ Blended Profile saved for: ${userId}`);
+        res.json({ success: true, message: "All settings and slots saved!" });
+
+    } catch (err) {
+        // If anything fails, ROLLBACK so we don't have partial data
+        await pool.query('ROLLBACK');
+        console.error("❌ Blended Save Error:", err);
+        res.status(500).json({ error: err.message });
     }
 });
-
    
 /*****************************************************
  5️⃣ AVAILABILITY ENGINE
@@ -737,20 +760,74 @@ app.get('/api/db-check', async (req, res) => {
             status: "Connected", 
             timestamp: result.rows[0].now 
         });
+
     } catch (err) {
         res.status(500).json({ status: "Error", error: err.message });
     }
 });
-});
+
 
 });
 
-/*****************************************************
- 🔟 START SERVER
-*****************************************************/
+// Database logic (Assuming PostgreSQL/Knex or similar)
+// GET: Fetch profile for the widget
+const express = require('express');
+const axios = require('axios');
+const app = express();
+app.use(express.json());
+
+// 1. ENDPOINT FOR THE WIDGET: Fetch specific configuration
+app.get('/api/get-profile/:locationId', async (req, res) => {
+    try {
+        const { locationId } = req.params;
+        
+        // Database lookup: Map Location ID to stored profile and fleet
+        const profile = await db.query('SELECT * FROM profiles WHERE location_id = $1', [locationId]);
+        const fleet = await db.query('SELECT * FROM fleet_vehicles WHERE location_id = $1', [locationId]);
+
+        if (profile.rows.length === 0) return res.status(404).json({ error: "Location Not Found" });
+
+        // Map data to return to widget
+        res.json({
+            maps_key: profile.rows[0].maps_api_key,
+            tax_rate: profile.rows[0].tax_rate,
+            fleet: fleet.rows, // Contains vehicle_type, pricing, and calendar_id
+            fixed_rates: profile.rows[0].fixed_rates,
+            peak_windows: profile.rows[0].peak_windows,
+            events: profile.rows[0].events
+        });
+    } catch (err) {
+        res.status(500).send("Database Error");
+    }
+});
+
+// 2. ENDPOINT FOR BOOKING: Map vehicle and CRM token
+app.post('/api/create-booking', async (req, res) => {
+    const { locationId, vehicleId, tripData, customerData } = req.body;
+
+    try {
+        // Find the specific CRM Token for this business
+        const biz = await db.query('SELECT crm_token FROM profiles WHERE location_id = $1', [locationId]);
+        
+        // Find the specific Calendar ID for this vehicle slot
+        const vehicle = await db.query('SELECT calendar_id, vehicle_type FROM fleet_vehicles WHERE vehicle_id = $1', [vehicleId]);
+
+        // MAP TO CRM: Send to the specific business profile
+        await axios.post(`https://api.crm-provider.com/v1/leads?token=${biz.rows[0].crm_token}`, {
+            name: customerData.name,
+            description: `Booking for ${vehicle.rows[0].vehicle_type}: ${tripData.pickup} to ${tripData.dropoff}`
+        });
+
+        // MAP TO CALENDAR: Route booking to the vehicle's unique calendar
+        if (vehicle.rows[0].calendar_id) {
+            // Logic to insert event into Google/Outlook Calendar via the stored ID
+        }
+
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: "Routing failed" });
+    }
+});
+
 const PORT = process.env.PORT || 8080;
-
-app.listen(PORT, () =>
-  console.log(`🚀 SaaS Backend running on ${PORT}`)
-
-);
+app.listen(PORT, () => console.log(`🚀 SaaS Backend running on ${PORT}`));

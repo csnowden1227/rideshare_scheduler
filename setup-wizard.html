@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chauffeur Deluxe | Setup Wizard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    
+    <script src="https://maps.googleapis.com/maps/api/js?key=YOUR_API_KEY&libraries=places"></script>
+
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .input-mini {
+            width: 100%;
+            padding: 0.5rem;
+            border: 1px solid #e2e8f0;
+            border-radius: 0.5rem;
+            font-size: 0.875rem;
+            outline: none;
+        }
+        .input-mini:focus { border-color: #000; outline: none; box-shadow: 0 0 0 2px #f3f4f6; }
+        /* Style for Google Autocomplete dropdown */
+        .pac-container { border-radius: 8px; margin-top: 5px; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1); border: 1px solid #f1f5f9; }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-900">
+
+<div class="max-w-5xl mx-auto p-6 md:p-12">
+    <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-4">
+        <div>
+            <h1 class="text-4xl font-extrabold tracking-tight">Setup Wizard</h1>
+            <p class="text-gray-500 mt-1">Configure your fleet, surges, and fixed routes.</p>
+        </div>
+        
+        <div class="bg-white p-4 rounded-2xl shadow-sm border border-gray-200 flex items-center space-x-4">
+            <span class="text-sm font-bold uppercase tracking-wider text-gray-600">Booking:</span>
+            <label class="relative inline-flex items-center cursor-pointer">
+                <input type="checkbox" id="booking_enabled" class="sr-only peer" checked>
+                <div class="w-14 h-7 bg-gray-200 rounded-full peer peer-checked:bg-green-600 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-[4px] after:bg-white after:rounded-full after:h-6 after:w-6 after:transition-all"></div>
+            </label>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <div class="lg:col-span-2 space-y-6">
+            
+            <div class="bg-white p-8 rounded-2xl shadow-sm border border-gray-200">
+                <h2 class="text-xl font-bold mb-6 flex items-center">
+                    <span class="bg-black text-white w-8 h-8 rounded-lg flex items-center justify-center mr-3 text-sm">1</span>
+                    API Configuration
+                </h2>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-2">Google Maps Key</label>
+                        <input type="password" id="maps_key" class="input-mini" placeholder="AIzaSy...">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-2">Tax Rate (%)</label>
+                        <input type="number" id="tax_rate" class="input-mini" value="0.00">
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-white p-8 rounded-2xl shadow-sm border border-gray-200">
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-xl font-bold flex items-center">
+                        <span class="bg-black text-white w-8 h-8 rounded-lg flex items-center justify-center mr-3 text-sm">2</span>
+                        Fleet & Pricing
+                    </h2>
+                    <<button type="button" onclick="addFleetRow('', 'New Vehicle', 50, 3, 75)" class="text-xs font-bold bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700">+ Add Vehicle</button>
+                </div>
+                <table class="w-full text-left">
+                    <thead>
+                        <tr class="text-xs uppercase text-gray-400 border-b border-gray-100">
+                            <th class="pb-4">Vehicle</th>
+                            <th class="pb-4">Base $</th>
+                            <th class="pb-4">Mile $</th>
+                            <th class="pb-4">Min $</th>
+                        </tr>
+                    </thead>
+                    <tbody id="fleet-body"></tbody>
+                </table>
+            </div>
+
+            <div class="bg-white p-8 rounded-2xl shadow-sm border border-gray-200">
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-xl font-bold flex items-center">
+                        <span class="bg-black text-white w-8 h-8 rounded-lg flex items-center justify-center mr-3 text-sm">3</span>
+                        Fixed Route Geofencing
+                    </h2>
+                    <button type="button" onclick="addRouteRow()" class="text-xs font-bold bg-blue-600 text-white px-3 py-1 rounded-lg hover:bg-blue-700">+ Add Route</button>
+                </div>
+                <table class="w-full text-left">
+                    <thead>
+                        <tr class="text-xs uppercase text-gray-400 border-b border-gray-100">
+                            <th class="pb-4">Pickup Address</th>
+                            <th class="pb-4">Dropoff Address</th>
+                            <th class="pb-4">Flat Price</th>
+                            <th class="pb-4"></th>
+                        </tr>
+                    </thead>
+                    <tbody id="routes-body"></tbody>
+                </table>
+            </div>
+
+            <div class="bg-white p-8 rounded-2xl shadow-sm border border-gray-200">
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-xl font-bold flex items-center">
+                        <span class="bg-black text-white w-8 h-8 rounded-lg flex items-center justify-center mr-3 text-sm">4</span>
+                        Peak Hour Windows
+                    </h2>
+                    <button type="button" onclick="addPeakTimeRow()" class="text-xs font-bold bg-blue-600 text-white px-3 py-1 rounded-lg">+ Add Time</button>
+                </div>
+                <table class="w-full text-left">
+                    <tbody id="peak-times-body"></tbody>
+                </table>
+            </div>
+
+            <div class="bg-white p-8 rounded-2xl shadow-sm border border-gray-200">
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-xl font-bold flex items-center">
+                        <span class="bg-black text-white w-8 h-8 rounded-lg flex items-center justify-center mr-3 text-sm">5</span>
+                        Special Events
+                    </h2>
+                    <button type="button" onclick="addEventRow()" class="text-xs font-bold bg-blue-600 text-white px-3 py-1 rounded-lg">+ Add Event</button>
+                </div>
+                <table class="w-full text-left">
+                    <tbody id="events-body"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="space-y-6">
+            <div class="bg-gray-900 text-white p-8 rounded-3xl shadow-2xl sticky top-6">
+                <h2 class="text-xl font-bold mb-4">Actions</h2>
+                <button onclick="saveSettings()" id="save-settings-btn" class="w-full bg-white text-black font-bold py-4 rounded-xl hover:bg-gray-200 transition-all shadow-lg mb-8">
+                    SAVE ALL SETTINGS
+                </button>
+                
+                <div class="border-t border-gray-800 pt-6">
+                    <h3 class="text-xs font-bold uppercase tracking-widest text-gray-400 mb-3">Widget Embed Code</h3>
+                    <pre id="embed-code-box" class="bg-black p-4 rounded-xl text-[10px] text-green-400 overflow-x-auto border border-gray-700 min-h-[50px] whitespace-pre-wrap break-all"></pre>
+                    <button onclick="copyEmbed()" class="mt-2 w-full text-[10px] bg-gray-800 py-2 rounded-lg hover:bg-gray-700 transition">📋 Copy to Clipboard</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const BACKEND_URL = "https://rideshare-scheduler.onrender.com"; // YOUR RENDER URL
+    const urlParams = new URLSearchParams(window.location.search);
+    const locationId = urlParams.get('location_id') || 'TEST_LOC';
+
+    // --- Dynamic Row Generators ---
+
+    function addFleetRow(id='', name='', base=50, mile=3, min=75) {
+        const tbody = document.getElementById('fleet-body');
+        const tr = document.createElement('tr');
+        tr.className = "fleet-row border-b border-gray-50";
+        tr.dataset.id = id;
+        tr.innerHTML = `
+            <td class="py-4 text-sm font-bold">${name}</td>
+            <td class="py-4"><input type="number" class="base-rate input-mini w-20" value="${base}"></td>
+            <td class="py-4"><input type="number" class="per-mile input-mini w-20" value="${mile}"></td>
+            <td class="py-4"><input type="number" class="min-fare input-mini w-20" value="${min}"></td>
+        `;
+        tbody.appendChild(tr);
+    }
+
+    function addRouteRow(from='', to='', price='') {
+        const tbody = document.getElementById('routes-body');
+        const tr = document.createElement('tr');
+        tr.className = "route-row border-b border-gray-50";
+        const rowId = Date.now(); 
+        
+        tr.innerHTML = `
+            <td class="py-2 pr-2"><input type="text" id="from-${rowId}" class="route-from input-mini" value="${from}" placeholder="Pickup Address"></td>
+            <td class="py-2 pr-2"><input type="text" id="to-${rowId}" class="route-to input-mini" value="${to}" placeholder="Dropoff Address"></td>
+            <td class="py-2"><input type="number" class="route-price input-mini w-24" value="${price}" placeholder="$"></td>
+            <td class="py-2 text-right"><button onclick="this.closest('tr').remove()" class="text-red-400 text-xl font-bold ml-2">&times;</button></td>
+        `;
+        tbody.appendChild(tr);
+
+        // ATTACH AUTOCOMPLETE
+        new google.maps.places.Autocomplete(document.getElementById(`from-${rowId}`));
+        new google.maps.places.Autocomplete(document.getElementById(`to-${rowId}`));
+    }
+
+    function addPeakTimeRow(label='', start='', end='', mult='1.5') {
+        const tbody = document.getElementById('peak-times-body');
+        const tr = document.createElement('tr');
+        tr.className = "peak-time-row border-b border-gray-50";
+        tr.innerHTML = `
+            <td class="py-2 pr-2"><input type="text" class="peak-label input-mini" value="${label}" placeholder="Morning Rush"></td>
+            <td class="py-2 pr-2"><input type="time" class="peak-start input-mini" value="${start}"></td>
+            <td class="py-2 pr-2"><input type="time" class="peak-end input-mini" value="${end}"></td>
+            <td class="py-2"><input type="number" step="0.1" class="peak-multiplier input-mini w-20" value="${mult}"></td>
+            <td class="py-2 text-right"><button onclick="this.closest('tr').remove()" class="text-red-400 text-xl font-bold ml-2">&times;</button></td>
+        `;
+        tbody.appendChild(tr);
+    }
+
+    function addEventRow(name='', date='', mult='2.0') {
+        const tbody = document.getElementById('events-body');
+        const tr = document.createElement('tr');
+        tr.className = "event-row border-b border-gray-50";
+        tr.innerHTML = `
+            <td class="py-2 pr-2"><input type="text" class="event-name input-mini" value="${name}" placeholder="Super Bowl"></td>
+            <td class="py-2 pr-2"><input type="date" class="event-date input-mini" value="${date}"></td>
+            <td class="py-2"><input type="number" step="0.1" class="event-multiplier input-mini w-20" value="${mult}"></td>
+            <td class="py-2 text-right"><button onclick="this.closest('tr').remove()" class="text-red-400 text-xl font-bold ml-2">&times;</button></td>
+        `;
+        tbody.appendChild(tr);
+    }
+
+    // --- API Calls ---
+
+    async function syncFleet() {
+        try {
+            const res = await fetch(`${BACKEND_URL}/api/sync-fleet`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ userId: locationId })
+            });
+            const data = await res.json();
+            if (data.success) {
+                alert("Fleet Synced! Page will reload.");
+                location.reload();
+            }
+        } catch (e) { alert("Sync failed. Check backend connection."); }
+    }
+
+    async function saveSettings() {
+        const btn = document.getElementById('save-settings-btn');
+        btn.innerText = "SAVING...";
+
+        const payload = {
+            userId: locationId,
+            maps_api_key: document.getElementById('maps_key').value,
+            tax_rate: document.getElementById('tax_rate').value,
+            fleet: Array.from(document.querySelectorAll('.fleet-row')).map(r => ({
+                id: r.dataset.id, base: r.querySelector('.base-rate').value, 
+                mile: r.querySelector('.per-mile').value, min: r.querySelector('.min-fare').value
+            })),
+            fixed_rates: Array.from(document.querySelectorAll('.route-row')).map(r => ({
+                pickup: r.querySelector('.route-from').value, dropoff: r.querySelector('.route-to').value, price: r.querySelector('.route-price').value
+            })),
+            peak_windows: Array.from(document.querySelectorAll('.peak-time-row')).map(r => ({
+                label: r.querySelector('.peak-label').value, start_time: r.querySelector('.peak-start').value, end_time: r.querySelector('.peak-end').value, multiplier: r.querySelector('.peak-multiplier').value
+            })),
+            events: Array.from(document.querySelectorAll('.event-row')).map(r => ({
+                name: r.querySelector('.event-name').value, date: r.querySelector('.event-date').value, multiplier: r.querySelector('.event-multiplier').value
+            }))
+        };
+
+        try {
+            const res = await fetch(`${BACKEND_URL}/api/update-profile`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(payload)
+            });
+            if (res.ok) alert("✅ All Settings Saved!");
+            else alert("❌ Error saving to database.");
+        } catch (err) {
+            alert("❌ Network Error.");
+        } finally {
+            btn.innerText = "SAVE ALL SETTINGS";
+        }
+    }
+
+    function copyEmbed() {
+        const code = document.getElementById('embed-code-box').innerText;
+        navigator.clipboard.writeText(code).then(() => alert("Code copied to clipboard!"));
+    }
+
+    window.onload = () => {
+        document.getElementById('embed-code-box').innerText = `<script src="${BACKEND_URL}/widget.js?loc=${locationId}"><\/script>`;
+    };
+</script>
+</body>
+</html>
