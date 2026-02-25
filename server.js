@@ -802,32 +802,62 @@ app.get('/api/get-profile/:locationId', async (req, res) => {
 });
 
 // 2. ENDPOINT FOR BOOKING: Map vehicle and CRM token
+// --- UPDATED BOOKING ROUTE ---
 app.post('/api/create-booking', async (req, res) => {
-    const { locationId, vehicleId, tripData, customerData } = req.body;
+    // Destructure all the fields we are now sending from the widget
+    const { 
+        saas_location_id, 
+        vehicle_slot_id, 
+        first_name, 
+        last_name, 
+        email, 
+        phone,
+        pickup_address, 
+        pickup_coords,   // Now capturing (lat, lng)
+        dropoff_address, 
+        dropoff_coords,  // Now capturing (lat, lng)
+        start_time, 
+        total_price 
+    } = req.body;
 
     try {
-        // Find the specific CRM Token for this business
-        const biz = await db.query('SELECT crm_token FROM profiles WHERE location_id = $1', [locationId]);
+        // 1. SAVE TO DATABASE (The "Who is Who" Table)
+        await db.query(`
+            INSERT INTO bookings (
+                saas_location_id, vehicle_slot_id, first_name, last_name, 
+                email, phone, pickup_address, pickup_coords, 
+                dropoff_address, dropoff_coords, start_time, total_price
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+            [saas_location_id, vehicle_slot_id, first_name, last_name, 
+             email, phone, pickup_address, pickup_coords, 
+             dropoff_address, dropoff_coords, start_time, total_price]
+        );
+
+        // 2. FETCH AGENT CRM DETAILS
+        const biz = await db.query('SELECT crm_token, crm_url FROM profiles WHERE location_id = $1', [saas_location_id]);
         
-        // Find the specific Calendar ID for this vehicle slot
-        const vehicle = await db.query('SELECT calendar_id, vehicle_type FROM fleet_vehicles WHERE vehicle_id = $1', [vehicleId]);
-
-        // MAP TO CRM: Send to the specific business profile
-        await axios.post(`https://api.crm-provider.com/v1/leads?token=${biz.rows[0].crm_token}`, {
-            name: customerData.name,
-            description: `Booking for ${vehicle.rows[0].vehicle_type}: ${tripData.pickup} to ${tripData.dropoff}`
-        });
-
-        // MAP TO CALENDAR: Route booking to the vehicle's unique calendar
-        if (vehicle.rows[0].calendar_id) {
-            // Logic to insert event into Google/Outlook Calendar via the stored ID
+        // 3. SEND TO CRM
+        if (biz.rows[0]) {
+            await axios.post(`${biz.rows[0].crm_url}?token=${biz.rows[0].crm_token}`, {
+                first_name,
+                last_name,
+                email,
+                ride_details: `${pickup_address} to ${dropoff_address}`,
+                vehicle_slot: vehicle_slot_id,
+                price: total_price
+            });
         }
 
-        res.json({ success: true });
+        res.json({ success: true, message: "Booking saved and routed." });
     } catch (err) {
-        res.status(500).json({ error: "Routing failed" });
+        console.error("Booking Error:", err);
+        res.status(500).json({ error: "Booking failed to process." });
     }
 });
 
+// --- SERVER START ---
 const PORT = process.env.PORT || 8080;
-app.listen(PORT, () => console.log(`🚀 SaaS Backend running on ${PORT}`));
+app.listen(PORT, () => {
+    console.log(`🚀 Chauffeur SaaS Backend running on port ${PORT}`);
+});
+// Ensure there is NO code below this line
