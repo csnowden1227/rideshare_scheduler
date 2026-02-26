@@ -279,138 +279,161 @@ app.get('/api/test', (req, res) => {
  4️⃣ BUSINESS PROFILE (MAPS API, TAX, & KILL SWITCH)
 *****************************************************/
 app.post('/api/update-profile-full', async (req, res) => {
-    const { 
-        userId,             // The GHL/CRM location_id
-        fleet, 
-        fixed_rates, 
-        events, 
-        maps_api_key, 
-        crm_api_key,        // Incoming API Key/Token
-        tax_rate, 
-        is_booking_enabled 
-    } = req.body;
+  const {
+    userId, // The GHL/CRM location_id
+    fleet,
+    fixed_rates,
+    events,
+    maps_api_key,
+    crm_api_key, // Incoming API Key/Token
+    tax_rate,
+    is_booking_enabled, // (unused here, but kept)
+    peak_windows // was referenced later but not destructured
+  } = req.body;
 
-    // THE BRIDGE: Map CRM names to SaaS Database names
-    const saas_location_id = userId; 
-    const crm_token = crm_api_key; 
+  // THE BRIDGE: Map CRM names to SaaS Database names
+  const saas_location_id = userId;
+  const crm_token = crm_api_key;
 
-    try {
-        await pool.query('BEGIN');
+  try {
+    await pool.query('BEGIN');
 
-        // 1. UPDATE MAIN PROFILE (The "Business Profile")
-        // Uses 'profiles' table and maps crm_api_key to crm_token
-        await pool.query(`
-            INSERT INTO profiles (
-                location_id, 
-                crm_token, 
-                maps_api_key, 
-                fleet, 
-                fixed_routes, 
-                tax_rate
-            )
-            VALUES ($1, $2, $3, $4, $5, $6)
-            ON CONFLICT (location_id) 
-            DO UPDATE SET 
-                crm_token = EXCLUDED.crm_token,
-                maps_api_key = EXCLUDED.maps_api_key,
-                fleet = EXCLUDED.fleet,
-                fixed_routes = EXCLUDED.fixed_routes,
-                tax_rate = EXCLUDED.tax_rate`,
-            [saas_location_id, crm_token, maps_api_key, JSON.stringify(fleet), JSON.stringify(fixed_rates), tax_rate || 0]
+    // 1. UPDATE MAIN PROFILE (The "Business Profile")
+    await pool.query(
+      `
+      INSERT INTO profiles (
+        location_id,
+        crm_token,
+        maps_api_key,
+        fleet,
+        fixed_routes,
+        tax_rate
+      )
+      VALUES ($1, $2, $3, $4, $5, $6)
+      ON CONFLICT (location_id)
+      DO UPDATE SET
+        crm_token = EXCLUDED.crm_token,
+        maps_api_key = EXCLUDED.maps_api_key,
+        fleet = EXCLUDED.fleet,
+        fixed_routes = EXCLUDED.fixed_routes,
+        tax_rate = EXCLUDED.tax_rate
+      `,
+      [
+        saas_location_id,
+        crm_token,
+        maps_api_key,
+        JSON.stringify(fleet),
+        JSON.stringify(fixed_rates),
+        tax_rate || 0
+      ]
+    );
+
+    // 2. REFRESH SERVICES (The "Booking Slots")
+    await pool.query('DELETE FROM services WHERE saas_location_id = $1', [saas_location_id]);
+
+    if (fleet && fleet.length > 0) {
+      for (const vehicle of fleet) {
+        // We use saas_location_staff_id to satisfy your DB unique constraint
+        const staffId = `${saas_location_id}-${String(vehicle.vehicle_type || 'vehicle')
+          .replace(/\s+/g, '-')
+          .toLowerCase()}`;
+
+        await pool.query(
+          `
+          INSERT INTO services (
+            saas_location_id,
+            vehicle_slot_id,
+            name,
+            base_rate,
+            per_mile_rate,
+            saas_location_staff_id
+          )
+          VALUES ($1, $2, $3, $4, $5, $6)
+          `,
+          [
+            saas_location_id,
+            vehicle.vehicle_slot_id || staffId,
+            vehicle.vehicle_type,
+            vehicle.base_rate,
+            vehicle.mile_rate,
+            staffId
+          ]
         );
-
-        // 2. REFRESH SERVICES (The "Booking Slots")
-        // Aligns with your Create Booking const: saas_location_id & vehicle_slot_id
-        await pool.query('DELETE FROM services WHERE saas_location_id = $1', [saas_location_id]);
-        
-        if (fleet && fleet.length > 0) {
-            for (const vehicle of fleet) {
-                // We use saas_location_staff_id to satisfy your DB unique constraint
-                const staffId = `${saas_location_id}-${vehicle.vehicle_type.replace(/\s+/g, '-').toLowerCase()}`;
-                
-                await pool.query(`
-                    INSERT INTO services (
-                        saas_location_id, 
-                        vehicle_slot_id, 
-                        name, 
-                        base_rate, 
-                        per_mile_rate,
-                        saas_location_staff_id
-                    )
-                    VALUES ($1, $2, $3, $4, $5, $6)`,
-                    [
-                        saas_location_id, 
-                        vehicle.vehicle_slot_id || staffId, 
-                        vehicle.vehicle_type, 
-                        vehicle.base_rate, 
-                        vehicle.mile_rate,
-                        staffId
-                    ]
-                );
-
-        // 3. UPSERT FLEET SLOTS (New Slot Logic)
-        // This ensures vehicle_id (e.g., LOC-vehicle-1) is the permanent anchor
-        for (const vehicle of fleet) {
-            await pool.query(`
-                INSERT INTO fleet (location_id, vehicle_id, vehicle_type, base_rate, mile_rate)
-                VALUES ($1, $2, $3, $4, $5)
-                ON CONFLICT (vehicle_id) 
-                DO UPDATE SET 
-                    vehicle_type = EXCLUDED.vehicle_type, 
-                    base_rate = EXCLUDED.base_rate, 
-                    mile_rate = EXCLUDED.mile_rate`,
-                [userId, vehicle.vehicle_id, vehicle.vehicle_type, vehicle.base_rate, vehicle.mile_rate]
-            );
-        }
-
-        // 4. REFRESH FIXED ROUTES (Old Functionality)
-        await pool.query('DELETE FROM fixed_rates WHERE location_id = $1', [userId]);
-        if (fixed_rates && fixed_rates.length > 0) {
-            for (const route of fixed_rates) {
-                await pool.query(`
-                    INSERT INTO fixed_rates (pickup, dropoff, price, location_id)
-                    VALUES ($1, $2, $3, $4)`,
-                    [route.pickup, route.dropoff, route.price, userId]
-                );
-            }
-        }
-
-        // 5. REFRESH PEAK WINDOWS (Old Functionality)
-        await pool.query('DELETE FROM peak_windows WHERE location_id = $1', [userId]);
-        if (peak_windows && peak_windows.length > 0) {
-            for (const window of peak_windows) {
-                await pool.query(`
-                    INSERT INTO peak_windows (label, start_time, end_time, multiplier, location_id)
-                    VALUES ($1, $2, $3, $4, $5)`,
-                    [window.label, window.start_time, window.end_time, window.multiplier, userId]
-                );
-            }
-        }
-
-        // 6. REFRESH SPECIAL EVENTS (Old Functionality)
-        await pool.query('DELETE FROM events WHERE location_id = $1', [userId]);
-        if (events && events.length > 0) {
-            for (const event of events) {
-                await pool.query(`
-                    INSERT INTO events (name, event_date, multiplier, location_id)
-                    VALUES ($1, $2, $3, $4)`,
-                    [event.name, event.date, event.multiplier, userId]
-                );
-            }
-        }
-
-        // 7. COMMIT EVERYTHING
-        await pool.query('COMMIT');
-        
-        console.log(`✅ Blended Profile saved for: ${userId}`);
-        res.json({ success: true, message: "All settings and slots saved!" });
-
-    } catch (err) {
-        // If anything fails, ROLLBACK so we don't have partial data
-        await pool.query('ROLLBACK');
-        console.error("❌ Blended Save Error:", err);
-        res.status(500).json({ error: err.message });
+      }
     }
+
+    // 3. UPSERT FLEET SLOTS (New Slot Logic)
+    // This ensures vehicle_id (e.g., LOC-vehicle-1) is the permanent anchor
+    if (fleet && fleet.length > 0) {
+      for (const vehicle of fleet) {
+        await pool.query(
+          `
+          INSERT INTO fleet (location_id, vehicle_id, vehicle_type, base_rate, mile_rate)
+          VALUES ($1, $2, $3, $4, $5)
+          ON CONFLICT (vehicle_id)
+          DO UPDATE SET
+            vehicle_type = EXCLUDED.vehicle_type,
+            base_rate = EXCLUDED.base_rate,
+            mile_rate = EXCLUDED.mile_rate
+          `,
+          [userId, vehicle.vehicle_id, vehicle.vehicle_type, vehicle.base_rate, vehicle.mile_rate]
+        );
+      }
+    }
+
+    // 4. REFRESH FIXED ROUTES (Old Functionality)
+    await pool.query('DELETE FROM fixed_rates WHERE location_id = $1', [userId]);
+    if (fixed_rates && fixed_rates.length > 0) {
+      for (const route of fixed_rates) {
+        await pool.query(
+          `
+          INSERT INTO fixed_rates (pickup, dropoff, price, location_id)
+          VALUES ($1, $2, $3, $4)
+          `,
+          [route.pickup, route.dropoff, route.price, userId]
+        );
+      }
+    }
+
+    // 5. REFRESH PEAK WINDOWS (Old Functionality)
+    await pool.query('DELETE FROM peak_windows WHERE location_id = $1', [userId]);
+    if (peak_windows && peak_windows.length > 0) {
+      for (const window of peak_windows) {
+        await pool.query(
+          `
+          INSERT INTO peak_windows (label, start_time, end_time, multiplier, location_id)
+          VALUES ($1, $2, $3, $4, $5)
+          `,
+          [window.label, window.start_time, window.end_time, window.multiplier, userId]
+        );
+      }
+    }
+
+    // 6. REFRESH SPECIAL EVENTS (Old Functionality)
+    await pool.query('DELETE FROM events WHERE location_id = $1', [userId]);
+    if (events && events.length > 0) {
+      for (const event of events) {
+        await pool.query(
+          `
+          INSERT INTO events (name, event_date, multiplier, location_id)
+          VALUES ($1, $2, $3, $4)
+          `,
+          [event.name, event.date, event.multiplier, userId]
+        );
+      }
+    }
+
+    // 7. COMMIT EVERYTHING
+    await pool.query('COMMIT');
+
+    console.log(`✅ Blended Profile saved for: ${userId}`);
+    res.json({ success: true, message: 'All settings and slots saved!' });
+  } catch (err) {
+    // If anything fails, ROLLBACK so we don't have partial data
+    await pool.query('ROLLBACK');
+    console.error('❌ Blended Save Error:', err);
+    res.status(500).json({ error: err.message });
+  }
 });
    
 /*****************************************************
