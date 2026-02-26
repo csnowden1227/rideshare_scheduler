@@ -1,5 +1,5 @@
 (function() {
-    const BACKEND_URL = "https://chauffeur.crmonesource.com";
+    const BACKEND_URL = "https://rideshare-scheduler-axx6.onrender.com/";
     const scriptTag = document.currentScript;
     const urlParams = new URLSearchParams(scriptTag.src.split('?')[1]);
     const locationId = urlParams.get('loc');
