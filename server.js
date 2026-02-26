@@ -305,154 +305,141 @@ app.get('/api/test', (req, res) => {
 }
 
 app.post('/api/update-profile-full', async (req, res) => {
-  // We pull 'saas_location_id' directly from the body. 
-  // DO NOT use 'const saas_location_id = ...' again below this line.
-  const {
-    saas_location_id, 
-    crm_api_key, 
-    maps_api_key,
-    tax_rate,
-    fleet,
-    fixed_rates,
-    peak_windows
-  } = req.body;
+    // 1. Destructure the body
+    const {
+        saas_location_id,
+        crm_api_key,
+        maps_api_key,
+        tax_rate,
+        fleet,
+        fixed_rates,
+        peak_windows,
+        events // Added missing destructuring for events
+    } = req.body;
 
-  try {
-    await pool.query(
-      `INSERT INTO profiles (
-        saas_location_id, crm_token, maps_api_key, tax_rate, fleet, fixed_routes, peak_windows
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7)
-      ON CONFLICT (saas_location_id) 
-      DO UPDATE SET 
-        crm_token = EXCLUDED.crm_token,
-        maps_api_key = EXCLUDED.maps_api_key,
-        tax_rate = EXCLUDED.tax_rate,
-        fleet = EXCLUDED.fleet,
-        fixed_routes = EXCLUDED.fixed_routes,
-        peak_windows = EXCLUDED.peak_windows`,
-      [
-        saas_location_id, 
-        crm_api_key, 
-        maps_api_key, 
-        tax_rate || 0, 
-        JSON.stringify(fleet || []), 
-        JSON.stringify(fixed_rates || []), 
-        JSON.stringify(peak_windows || [])
-      ]
-    );
-    res.json({ success: true });
-  } catch (err) {
-    console.error("DB Sync Error:", err);
-    res.status(500).json({ error: "Database alignment failed" });
-  }
+    // Standardize the ID variable
+    const userId = saas_location_id;
+
+    const client = await pool.connect();
+
+    try {
+        await client.query('BEGIN');
+
+        // 1. UPSERT THE MAIN PROFILE
+        await client.query(
+            `INSERT INTO profiles (
+                saas_location_id, crm_token, maps_api_key, tax_rate, fleet, fixed_routes, peak_windows
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+            ON CONFLICT (saas_location_id) 
+            DO UPDATE SET 
+                crm_token = EXCLUDED.crm_token,
+                maps_api_key = EXCLUDED.maps_api_key,
+                tax_rate = EXCLUDED.tax_rate,
+                fleet = EXCLUDED.fleet,
+                fixed_routes = EXCLUDED.fixed_routes,
+                peak_windows = EXCLUDED.peak_windows`,
+            [
+                saas_location_id,
+                crm_api_key,
+                maps_api_key,
+                tax_rate || 0,
+                JSON.stringify(fleet || []),
+                JSON.stringify(fixed_rates || []),
+                JSON.stringify(peak_windows || [])
+            ]
+        );
+
+        // 2. REFRESH SERVICES (Booking Slots)
+        await client.query('DELETE FROM services WHERE saas_location_id = $1', [saas_location_id]);
+
+        if (fleet && fleet.length > 0) {
+            for (const vehicle of fleet) {
+                const staffId = `${saas_location_id}-${String(vehicle.vehicle_type || 'vehicle')
+                    .replace(/\s+/g, '-')
+                    .toLowerCase()}`;
+
+                await client.query(
+                    `INSERT INTO services (
+                        saas_location_id, vehicle_slot_id, name, base_rate, per_mile_rate, saas_location_staff_id
+                    ) VALUES ($1, $2, $3, $4, $5, $6)`,
+                    [
+                        saas_location_id,
+                        vehicle.vehicle_slot_id || staffId,
+                        vehicle.vehicle_type,
+                        vehicle.base_rate,
+                        vehicle.mile_rate,
+                        staffId
+                    ]
+                );
+            }
+        }
+
+        // 3. UPSERT FLEET SLOTS
+        if (fleet && fleet.length > 0) {
+            for (const vehicle of fleet) {
+                await client.query(
+                    `INSERT INTO fleet (location_id, vehicle_id, vehicle_type, base_rate, mile_rate)
+                    VALUES ($1, $2, $3, $4, $5)
+                    ON CONFLICT (vehicle_id)
+                    DO UPDATE SET
+                        vehicle_type = EXCLUDED.vehicle_type,
+                        base_rate = EXCLUDED.base_rate,
+                        mile_rate = EXCLUDED.mile_rate`,
+                    [userId, vehicle.vehicle_id, vehicle.vehicle_type, vehicle.base_rate, vehicle.mile_rate]
+                );
+            }
+        }
+
+        // 4. REFRESH FIXED ROUTES
+        await client.query('DELETE FROM fixed_rates WHERE location_id = $1', [userId]);
+        if (fixed_rates && fixed_rates.length > 0) {
+            for (const route of fixed_rates) {
+                await client.query(
+                    `INSERT INTO fixed_rates (pickup, dropoff, price, location_id)
+                    VALUES ($1, $2, $3, $4)`,
+                    [route.pickup, route.dropoff, route.price, userId]
+                );
+            }
+        }
+
+        // 5. REFRESH PEAK WINDOWS
+        await client.query('DELETE FROM peak_windows WHERE location_id = $1', [userId]);
+        if (peak_windows && peak_windows.length > 0) {
+            for (const window of peak_windows) {
+                await client.query(
+                    `INSERT INTO peak_windows (label, start_time, end_time, multiplier, location_id)
+                    VALUES ($1, $2, $3, $4, $5)`,
+                    [window.label, window.start_time, window.end_time, window.multiplier, userId]
+                );
+            }
+        }
+
+        // 6. REFRESH SPECIAL EVENTS
+        await client.query('DELETE FROM events WHERE location_id = $1', [userId]);
+        if (events && events.length > 0) {
+            for (const event of events) {
+                await client.query(
+                    `INSERT INTO events (name, event_date, multiplier, location_id)
+                    VALUES ($1, $2, $3, $4)`,
+                    [event.name, event.date, event.multiplier, userId]
+                );
+            }
+        }
+
+        // 7. COMMIT EVERYTHING
+        await client.query('COMMIT');
+
+        console.log(`✅ Blended Profile saved for: ${userId}`);
+        res.json({ success: true, message: 'All settings and slots saved!' });
+
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error("❌ Blended Save Error:", err);
+        res.status(500).json({ error: "Failed to save profile settings." });
+    } finally {
+        client.release();
+    }
 });
-
-    // 2. REFRESH SERVICES (The "Booking Slots")
-    await pool.query('DELETE FROM services WHERE saas_location_id = $1', [saas_location_id]);
-
-    if (fleet && fleet.length > 0) {
-      for (const vehicle of fleet) {
-        // We use saas_location_staff_id to satisfy your DB unique constraint
-        const staffId = `${saas_location_id}-${String(vehicle.vehicle_type || 'vehicle')
-          .replace(/\s+/g, '-')
-          .toLowerCase()}`;
-
-        await pool.query(
-          `
-          INSERT INTO services (
-            saas_location_id,
-            vehicle_slot_id,
-            name,
-            base_rate,
-            per_mile_rate,
-            saas_location_staff_id
-          )
-          VALUES ($1, $2, $3, $4, $5, $6)
-          `,
-          [
-            saas_location_id,
-            vehicle.vehicle_slot_id || staffId,
-            vehicle.vehicle_type,
-            vehicle.base_rate,
-            vehicle.mile_rate,
-            staffId
-          ]
-        );
-      }
-    }
-
-    // 3. UPSERT FLEET SLOTS (New Slot Logic)
-    // This ensures vehicle_id (e.g., LOC-vehicle-1) is the permanent anchor
-    if (fleet && fleet.length > 0) {
-      for (const vehicle of fleet) {
-        await pool.query(
-          `
-          INSERT INTO fleet (location_id, vehicle_id, vehicle_type, base_rate, mile_rate)
-          VALUES ($1, $2, $3, $4, $5)
-          ON CONFLICT (vehicle_id)
-          DO UPDATE SET
-            vehicle_type = EXCLUDED.vehicle_type,
-            base_rate = EXCLUDED.base_rate,
-            mile_rate = EXCLUDED.mile_rate
-          `,
-          [userId, vehicle.vehicle_id, vehicle.vehicle_type, vehicle.base_rate, vehicle.mile_rate]
-        );
-      }
-    }
-
-    // 4. REFRESH FIXED ROUTES (Old Functionality)
-    await pool.query('DELETE FROM fixed_rates WHERE location_id = $1', [userId]);
-    if (fixed_rates && fixed_rates.length > 0) {
-      for (const route of fixed_rates) {
-        await pool.query(
-          `
-          INSERT INTO fixed_rates (pickup, dropoff, price, location_id)
-          VALUES ($1, $2, $3, $4)
-          `,
-          [route.pickup, route.dropoff, route.price, userId]
-        );
-      }
-    }
-
-    // 5. REFRESH PEAK WINDOWS (Old Functionality)
-    await pool.query('DELETE FROM peak_windows WHERE location_id = $1', [userId]);
-    if (peak_windows && peak_windows.length > 0) {
-      for (const window of peak_windows) {
-        await pool.query(
-          `
-          INSERT INTO peak_windows (label, start_time, end_time, multiplier, location_id)
-          VALUES ($1, $2, $3, $4, $5)
-          `,
-          [window.label, window.start_time, window.end_time, window.multiplier, userId]
-        );
-      }
-    }
-
-    // 6. REFRESH SPECIAL EVENTS (Old Functionality)
-    await pool.query('DELETE FROM events WHERE location_id = $1', [userId]);
-    if (events && events.length > 0) {
-      for (const event of events) {
-        await pool.query(
-          `
-          INSERT INTO events (name, event_date, multiplier, location_id)
-          VALUES ($1, $2, $3, $4)
-          `,
-          [event.name, event.date, event.multiplier, userId]
-        );
-      }
-    }
-
-    // 7. COMMIT EVERYTHING
-    await pool.query('COMMIT');
-
-    console.log(`✅ Blended Profile saved for: ${userId}`);
-    res.json({ success: true, message: 'All settings and slots saved!' });
-
-  } catch (err) {
-    await pool.query('ROLLBACK');
-    console.error("❌ Blended Save Error:", err);
-    res.status(500).json({ error: "Failed to save profile settings." });
- }
 
    
 /*****************************************************
@@ -542,17 +529,8 @@ app.post("/api/availability", async (req, res) => {
 /*****************************************************
  6️⃣ PRICING SIMULATOR (QUOTE CALCULATION)
 *****************************************************/
-app.post("/api/calculate-quote", async (req, res) => {
-  const { userId, serviceId, pickup, dropoff, startISO } = req.body;
 
-  try {
-    const userRes = await pool.query("SELECT tax_rate, maps_api_key, peak_multiplier FROM users WHERE id = $1", [userId]);
-    const serviceRes = await pool.query("SELECT * FROM services WHERE id = $1", [serviceId]);
-
-    if (!userRes.rows.length || !serviceRes.rows.length) {
-      return res.status(404).json({ error: "Config not found" });
-    }
-
+// Helper moved outside to prevent re-declaration on every request
 async function getCurrentMultiplier(locationId) {
     try {
         // 1. Check for Special Events First (Date-based)
@@ -566,63 +544,76 @@ async function getCurrentMultiplier(locationId) {
         const peakResult = await pool.query(
             `SELECT multiplier FROM service_peak_multipliers 
              WHERE saas_location_id = $1 
-             AND CURRENT_TIME AT TIME ZONE 'UTC' BETWEEN start_time AND end_time`, 
-             [locationId]
+             AND CURRENT_TIME AT TIME ZONE 'UTC' BETWEEN start_time AND end_time`,
+            [locationId]
         );
-        // Note: Change 'UTC' to the SaaS owner's timezone if needed!
 
         if (peakResult.rows.length > 0) return parseFloat(peakResult.rows[0].multiplier);
 
         // 3. Default Multiplier if nothing matches
-        return 1.0; 
+        return 1.0;
     } catch (err) {
         console.error("Error fetching multiplier:", err);
         return 1.0;
     }
 }
 
+app.post("/api/calculate-quote", async (req, res) => {
+    const { userId, serviceId, pickup, dropoff, startISO } = req.body;
 
-    const user = userRes.rows[0];
-    const service = serviceRes.rows[0];
-    
-    // Check for fixed rate
-    const fixedPrice = await checkFixedRate(userId, serviceId, pickup, dropoff);
-    let priceBeforeTax = 0;
-    let miles = 0;
+    try {
+        const userRes = await pool.query("SELECT tax_rate, maps_api_key, peak_multiplier FROM users WHERE id = $1", [userId]);
+        const serviceRes = await pool.query("SELECT * FROM services WHERE id = $1", [serviceId]);
 
-    if (fixedPrice) {
-      priceBeforeTax = fixedPrice;
-    } else {
-      const mapsUrl = `https://maps.googleapis.com/maps/api/distancematrix/json?origins=${encodeURIComponent(pickup)}&destinations=${encodeURIComponent(dropoff)}&key=${user.maps_api_key}`;
-      const mapsResp = await fetch(mapsUrl);
-      const mapsData = await mapsResp.json();
-      
-      if (mapsData.rows?.[0]?.elements?.[0]?.status === "OK") {
-        // Convert meters to miles
-        miles = mapsData.rows[0].elements[0].distance.value / 1609.34;
-      }
-      
-      // CALCULATION: Base + (Miles * Per Mile Rate)
-      priceBeforeTax = parseFloat(service.base_rate || 0) + (miles * parseFloat(service.per_mile_rate || 0));
+        if (!userRes.rows.length || !serviceRes.rows.length) {
+            return res.status(404).json({ error: "Config not found" });
+        }
+
+        const user = userRes.rows[0];
+        const service = serviceRes.rows[0];
+
+        // Check for fixed rate
+        const fixedPrice = await checkFixedRate(userId, serviceId, pickup, dropoff);
+        let priceBeforeTax = 0;
+        let miles = 0;
+
+        if (fixedPrice) {
+            priceBeforeTax = fixedPrice;
+        } else {
+            const mapsUrl = `https://maps.googleapis.com/maps/api/distancematrix/json?origins=${encodeURIComponent(pickup)}&destinations=${encodeURIComponent(dropoff)}&key=${user.maps_api_key}`;
+            const mapsResp = await fetch(mapsUrl);
+            const mapsData = await mapsResp.json();
+
+            if (mapsData.rows?.[0]?.elements?.[0]?.status === "OK") {
+                // Convert meters to miles
+                miles = mapsData.rows[0].elements[0].distance.value / 1609.34;
+            }
+
+            // CALCULATION: Base + (Miles * Per Mile Rate)
+            priceBeforeTax = parseFloat(service.base_rate || 0) + (miles * parseFloat(service.per_mile_rate || 0));
+        }
+
+        // Use the logic-based multiplier
+        const multiplier = getPeakMultiplier(startISO || new Date().toISOString(), service.peak_multiplier || user.peak_multiplier);
+
+        // Applying the Peak Multiplier
+        let subtotal = priceBeforeTax * multiplier;
+
+        const taxAmount = subtotal * (parseFloat(user.tax_rate || 0) / 100);
+        const finalTotal = subtotal + taxAmount;
+
+        res.json({
+            subtotal: subtotal.toFixed(2),
+            tax: taxAmount.toFixed(2),
+            total: finalTotal.toFixed(2),
+            miles: miles.toFixed(2)
+        });
+
+    } catch (err) {
+        console.error("Quote Calculation Error:", err);
+        res.status(500).json({ error: "Internal Server Error" });
     }
-
-    const multiplier = getPeakMultiplier(startISO || new Date().toISOString(), service.peak_multiplier || user.peak_multiplier);
-    
-    // Applying the Peak Multiplier
-    let subtotal = priceBeforeTax * multiplier;
-
-    // --- MINIMUM PRICE CHECK REMOVED HERE ---
-    // (We deleted the 'if (subtotal < parseFloat...)' line)
-
-    const taxAmount = subtotal * (parseFloat(user.tax_rate || 0) / 100);
-    const finalTotal = subtotal + taxAmount;
-    
-    res.json({
-      subtotal: subtotal.toFixed(2),
-      tax: taxAmount.toFixed(2),
-      total: finalTotal.toFixed(2),
-      miles: miles.toFixed(2)
-    });
+});
 
 /*****************************************************
  7️⃣ BOOKING ENGINE
