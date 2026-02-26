@@ -33,7 +33,7 @@ app.post('/api/create-booking', async (req, res) => {
                 pickup: bookingData.pickup,
                 dropoff: bookingData.dropoff,
                 // Ensure your formula is used here
-                total_fare: (bookingData.base + (bookingData.miles * bookingData.rate)) * bookingData.multiplier,
+                total_price: (bookingData.base + (bookingData.miles * bookingData.rate)) * bookingData.multiplier,
                 timestamp: new Date()
             })
         });
@@ -242,7 +242,6 @@ async function saveSettings() {
         serviceId: row.dataset.id,
         base_rate: row.querySelector('.base-rate').value,
         per_mile: row.querySelector('.per-mile').value,
-        min_fare: row.querySelector('.min-fare').value
     }));
 
     // 2. Collect Daily Peak Windows
@@ -596,39 +595,42 @@ async function getCurrentMultiplier(locationId) {
     
     // Check for fixed rate
     const fixedPrice = await checkFixedRate(userId, serviceId, pickup, dropoff);
-    let fareBeforeTax = 0;
+    let priceBeforeTax = 0;
     let miles = 0;
 
     if (fixedPrice) {
-      fareBeforeTax = fixedPrice;
+      priceBeforeTax = fixedPrice;
     } else {
       const mapsUrl = `https://maps.googleapis.com/maps/api/distancematrix/json?origins=${encodeURIComponent(pickup)}&destinations=${encodeURIComponent(dropoff)}&key=${user.maps_api_key}`;
       const mapsResp = await fetch(mapsUrl);
       const mapsData = await mapsResp.json();
       
       if (mapsData.rows?.[0]?.elements?.[0]?.status === "OK") {
+        // Convert meters to miles
         miles = mapsData.rows[0].elements[0].distance.value / 1609.34;
       }
       
-      fareBeforeTax = parseFloat(service.base_rate || 0) + (miles * parseFloat(service.per_mile_rate || 0));
+      // CALCULATION: Base + (Miles * Per Mile Rate)
+      priceBeforeTax = parseFloat(service.base_rate || 0) + (miles * parseFloat(service.per_mile_rate || 0));
     }
 
     const multiplier = getPeakMultiplier(startISO || new Date().toISOString(), service.peak_multiplier || user.peak_multiplier);
-    let subtotal = fareBeforeTax * multiplier;
-    if (subtotal < parseFloat(service.minimum_fare || 0)) subtotal = parseFloat(service.minimum_fare);
+    
+    // Applying the Peak Multiplier
+    let subtotal = priceBeforeTax * multiplier;
+
+    // --- MINIMUM PRICE CHECK REMOVED HERE ---
+    // (We deleted the 'if (subtotal < parseFloat...)' line)
 
     const taxAmount = subtotal * (parseFloat(user.tax_rate || 0) / 100);
+    const finalTotal = subtotal + taxAmount;
     
     res.json({
       subtotal: subtotal.toFixed(2),
       tax: taxAmount.toFixed(2),
-      total: (subtotal + taxAmount).toFixed(2),
+      total: finalTotal.toFixed(2),
       miles: miles.toFixed(2)
     });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
 
 /*****************************************************
  7️⃣ BOOKING ENGINE
@@ -676,11 +678,11 @@ app.post("/api/book", async (req, res) => {
     // 1. Check for Fixed Rate match first
     const fixedPrice = await checkFixedRate(saas_location_id, service.id, pickup, dropoff);
 
-    let fareBeforeTax = 0;
+    let priceBeforeTax = 0;
     let miles = 0;
 
     if (fixedPrice) {
-      fareBeforeTax = fixedPrice;
+      priceBeforeTax = fixedPrice;
     } else {
       // 2. Fallback to Distance Calculation
       const mapsUrl = `https://maps.googleapis.com/maps/api/distancematrix/json?origins=${encodeURIComponent(pickup)}&destinations=${encodeURIComponent(dropoff)}&departure_time=now&key=${mapsApiKey}`;
@@ -691,22 +693,19 @@ app.post("/api/book", async (req, res) => {
         miles = mapsData.rows[0].elements[0].distance.value / 1609.34;
       }
 
-      fareBeforeTax = parseFloat(service.base_rate || 50) + (miles * parseFloat(service.per_mile_rate || 3));
+      priceBeforeTax = parseFloat(service.base_rate || 50) + (miles * parseFloat(service.per_mile_rate || 3));
     }
 
-    // 3. Apply Peak Multiplier
+// 3. Apply Peak Multiplier
     const multiplier = getPeakMultiplier(startISO, service.peak_multiplier || userConfig.peak_multiplier);
-    let totalFare = fareBeforeTax * multiplier;
+    let totalPrice = priceBeforeTax * multiplier;
 
-    // 4. Minimum Fare Check
-    if (service.minimum_fare && totalFare < parseFloat(service.minimum_fare)) {
-      totalFare = parseFloat(service.minimum_fare);
-    }
+    // --- SECTION 4 (MINIMUM CHECK) HAS BEEN DELETED ---
 
-    // 5. TAX CALCULATION
-    const taxRate = parseFloat(userConfig.tax_rate || 0) / 100;
-    const taxAmount = totalFare * taxRate;
-    const totalPrice = Math.ceil(totalFare + taxAmount);
+    // 5. Calculate Tax and Final Totals
+    const taxRate = parseFloat(userConfig.tax_rate || 0);
+    const taxAmount = totalPrice * (taxRate / 100);
+    const finalGrandTotal = totalPrice + taxAmount;
 
     const startTime = new Date(startISO);
     const endTime = new Date(
@@ -773,7 +772,7 @@ app.post("/api/book", async (req, res) => {
       success: true,
       message: "Booking confirmed.",
       totalPrice: totalPrice,
-      subtotal: totalFare.toFixed(2),
+      subtotal: totalPrice.toFixed(2),
       tax: taxAmount.toFixed(2),
       miles: miles.toFixed(2)
     });
