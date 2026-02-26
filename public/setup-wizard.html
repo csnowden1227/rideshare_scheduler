@@ -219,30 +219,45 @@
     }
 
     function syncRouteFields(savedData = []) {
-        const select = document.getElementById('route_count');
-        const count = savedData.length > 0 ? savedData.length : parseInt(select.value);
-        const container = document.getElementById('routes-container');
-        container.innerHTML = "";
+    const select = document.getElementById('route_count');
+    // If we have savedData, use its length; otherwise, use the dropdown value
+    const count = savedData.length > 0 ? savedData.length : parseInt(select.value);
+    const container = document.getElementById('routes-container');
+    container.innerHTML = "";
+    
+    for (let i = 0; i < count; i++) {
+        // We use the database keys: pickup_keyword, dropoff_keyword, and fixed_price
+        const d = savedData[i] || { pickup_keyword: '', dropoff_keyword: '', fixed_price: '' };
+        const div = document.createElement('div');
+        div.className = "flex flex-col md:flex-row gap-3 route-row p-4 bg-white rounded-xl border border-slate-200 shadow-sm mb-3";
+        const uid = Math.random().toString(36).substr(2, 5);
         
-        for (let i = 0; i < count; i++) {
-            const d = savedData[i] || { pickup: '', dropoff: '', price: '' };
-            const div = document.createElement('div');
-            div.className = "flex gap-2 route-row";
-            const uid = Math.random().toString(36).substr(2, 5);
-            div.innerHTML = `
-                <input type="text" id="p-${uid}" class="r-pickup input-mini" value="${d.pickup}" placeholder="Pickup Address">
-                <input type="text" id="d-${uid}" class="r-dropoff input-mini" value="${d.dropoff}" placeholder="Dropoff Address">
-                <input type="number" class="r-price input-mini !w-32" value="${d.price}" placeholder="$">
-            `;
-            container.appendChild(div);
-            
-            if (typeof google !== 'undefined' && google.maps && google.maps.places) {
-                new google.maps.places.Autocomplete(document.getElementById(`p-${uid}`));
-                new google.maps.places.Autocomplete(document.getElementById(`d-${uid}`));
-            }
+        div.innerHTML = `
+            <div class="flex-1">
+                <label class="text-[9px] uppercase font-black text-slate-400 mb-1 block">Pickup Geofence (City/Coord)</label>
+                <input type="text" id="p-${uid}" class="r-pickup input-mini" 
+                       value="${d.pickup_keyword || ''}" placeholder="e.g. Los Angeles">
+            </div>
+            <div class="flex-1">
+                <label class="text-[9px] uppercase font-black text-slate-400 mb-1 block">Dropoff Geofence (City/Coord)</label>
+                <input type="text" id="d-${uid}" class="r-dropoff input-mini" 
+                       value="${d.dropoff_keyword || ''}" placeholder="e.g. LAX Airport">
+            </div>
+            <div class="w-full md:w-32">
+                <label class="text-[9px] uppercase font-black text-blue-600 mb-1 block">Flat Rate ($)</label>
+                <input type="number" step="0.01" class="r-price input-mini font-bold border-blue-200" 
+                       value="${d.fixed_price || ''}" placeholder="0.00">
+            </div>
+        `;
+        container.appendChild(div);
+        
+        // Google Autocomplete attachment
+        if (typeof google !== 'undefined' && google.maps && google.maps.places) {
+            new google.maps.places.Autocomplete(document.getElementById(`p-${uid}`));
+            new google.maps.places.Autocomplete(document.getElementById(`d-${uid}`));
         }
     }
-
+}
     async function loadFromBackend() {
         document.getElementById('display-loc-id').innerText = locationId;
         updateEmbedCode();
@@ -277,14 +292,11 @@
         }
     }
 
-    async function saveToBackend() {
-        const btn = document.getElementById('save-btn');
-        btn.innerText = "SYNCING...";
-        
-        const payload = {
+    const payload = {
             saas_location_id: locationId,
             maps_api_key: document.getElementById('maps_key').value,
-            crm_api_key: document.getElementById('crm_api_key').value,
+            // 1. Map to crm_url instead of crm_api_key
+            crm_url: document.getElementById('crm_api_key').value, 
             tax_rate: parseFloat(document.getElementById('tax_rate').value) || 0,
             fleet: Array.from(document.querySelectorAll('#fleet-body tr')).map(tr => ({
                 vehicle_id: tr.cells[0].innerText,
@@ -299,10 +311,11 @@
                 end_time: r.querySelector('.p-end').value,
                 multiplier: parseFloat(r.querySelector('.p-mult').value) || 1
             })),
+            // 2. Map fixed_rates keys to match the database column names
             fixed_rates: Array.from(document.querySelectorAll('.route-row')).map(r => ({
-                pickup: r.querySelector('.r-pickup').value,
-                dropoff: r.querySelector('.r-dropoff').value,
-                price: parseFloat(r.querySelector('.r-price').value) || 0
+                pickup_keyword: r.querySelector('.r-pickup').value,  // was 'pickup'
+                dropoff_keyword: r.querySelector('.r-dropoff').value, // was 'dropoff'
+                fixed_price: parseFloat(r.querySelector('.r-price').value) || 0 // was 'price'
             })),
             events: Array.from(document.querySelectorAll('.event-row')).map(e => ({
                 name: e.querySelector('.e-name').value,
@@ -310,7 +323,6 @@
                 multiplier: parseFloat(e.querySelector('.e-mult').value) || 1
             })).filter(e => e.name) 
         };
-
         try {
             const response = await fetch(`${BACKEND_URL}/api/update-profile`, {
                 method: 'POST',
@@ -329,7 +341,6 @@
         } finally { 
             btn.innerText = "Sync to Cloud"; 
         }
-    }
 
     function copyEmbed() {
         const text = document.getElementById('embed-box').innerText;

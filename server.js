@@ -175,6 +175,30 @@ function copyEmbedCode() {
     });
 }
 
+async function checkFixedRate(saas_location_id, pickupAddr, dropoffAddr) {
+  // 1. Fetch all fixed routes for this specific location
+  const result = await pool.query(
+    "SELECT pickup_keyword, dropoff_keyword, fixed_price FROM fixed_rates WHERE user_id = $1 AND is_active = true",
+    [saas_location_id]
+  );
+
+  const activeRoutes = result.rows;
+
+  // 2. Loop through routes to see if the customer's addresses "contain" the keywords
+  for (const route of activeRoutes) {
+    const pickupMatch = pickupAddr.toLowerCase().includes(route.pickup_keyword.toLowerCase());
+    const dropoffMatch = dropoffAddr.toLowerCase().includes(route.dropoff_keyword.toLowerCase());
+
+    if (pickupMatch && dropoffMatch) {
+      console.log(`🎯 Geofence Match Found: ${route.pickup_keyword} to ${route.dropoff_keyword} for $${route.fixed_price}`);
+      return parseFloat(route.fixed_price);
+    }
+  }
+
+  // 3. Return null if no geofence matches (logic will then fall back to distance-based pricing)
+  return null;
+}
+
 async function syncFleet() {
     const res = await fetch(`${BACKEND_URL}/api/sync-fleet`, {
         method: 'POST',
@@ -305,20 +329,16 @@ app.get('/api/test', (req, res) => {
 }
 
 app.post('/api/update-profile-full', async (req, res) => {
-    // 1. Destructure the body
     const {
         saas_location_id,
-        crm_api_key,
+        crm_api_key, // This is your Webhook URL from the frontend
         maps_api_key,
         tax_rate,
         fleet,
         fixed_rates,
         peak_windows,
-        events // Added missing destructuring for events
+        events
     } = req.body;
-
-    // Standardize the ID variable
-    const userId = saas_location_id;
 
     const client = await pool.connect();
 
@@ -326,17 +346,18 @@ app.post('/api/update-profile-full', async (req, res) => {
         await client.query('BEGIN');
 
         // 1. UPSERT THE MAIN PROFILE
+        // Note: Using 'crm_url' and 'location_id' to match your schema
         await client.query(
             `INSERT INTO profiles (
-                saas_location_id, crm_token, maps_api_key, tax_rate, fleet, fixed_routes, peak_windows
+                location_id, crm_url, maps_api_key, tax_rate, fleet, special_events, peak_windows
             ) VALUES ($1, $2, $3, $4, $5, $6, $7)
-            ON CONFLICT (saas_location_id) 
+            ON CONFLICT (location_id) 
             DO UPDATE SET 
-                crm_token = EXCLUDED.crm_token,
+                crm_url = EXCLUDED.crm_url,
                 maps_api_key = EXCLUDED.maps_api_key,
                 tax_rate = EXCLUDED.tax_rate,
                 fleet = EXCLUDED.fleet,
-                fixed_routes = EXCLUDED.fixed_routes,
+                special_events = EXCLUDED.special_events,
                 peak_windows = EXCLUDED.peak_windows`,
             [
                 saas_location_id,
@@ -344,7 +365,7 @@ app.post('/api/update-profile-full', async (req, res) => {
                 maps_api_key,
                 tax_rate || 0,
                 JSON.stringify(fleet || []),
-                JSON.stringify(fixed_rates || []),
+                JSON.stringify(events || []),
                 JSON.stringify(peak_windows || [])
             ]
         );
@@ -354,6 +375,7 @@ app.post('/api/update-profile-full', async (req, res) => {
 
         if (fleet && fleet.length > 0) {
             for (const vehicle of fleet) {
+                // Generate a clean staff ID (e.g., 101-luxury-sedan)
                 const staffId = `${saas_location_id}-${String(vehicle.vehicle_type || 'vehicle')
                     .replace(/\s+/g, '-')
                     .toLowerCase()}`;
@@ -364,7 +386,7 @@ app.post('/api/update-profile-full', async (req, res) => {
                     ) VALUES ($1, $2, $3, $4, $5, $6)`,
                     [
                         saas_location_id,
-                        vehicle.vehicle_slot_id || staffId,
+                        vehicle.vehicle_id || staffId, // use vehicle_id from payload
                         vehicle.vehicle_type,
                         vehicle.base_rate,
                         vehicle.mile_rate,
@@ -374,68 +396,31 @@ app.post('/api/update-profile-full', async (req, res) => {
             }
         }
 
-        // 3. UPSERT FLEET SLOTS
-        if (fleet && fleet.length > 0) {
-            for (const vehicle of fleet) {
-                await client.query(
-                    `INSERT INTO fleet (location_id, vehicle_id, vehicle_type, base_rate, mile_rate)
-                    VALUES ($1, $2, $3, $4, $5)
-                    ON CONFLICT (vehicle_id)
-                    DO UPDATE SET
-                        vehicle_type = EXCLUDED.vehicle_type,
-                        base_rate = EXCLUDED.base_rate,
-                        mile_rate = EXCLUDED.mile_rate`,
-                    [userId, vehicle.vehicle_id, vehicle.vehicle_type, vehicle.base_rate, vehicle.mile_rate]
-                );
-            }
-        }
-
-        // 4. REFRESH FIXED ROUTES
-        await client.query('DELETE FROM fixed_rates WHERE location_id = $1', [userId]);
+        // 3. REFRESH FIXED RATES (Geofencing)
+        // Note: Match schema: user_id, pickup_keyword, dropoff_keyword, fixed_price
+        await client.query('DELETE FROM fixed_rates WHERE user_id = $1', [saas_location_id]);
         if (fixed_rates && fixed_rates.length > 0) {
             for (const route of fixed_rates) {
-                await client.query(
-                    `INSERT INTO fixed_rates (pickup, dropoff, price, location_id)
-                    VALUES ($1, $2, $3, $4)`,
-                    [route.pickup, route.dropoff, route.price, userId]
-                );
+                if (route.pickup_keyword && route.dropoff_keyword) {
+                    await client.query(
+                        `INSERT INTO fixed_rates (user_id, pickup_keyword, dropoff_keyword, fixed_price, is_active)
+                        VALUES ($1, $2, $3, $4, true)`,
+                        [saas_location_id, route.pickup_keyword, route.dropoff_keyword, route.fixed_price]
+                    );
+                }
             }
         }
 
-        // 5. REFRESH PEAK WINDOWS
-        await client.query('DELETE FROM peak_windows WHERE location_id = $1', [userId]);
-        if (peak_windows && peak_windows.length > 0) {
-            for (const window of peak_windows) {
-                await client.query(
-                    `INSERT INTO peak_windows (label, start_time, end_time, multiplier, location_id)
-                    VALUES ($1, $2, $3, $4, $5)`,
-                    [window.label, window.start_time, window.end_time, window.multiplier, userId]
-                );
-            }
-        }
-
-        // 6. REFRESH SPECIAL EVENTS
-        await client.query('DELETE FROM events WHERE location_id = $1', [userId]);
-        if (events && events.length > 0) {
-            for (const event of events) {
-                await client.query(
-                    `INSERT INTO events (name, event_date, multiplier, location_id)
-                    VALUES ($1, $2, $3, $4)`,
-                    [event.name, event.date, event.multiplier, userId]
-                );
-            }
-        }
-
-        // 7. COMMIT EVERYTHING
+        // 4. COMMIT EVERYTHING
         await client.query('COMMIT');
 
-        console.log(`✅ Blended Profile saved for: ${userId}`);
+        console.log(`✅ Profile and Services synced for: ${saas_location_id}`);
         res.json({ success: true, message: 'All settings and slots saved!' });
 
     } catch (err) {
         await client.query('ROLLBACK');
-        console.error("❌ Blended Save Error:", err);
-        res.status(500).json({ error: "Failed to save profile settings." });
+        console.error("❌ Blended Save Error:", err.message);
+        res.status(500).json({ error: "Failed to save profile settings.", detail: err.message });
     } finally {
         client.release();
     }
@@ -623,149 +608,120 @@ app.post("/api/book", async (req, res) => {
 
   try {
     const {
-      saas_location_staff_id,
-      startISO,
-      pickup,
-      dropoff,
-      email,
+      saas_location_id,
+      vehicle_slot_id,
+      pickup_address,
+      dropoff_address,
       firstName,
       lastName,
+      email,
       phone,
+      startISO
     } = req.body;
-
-    const [saas_location_id] = saas_location_staff_id.split("_");
-
-    const userRes = await client.query(
-      "SELECT * FROM users WHERE id=$1",
-      [saas_location_id]
-    );
-
-    const userConfig = userRes.rows[0];
-
-    // KILL SWITCH CHECK
-    if (!userConfig.is_booking_enabled) {
-      return res.status(403).json({ error: "Booking is currently disabled." });
-    }
-
-    const svcQuery = await client.query(
-      "SELECT * FROM services WHERE saas_location_staff_id=$1 LIMIT 1",
-      [saas_location_staff_id]
-    );
-
-    const service = svcQuery.rows[0];
 
     await client.query("BEGIN");
 
-    const mapsApiKey = await getMapsKey(saas_location_id);
+    // 1. VALIDATION & DATA RETRIEVAL
+    const profileCheck = await client.query(
+      "SELECT * FROM profiles WHERE saas_location_id = $1",
+      [saas_location_id]
+    );
 
-    // 1. Check for Fixed Rate match first
-    const fixedPrice = await checkFixedRate(saas_location_id, service.id, pickup, dropoff);
+    if (profileCheck.rows.length === 0) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ error: "Location not registered." });
+    }
 
-    let priceBeforeTax = 0;
-    let miles = 0;
+    const userConfig = profileCheck.rows[0];
+    const mapsApiKey = userConfig.maps_api_key;
 
+    const serviceRes = await client.query(
+      "SELECT * FROM services WHERE vehicle_slot_id = $1 AND saas_location_id = $2",
+      [vehicle_slot_id, saas_location_id]
+    );
+    const service = serviceRes.rows[0] || { base_rate: 50, per_mile_rate: 3 };
+
+    // 2. PRICING LOGIC
+    
+    // Before calculating distance-based price, check for a Flat Rate
+const fixedPrice = await checkFixedRate(saas_location_id, pickup, dropoff);
+
+let totalPrice;
+if (fixedPrice) {
+  totalPrice = fixedPrice; // Use the Flat Rate (Geofence match)
+} else {
+  // Use your existing distance logic: (Base + (Miles * Rate))
+  totalPrice = basePrice + (miles * perMileRate);
+}
+     
     if (fixedPrice) {
       priceBeforeTax = fixedPrice;
     } else {
-      // 2. Fallback to Distance Calculation
-      const mapsUrl = `https://maps.googleapis.com/maps/api/distancematrix/json?origins=${encodeURIComponent(pickup)}&destinations=${encodeURIComponent(dropoff)}&departure_time=now&key=${mapsApiKey}`;
+      const mapsUrl = `https://maps.googleapis.com/maps/api/distancematrix/json?origins=${encodeURIComponent(pickup_address)}&destinations=${encodeURIComponent(dropoff_address)}&departure_time=now&key=${mapsApiKey}`;
       const mapsResp = await fetch(mapsUrl);
       const mapsData = await mapsResp.json();
 
       if (mapsData.rows?.[0]?.elements?.[0]?.status === "OK") {
         miles = mapsData.rows[0].elements[0].distance.value / 1609.34;
       }
-
       priceBeforeTax = parseFloat(service.base_rate || 50) + (miles * parseFloat(service.per_mile_rate || 3));
+    
     }
 
-// 3. Apply Peak Multiplier
+    // 3. APPLY MULTIPLIERS & TAX
     const multiplier = getPeakMultiplier(startISO, service.peak_multiplier || userConfig.peak_multiplier);
-    let totalPrice = priceBeforeTax * multiplier;
+    let subtotal = priceBeforeTax * multiplier;
 
-    // --- SECTION 4 (MINIMUM CHECK) HAS BEEN DELETED ---
-
-    // 5. Calculate Tax and Final Totals
     const taxRate = parseFloat(userConfig.tax_rate || 0);
-    const taxAmount = totalPrice * (taxRate / 100);
-    const finalGrandTotal = totalPrice + taxAmount;
+    const taxAmount = subtotal * (taxRate / 100);
+    const finalGrandTotal = subtotal + taxAmount;
 
-    const startTime = new Date(startISO);
-    const endTime = new Date(
-      startTime.getTime() + (service.duration_min || 60) * 60000
-    );
-
-    // 1. SAVE TO DATABASE
+    
+    // 4. SAVE TO DATABASE
     await client.query(
       `INSERT INTO bookings (
-        user_id, service_id, start_time, end_time,
-        pickup_address, dropoff_address,
-        customer_email, first_name, last_name,
-        phone, status, total_price
-      )
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'confirmed',$11)`,
-      [
-        saas_location_id,
-        service.id,
-        startTime,
-        endTime,
-        pickup,
-        dropoff,
-        email,
-        firstName,
-        lastName,
-        phone,
-        totalPrice,
-      ]
+        saas_location_id, vehicle_slot_id, first_name, last_name, 
+        email, phone, pickup_address, dropoff_address, total_price, status, start_time
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'confirmed', $10)`,
+      [saas_location_id, vehicle_slot_id, firstName, lastName, email, phone, pickup_address, dropoff_address, finalGrandTotal, startISO]
     );
 
-    // 2. COMMIT THE DATABASE TRANSACTION (Only do this once)
     await client.query("COMMIT");
 
-    // 3. SEND TO CRM WEBHOOK
-    try {
-      const CRM_WEBHOOK_URL = "https://services.leadconnectorhq.com/hooks/VXE0UY17p7wnxdZ3sOLc/webhook-trigger/Je8HE3oHLu0Moe22PIGt";
-      
-      await fetch(CRM_WEBHOOK_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          firstName,
-          lastName,
-          email,
-          phone,
-          pickup,
-          dropoff,
-          totalPrice, 
-          miles: miles.toFixed(2),
-          bookingDate: startISO,
-          locationId: saas_location_id
-        })
-      });
-      console.log("Webhook sent to LeadConnector successfully");
-    } catch (webhookError) {
-      // Log it, but don't fail the booking if the webhook is just slow
-      console.error("Webhook failed to send:", webhookError);
-    }
+    // 5. SEND TO CRM WEBHOOK (Outside transaction)
+    const CRM_WEBHOOK_URL = "https://services.leadconnectorhq.com/hooks/VXE0UY17p7wnxdZ3sOLc/webhook-trigger/Je8HE3oHLu0Moe22PIGt";
+    
+    fetch(CRM_WEBHOOK_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        firstName,
+        lastName,
+        email,
+        phone,
+        pickup: pickup_address,
+        dropoff: dropoff_address,
+        totalPrice: finalGrandTotal.toFixed(2),
+        miles: miles.toFixed(2),
+        bookingDate: startISO,
+        locationId: saas_location_id
+      })
+    }).catch(e => console.error("Webhook failed:", e));
 
-    // 4. SEND FINAL RESPONSE TO USER
+    // 6. FINAL RESPONSE
     res.json({
       success: true,
-      message: "Booking confirmed.",
-      totalPrice: totalPrice,
-      subtotal: totalPrice.toFixed(2),
+      totalPrice: finalGrandTotal.toFixed(2),
+      subtotal: subtotal.toFixed(2),
       tax: taxAmount.toFixed(2),
       miles: miles.toFixed(2)
     });
+
   } catch (err) {
-    // If anything in the 'try' block fails, we undo the DB changes
-    await client.query("ROLLBACK");
+    if (client) await client.query("ROLLBACK");
     console.error("Booking Error:", err);
     res.status(500).json({ error: err.message });
   } finally {
-    // Always release the database connection back to the pool
     client.release();
   }
 });
@@ -822,35 +778,48 @@ app.post('/api/sync-fleet', async (req, res) => {
 
 // 9️⃣ GET PROFILE SETTINGS
 
-app.get("/api/get-profile/:locationId", async (req, res) => {
-  const { locationId } = req.params; // Using the GHL Location ID from the URL
+app.get("/api/get-profile/:location_id", async (req, res) => {
+  const { location_id } = req.params;
+  const client = await pool.connect();
 
   try {
-    // UPDATED: Search by saas_location_id column
-    const result = await pool.query(
-      "SELECT * FROM users WHERE saas_location_id = $1",
-      [locationId]
+    // 1. Get the main profile (fleet, tax, maps key, webhook url)
+    const profileRes = await client.query(
+      "SELECT * FROM profiles WHERE location_id = $1",
+      [location_id]
     );
 
-    if (result.rows.length === 0) {
-      // Return defaults so the frontend doesn't break on a new user
-      return res.json({
-        maps_api_key: "",
-        crm_api_key: "", // This is your Webhook URL
-        saas_location_id: locationId,
-        tax_rate: 0,
-        fleet: [],        // Important: Frontend needs these to be arrays
-        peak_windows: [],
-        fixed_rates: []
-      });
+    if (profileRes.rows.length === 0) {
+      return res.status(404).json({ error: "Profile not found" });
     }
 
-    // Return the found user record
-    return res.json(result.rows[0]);
+    const profile = profileRes.rows[0];
+
+    // 2. Get the geofencing / fixed rates
+    const ratesRes = await client.query(
+      "SELECT pickup_keyword, dropoff_keyword, fixed_price FROM fixed_rates WHERE user_id = $1",
+      [location_id]
+    );
+
+    // 3. Combine the data into one clean object for the Frontend
+    const fullProfile = {
+      location_id: profile.location_id,
+      maps_api_key: profile.maps_api_key,
+      crm_url: profile.crm_url, // This matches the 'webhook' field in UI
+      tax_rate: profile.tax_rate,
+      fleet: typeof profile.fleet === 'string' ? JSON.parse(profile.fleet) : profile.fleet,
+      peak_windows: typeof profile.peak_windows === 'string' ? JSON.parse(profile.peak_windows) : profile.peak_windows,
+      events: typeof profile.special_events === 'string' ? JSON.parse(profile.special_events) : profile.special_events,
+      fixed_rates: ratesRes.rows // Array of {pickup_keyword, dropoff_keyword, fixed_price}
+    };
+
+    res.json(fullProfile);
 
   } catch (err) {
-    console.error("Error fetching profile:", err.message);
-    return res.status(500).json({ error: "Failed to load settings." });
+    console.error("❌ Error fetching profile:", err.message);
+    res.status(500).json({ error: "Server error fetching profile data" });
+  } finally {
+    client.release();
   }
 });
 
