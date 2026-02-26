@@ -1,4 +1,3 @@
-
 /*****************************************************
  🚀 SERVER.JS - GO HIGH LEVEL SAAS BACKEND
 *****************************************************/
@@ -13,7 +12,7 @@ import https from 'https'; // Required for your getTravelTime function
 
 dotenv.config();
 
-
+const app = express(); // ✅ ADD THIS
 
 /*****************************************************
  1️⃣ DATABASE CONFIGURATION
