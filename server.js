@@ -767,123 +767,161 @@ app.post('/api/sync-fleet', async (req, res) => {
         console.log(`✅ Fleet synced for Location: ${userId}`);
         res.json({ success: true, message: "Fleet synced successfully!" });
 
-    } catch (error) {
-        console.error("❌ Sync Error:", error);
-        res.status(500).json({ success: false, error: "Failed to sync fleet from CRM" });
-    }
-});
+} catch (error) {
+  console.error("❌ Sync Error:", error);
+  res.status(500).json({ success: false, error: "Failed to sync fleet from CRM" });
+}
+}); // ✅ closes whatever app.post/app.get this catch belongs to
 
 // 9️⃣ GET PROFILE SETTINGS
-// 1. Get Profile Route
+
+// 1. Get Profile Route (by userId)
 app.get("/api/get-profile/:userId", async (req, res) => {
-    const { userId } = req.params;
-    try {
-        const result = await pool.query("SELECT * FROM users WHERE id = $1", [userId]);
-        if (result.rows.length === 0) {
-            return res.json({ 
-                maps_api_key: "", 
-                crm_api_key: "", 
-                tax_rate: 0, 
-                is_booking_enabled: true 
-            });
-        }
-        res.json(result.rows[0]);
-    } catch (err) {
-        console.error("Error fetching profile:", err.message);
-        res.status(500).json({ error: "Failed to load settings." });
+  const { userId } = req.params;
+
+  try {
+    const result = await pool.query("SELECT * FROM users WHERE id = $1", [userId]);
+
+    if (result.rows.length === 0) {
+      return res.json({
+        maps_api_key: "",
+        crm_api_key: "",
+        tax_rate: 0,
+        is_booking_enabled: true
+      });
     }
-}); // <--- Correctly closes get-profile
+
+    return res.json(result.rows[0]);
+  } catch (err) {
+    console.error("Error fetching profile:", err.message);
+    return res.status(500).json({ error: "Failed to load settings." });
+  }
+}); // ✅ closes get-profile
 
 // 2. Get Quote Route
-app.post('/api/get-quote', async (req, res) => {
-    try {
-        const { locationId, distance, serviceType } = req.body;
-        const baseRate = 2.50; 
-        const multiplier = await getCurrentMultiplier(locationId);
-        const totalPrice = (distance * baseRate) * multiplier;
-        
-        res.json({ 
-            quote: totalPrice.toFixed(2), 
-            appliedMultiplier: multiplier 
-        });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-}); // <--- Correctly closes get-quote
+app.post("/api/get-quote", async (req, res) => {
+  try {
+    const { locationId, distance, serviceType } = req.body; // serviceType unused but fine
+
+    const baseRate = 2.5;
+    const multiplier = await getCurrentMultiplier(locationId);
+    const totalPrice = distance * baseRate * multiplier;
+
+    return res.json({
+      quote: totalPrice.toFixed(2),
+      appliedMultiplier: multiplier
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+}); // ✅ closes get-quote
 
 // 3. DB Check Route
-app.get('/api/db-check', async (req, res) => {
-    try {
-        const result = await pool.query('SELECT NOW()'); 
-        res.json({ 
-            status: "Connected", 
-            timestamp: result.rows[0].now 
-        });
-    } catch (err) {
-        res.status(500).json({ status: "Error", error: err.message });
+app.get("/api/db-check", async (req, res) => {
+  try {
+    const result = await pool.query("SELECT NOW()");
+    return res.json({
+      status: "Connected",
+      timestamp: result.rows[0].now
+    });
+  } catch (err) {
+    return res.status(500).json({ status: "Error", error: err.message });
+  }
+}); // ✅ closes db-check
+
+/* =========================================================
+   ⚠️ FIX: REMOVE DUPLICATE APP/EXPRESS RE-DECLARATIONS BELOW
+   - You already have: const app = express(); app.use(...)
+   - You already have: pool (Postgres)
+   - This block was causing redeclare + duplicate route conflicts
+   ========================================================= */
+
+// ❌ REMOVE THESE (they break your server file):
+// const express = require('express');
+// const axios = require('axios');
+// const app = express();
+// app.use(express.json());
+
+// 1. ENDPOINT FOR THE WIDGET: Fetch specific configuration (by locationId)
+// ✅ Keep ONE version of /api/get-profile. If you need BOTH "userId" and "locationId",
+// rename one of them to avoid route collision.
+app.get("/api/get-profile-widget/:locationId", async (req, res) => {
+  try {
+    const { locationId } = req.params;
+
+    // Use your existing Postgres pool (not db)
+    const profile = await pool.query("SELECT * FROM profiles WHERE location_id = $1", [locationId]);
+    const fleet = await pool.query("SELECT * FROM fleet_vehicles WHERE location_id = $1", [locationId]);
+
+    if (profile.rows.length === 0) {
+      return res.status(404).json({ error: "Location Not Found" });
     }
-}); // <--- Correctly closes db-check
 
-// Database logic (Assuming PostgreSQL/Knex or similar)
-// GET: Fetch profile for the widget
-const express = require('express');
-const axios = require('axios');
-const app = express();
-app.use(express.json());
-
-// 1. ENDPOINT FOR THE WIDGET: Fetch specific configuration
-app.get('/api/get-profile/:locationId', async (req, res) => {
-    try {
-        const { locationId } = req.params;
-        
-        // Database lookup: Map Location ID to stored profile and fleet
-        const profile = await db.query('SELECT * FROM profiles WHERE location_id = $1', [locationId]);
-        const fleet = await db.query('SELECT * FROM fleet_vehicles WHERE location_id = $1', [locationId]);
-
-        if (profile.rows.length === 0) return res.status(404).json({ error: "Location Not Found" });
-
-        // Map data to return to widget
-        res.json({
-            maps_key: profile.rows[0].maps_api_key,
-            tax_rate: profile.rows[0].tax_rate,
-            fleet: fleet.rows, // Contains vehicle_type, pricing, and calendar_id
-            fixed_rates: profile.rows[0].fixed_rates,
-            peak_windows: profile.rows[0].peak_windows,
-            events: profile.rows[0].events
-        });
-    } catch (err) {
-        res.status(500).send("Database Error");
-    }
+    return res.json({
+      maps_key: profile.rows[0].maps_api_key,
+      tax_rate: profile.rows[0].tax_rate,
+      fleet: fleet.rows,
+      fixed_rates: profile.rows[0].fixed_rates,
+      peak_windows: profile.rows[0].peak_windows,
+      events: profile.rows[0].events
+    });
+  } catch (err) {
+    console.error("Database Error:", err);
+    return res.status(500).send("Database Error");
+  }
 });
 
 // 2. ENDPOINT FOR BOOKING: Map vehicle and CRM token
-app.post('/api/create-booking', async (req, res) => {
-    try {
-        const { 
-            saas_location_id, vehicle_slot_id, first_name, last_name, 
-            email, phone, pickup_address, pickup_coords, 
-            dropoff_address, dropoff_coords, start_time, total_price 
-        } = req.body;
+app.post("/api/create-booking", async (req, res) => {
+  try {
+    const {
+      saas_location_id,
+      vehicle_slot_id,
+      first_name,
+      last_name,
+      email,
+      phone,
+      pickup_address,
+      pickup_coords,
+      dropoff_address,
+      dropoff_coords,
+      start_time,
+      total_price
+    } = req.body;
 
-        await db.query(`
-            INSERT INTO bookings (
-                saas_location_id, vehicle_slot_id, first_name, last_name, 
-                email, phone, pickup_address, pickup_coords, 
-                dropoff_address, dropoff_coords, start_time, total_price
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
-            [saas_location_id, vehicle_slot_id, first_name, last_name, 
-             email, phone, pickup_address, pickup_coords, 
-             dropoff_address, dropoff_coords, start_time, total_price]
-        );
+    await pool.query(
+      `
+      INSERT INTO bookings (
+        saas_location_id, vehicle_slot_id, first_name, last_name,
+        email, phone, pickup_address, pickup_coords,
+        dropoff_address, dropoff_coords, start_time, total_price
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+      `,
+      [
+        saas_location_id,
+        vehicle_slot_id,
+        first_name,
+        last_name,
+        email,
+        phone,
+        pickup_address,
+        pickup_coords,
+        dropoff_address,
+        dropoff_coords,
+        start_time,
+        total_price
+      ]
+    );
 
-        res.json({ success: true });
-    } catch (err) {
-        console.error("Booking Error:", err);
-        res.status(500).json({ error: "Routing failed" });
-    }
-}); // <--- This closes the app.post
+    return res.json({ success: true });
+  } catch (err) {
+    console.error("Booking Error:", err);
+    return res.status(500).json({ error: "Routing failed" });
+  }
+}); // ✅ closes create-booking
 
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
-    console.log(`🚀 Chauffeur SaaS Backend running on port ${PORT}`);
+  console.log(`🚀 Chauffeur SaaS Backend running on port ${PORT}`);
 });
