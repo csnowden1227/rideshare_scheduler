@@ -745,6 +745,13 @@ app.post("/api/book", async (req, res) => {
     try {
       const CRM_WEBHOOK_URL = process.env.CRM_WEBHOOK_URL || "https://services.leadconnectorhq.com/hooks/VXE0UY17p7wnxdZ3sOLc/webhook-trigger/Je8HE3oHLu0Moe22PIGt";
       
+await client.query("COMMIT");
+
+    // --- START WEBHOOK SECTION ---
+    try {
+      // Using your LeadConnector URL
+      const CRM_WEBHOOK_URL = "https://services.leadconnectorhq.com/hooks/VXE0UY17p7wnxdZ3sOLc/webhook-trigger/Je8HE3oHLu0Moe22PIGt";
+      
       await fetch(CRM_WEBHOOK_URL, {
         method: 'POST',
         headers: {
@@ -757,22 +764,20 @@ app.post("/api/book", async (req, res) => {
           phone,
           pickup,
           dropoff,
-          totalPrice,
+          totalPrice, // This is the final calculated price (Base + Miles)
           miles: miles.toFixed(2),
-          bookingDate: startISO
+          bookingDate: startISO,
+          locationId: saas_location_id
         })
       });
-      console.log("Webhook sent successfully");
+      console.log("Webhook sent to LeadConnector successfully");
     } catch (webhookError) {
-      // We log the error but don't stop the response because the DB save worked
+      // If the webhook fails, we still want the user to see their confirmation
       console.error("Webhook failed to send:", webhookError);
     }
     // --- END WEBHOOK SECTION ---
 
-    res.json({
-      success: true,
-      // ... rest of your existing response ...
-
+    // Send the final response to the browser/widget
     res.json({
       success: true,
       message: "Booking confirmed.",
@@ -781,11 +786,14 @@ app.post("/api/book", async (req, res) => {
       tax: taxAmount.toFixed(2),
       miles: miles.toFixed(2)
     });
+
   } catch (err) {
+    // If anything in the 'try' block fails, we undo the DB changes
     await client.query("ROLLBACK");
     console.error("Booking Error:", err);
     res.status(500).json({ error: err.message });
   } finally {
+    // Always release the database connection back to the pool
     client.release();
   }
 });
