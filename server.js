@@ -738,6 +738,41 @@ app.post("/api/book", async (req, res) => {
 
     await client.query("COMMIT");
 
+    // ... existing code above ...
+    await client.query("COMMIT");
+
+    // --- START WEBHOOK SECTION ---
+    try {
+      const CRM_WEBHOOK_URL = process.env.CRM_WEBHOOK_URL || "https://services.leadconnectorhq.com/hooks/VXE0UY17p7wnxdZ3sOLc/webhook-trigger/Je8HE3oHLu0Moe22PIGt";
+      
+      await fetch(CRM_WEBHOOK_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          firstName,
+          lastName,
+          email,
+          phone,
+          pickup,
+          dropoff,
+          totalPrice,
+          miles: miles.toFixed(2),
+          bookingDate: startISO
+        })
+      });
+      console.log("Webhook sent successfully");
+    } catch (webhookError) {
+      // We log the error but don't stop the response because the DB save worked
+      console.error("Webhook failed to send:", webhookError);
+    }
+    // --- END WEBHOOK SECTION ---
+
+    res.json({
+      success: true,
+      // ... rest of your existing response ...
+
     res.json({
       success: true,
       message: "Booking confirmed.",
