@@ -270,7 +270,7 @@ async function saveSettings() {
     const payload = {
         userId: locationId,
         maps_api_key: document.getElementById('maps_key').value,
-        crm_api_key: document.getElementById('CRM_key')?.value, // Added safety
+        saas_location_id: document.getElementById('CRM_key')?.value, // Added safety
         tax_rate: document.getElementById('tax_rate')?.value || 0,
         fleet: fleet,
         peak_windows: peakTimes,
@@ -314,15 +314,28 @@ app.post('/api/update-profile-full', async (req, res) => {
     fixed_rates,
     events,
     maps_api_key,
-    crm_api_key, // Incoming API Key/Token
+    saas_location_id,
     tax_rate,
     is_booking_enabled, // (unused here, but kept)
     peak_windows // was referenced later but not destructured
   } = req.body;
 
-  // THE BRIDGE: Map CRM names to SaaS Database names
-  const saas_location_id = userId;
-  const crm_token = crm_api_key;
+/// THE BRIDGE: Map Database names to Webhook variables
+// We use 'target' in the name to avoid redeclaring existing variables
+const targetLocation = user.saas_location_id; 
+const targetWebhook = user.crm_api_key; 
+
+// Now, when you fetch, use those 'target' names:
+await fetch(targetWebhook, { 
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    locationId: targetLocation,
+    totalPrice: totalPrice,
+    miles: miles
+    // ... other data
+  })
+});
 
   try {
     await pool.query('BEGIN');
@@ -590,6 +603,7 @@ async function getCurrentMultiplier(locationId) {
     }
 }
 
+
     const user = userRes.rows[0];
     const service = serviceRes.rows[0];
     
@@ -852,7 +866,7 @@ app.get("/api/get-profile/:userId", async (req, res) => {
     if (result.rows.length === 0) {
       return res.json({
         maps_api_key: "",
-        crm_api_key: "",
+        saas_location_id: "",
         tax_rate: 0,
         is_booking_enabled: true
       });
@@ -972,39 +986,52 @@ app.post("/api/create-booking", async (req, res) => {
       total_price
     } = req.body;
 
+    // 1. Save to your local Database
     await pool.query(
-      `
-      INSERT INTO bookings (
+      `INSERT INTO bookings (
         saas_location_id, vehicle_slot_id, first_name, last_name,
         email, phone, pickup_address, pickup_coords,
         dropoff_address, dropoff_coords, start_time, total_price
-      )
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
-      `,
-      [
-        saas_location_id,
-        vehicle_slot_id,
-        first_name,
-        last_name,
-        email,
-        phone,
-        pickup_address,
-        pickup_coords,
-        dropoff_address,
-        dropoff_coords,
-        start_time,
-        total_price
-      ]
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+      [saas_location_id, vehicle_slot_id, first_name, last_name, email, phone, pickup_address, pickup_coords, dropoff_address, dropoff_coords, start_time, total_price]
     );
+
+    // 2. THE BRIDGE: Get the Webhook URL for this specific user
+    const userRes = await pool.query("SELECT crm_api_key FROM users WHERE saas_location_id = $1", [saas_location_id]);
+    
+    const webhookUrl = userRes.rows[0]?.crm_api_key;
+
+    // 3. Trigger the Webhook to GHL
+    if (webhookUrl && webhookUrl.startsWith('http')) {
+      fetch(webhookUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          locationId: saas_location_id,
+          firstName: first_name,
+          lastName: last_name,
+          email: email,
+          phone: phone,
+          pickup: pickup_address,
+          dropoff: dropoff_address,
+          totalPrice: total_price,
+          startTime: start_time
+        })
+      }).catch(e => console.error("GHL Webhook Trigger Failed:", e)); 
+      // Note: We don't 'await' this fetch so the user gets a fast response
+    }
 
     return res.json({ success: true });
 
   } catch (err) {
     console.error("Booking Error:", err);
-    return res.status(500).json({ error: "Routing failed" });
+    if (!res.headersSent) {
+      return res.status(500).json({ error: "Booking failed" });
+    }
   }
 });
 
+// --- SERVER START ---
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
   console.log(`🚀 Chauffeur SaaS Backend running on port ${PORT}`);
