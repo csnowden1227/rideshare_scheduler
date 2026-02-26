@@ -13,7 +13,7 @@ import https from 'https'; // Required for your getTravelTime function
 
 dotenv.config();
 
-const app = express();
+
 
 /*****************************************************
  1️⃣ DATABASE CONFIGURATION
@@ -429,8 +429,7 @@ app.post('/api/update-profile-full', async (req, res) => {
     console.log(`✅ Blended Profile saved for: ${userId}`);
     res.json({ success: true, message: 'All settings and slots saved!' });
   } catch (err) {
-    // If anything fails, ROLLBACK so we don't have partial data
-    await pool.query('ROLLBACK');
+      await pool.query('ROLLBACK');
     console.error('❌ Blended Save Error:', err);
     res.status(500).json({ error: err.message });
   }
@@ -775,61 +774,55 @@ app.post('/api/sync-fleet', async (req, res) => {
 });
 
 // 9️⃣ GET PROFILE SETTINGS
+// 1. Get Profile Route
 app.get("/api/get-profile/:userId", async (req, res) => {
-  const { userId } = req.params;
-
-  try {
-    const result = await pool.query("SELECT * FROM users WHERE id = $1", [userId]);
-    
-    if (result.rows.length === 0) {
-      // If user doesn't exist yet, send back empty defaults
-      return res.json({ 
-        maps_api_key: "", 
-        CRM_One_Source_api_key: "", 
-        tax_rate: 0, 
-        is_booking_enabled: true 
-      });
+    const { userId } = req.params;
+    try {
+        const result = await pool.query("SELECT * FROM users WHERE id = $1", [userId]);
+        if (result.rows.length === 0) {
+            return res.json({ 
+                maps_api_key: "", 
+                crm_api_key: "", 
+                tax_rate: 0, 
+                is_booking_enabled: true 
+            });
+        }
+        res.json(result.rows[0]);
+    } catch (err) {
+        console.error("Error fetching profile:", err.message);
+        res.status(500).json({ error: "Failed to load settings." });
     }
+}); // <--- Correctly closes get-profile
 
-    res.json(result.rows[0]);
-  } catch (err) {
-    console.error("Error fetching profile:", err.message);
-    res.status(500).json({ error: "Failed to load settings." });
-  }
+// 2. Get Quote Route
+app.post('/api/get-quote', async (req, res) => {
+    try {
+        const { locationId, distance, serviceType } = req.body;
+        const baseRate = 2.50; 
+        const multiplier = await getCurrentMultiplier(locationId);
+        const totalPrice = (distance * baseRate) * multiplier;
+        
+        res.json({ 
+            quote: totalPrice.toFixed(2), 
+            appliedMultiplier: multiplier 
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+}); // <--- Correctly closes get-quote
 
-  app.post('/api/get-quote', async (req, res) => {
-    const { locationId, distance, serviceType } = req.body;
-    
-    // Get the base rate from service_types table
-    const baseRate = 2.50; // (or fetch from DB)
-    
-    // Get the active multiplier (Rush Hour or Event)
-    const multiplier = await getCurrentMultiplier(locationId);
-    
-    // Calculate final price
-    const totalPrice = (distance * baseRate) * multiplier;
-    
-    res.json({ 
-        quote: totalPrice.toFixed(2), 
-        appliedMultiplier: multiplier 
-    });
-
-    // Add this to server.js
+// 3. DB Check Route
 app.get('/api/db-check', async (req, res) => {
     try {
-        const result = await client.query('SELECT NOW()'); // Asks DB for current time
+        const result = await pool.query('SELECT NOW()'); 
         res.json({ 
             status: "Connected", 
             timestamp: result.rows[0].now 
         });
-
     } catch (err) {
         res.status(500).json({ status: "Error", error: err.message });
     }
-});
-
-
-});
+}); // <--- Correctly closes db-check
 
 // Database logic (Assuming PostgreSQL/Knex or similar)
 // GET: Fetch profile for the widget
