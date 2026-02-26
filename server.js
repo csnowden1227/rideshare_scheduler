@@ -769,18 +769,23 @@ app.post('/api/sync-fleet', async (req, res) => {
 
 } catch (error) {
   console.error("❌ Sync Error:", error);
-  res.status(500).json({ success: false, error: "Failed to sync fleet from CRM" });
+  return res
+    .status(500)
+    .json({ success: false, error: "Failed to sync fleet from CRM" });
 }
-}); // ✅ closes whatever app.post/app.get this catch belongs to
+});
 
 // 9️⃣ GET PROFILE SETTINGS
 
-// 1. Get Profile Route (by userId)
+// 1. Get Profile Route
 app.get("/api/get-profile/:userId", async (req, res) => {
   const { userId } = req.params;
 
   try {
-    const result = await pool.query("SELECT * FROM users WHERE id = $1", [userId]);
+    const result = await pool.query(
+      "SELECT * FROM users WHERE id = $1",
+      [userId]
+    );
 
     if (result.rows.length === 0) {
       return res.json({
@@ -792,40 +797,46 @@ app.get("/api/get-profile/:userId", async (req, res) => {
     }
 
     return res.json(result.rows[0]);
+
   } catch (err) {
     console.error("Error fetching profile:", err.message);
     return res.status(500).json({ error: "Failed to load settings." });
   }
-}); // ✅ closes get-profile
+});
 
 // 2. Get Quote Route
-app.post("/api/get-quote", async (req, res) => {
-  try {
-    const { locationId, distance, serviceType } = req.body; // serviceType unused but fine
-
-    const baseRate = 2.5;
-    const multiplier = await getCurrentMultiplier(locationId);
-    const totalPrice = distance * baseRate * multiplier;
-
-    return res.json({
-      quote: totalPrice.toFixed(2),
-      appliedMultiplier: multiplier
-    });
-  } catch (err) {
-    return res.status(500).json({ error: err.message });
-  }
-}); // ✅ closes get-quote
+app.post('/api/get-quote', async (req, res) => {
+    try {
+        const { locationId, distance, serviceType } = req.body;
+        const baseRate = 2.50; 
+        const multiplier = await getCurrentMultiplier(locationId);
+        const totalPrice = (distance * baseRate) * multiplier;
+        
+        res.json({ 
+            quote: totalPrice.toFixed(2), 
+            appliedMultiplier: multiplier 
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+}); // <--- Correctly closes get-quote
 
 // 3. DB Check Route
 app.get("/api/db-check", async (req, res) => {
   try {
     const result = await pool.query("SELECT NOW()");
+    
     return res.json({
       status: "Connected",
       timestamp: result.rows[0].now
     });
+
   } catch (err) {
-    return res.status(500).json({ status: "Error", error: err.message });
+    console.error("DB Check Error:", err);
+    return res.status(500).json({
+      status: "Error",
+      error: err.message
+    });
   }
 }); // ✅ closes db-check
 
@@ -845,18 +856,27 @@ app.get("/api/db-check", async (req, res) => {
 // 1. ENDPOINT FOR THE WIDGET: Fetch specific configuration (by locationId)
 // ✅ Keep ONE version of /api/get-profile. If you need BOTH "userId" and "locationId",
 // rename one of them to avoid route collision.
+// 1. ENDPOINT FOR THE WIDGET: Fetch specific configuration
 app.get("/api/get-profile-widget/:locationId", async (req, res) => {
   try {
     const { locationId } = req.params;
 
-    // Use your existing Postgres pool (not db)
-    const profile = await pool.query("SELECT * FROM profiles WHERE location_id = $1", [locationId]);
-    const fleet = await pool.query("SELECT * FROM fleet_vehicles WHERE location_id = $1", [locationId]);
+    // Use pool (your Postgres connection), not db
+    const profile = await pool.query(
+      "SELECT * FROM profiles WHERE location_id = $1",
+      [locationId]
+    );
+
+    const fleet = await pool.query(
+      "SELECT * FROM fleet_vehicles WHERE location_id = $1",
+      [locationId]
+    );
 
     if (profile.rows.length === 0) {
       return res.status(404).json({ error: "Location Not Found" });
     }
 
+    // Map data to return to widget
     return res.json({
       maps_key: profile.rows[0].maps_api_key,
       tax_rate: profile.rows[0].tax_rate,
@@ -865,6 +885,7 @@ app.get("/api/get-profile-widget/:locationId", async (req, res) => {
       peak_windows: profile.rows[0].peak_windows,
       events: profile.rows[0].events
     });
+
   } catch (err) {
     console.error("Database Error:", err);
     return res.status(500).send("Database Error");
@@ -896,7 +917,7 @@ app.post("/api/create-booking", async (req, res) => {
         email, phone, pickup_address, pickup_coords,
         dropoff_address, dropoff_coords, start_time, total_price
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
       `,
       [
         saas_location_id,
@@ -915,11 +936,12 @@ app.post("/api/create-booking", async (req, res) => {
     );
 
     return res.json({ success: true });
+
   } catch (err) {
     console.error("Booking Error:", err);
     return res.status(500).json({ error: "Routing failed" });
   }
-}); // ✅ closes create-booking
+});
 
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
