@@ -304,71 +304,48 @@ app.get('/api/test', (req, res) => {
     }
 }
 
-/*****************************************************
- 4️⃣ BUSINESS PROFILE (MAPS API, TAX, & KILL SWITCH)
-*****************************************************/
 app.post('/api/update-profile-full', async (req, res) => {
+  // We pull 'saas_location_id' directly from the body. 
+  // DO NOT use 'const saas_location_id = ...' again below this line.
   const {
-    userId, // The GHL/CRM location_id
+    saas_location_id, 
+    crm_api_key, 
+    maps_api_key,
+    tax_rate,
     fleet,
     fixed_rates,
-    events,
-    maps_api_key,
-    saas_location_id,
-    tax_rate,
-    is_booking_enabled, // (unused here, but kept)
-    peak_windows // was referenced later but not destructured
+    peak_windows
   } = req.body;
 
-/// THE BRIDGE: Map Database names to Webhook variables
-// We use 'target' in the name to avoid redeclaring existing variables
-const targetLocation = user.saas_location_id; 
-const targetWebhook = user.crm_api_key; 
-
-// Now, when you fetch, use those 'target' names:
-await fetch(targetWebhook, { 
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({
-    locationId: targetLocation,
-    totalPrice: totalPrice,
-    miles: miles
-    // ... other data
-  })
-});
-
   try {
-    await pool.query('BEGIN');
-
-    // 1. UPDATE MAIN PROFILE (The "Business Profile")
     await pool.query(
-      `
-      INSERT INTO profiles (
-        location_id,
-        crm_token,
-        maps_api_key,
-        fleet,
-        fixed_routes,
-        tax_rate
-      )
-      VALUES ($1, $2, $3, $4, $5, $6)
-      ON CONFLICT (location_id)
-      DO UPDATE SET
+      `INSERT INTO profiles (
+        saas_location_id, crm_token, maps_api_key, tax_rate, fleet, fixed_routes, peak_windows
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+      ON CONFLICT (saas_location_id) 
+      DO UPDATE SET 
         crm_token = EXCLUDED.crm_token,
         maps_api_key = EXCLUDED.maps_api_key,
+        tax_rate = EXCLUDED.tax_rate,
         fleet = EXCLUDED.fleet,
         fixed_routes = EXCLUDED.fixed_routes,
-        tax_rate = EXCLUDED.tax_rate
-      `,
+        peak_windows = EXCLUDED.peak_windows`,
       [
-        saas_location_id,
-        crm_token,
-        maps_api_key,
-        JSON.stringify(fleet),
-        JSON.stringify(fixed_rates),
-        tax_rate || 0
+        saas_location_id, 
+        crm_api_key, 
+        maps_api_key, 
+        tax_rate || 0, 
+        JSON.stringify(fleet || []), 
+        JSON.stringify(fixed_rates || []), 
+        JSON.stringify(peak_windows || [])
       ]
     );
+    res.json({ success: true });
+  } catch (err) {
+    console.error("DB Sync Error:", err);
+    res.status(500).json({ error: "Database alignment failed" });
+  }
+});
 
     // 2. REFRESH SERVICES (The "Booking Slots")
     await pool.query('DELETE FROM services WHERE saas_location_id = $1', [saas_location_id]);
@@ -470,12 +447,13 @@ await fetch(targetWebhook, {
 
     console.log(`✅ Blended Profile saved for: ${userId}`);
     res.json({ success: true, message: 'All settings and slots saved!' });
+
   } catch (err) {
-      await pool.query('ROLLBACK');
-    console.error('❌ Blended Save Error:', err);
-    res.status(500).json({ error: err.message });
-  }
-});
+    await pool.query('ROLLBACK');
+    console.error("❌ Blended Save Error:", err);
+    res.status(500).json({ error: "Failed to save profile settings." });
+ }
+
    
 /*****************************************************
  5️⃣ AVAILABILITY ENGINE
@@ -579,7 +557,7 @@ async function getCurrentMultiplier(locationId) {
     try {
         // 1. Check for Special Events First (Date-based)
         const eventResult = await pool.query(
-            "SELECT multiplier FROM event_multipliers WHERE location_id = $1 AND event_date = CURRENT_DATE",
+            "SELECT multiplier FROM event_multipliers WHERE saas_location_id = $1 AND event_date = CURRENT_DATE",
             [locationId]
         );
         if (eventResult.rows.length > 0) return parseFloat(eventResult.rows[0].multiplier);
@@ -587,7 +565,7 @@ async function getCurrentMultiplier(locationId) {
         // 2. Check for Daily Peak Windows (Time-based Rush Hours)
         const peakResult = await pool.query(
             `SELECT multiplier FROM service_peak_multipliers 
-             WHERE location_id = $1 
+             WHERE saas_location_id = $1 
              AND CURRENT_TIME AT TIME ZONE 'UTC' BETWEEN start_time AND end_time`, 
              [locationId]
         );
@@ -853,25 +831,30 @@ app.post('/api/sync-fleet', async (req, res) => {
 
 // 9️⃣ GET PROFILE SETTINGS
 
-// 1. Get Profile Route
-app.get("/api/get-profile/:userId", async (req, res) => {
-  const { userId } = req.params;
+app.get("/api/get-profile/:locationId", async (req, res) => {
+  const { locationId } = req.params; // Using the GHL Location ID from the URL
 
   try {
+    // UPDATED: Search by saas_location_id column
     const result = await pool.query(
-      "SELECT * FROM users WHERE id = $1",
-      [userId]
+      "SELECT * FROM users WHERE saas_location_id = $1",
+      [locationId]
     );
 
     if (result.rows.length === 0) {
+      // Return defaults so the frontend doesn't break on a new user
       return res.json({
         maps_api_key: "",
-        saas_location_id: "",
+        crm_api_key: "", // This is your Webhook URL
+        saas_location_id: locationId,
         tax_rate: 0,
-        is_booking_enabled: true
+        fleet: [],        // Important: Frontend needs these to be arrays
+        peak_windows: [],
+        fixed_rates: []
       });
     }
 
+    // Return the found user record
     return res.json(result.rows[0]);
 
   } catch (err) {
@@ -939,12 +922,12 @@ app.get("/api/get-profile-widget/:locationId", async (req, res) => {
 
     // Use pool (your Postgres connection), not db
     const profile = await pool.query(
-      "SELECT * FROM profiles WHERE location_id = $1",
+      "SELECT * FROM profiles WHERE saas_location_id = $1",
       [locationId]
     );
 
     const fleet = await pool.query(
-      "SELECT * FROM fleet_vehicles WHERE location_id = $1",
+      "SELECT * FROM fleet_vehicles WHERE saas_location_id = $1",
       [locationId]
     );
 
@@ -997,12 +980,16 @@ app.post("/api/create-booking", async (req, res) => {
     );
 
     // 2. THE BRIDGE: Get the Webhook URL for this specific user
-    const userRes = await pool.query("SELECT crm_api_key FROM users WHERE saas_location_id = $1", [saas_location_id]);
+    const userRes = await pool.query(
+      "SELECT crm_api_key FROM users WHERE saas_location_id = $1", 
+      [saas_location_id]
+    );
     
     const webhookUrl = userRes.rows[0]?.crm_api_key;
 
     // 3. Trigger the Webhook to GHL
     if (webhookUrl && webhookUrl.startsWith('http')) {
+      // We don't 'await' this so the customer gets their confirmation instantly
       fetch(webhookUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1015,18 +1002,19 @@ app.post("/api/create-booking", async (req, res) => {
           pickup: pickup_address,
           dropoff: dropoff_address,
           totalPrice: total_price,
-          startTime: start_time
+          startTime: start_time,
+          vehicleId: vehicle_slot_id
         })
-      }).catch(e => console.error("GHL Webhook Trigger Failed:", e)); 
-      // Note: We don't 'await' this fetch so the user gets a fast response
+      }).catch(e => console.error("GHL Webhook Trigger Failed:", e));
     }
 
-    return res.json({ success: true });
+    // 4. Send success back to the frontend widget
+    return res.json({ success: true, message: "Booking confirmed" });
 
   } catch (err) {
     console.error("Booking Error:", err);
     if (!res.headersSent) {
-      return res.status(500).json({ error: "Booking failed" });
+      return res.status(500).json({ error: "Booking could not be processed" });
     }
   }
 });

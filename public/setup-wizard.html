@@ -32,21 +32,20 @@
                     <span class="w-7 h-7 bg-slate-800 text-white rounded-lg flex items-center justify-center text-xs italic">01</span>
                     Credentials & Tax Mapping
                 </h2>
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <div>
-                        <label class="block text-[10px] font-bold mb-2 uppercase text-slate-400">Google Maps API Key</label>
-                        <input type="password" id="maps_key" class="input-mini" placeholder="Enter API Key">
-                    </div>
-                    <div>
-                        <label class="block text-[10px] font-bold mb-2 uppercase text-slate-400">CRM Token (Business Profile)</label>
-                        <input type="password" id="crm_api_key" class="input-mini" placeholder="Enter CRM Token">
-                    </div>
-                    <div>
-                        <label class="block text-[10px] font-bold mb-2 uppercase text-slate-400">Tax Rate (%)</label>
-                        <input type="number" step="0.01" id="tax_rate" class="input-mini" placeholder="e.g. 8.25">
-                    </div>
-                </div>
-            </div>
+<div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+    <div>
+        <label class="block text-[10px] font-bold mb-2 uppercase text-slate-400">Google Maps API Key</label>
+        <input type="password" id="maps_key" class="input-mini" placeholder="Enter API Key">
+    </div>
+    <div>
+        <label class="block text-[10px] font-bold mb-2 uppercase text-slate-400">CRM Webhook URL</label>
+        <input type="text" id="crm_api_key" class="input-mini" placeholder="https://services.leadconnector...">
+    </div>
+    <div>
+        <label class="block text-[10px] font-bold mb-2 uppercase text-slate-400">Tax Rate (%)</label>
+        <input type="number" step="0.01" id="tax_rate" class="input-mini" placeholder="e.g. 8.25">
+    </div>
+</div>
 
             <div class="card">
                 <h2 class="text-lg font-bold mb-6 flex items-center gap-3">
@@ -233,75 +232,99 @@
     }
 
     async function loadFromBackend() {
-        document.getElementById('display-loc-id').innerText = locationId;
-        updateEmbedCode();
-        try {
-            const res = await fetch(`${BACKEND_URL}/api/get-profile/${locationId}`);
-            const data = await res.json();
-            if (data && !data.error) {
-                document.getElementById('maps_key').value = data.maps_api_key || '';
-                document.getElementById('crm_api_key').value = data.crm_api_key || '';
-                document.getElementById('tax_rate').value = data.tax_rate || '0.00';
-                
-                const plan = data.plan_name || 'Starter';
-                document.getElementById('plan-badge').innerText = plan + " Plan";
-                const slotCount = (plan === 'Pro') ? 3 : (plan === 'Premium' ? 2 : 1);
-                
-                renderFleet(slotCount, data.fleet || []);
-                if (data.peak_windows) data.peak_windows.forEach(p => addPeakRow(p));
-                if (data.fixed_rates && data.fixed_rates.length > 0) {
-                    document.getElementById('route_count').value = data.fixed_rates.length;
-                    syncRouteFields(data.fixed_rates);
-                }
-                if (data.events) data.events.forEach(e => addEventRow(e));
-            } else {
-                renderFleet(1, []);
-            }
-        } catch (e) { renderFleet(1, []); }
-    }
+    // Standardize: Use locationId for the frontend variable
+    document.getElementById('display-loc-id').innerText = locationId;
+    updateEmbedCode();
 
-    async function saveToBackend() {
-        const btn = document.getElementById('save-btn');
-        btn.innerText = "SYNCING...";
-        const payload = {
-            userId: locationId,
-            maps_api_key: document.getElementById('maps_key').value,
-            crm_api_key: document.getElementById('crm_api_key').value,
-            tax_rate: parseFloat(document.getElementById('tax_rate').value) || 0,
-            fleet: Array.from(document.querySelectorAll('#fleet-body tr')).map(tr => ({
-                vehicle_id: tr.cells[0].innerText,
-                vehicle_type: tr.querySelector('.v-type').value,
-                base_rate: parseFloat(tr.querySelector('.v-base').value) || 0,
-                mile_rate: parseFloat(tr.querySelector('.v-mile').value) || 0,
-                calendar_id: tr.querySelector('.v-cal').value
-            })),
-            peak_windows: Array.from(document.querySelectorAll('.peak-row')).map(r => ({
-                day: r.querySelector('.p-day').value,
-                start_time: r.querySelector('.p-start').value,
-                end_time: r.querySelector('.p-end').value,
-                multiplier: parseFloat(r.querySelector('.p-mult').value) || 1
-            })),
-            fixed_rates: Array.from(document.querySelectorAll('.route-row')).map(r => ({
-                pickup: r.querySelector('.r-pickup').value,
-                dropoff: r.querySelector('.r-dropoff').value,
-                price: parseFloat(r.querySelector('.r-price').value) || 0
-            })),
-            events: Array.from(document.querySelectorAll('.event-row')).map(e => ({
-                name: e.querySelector('.e-name').value,
-                date: e.querySelector('.e-date').value,
-                multiplier: parseFloat(e.querySelector('.e-mult').value) || 1
-            })).filter(e => e.name) 
-        };
-        try {
-            await fetch(`${BACKEND_URL}/api/update-profile`, {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify(payload)
-            });
-            alert("Success: Pricing formula and settings synced.");
-        } catch (e) { alert("Sync Error"); }
-        finally { btn.innerText = "Sync to Cloud"; }
+    try {
+        const res = await fetch(`${BACKEND_URL}/api/get-profile/${locationId}`);
+        const data = await res.json();
+
+        if (data && !data.error) {
+            document.getElementById('maps_key').value = data.maps_api_key || '';
+            
+            // Webhook URL (stored in crm_api_key column)
+            const webhookInput = document.getElementById('crm_api_key');
+            webhookInput.value = data.crm_api_key || '';
+            webhookInput.title = data.crm_api_key || ''; 
+            
+            document.getElementById('tax_rate').value = data.tax_rate || '0.00';
+            
+            const plan = data.plan_name || 'Starter';
+            document.getElementById('plan-badge').innerText = plan + " Plan";
+            const slotCount = (plan === 'Pro') ? 3 : (plan === 'Premium' ? 2 : 1);
+            
+            renderFleet(slotCount, data.fleet || []);
+            
+            if (data.peak_windows) data.peak_windows.forEach(p => addPeakRow(p));
+            if (data.fixed_rates && data.fixed_rates.length > 0) {
+                document.getElementById('route_count').value = data.fixed_rates.length;
+                syncRouteFields(data.fixed_rates);
+            }
+            if (data.events) data.events.forEach(e => addEventRow(e));
+        } else {
+            renderFleet(1, []);
+        }
+    } catch (e) { 
+        console.error("Load error:", e);
+        renderFleet(1, []); 
     }
+}
+
+async function saveToBackend() {
+    const btn = document.getElementById('save-btn');
+    btn.innerText = "SYNCING...";
+    
+    // THE PAYLOAD: Mapping local variables to Database/CRM keys
+    const payload = {
+        saas_location_id: locationId, // Matches your DB column name
+        maps_api_key: document.getElementById('maps_key').value,
+        crm_api_key: document.getElementById('crm_api_key').value, // This is the Webhook URL
+        tax_rate: parseFloat(document.getElementById('tax_rate').value) || 0,
+        fleet: Array.from(document.querySelectorAll('#fleet-body tr')).map(tr => ({
+            vehicle_id: tr.cells[0].innerText,
+            vehicle_type: tr.querySelector('.v-type').value,
+            base_rate: parseFloat(tr.querySelector('.v-base').value) || 0,
+            mile_rate: parseFloat(tr.querySelector('.v-mile').value) || 0,
+            calendar_id: tr.querySelector('.v-cal').value
+        })),
+        peak_windows: Array.from(document.querySelectorAll('.peak-row')).map(r => ({
+            day: r.querySelector('.p-day').value,
+            start_time: r.querySelector('.p-start').value,
+            end_time: r.querySelector('.p-end').value,
+            multiplier: parseFloat(r.querySelector('.p-mult').value) || 1
+        })),
+        fixed_rates: Array.from(document.querySelectorAll('.route-row')).map(r => ({
+            pickup: r.querySelector('.r-pickup').value,
+            dropoff: r.querySelector('.r-dropoff').value,
+            price: parseFloat(r.querySelector('.r-price').value) || 0
+        })),
+        events: Array.from(document.querySelectorAll('.event-row')).map(e => ({
+            name: e.querySelector('.e-name').value,
+            date: e.querySelector('.e-date').value,
+            multiplier: parseFloat(e.querySelector('.e-mult').value) || 1
+        })).filter(e => e.name) 
+    };
+
+    try {
+        const response = await fetch(`${BACKEND_URL}/api/update-profile`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(payload)
+        });
+        
+        if (response.ok) {
+            alert("Success: All settings and pricing formulas synced.");
+        } else {
+            const errorData = await response.json();
+            alert("Error: " + (errorData.error || "Server failed to save."));
+        }
+    } catch (e) { 
+        alert("Sync Error: Check your internet connection."); 
+    } finally { 
+        btn.innerText = "Sync to Cloud"; 
+    }
+}
 
     function copyEmbed() {
         navigator.clipboard.writeText(document.getElementById('embed-box').innerText);
