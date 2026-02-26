@@ -14,6 +14,37 @@ dotenv.config();
 
 const app = express(); // ✅ ADD THIS
 
+// 1. Define it at the top
+const CRM_WEBHOOK_URL = process.env.CRM_WEBHOOK_URL || "https://services.leadconnectorhq.com/hooks/VXE0UY17p7wnxdZ3sOLc/webhook-trigger/Je8HE3oHLu0Moe22PIGt";
+
+// 2. Find your booking endpoint
+app.post('/api/create-booking', async (req, res) => {
+    const bookingData = req.body;
+
+    try {
+        // ... (Your code to save booking to Postgres) ...
+
+        // 3. TRIGGER THE WEBHOOK HERE
+        await fetch(CRM_WEBHOOK_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                customer_name: bookingData.name,
+                pickup: bookingData.pickup,
+                dropoff: bookingData.dropoff,
+                // Ensure your formula is used here
+                total_fare: (bookingData.base + (bookingData.miles * bookingData.rate)) * bookingData.multiplier,
+                timestamp: new Date()
+            })
+        });
+
+        res.status(200).json({ success: true });
+    } catch (error) {
+        console.error("Webhook failed", error);
+        res.status(500).json({ error: "Booking saved but CRM sync failed" });
+    }
+});
+
 /*****************************************************
  1️⃣ DATABASE CONFIGURATION
 *****************************************************/
