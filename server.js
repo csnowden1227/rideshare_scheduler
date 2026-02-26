@@ -713,6 +713,7 @@ app.post("/api/book", async (req, res) => {
       startTime.getTime() + (service.duration_min || 60) * 60000
     );
 
+    // 1. SAVE TO DATABASE
     await client.query(
       `INSERT INTO bookings (
         user_id, service_id, start_time, end_time,
@@ -736,20 +737,11 @@ app.post("/api/book", async (req, res) => {
       ]
     );
 
+    // 2. COMMIT THE DATABASE TRANSACTION (Only do this once)
     await client.query("COMMIT");
 
-    // ... existing code above ...
-    await client.query("COMMIT");
-
-    // --- START WEBHOOK SECTION ---
+    // 3. SEND TO CRM WEBHOOK
     try {
-      const CRM_WEBHOOK_URL = process.env.CRM_WEBHOOK_URL || "https://services.leadconnectorhq.com/hooks/VXE0UY17p7wnxdZ3sOLc/webhook-trigger/Je8HE3oHLu0Moe22PIGt";
-      
-await client.query("COMMIT");
-
-    // --- START WEBHOOK SECTION ---
-    try {
-      // Using your LeadConnector URL
       const CRM_WEBHOOK_URL = "https://services.leadconnectorhq.com/hooks/VXE0UY17p7wnxdZ3sOLc/webhook-trigger/Je8HE3oHLu0Moe22PIGt";
       
       await fetch(CRM_WEBHOOK_URL, {
@@ -764,7 +756,7 @@ await client.query("COMMIT");
           phone,
           pickup,
           dropoff,
-          totalPrice, // This is the final calculated price (Base + Miles)
+          totalPrice, 
           miles: miles.toFixed(2),
           bookingDate: startISO,
           locationId: saas_location_id
@@ -772,12 +764,11 @@ await client.query("COMMIT");
       });
       console.log("Webhook sent to LeadConnector successfully");
     } catch (webhookError) {
-      // If the webhook fails, we still want the user to see their confirmation
+      // Log it, but don't fail the booking if the webhook is just slow
       console.error("Webhook failed to send:", webhookError);
     }
-    // --- END WEBHOOK SECTION ---
 
-    // Send the final response to the browser/widget
+    // 4. SEND FINAL RESPONSE TO USER
     res.json({
       success: true,
       message: "Booking confirmed.",
@@ -786,7 +777,6 @@ await client.query("COMMIT");
       tax: taxAmount.toFixed(2),
       miles: miles.toFixed(2)
     });
-
   } catch (err) {
     // If anything in the 'try' block fails, we undo the DB changes
     await client.query("ROLLBACK");
