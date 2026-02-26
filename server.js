@@ -279,35 +279,74 @@ app.get('/api/test', (req, res) => {
  4️⃣ BUSINESS PROFILE (MAPS API, TAX, & KILL SWITCH)
 *****************************************************/
 app.post('/api/update-profile-full', async (req, res) => {
-    const payload = req.body;
-    // Merging all fields from both versions
     const { 
-        userId, 
+        userId,             // The GHL/CRM location_id
         fleet, 
         fixed_rates, 
-        peak_windows, 
         events, 
         maps_api_key, 
-        ghl_api_key, 
+        crm_api_key,        // Incoming API Key/Token
         tax_rate, 
         is_booking_enabled 
-    } = payload;
+    } = req.body;
+
+    // THE BRIDGE: Map CRM names to SaaS Database names
+    const saas_location_id = userId; 
+    const crm_token = crm_api_key; 
 
     try {
-        // 1. Start Transaction (Safety first!)
         await pool.query('BEGIN');
 
-        // 2. UPDATE MAIN LOCATION CONFIG
-        // We use locations table but keep the tax_rate and maps_key from the old logic
+        // 1. UPDATE MAIN PROFILE (The "Business Profile")
+        // Uses 'profiles' table and maps crm_api_key to crm_token
         await pool.query(`
-            UPDATE locations 
-            SET maps_api_key = $1, 
-                ghl_api_key = $2, 
-                tax_rate = $3, 
-                is_booking_enabled = $4
-            WHERE location_id = $5`, 
-            [maps_api_key, ghl_api_key, tax_rate || 0, is_booking_enabled ?? true, userId]
+            INSERT INTO profiles (
+                location_id, 
+                crm_token, 
+                maps_api_key, 
+                fleet, 
+                fixed_routes, 
+                tax_rate
+            )
+            VALUES ($1, $2, $3, $4, $5, $6)
+            ON CONFLICT (location_id) 
+            DO UPDATE SET 
+                crm_token = EXCLUDED.crm_token,
+                maps_api_key = EXCLUDED.maps_api_key,
+                fleet = EXCLUDED.fleet,
+                fixed_routes = EXCLUDED.fixed_routes,
+                tax_rate = EXCLUDED.tax_rate`,
+            [saas_location_id, crm_token, maps_api_key, JSON.stringify(fleet), JSON.stringify(fixed_rates), tax_rate || 0]
         );
+
+        // 2. REFRESH SERVICES (The "Booking Slots")
+        // Aligns with your Create Booking const: saas_location_id & vehicle_slot_id
+        await pool.query('DELETE FROM services WHERE saas_location_id = $1', [saas_location_id]);
+        
+        if (fleet && fleet.length > 0) {
+            for (const vehicle of fleet) {
+                // We use saas_location_staff_id to satisfy your DB unique constraint
+                const staffId = `${saas_location_id}-${vehicle.vehicle_type.replace(/\s+/g, '-').toLowerCase()}`;
+                
+                await pool.query(`
+                    INSERT INTO services (
+                        saas_location_id, 
+                        vehicle_slot_id, 
+                        name, 
+                        base_rate, 
+                        per_mile_rate,
+                        saas_location_staff_id
+                    )
+                    VALUES ($1, $2, $3, $4, $5, $6)`,
+                    [
+                        saas_location_id, 
+                        vehicle.vehicle_slot_id || staffId, 
+                        vehicle.vehicle_type, 
+                        vehicle.base_rate, 
+                        vehicle.mile_rate,
+                        staffId
+                    ]
+                );
 
         // 3. UPSERT FLEET SLOTS (New Slot Logic)
         // This ensures vehicle_id (e.g., LOC-vehicle-1) is the permanent anchor
