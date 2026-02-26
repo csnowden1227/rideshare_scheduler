@@ -88,20 +88,20 @@
             </div>
 
             <div class="card">
-                <div class="flex justify-between items-center mb-6">
-                    <h2 class="text-lg font-bold flex items-center gap-3">
-                        <span class="w-7 h-7 bg-slate-800 text-white rounded-lg flex items-center justify-center text-xs italic">04</span>
-                        Fixed Route Geofencing
-                    </h2>
-                    <select id="route_count" onchange="syncRouteFields()" class="input-mini !w-32 font-bold text-blue-600">
-                        <option value="0">Add Routes</option>
-                        <option value="5">5 Routes</option>
-                        <option value="10">10 Routes</option>
-                    </select>
-                </div>
-                <div id="routes-container" class="space-y-3"></div>
-            </div>
-
+    <div class="flex justify-between items-center mb-6">
+        <h2 class="text-lg font-bold flex items-center gap-3">
+            <span class="w-7 h-7 bg-slate-800 text-white rounded-lg flex items-center justify-center text-xs italic">04</span>
+            Fixed Route Geofencing
+        </h2>
+        <select id="route_count" onchange="syncRouteFields()" class="input-mini !w-32 font-bold text-blue-600">
+            <option value="0">Add Routes</option>
+            <option value="1">1 Route</option>
+            <option value="5">5 Routes</option>
+            <option value="10">10 Routes</option>
+        </select>
+    </div>
+    <div id="routes-container" class="space-y-3"></div>
+</div>
             <div class="card">
                 <div class="flex justify-between items-center mb-6">
                     <h2 class="text-lg font-bold flex items-center gap-3">
@@ -292,6 +292,43 @@
         }
     }
 
+    async function runWebhookTest() {
+    const locId = document.getElementById('display-loc-id').innerText;
+    
+    // We grab the first vehicle ID from the fleet table to make it realistic
+    const firstVehicle = document.querySelector('.v-type')?.value || "Standard Sedan";
+
+    const testBooking = {
+        saas_location_id: locId,
+        firstName: "Webhook",
+        lastName: "Tester",
+        email: "test@example.com",
+        phone: "555-0199",
+        pickup: "123 Main St, Los Angeles, CA", // Make sure this matches a geofence keyword you saved!
+        dropoff: "LAX Airport",
+        serviceId: locId + "_vehicle_1", 
+        startISO: new Date().toISOString()
+    };
+
+    console.log("Sending test booking...", testBooking);
+
+    try {
+        const res = await fetch(`${BACKEND_URL}/api/book`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(testBooking)
+        });
+        const data = await res.json();
+        
+        if (data.success) {
+            alert(`✅ Success! CRM Webhook triggered.\nPrice Calculated: $${data.totalPrice}`);
+        } else {
+            alert(`❌ Server Error: ${data.error}`);
+        }
+    } catch (err) {
+        alert("❌ Failed to reach server. Is your backend running?");
+    }
+}
     const payload = {
             saas_location_id: locationId,
             maps_api_key: document.getElementById('maps_key').value,
@@ -341,6 +378,8 @@
         } finally { 
             btn.innerText = "Sync to Cloud"; 
         }
+
+        
 
     function copyEmbed() {
         const text = document.getElementById('embed-box').innerText;

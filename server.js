@@ -189,9 +189,7 @@ async function checkFixedRate(saas_location_id, pickupAddr, dropoffAddr) {
     const pickupMatch = pickupAddr.toLowerCase().includes(route.pickup_keyword.toLowerCase());
     const dropoffMatch = dropoffAddr.toLowerCase().includes(route.dropoff_keyword.toLowerCase());
 
-    if (pickupMatch && dropoffMatch) {
-      console.log(`🎯 Geofence Match Found: ${route.pickup_keyword} to ${route.dropoff_keyword} for $${route.fixed_price}`);
-      return parseFloat(route.fixed_price);
+    if (pickupMatch && dropoffMatch) {return parseFloat(route.fixed_price);
     }
   }
 
