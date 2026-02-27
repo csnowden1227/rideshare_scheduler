@@ -152,44 +152,41 @@
     }
 
     function renderFleet(count, savedFleet = []) {
-        const tbody = document.getElementById('fleet-body');
-        if (!tbody) return;
-        tbody.innerHTML = "";
-        
-        for (let i = 1; i <= count; i++) {
-            const slotId = `${locationId}_vehicle_${i}`;
-            const data = (savedFleet && savedFleet.length > 0) 
-                         ? savedFleet.find(f => f.vehicle_id === slotId) || {} 
-                         : {};
+    const body = document.getElementById('fleet-body');
+    body.innerHTML = ""; // Clear existing rows
 
-            const tr = document.createElement('tr');
-            tr.className = "border-b border-slate-50 last:border-0";
-            tr.innerHTML = `
-                <td class="py-4 font-mono text-[9px] text-slate-400 font-bold">${slotId}</td>
-                <td class="pr-2">
-                    <select class="v-type input-mini font-bold bg-white border border-slate-200">
-                        <option value="" disabled ${!data.vehicle_type ? 'selected' : ''}>Select Type</option>
-                        ${VEHICLE_LIST.map(v => `<option value="${v}" ${data.vehicle_type === v ? 'selected' : ''}>${v}</option>`).join('')}
-                    </select>
-                </td>
-                <td class="pr-2">
-                    <div class="flex items-center gap-1">
-                        <div class="flex flex-col flex-1">
-                            <span class="text-[8px] text-gray-400 ml-1 uppercase">Base $</span>
-                            <input type="number" class="v-base input-mini" value="${data.base_rate || 50}" placeholder="Base">
-                        </div>
-                        <div class="pt-4 text-gray-300 font-light">+</div>
-                        <div class="flex flex-col flex-1">
-                            <span class="text-[8px] text-gray-400 ml-1 uppercase">Rate/Mi</span>
-                            <input type="number" step="0.1" class="v-mile input-mini" value="${data.mile_rate || 3.5}" placeholder="Rate">
-                        </div>
-                    </div>
-                </td>
-                <td><input type="text" class="v-cal input-mini font-mono text-[10px]" value="${data.calendar_id || ''}" placeholder="Calendar ID"></td>
-            `;
-            tbody.appendChild(tr);
-        }
+    const vehicleOptions = [
+        "Standard Sedan", "Luxury Sedan", "SUV", 
+        "Luxury SUV", "Van", "Limousine"
+    ];
+
+    for (let i = 1; i <= count; i++) {
+        const row = document.createElement('tr');
+        const s = savedFleet.find(f => f.vehicle_id === `${locationId}_vehicle_${i}`) || {};
+        
+        // Generate options for the dropdown
+        const optionsHtml = vehicleOptions.map(opt => 
+            `<option value="${opt}" ${s.vehicle_type === opt ? 'selected' : ''}>${opt}</option>`
+        ).join('');
+
+        row.innerHTML = `
+            <td class="p-4 text-xs font-mono text-slate-400">${locationId}_vehicle_${i}</td>
+            <td class="p-4">
+                <select class="v-type input-mini w-full">${optionsHtml}</select>
+            </td>
+            <td class="p-4">
+                <input type="number" class="v-base input-mini" value="${s.base_rate || 0}" placeholder="Base $">
+            </td>
+            <td class="p-4">
+                <input type="number" class="v-mile input-mini" value="${s.mile_rate || 0}" placeholder="Per Mile $">
+            </td>
+            <td class="p-4">
+                <input type="text" class="v-cal input-mini" value="${s.calendar_id || ''}" placeholder="Calendar ID">
+            </td>
+        `;
+        body.appendChild(row);
     }
+}
 
     function addPeakRow(data = {}) {
         const tbody = document.getElementById('peak-body');
