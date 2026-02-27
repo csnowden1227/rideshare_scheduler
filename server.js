@@ -546,60 +546,54 @@ async function getCurrentMultiplier(locationId) {
     }
 }
 
-async function triggerCrmWebhook(locationId) {
+async function triggerCrmWebhook(bookingId) {
     try {
-        // 1. Fetch data
-        const res = await pool.query('SELECT * FROM profiles WHERE saas_location_id = $1', [locationId]);
-        const profile = res.rows[0];
+        // 1. Fetch the booking AND the user's tax rate in one go
+        const query = `
+            SELECT b.*, u.tax_rate, u.ghl_api_key as webhook_url
+            FROM bookings b
+            JOIN users u ON b.saas_location_id = u.id
+            WHERE b.booking_id = $1
+        `;
+        const res = await pool.query(query, [bookingId]);
+        const data = res.rows[0];
 
-        if (!profile || (!profile.webhook_url && !profile.crm_api_key)) {
-            console.log("No valid webhook URL found.");
+        if (!data || !data.webhook_url) {
+            console.log("No booking found or missing Webhook URL.");
             return;
         }
 
-        const targetUrl = profile.webhook_url || profile.crm_api_key;
+        // 2. The calculation (using your exact column: total_price)
+        const rawPrice = Number(data.total_price) || 0;
+        const tax = Number(data.tax_rate) || 0;
+        const finalCalculatedPrice = (rawPrice + (rawPrice * (tax / 100))).toFixed(2);
 
-        // 2. Do the math (Use a unique name like 'calculatedValue' to avoid redeclaration errors)
-        const fleetArray = Array.isArray(profile.fleet) ? profile.fleet : [];
-        const basePrice = fleetArray[0]?.base_price || 0; 
-        const taxRate = Number(profile.tax_rate) || 0;
-        const calculatedValue = (basePrice + (basePrice * (taxRate / 100))).toFixed(2);
-
-        // 3. Send to Webhook
-        console.log(`🚀 Sending payload to: ${targetUrl}`);
+        // 3. Send the payload with YOUR column names
+        console.log(`🚀 Sending Booking ${bookingId} to GHL...`);
         
-        const webhookResponse = await fetch(targetUrl, {
+        const response = await fetch(data.webhook_url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                source: "Rideshare Scheduler Admin",
-                timestamp: new Date().toISOString(),
-                
-                // DATA FIELDS FOR GHL
-                saas_location_id: profile.saas_location_id,
-                vehicle_slot_id: profile.vehicle_slot_id || "N/A",
-                pickup_address: profile.pickup_address || "Not Set",
-                dropoff_address: profile.dropoff_address || "Not Set",
-                firstName: profile.firstName || "Customer",
-                lastName: profile.lastName || "Name",
-                email: profile.email || "test@example.com",
-                phone: profile.phone || "No Phone",
-                startISO: new Date().toISOString(),
-                
-                // Assigning our calculated value to the key 'totalPrice'
-                totalPrice: calculatedValue, 
-                
-                data: profile 
+                source: "Rideshare Scheduler",
+                saas_location_id: data.saas_location_id,
+                vehicle_slot_id: data.vehicle_slot_id,
+                pickup_address: data.pickup_address,
+                dropoff_address: data.dropoff_address,
+                firstName: data.first_name, // Matches your 'first_name' column
+                lastName: data.last_name,   // Matches your 'last_name' column
+                email: data.email,
+                phone: data.phone,
+                startISO: data.start_time,
+                totalPrice: finalCalculatedPrice,
+                status: data.status,
+                raw_data: data // Full record just in case
             })
         });
 
-        if (webhookResponse.ok) {
-            console.log(`✅ Webhook delivered! Sent Total: $${calculatedValue}`);
-        } else {
-            console.error("❌ Webhook failed. Status:", webhookResponse.status);
-        }
+        if (response.ok) console.log("✅ Webhook delivered successfully.");
     } catch (err) {
-        console.error("❌ Error in triggerCrmWebhook:", err.message);
+        console.error("❌ Webhook Error:", err.message);
     }
 }
 app.post("/api/calculate-quote", async (req, res) => {
