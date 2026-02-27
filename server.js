@@ -569,6 +569,8 @@ async function triggerCrmWebhook(bookingId) {
         const currentTax = Number(data.tax_rate) || 0;
         const calculatedGrandTotal = (rawAmount + (rawAmount * (currentTax / 100))).toFixed(2);
 
+        console.log(`📊 Math Check: Base(${rawAmount}) + Tax(${currentTax}%) = Total(${calculatedGrandTotal})`);
+
         console.log(`📡 Dispatching to CRM One Source: ${data.crm_webhook_url}`);
 
         const response = await fetch(data.crm_webhook_url, {
