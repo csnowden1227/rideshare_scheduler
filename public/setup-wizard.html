@@ -37,8 +37,8 @@
                         <input type="password" id="maps_key" class="input-mini" placeholder="AIzaSy...">
                     </div>
                     <div>
-                        <label class="block text-[10px] font-bold mb-2 uppercase text-slate-400">SaaS Location ID (CRM Profile)</label>
-                        <input type="text" id="saas_location_input" class="input-mini" placeholder="Enter Location ID">
+                        <label class="block text-[10px] font-bold mb-2 uppercase text-slate-400">CRM Webhook URL</label>
+                        <input type="text" id="saas_location_input" class="input-mini" placeholder="Webhook URL">
                     </div>
                     <div>
                         <label class="block text-[10px] font-bold mb-2 uppercase text-slate-400">Tax Rate (%)</label>
@@ -48,7 +48,7 @@
             </div>
 
             <div class="card">
-                <h2 class="section-header">SECTION: FLEET SLOTS (Base + Rate/Mile)</h2>
+                <h2 class="section-header">SECTION: FLEET SLOTS</h2>
                 <table class="w-full">
                     <thead>
                         <tr>
@@ -79,7 +79,7 @@
                 <table class="w-full">
                     <thead>
                         <tr class="text-[10px] uppercase text-gray-400">
-                            <th>Day of Week</th><th>Start</th><th>End</th><th>Multiplier</th><th></th>
+                            <th>Day</th><th>Start</th><th>End</th><th>Multiplier</th><th></th>
                         </tr>
                     </thead>
                     <tbody id="peak-body"></tbody>
@@ -120,11 +120,12 @@
 </div>
 
 <script>
-    const BACKEND_URL = "https://rideshare-scheduler-axx6.onrender.com/"; 
+const BACKEND_URL = "https://rideshare-scheduler-axx6.onrender.com"; 
     const urlParams = new URLSearchParams(window.location.search);
     const locationId = urlParams.get('location_id') || 'LOC_DEMO'; 
     const VEHICLE_LIST = ["Standard Sedan", "Luxury Sedan", "Standard SUV", "Luxury SUV", "Standard XL SUV", "Luxury XL SUV"];
 
+    // --- UI RENDERERS ---
     function renderFleet(count, savedFleet = []) {
         const tbody = document.getElementById('fleet-body');
         tbody.innerHTML = "";
@@ -155,7 +156,7 @@
             <div class="flex flex-col md:flex-row gap-3">
                 <div class="flex-1">
                     <label class="text-[9px] uppercase font-bold text-slate-400">Pickup Address</label>
-                    <input type="text" id="p-${uid}" class="r-pickup input-mini mb-1" value="${data.pickup || ''}" placeholder="Address">
+                    <input type="text" id="p-${uid}" class="r-pickup input-mini mb-1" value="${data.pickup_keyword || data.pickup || ''}" placeholder="Address">
                     <div class="flex gap-1">
                         <input type="text" class="r-p-lat input-mini coord-input" placeholder="Lat" value="${data.pickup_lat || ''}">
                         <input type="text" class="r-p-lng input-mini coord-input" placeholder="Lng" value="${data.pickup_lng || ''}">
@@ -163,7 +164,7 @@
                 </div>
                 <div class="flex-1">
                     <label class="text-[9px] uppercase font-bold text-slate-400">Dropoff Address</label>
-                    <input type="text" id="d-${uid}" class="r-dropoff input-mini mb-1" value="${data.dropoff || ''}" placeholder="Address">
+                    <input type="text" id="d-${uid}" class="r-dropoff input-mini mb-1" value="${data.dropoff_keyword || data.dropoff || ''}" placeholder="Address">
                     <div class="flex gap-1">
                         <input type="text" class="r-d-lat input-mini coord-input" placeholder="Lat" value="${data.dropoff_lat || ''}">
                         <input type="text" class="r-d-lng input-mini coord-input" placeholder="Lng" value="${data.dropoff_lng || ''}">
@@ -171,7 +172,7 @@
                 </div>
                 <div class="w-full md:w-32">
                     <label class="text-[9px] uppercase font-bold text-slate-400">Flat Rate ($)</label>
-                    <input type="number" class="r-price input-mini h-[72px] text-lg font-bold" value="${data.price || ''}" placeholder="0.00">
+                    <input type="number" class="r-price input-mini h-[72px] text-lg font-bold" value="${data.fixed_price || data.price || ''}" placeholder="0.00">
                 </div>
                 <button onclick="this.closest('.route-row').remove()" class="text-red-400 px-2 font-bold self-center">&times;</button>
             </div>
@@ -200,7 +201,7 @@
         const tr = document.createElement('tr');
         tr.className = "peak-row border-b border-slate-50";
         tr.innerHTML = `
-            <td class="py-3 pr-2"><select class="p-day input-mini"><option>Weekdays</option><option>Weekends</option><option>Everyday</option></select></td>
+            <td class="py-3 pr-2"><select class="p-day input-mini"><option ${data.day==='Weekdays'?'selected':''}>Weekdays</option><option ${data.day==='Weekends'?'selected':''}>Weekends</option><option ${data.day==='Everyday'?'selected':''}>Everyday</option></select></td>
             <td class="py-3 pr-2"><input type="time" class="p-start input-mini" value="${data.start_time || '17:00'}"></td>
             <td class="py-3 pr-2"><input type="time" class="p-end input-mini" value="${data.end_time || '19:00'}"></td>
             <td class="py-3 pr-2"><input type="number" step="0.1" class="p-mult input-mini" value="${data.multiplier || 1.5}"></td>
@@ -213,8 +214,8 @@
         const tr = document.createElement('tr');
         tr.className = "event-row border-b border-slate-50";
         tr.innerHTML = `
-            <td class="py-3 pr-2"><input type="text" class="e-name input-mini" placeholder="Event" value="${data.name || ''}"></td>
-            <td class="py-3 pr-2"><input type="date" class="e-date input-mini" value="${data.date || ''}"></td>
+            <td class="py-3 pr-2"><input type="text" class="e-name input-mini" placeholder="Event" value="${data.event_name || data.name || ''}"></td>
+            <td class="py-3 pr-2"><input type="date" class="e-date input-mini" value="${data.event_date || data.date || ''}"></td>
             <td class="py-3 pr-2"><input type="number" class="e-base input-mini" value="${data.base_rate || 50}"></td>
             <td class="py-3 pr-2"><input type="number" step="0.1" class="e-mile input-mini" value="${data.mile_rate || 3.5}"></td>
             <td class="py-3 pr-2"><input type="number" step="0.1" class="e-mult input-mini" value="${data.multiplier || 2.0}"></td>
@@ -223,66 +224,86 @@
         document.getElementById('event-body').appendChild(tr);
     }
 
-    async function saveToBackend() {
-        const btn = document.getElementById('save-btn');
-        btn.innerText = "SYNCING...";
-        
-        try {
-            const payload = {
-                saas_location_id: locationId,
-                // MAPS CRM Profile input to the payload field
-                crm_webhook_url: document.getElementById('saas_location_input').value,
-                maps_api_key: document.getElementById('maps_key').value,
-                tax_rate: document.getElementById('tax_rate').value,
-                fleet: Array.from(document.querySelectorAll('#fleet-body tr')).map(tr => ({
-                    vehicle_id: tr.cells[0].innerText,
-                    vehicle_type: tr.querySelector('.v-type').value,
-                    base_rate: tr.querySelector('.v-base').value,
-                    mile_rate: tr.querySelector('.v-mile').value,
-                    calendar_id: tr.querySelector('.v-cal').value
-                })),
-                fixed_rates: Array.from(document.querySelectorAll('.route-row')).map(r => ({
-                    pickup: r.querySelector('.r-pickup').value,
-                    pickup_lat: r.querySelector('.r-p-lat').value,
-                    pickup_lng: r.querySelector('.r-p-lng').value,
-                    dropoff: r.querySelector('.r-dropoff').value,
-                    dropoff_lat: r.querySelector('.r-d-lat').value,
-                    dropoff_lng: r.querySelector('.r-d-lng').value,
-                    price: r.querySelector('.r-price').value
-                })),
-                peak_windows: Array.from(document.querySelectorAll('.peak-row')).map(r => ({
-                    day: r.querySelector('.p-day').value,
-                    start_time: r.querySelector('.p-start').value,
-                    end_time: r.querySelector('.p-end').value,
-                    multiplier: r.querySelector('.p-mult').value
-                })),
-                events: Array.from(document.querySelectorAll('.event-row')).map(e => ({
-                    name: e.querySelector('.e-name').value,
-                    date: e.querySelector('.e-date').value,
-                    base_rate: e.querySelector('.e-base').value,
-                    mile_rate: e.querySelector('.e-mile').value,
-                    multiplier: e.querySelector('.e-mult').value
-                }))
-            };
-
-            const res = await fetch(`${BACKEND_URL}/api/update-profile-full`, {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify(payload)
-            });
-
-            if (res.ok) alert("✅ Cloud Sync Successful!");
-            else alert("❌ Error: Sync Failed. Check server logs.");
-
-        } catch (e) { 
-            console.error(e);
-            alert("❌ Network Error. Make sure your server is running."); 
-        } finally { 
-            btn.innerText = "Sync to Cloud"; 
-        }
+    // --- THE SYNC FIX (DATA CLEANING) ---
+async function saveToBackend() {
+    const btn = document.getElementById('save-btn');
+    const crmInput = document.getElementById('saas_location_input').value.trim();
+    
+    // Quick validation before even trying
+    if (crmInput && !crmInput.startsWith('http')) {
+        alert("⚠️ Warning: Your CRM URL does not start with https://. This usually causes sync failures.");
     }
 
-    async function loadFromBackend() {
+    btn.innerText = "VALIDATING & SYNCING...";
+    
+    const payload = {
+        saas_location_id: locationId,
+        // Triple-mapping for database and webhook trigger compatibility
+        crm_api_key: crmInput,
+        crm_url: crmInput,
+        webhook_url: crmInput,
+        
+        maps_api_key: document.getElementById('maps_key').value,
+        tax_rate: parseFloat(document.getElementById('tax_rate').value) || 0,
+        
+        fleet: Array.from(document.querySelectorAll('#fleet-body tr')).map(tr => ({
+            vehicle_id: tr.cells[0].innerText,
+            vehicle_type: tr.querySelector('.v-type').value,
+            base_rate: parseFloat(tr.querySelector('.v-base').value) || 0,
+            mile_rate: parseFloat(tr.querySelector('.v-mile').value) || 0,
+            calendar_id: tr.querySelector('.v-cal').value
+        })),
+        fixed_rates: Array.from(document.querySelectorAll('.route-row')).map(r => ({
+            pickup_keyword: r.querySelector('.r-pickup').value,
+            pickup_lat: parseFloat(r.querySelector('.r-p-lat').value) || 0,
+            pickup_lng: parseFloat(r.querySelector('.r-p-lng').value) || 0,
+            dropoff_keyword: r.querySelector('.r-dropoff').value,
+            dropoff_lat: parseFloat(r.querySelector('.r-d-lat').value) || 0,
+            dropoff_lng: parseFloat(r.querySelector('.r-d-lng').value) || 0,
+            fixed_price: parseFloat(r.querySelector('.r-price').value) || 0
+        })),
+        peak_windows: Array.from(document.querySelectorAll('.peak-row')).map(r => ({
+            day: r.querySelector('.p-day').value,
+            start_time: r.querySelector('.p-start').value,
+            end_time: r.querySelector('.p-end').value,
+            multiplier: parseFloat(r.querySelector('.p-mult').value) || 1.0
+        })),
+        events: Array.from(document.querySelectorAll('.event-row')).map(e => ({
+            event_name: e.querySelector('.e-name').value,
+            event_date: e.querySelector('.e-date').value,
+            base_rate: parseFloat(e.querySelector('.e-base').value) || 0,
+            mile_rate: parseFloat(e.querySelector('.e-mile').value) || 0,
+            multiplier: parseFloat(e.querySelector('.e-mult').value) || 1.0
+        }))
+    };
+
+    try {
+        const res = await fetch(`${BACKEND_URL}/api/update-profile-full`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+
+        const result = await res.json();
+
+        if (res.ok) {
+            alert("✅ Sync Successful!\nDatabase updated and CRM link verified.");
+        } else {
+            console.error("Debug Info:", { sent: payload, received: result });
+            // Specific check for Webhook failure
+            const errorMsg = result.details || result.error || "";
+            if (errorMsg.includes("webhook") || errorMsg.includes("fetch")) {
+                alert(`❌ Webhook Error: The database saved, but the server couldn't "talk" to your CRM URL. Check the URL for typos.`);
+            } else {
+                alert(`❌ Sync Failed: ${errorMsg || 'Database connection error'}`);
+            }
+        }
+    } catch (e) {
+        alert("❌ Network Error: Could not reach the Render server.");
+    } finally {
+        btn.innerText = "Sync to Cloud";
+    }
+}    async function loadFromBackend() {
         document.getElementById('display-loc-id').innerText = locationId;
         document.getElementById('embed-box').innerText = `<script src="${BACKEND_URL}/widget.js?loc=${locationId}"><\/script>`;
         
@@ -291,13 +312,12 @@
             const data = await res.json();
             if (data && !data.error) {
                 document.getElementById('maps_key').value = data.maps_api_key || '';
-                // Load saved CRM ID into the input
-                document.getElementById('saas_location_input').value = data.crm_webhook_url || '';
+                document.getElementById('saas_location_input').value = data.crm_api_key || '';
                 document.getElementById('tax_rate').value = data.tax_rate || '0.00';
                 
                 const plan = data.plan_name || 'Starter';
                 document.getElementById('plan-badge').innerText = plan + " Plan";
-                const count = plan === 'Pro' ? 3 : (plan === 'Premium' ? 2 : 1);
+                const count = (plan === 'Pro') ? 3 : (plan === 'Premium' ? 2 : 1);
                 
                 renderFleet(count, data.fleet || []);
                 if (data.fixed_rates) data.fixed_rates.forEach(r => addRouteRow(r));
@@ -307,104 +327,12 @@
         } catch (e) { renderFleet(1); }
     }
 
-    async function runWebhookTest() {
-    const locId = document.getElementById('display-loc-id').innerText;
-    
-    // We grab the first vehicle ID from the fleet table to make it realistic
-    const firstVehicle = document.querySelector('.v-type')?.value || "Standard Sedan";
-
-    const testBooking = {
-        saas_location_id: locId,
-        firstName: "Webhook",
-        lastName: "Tester",
-        email: "test@example.com",
-        phone: "555-0199",
-        pickup: "123 Main St, Los Angeles, CA", // Make sure this matches a geofence keyword you saved!
-        dropoff: "LAX Airport",
-        serviceId: locId + "_vehicle_1", 
-        startISO: new Date().toISOString()
-    };
-
-    console.log("Sending test booking...", testBooking);
-
-    try {
-        const res = await fetch(`${BACKEND_URL}/api/book`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(testBooking)
-        });
-        const data = await res.json();
-        
-        if (data.success) {
-            alert(`✅ Success! CRM Webhook triggered.\nPrice Calculated: $${data.totalPrice}`);
-        } else {
-            alert(`❌ Server Error: ${data.error}`);
-        }
-    } catch (err) {
-        alert("❌ Failed to reach server. Is your backend running?");
-    }
-}
-    const payload = {
-            saas_location_id: locationId,
-            maps_api_key: document.getElementById('maps_key').value,
-            // 1. Map to crm_webhook_url instead of crm_api_key
-            crm_webhook_url: document.getElementById('crm_webhook_url').value, 
-            tax_rate: parseFloat(document.getElementById('tax_rate').value) || 0,
-            fleet: Array.from(document.querySelectorAll('#fleet-body tr')).map(tr => ({
-                vehicle_id: tr.cells[0].innerText,
-                vehicle_type: tr.querySelector('.v-type').value,
-                base_rate: parseFloat(tr.querySelector('.v-base').value) || 0,
-                mile_rate: parseFloat(tr.querySelector('.v-mile').value) || 0,
-                calendar_id: tr.querySelector('.v-cal').value
-            })),
-            peak_windows: Array.from(document.querySelectorAll('.peak-row')).map(r => ({
-                day: r.querySelector('.p-day').value,
-                start_time: r.querySelector('.p-start').value,
-                end_time: r.querySelector('.p-end').value,
-                multiplier: parseFloat(r.querySelector('.p-mult').value) || 1
-            })),
-            // 2. Map fixed_rates keys to match the database column names
-            fixed_rates: Array.from(document.querySelectorAll('.route-row')).map(r => ({
-                pickup_keyword: r.querySelector('.r-pickup').value,  // was 'pickup'
-                dropoff_keyword: r.querySelector('.r-dropoff').value, // was 'dropoff'
-                fixed_price: parseFloat(r.querySelector('.r-price').value) || 0 // was 'price'
-            })),
-            events: Array.from(document.querySelectorAll('.event-row')).map(e => ({
-                name: e.querySelector('.e-name').value,
-                date: e.querySelector('.e-date').value,
-                multiplier: parseFloat(e.querySelector('.e-mult').value) || 1
-            })).filter(e => e.name) 
-        };
-        try {
-            const response = await fetch(`${BACKEND_URL}/api/update-profile`, {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify(payload)
-            });
-            
-            if (response.ok) {
-                alert("Success: All settings and pricing formulas synced.");
-            } else {
-                const errorData = await response.json();
-                alert("Error: " + (errorData.error || "Server failed to save."));
-            }
-        } catch (e) { 
-            alert("Sync Error: Check your internet connection."); 
-        } finally { 
-            btn.innerText = "Sync to Cloud"; 
-        }
-
-        
-
     function copyEmbed() {
-        const text = document.getElementById('embed-box').innerText;
-        navigator.clipboard.writeText(text).then(() => {
-            alert("Embed code copied!");
-        });
+        navigator.clipboard.writeText(document.getElementById('embed-box').innerText);
+        alert("Embed code copied!");
     }
 
     window.onload = loadFromBackend;
 </script>
 </body>
 </html>
-
