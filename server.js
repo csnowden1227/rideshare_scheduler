@@ -587,7 +587,7 @@ async function triggerCrmWebhook(bookingId) {
                 
                 // This 'totalPrice' is a label for CRM One Source. 
                 // We fill it with our uniquely named variable.
-                totalPrice: calculatedGrandTotal, 
+                total_price: calculatedGrandTotal, 
                 
                 status: data.status
             })
