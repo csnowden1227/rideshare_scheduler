@@ -327,10 +327,10 @@ app.get('/api/test', (req, res) => {
     }
 }
 
-app.post('/api/update-profile-full', async (req, res) => {
+aapp.post('/api/update-profile-full', async (req, res) => {
     const {
         saas_location_id,
-        crm_webhook_url, // This is your Webhook URL from the frontend
+        crm_webhook_url, 
         maps_api_key,
         tax_rate,
         fleet,
@@ -339,28 +339,14 @@ app.post('/api/update-profile-full', async (req, res) => {
         events
     } = req.body;
 
-    const client = await pool.connect();
-
-    console.log('Database Connected. Listening for profile signals...');
-  
-  client.query('LISTEN profile_updated');
-  
-  client.on('notification', async (msg) => {
-    const locationId = msg.payload;
-    console.log(`Signal received for: ${locationId}`);
-    
-    // This is the bridge that connects the DB signal to the Webhook action
-    await triggerCrmWebhook(locationId); 
-});
-      
-  });
+    // 1. Declare client outside try so 'finally' can see it
+    let client;
 
     try {
+        client = await pool.connect();
         await client.query('BEGIN');
-        
 
         // 1. UPSERT THE MAIN PROFILE
-        // Note: Using 'crm_webhook_url' and 'location_id' to match your schema
         await client.query(
             `INSERT INTO profiles (
                 location_id, crm_webhook_url, maps_api_key, tax_rate, fleet, special_events, peak_windows
@@ -384,12 +370,10 @@ app.post('/api/update-profile-full', async (req, res) => {
             ]
         );
 
-        // 2. REFRESH SERVICES (Booking Slots)
+        // 2. REFRESH SERVICES
         await client.query('DELETE FROM services WHERE saas_location_id = $1', [saas_location_id]);
-
         if (fleet && fleet.length > 0) {
             for (const vehicle of fleet) {
-                // Generate a clean staff ID (e.g., 101-luxury-sedan)
                 const staffId = `${saas_location_id}-${String(vehicle.vehicle_type || 'vehicle')
                     .replace(/\s+/g, '-')
                     .toLowerCase()}`;
@@ -400,7 +384,7 @@ app.post('/api/update-profile-full', async (req, res) => {
                     ) VALUES ($1, $2, $3, $4, $5, $6)`,
                     [
                         saas_location_id,
-                        vehicle.vehicle_id || staffId, // use vehicle_id from payload
+                        vehicle.vehicle_id || staffId,
                         vehicle.vehicle_type,
                         vehicle.base_rate,
                         vehicle.mile_rate,
@@ -410,8 +394,7 @@ app.post('/api/update-profile-full', async (req, res) => {
             }
         }
 
-        // 3. REFRESH FIXED RATES (Geofencing)
-        // Note: Match schema: user_id, pickup_keyword, dropoff_keyword, fixed_price
+        // 3. REFRESH FIXED RATES
         await client.query('DELETE FROM fixed_rates WHERE user_id = $1', [saas_location_id]);
         if (fixed_rates && fixed_rates.length > 0) {
             for (const route of fixed_rates) {
@@ -425,20 +408,18 @@ app.post('/api/update-profile-full', async (req, res) => {
             }
         }
 
-        // 4. COMMIT EVERYTHING
         await client.query('COMMIT');
-
         console.log(`✅ Profile and Services synced for: ${saas_location_id}`);
         res.json({ success: true, message: 'All settings and slots saved!' });
 
     } catch (err) {
-        await client.query('ROLLBACK');
+        if (client) await client.query('ROLLBACK');
         console.error("❌ Blended Save Error:", err.message);
         res.status(500).json({ error: "Failed to save profile settings.", detail: err.message });
     } finally {
-        client.release();
+        if (client) client.release();
     }
-
+}); // End of POST route
 
    
 /*****************************************************
