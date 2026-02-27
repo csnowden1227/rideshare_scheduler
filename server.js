@@ -548,41 +548,60 @@ async function getCurrentMultiplier(locationId) {
 
 async function triggerCrmWebhook(locationId) {
     try {
-        // 1. Fetch the latest data for this location from your DB
+        // 1. Fetch data
         const res = await pool.query('SELECT * FROM profiles WHERE saas_location_id = $1', [locationId]);
         const profile = res.rows[0];
 
         if (!profile || (!profile.webhook_url && !profile.crm_api_key)) {
-            console.log("No webhook URL found for this location.");
+            console.log("No valid webhook URL found.");
             return;
         }
 
         const targetUrl = profile.webhook_url || profile.crm_api_key;
 
-        // 2. Send the data to the CRM (GoHighLevel/LeadConnector)
-        console.log(`Sending data to Webhook: ${targetUrl}`);
+        // 2. Do the math (Use a unique name like 'calculatedValue' to avoid redeclaration errors)
+        const fleetArray = Array.isArray(profile.fleet) ? profile.fleet : [];
+        const basePrice = fleetArray[0]?.base_price || 0; 
+        const taxRate = Number(profile.tax_rate) || 0;
+        const calculatedValue = (basePrice + (basePrice * (taxRate / 100))).toFixed(2);
+
+        // 3. Send to Webhook
+        console.log(`🚀 Sending payload to: ${targetUrl}`);
         
         const webhookResponse = await fetch(targetUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 source: "Rideshare Scheduler Admin",
-                location_id: profile.saas_location_id,
                 timestamp: new Date().toISOString(),
-                data: profile // Sends the entire fleet, rates, and peak settings
+                
+                // DATA FIELDS FOR GHL
+                saas_location_id: profile.saas_location_id,
+                vehicle_slot_id: profile.vehicle_slot_id || "N/A",
+                pickup_address: profile.pickup_address || "Not Set",
+                dropoff_address: profile.dropoff_address || "Not Set",
+                firstName: profile.firstName || "Customer",
+                lastName: profile.lastName || "Name",
+                email: profile.email || "test@example.com",
+                phone: profile.phone || "No Phone",
+                startISO: new Date().toISOString(),
+                
+                // Assigning our calculated value to the key 'totalPrice'
+                totalPrice: calculatedValue, 
+                
+                data: profile 
             })
         });
 
         if (webhookResponse.ok) {
-            console.log("✅ Webhook delivered successfully.");
+            console.log(`✅ Webhook delivered! Sent Total: $${calculatedValue}`);
         } else {
-            console.error("❌ Webhook failed with status:", webhookResponse.status);
+            console.error("❌ Webhook failed. Status:", webhookResponse.status);
         }
     } catch (err) {
         console.error("❌ Error in triggerCrmWebhook:", err.message);
     }
 }
-
 app.post("/api/calculate-quote", async (req, res) => {
     const { userId, serviceId, pickup, dropoff, startISO } = req.body;
 
@@ -656,7 +675,7 @@ app.post("/api/book", async (req, res) => {
       lastName,
       email,
       phone,
-      startISO
+      startISO,
     } = req.body;
 
     await client.query("BEGIN");
