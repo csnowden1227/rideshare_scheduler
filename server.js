@@ -548,54 +548,61 @@ async function getCurrentMultiplier(locationId) {
 
 async function triggerCrmWebhook(bookingId) {
     try {
-        // 1. Fetch the booking AND the user's tax rate in one go
+        // 1. Fetch the booking JOINED with the profile settings
+        // We use p.crm_webhook_url as the target
         const query = `
-            SELECT b.*, u.tax_rate, u.ghl_api_key as webhook_url
+            SELECT b.*, p.tax_rate, p.crm_webhook_url
             FROM bookings b
-            JOIN users u ON b.saas_location_id = u.id
+            JOIN profiles p ON b.saas_location_id = p.location_id
             WHERE b.booking_id = $1
         `;
         const res = await pool.query(query, [bookingId]);
         const data = res.rows[0];
 
-        if (!data || !data.webhook_url) {
-            console.log("No booking found or missing Webhook URL.");
+        // Check for the specific column name: crm_webhook_url
+        if (!data || !data.crm_webhook_url) {
+            console.log(`⚠️ No booking found or missing crm_webhook_url for booking ID: ${bookingId}`);
             return;
         }
 
-        // 2. The calculation (using your exact column: total_price)
+        // 2. The calculation
         const rawPrice = Number(data.total_price) || 0;
         const tax = Number(data.tax_rate) || 0;
         const finalCalculatedPrice = (rawPrice + (rawPrice * (tax / 100))).toFixed(2);
 
-        // 3. Send the payload with YOUR column names
-        console.log(`🚀 Sending Booking ${bookingId} to GHL...`);
+        // 3. Send the payload
+        console.log(`🚀 Sending Booking ${bookingId} to GHL via ${data.crm_webhook_url}`);
         
-        const response = await fetch(data.webhook_url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
+        const response = await fetch(data.crm_webhook_url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
                 source: "Rideshare Scheduler",
                 saas_location_id: data.saas_location_id,
                 vehicle_slot_id: data.vehicle_slot_id,
                 pickup_address: data.pickup_address,
                 dropoff_address: data.dropoff_address,
-                firstName: data.first_name, // Matches your 'first_name' column
-                lastName: data.last_name,   // Matches your 'last_name' column
+                firstName: data.first_name, 
+                lastName: data.last_name,   
                 email: data.email,
                 phone: data.phone,
                 startISO: data.start_time,
                 totalPrice: finalCalculatedPrice,
                 status: data.status,
-                raw_data: data // Full record just in case
+                raw_data: data 
             })
         });
 
-        if (response.ok) console.log("✅ Webhook delivered successfully.");
+        if (response.ok) {
+            console.log("✅ Webhook delivered successfully.");
+        } else {
+            console.error("❌ Webhook failed with status:", response.status);
+        }
     } catch (err) {
-        console.error("❌ Webhook Error:", err.message);
+        console.error("❌ Error in triggerCrmWebhook:", err.message);
     }
 }
+     
 app.post("/api/calculate-quote", async (req, res) => {
     const { userId, serviceId, pickup, dropoff, startISO } = req.body;
 
