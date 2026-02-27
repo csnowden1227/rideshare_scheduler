@@ -327,7 +327,7 @@ app.get('/api/test', (req, res) => {
     }
 }
 
-aapp.post('/api/update-profile-full', async (req, res) => {
+app.post('/api/update-profile-full', async (req, res) => {
     const {
         saas_location_id,
         crm_webhook_url, 
