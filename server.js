@@ -593,7 +593,7 @@ async function triggerCrmWebhook(bookingId) {
             })
         });
 
-        if (response.ok) {
+if (response.ok) {
             console.log("✅ Successfully delivered to CRM One Source!");
         } else {
             console.error("❌ CRM One Source delivery failed. Status:", response.status);
@@ -601,7 +601,7 @@ async function triggerCrmWebhook(bookingId) {
     } catch (err) {
         console.error("❌ Error in triggerCrmWebhook:", err.message);
     }
-}e.error("❌ CRM One Source delivery failed. Status:", response.status);
+} // This is the final closing brace for the whole triggerCrmWebhook function
      
 app.post("/api/calculate-quote", async (req, res) => {
     const { userId, serviceId, pickup, dropoff, startISO } = req.body;
