@@ -814,6 +814,19 @@ app.get("/api/get-profile/:location_id", async (req, res) => {
   const { location_id } = req.params;
   const client = await pool.connect();
 
+pool.connect((err, client, release) => {
+    if (err) return console.error('Error connecting to DB', err.stack);
+    
+    console.log('✅ Database Connected Globally. Listening for profile signals...');
+    client.query('LISTEN profile_updated');
+
+    client.on('notification', async (msg) => {
+        console.log(`🔔 Signal received for: ${msg.payload}`);
+        await triggerCrmWebhook(msg.payload); 
+    });
+    // Do NOT release this specific client, it needs to stay open to listen
+});
+
   try {
     // 1. Get the main profile (fleet, tax, maps key, webhook url)
     const profileRes = await client.query(
