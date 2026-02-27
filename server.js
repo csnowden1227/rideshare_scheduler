@@ -421,8 +421,7 @@ app.post('/api/update-profile-full', async (req, res) => {
     }
 }); // End of POST route
 
-   
-/*****************************************************
+   /*****************************************************
  5️⃣ AVAILABILITY ENGINE
 *****************************************************/
 app.post("/api/availability", async (req, res) => {
@@ -825,6 +824,36 @@ pool.connect((err, client, release) => {
         await triggerCrmWebhook(msg.payload); 
     });
     // Do NOT release this specific client, it needs to stay open to listen
+
+    // Start this when the server launches
+const startListener = async () => {
+  try {
+    const client = await pool.connect();
+    console.log("👂 Listening for Database Signals...");
+    
+    await client.query('LISTEN profile_updated');
+
+    client.on('notification', async (msg) => {
+      console.log(`🔔 SIGNAL RECEIVED: ${msg.payload}`);
+      // This calls your webhook function
+      if (typeof triggerCrmWebhook === 'function') {
+        await triggerCrmWebhook(msg.payload);
+      }
+    });
+
+    client.on('error', (err) => {
+      console.error('Database client error', err);
+      client.release();
+      setTimeout(startListener, 5000); // Restart if it fails
+    });
+
+  } catch (err) {
+    console.error('Failed to connect listener:', err);
+    setTimeout(startListener, 5000);
+  }
+};
+
+startListener();
 });
 
   try {
