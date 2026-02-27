@@ -341,8 +341,23 @@ app.post('/api/update-profile-full', async (req, res) => {
 
     const client = await pool.connect();
 
+    console.log('Database Connected. Listening for profile signals...');
+  
+  client.query('LISTEN profile_updated');
+  
+  client.on('notification', async (msg) => {
+    const locationId = msg.payload;
+    console.log(`Signal received for: ${locationId}`);
+    
+    // This is the bridge that connects the DB signal to the Webhook action
+    await triggerCrmWebhook(locationId); 
+});
+      
+  });
+
     try {
         await client.query('BEGIN');
+        
 
         // 1. UPSERT THE MAIN PROFILE
         // Note: Using 'crm_webhook_url' and 'location_id' to match your schema
@@ -423,7 +438,7 @@ app.post('/api/update-profile-full', async (req, res) => {
     } finally {
         client.release();
     }
-});
+
 
    
 /*****************************************************
@@ -542,6 +557,43 @@ async function getCurrentMultiplier(locationId) {
     }
 }
 
+async function triggerCrmWebhook(locationId) {
+    try {
+        // 1. Fetch the latest data for this location from your DB
+        const res = await pool.query('SELECT * FROM profiles WHERE saas_location_id = $1', [locationId]);
+        const profile = res.rows[0];
+
+        if (!profile || (!profile.webhook_url && !profile.crm_api_key)) {
+            console.log("No webhook URL found for this location.");
+            return;
+        }
+
+        const targetUrl = profile.webhook_url || profile.crm_api_key;
+
+        // 2. Send the data to the CRM (GoHighLevel/LeadConnector)
+        console.log(`Sending data to Webhook: ${targetUrl}`);
+        
+        const webhookResponse = await fetch(targetUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                source: "Rideshare Scheduler Admin",
+                location_id: profile.saas_location_id,
+                timestamp: new Date().toISOString(),
+                data: profile // Sends the entire fleet, rates, and peak settings
+            })
+        });
+
+        if (webhookResponse.ok) {
+            console.log("✅ Webhook delivered successfully.");
+        } else {
+            console.error("❌ Webhook failed with status:", webhookResponse.status);
+        }
+    } catch (err) {
+        console.error("❌ Error in triggerCrmWebhook:", err.message);
+    }
+}
+
 app.post("/api/calculate-quote", async (req, res) => {
     const { userId, serviceId, pickup, dropoff, startISO } = req.body;
 
@@ -604,7 +656,7 @@ app.post("/api/calculate-quote", async (req, res) => {
 *****************************************************/
 app.post("/api/book", async (req, res) => {
   const client = await pool.connect();
-
+  
   try {
     const {
       saas_location_id,
