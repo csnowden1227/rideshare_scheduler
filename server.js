@@ -190,6 +190,7 @@ async function checkFixedRate(saas_location_id, pickupAddr, dropoffAddr) {
     const dropoffMatch = dropoffAddr.toLowerCase().includes(route.dropoff_keyword.toLowerCase());
 
     if (pickupMatch && dropoffMatch) {return parseFloat(route.fixed_price);
+
     }
   }
 
@@ -292,7 +293,7 @@ async function saveSettings() {
     const payload = {
         userId: locationId,
         maps_api_key: document.getElementById('maps_key').value,
-        saas_location_id: document.getElementById('CRM_key')?.value, // Added safety
+        saas_location_id: document.getElementById('CRM_WEBHOOK_URL')?.value, // Added safety
         tax_rate: document.getElementById('tax_rate')?.value || 0,
         fleet: fleet,
         peak_windows: peakTimes,
@@ -329,7 +330,7 @@ app.get('/api/test', (req, res) => {
 app.post('/api/update-profile-full', async (req, res) => {
     const {
         saas_location_id,
-        crm_api_key, // This is your Webhook URL from the frontend
+        crm_webhook_url, // This is your Webhook URL from the frontend
         maps_api_key,
         tax_rate,
         fleet,
@@ -344,14 +345,14 @@ app.post('/api/update-profile-full', async (req, res) => {
         await client.query('BEGIN');
 
         // 1. UPSERT THE MAIN PROFILE
-        // Note: Using 'crm_url' and 'location_id' to match your schema
+        // Note: Using 'crm_webhook_url' and 'location_id' to match your schema
         await client.query(
             `INSERT INTO profiles (
-                location_id, crm_url, maps_api_key, tax_rate, fleet, special_events, peak_windows
+                location_id, crm_webhook_url, maps_api_key, tax_rate, fleet, special_events, peak_windows
             ) VALUES ($1, $2, $3, $4, $5, $6, $7)
             ON CONFLICT (location_id) 
             DO UPDATE SET 
-                crm_url = EXCLUDED.crm_url,
+                crm_webhook_url = EXCLUDED.crm_webhook_url,
                 maps_api_key = EXCLUDED.maps_api_key,
                 tax_rate = EXCLUDED.tax_rate,
                 fleet = EXCLUDED.fleet,
@@ -359,7 +360,7 @@ app.post('/api/update-profile-full', async (req, res) => {
                 peak_windows = EXCLUDED.peak_windows`,
             [
                 saas_location_id,
-                crm_api_key,
+                crm_webhook_url,
                 maps_api_key,
                 tax_rate || 0,
                 JSON.stringify(fleet || []),
@@ -939,11 +940,11 @@ app.post("/api/create-booking", async (req, res) => {
 
     // 2. THE BRIDGE: Get the Webhook URL for this specific user
     const userRes = await pool.query(
-      "SELECT crm_api_key FROM users WHERE saas_location_id = $1", 
+      "SELECT crm_webhook_url FROM users WHERE saas_location_id = $1", 
       [saas_location_id]
     );
     
-    const webhookUrl = userRes.rows[0]?.crm_api_key;
+    const webhookUrl = userRes.rows[0]?.crm_webhook_url;
 
     // 3. Trigger the Webhook to GHL
     if (webhookUrl && webhookUrl.startsWith('http')) {

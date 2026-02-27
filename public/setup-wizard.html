@@ -3,16 +3,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Chauffeur Deluxe | Full SaaS Terminal</title>
+    <title>Chauffeur Deluxe | Setup Wizard</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://maps.googleapis.com/maps/api/js?libraries=places"></script>
     <style>
-        .input-mini { width: 100%; padding: 0.6rem; border: 1px solid #e2e8f0; border-radius: 0.5rem; font-size: 0.875rem; transition: all 0.2s; background-color: white; }
+        .input-mini { width: 100%; padding: 0.6rem; border: 1px solid #e2e8f0; border-radius: 0.5rem; font-size: 0.85rem; transition: all 0.2s; }
         .input-mini:focus { border-color: #2563eb; ring: 2px; ring-color: #dbeafe; outline: none; }
-        .card { background: white; padding: 2rem; border-radius: 1.5rem; border: 1px solid #f1f5f9; margin-bottom: 2rem; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.05); overflow: visible !important; }
+        .card { background: white; padding: 2rem; border-radius: 1.5rem; border: 1px solid #f1f5f9; margin-bottom: 2rem; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.05); }
         th { text-align: left; padding-bottom: 1rem; color: #64748b; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.1em; }
-        .v-type { cursor: pointer; position: relative; z-index: 10; }
-        select { appearance: auto !important; }
+        .section-header { text-transform: uppercase; font-style: italic; font-weight: 800; color: #1e293b; border-bottom: 2px solid #e2e8f0; padding-bottom: 0.5rem; margin-bottom: 1.5rem; }
+        .coord-input { font-family: monospace; font-size: 10px; color: #64748b; background-color: #f8fafc; }
     </style>
 </head>
 <body class="bg-slate-50 text-slate-900 p-4 md:p-12">
@@ -30,57 +30,56 @@
         <div class="lg:col-span-3">
             
             <div class="card">
-                <h2 class="text-lg font-bold mb-6 flex items-center gap-3">
-                    <span class="w-7 h-7 bg-slate-800 text-white rounded-lg flex items-center justify-center text-xs italic">01</span>
-                    Credentials & Tax Mapping
-                </h2>
+                <h2 class="section-header">SECTION: CREDENTIALS</h2>
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
                     <div>
                         <label class="block text-[10px] font-bold mb-2 uppercase text-slate-400">Google Maps API Key</label>
-                        <input type="password" id="maps_key" class="input-mini" placeholder="Enter API Key">
+                        <input type="password" id="maps_key" class="input-mini" placeholder="AIzaSy...">
                     </div>
                     <div>
-                        <label class="block text-[10px] font-bold mb-2 uppercase text-slate-400">CRM Webhook URL</label>
-                        <input type="text" id="crm_api_key" class="input-mini" placeholder="https://services.leadconnector...">
+                        <label class="block text-[10px] font-bold mb-2 uppercase text-slate-400">SaaS Location ID (CRM Profile)</label>
+                        <input type="text" id="saas_location_input" class="input-mini" placeholder="Enter Location ID">
                     </div>
                     <div>
                         <label class="block text-[10px] font-bold mb-2 uppercase text-slate-400">Tax Rate (%)</label>
-                        <input type="number" step="0.01" id="tax_rate" class="input-mini" placeholder="e.g. 8.25">
+                        <input type="number" step="0.01" id="tax_rate" class="input-mini" placeholder="8.25">
                     </div>
                 </div>
-            </div> <div class="card">
-                <h2 class="text-lg font-bold mb-6 flex items-center gap-3">
-                    <span class="w-7 h-7 bg-slate-800 text-white rounded-lg flex items-center justify-center text-xs italic">02</span>
-                    Fleet Slots & Pricing Logic
-                </h2>
-                <div class="overflow-x-auto">
-                    <table class="w-full">
-                        <thead>
-                            <tr>
-                                <th>Slot</th>
-                                <th class="w-1/4">Vehicle Category</th>
-                                <th class="w-1/3 text-blue-600">Pricing: (Base + Rate/Mile)</th>
-                                <th>Calendar ID</th>
-                            </tr>
-                        </thead>
-                        <tbody id="fleet-body"></tbody>
-                    </table>
-                </div>
-                <p class="text-[10px] text-slate-400 mt-4 italic">* The final price will calculate: (Base + (Miles × Rate)) × Multiplier</p>
+            </div>
+
+            <div class="card">
+                <h2 class="section-header">SECTION: FLEET SLOTS (Base + Rate/Mile)</h2>
+                <table class="w-full">
+                    <thead>
+                        <tr>
+                            <th>Slot ID</th>
+                            <th class="w-1/3">Vehicle Category</th>
+                            <th>Base ($)</th>
+                            <th>Mile ($)</th>
+                            <th>Calendar ID</th>
+                        </tr>
+                    </thead>
+                    <tbody id="fleet-body"></tbody>
+                </table>
             </div>
 
             <div class="card">
                 <div class="flex justify-between items-center mb-6">
-                    <h2 class="text-lg font-bold flex items-center gap-3">
-                        <span class="w-7 h-7 bg-slate-800 text-white rounded-lg flex items-center justify-center text-xs italic">03</span>
-                        Peak Time Multipliers
-                    </h2>
-                    <button type="button" onclick="addPeakRow()" class="text-xs font-bold bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition">+ Add Peak</button>
+                    <h2 class="section-header !mb-0 !border-0">SECTION: FIXED ROUTES (GEOFENCING)</h2>
+                    <button type="button" onclick="addRouteRow()" class="text-xs font-bold bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition">+ Add Geofence</button>
                 </div>
-                <table class="w-full text-left">
+                <div id="routes-container" class="space-y-4"></div>
+            </div>
+
+            <div class="card">
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="section-header !mb-0 !border-0">SECTION: PEAK MULTIPLIERS</h2>
+                    <button type="button" onclick="addPeakRow()" class="text-xs font-bold bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition">+ Add Window</button>
+                </div>
+                <table class="w-full">
                     <thead>
                         <tr class="text-[10px] uppercase text-gray-400">
-                            <th class="pb-2">Day of Week</th><th class="pb-2">Start</th><th class="pb-2">End</th><th class="pb-2">Mult</th><th></th>
+                            <th>Day of Week</th><th>Start</th><th>End</th><th>Multiplier</th><th></th>
                         </tr>
                     </thead>
                     <tbody id="peak-body"></tbody>
@@ -88,35 +87,14 @@
             </div>
 
             <div class="card">
-    <div class="flex justify-between items-center mb-6">
-        <h2 class="text-lg font-bold flex items-center gap-3">
-            <span class="w-7 h-7 bg-slate-800 text-white rounded-lg flex items-center justify-center text-xs italic">04</span>
-            Fixed Route Geofencing
-        </h2>
-        <select id="route_count" onchange="syncRouteFields()" class="input-mini !w-32 font-bold text-blue-600">
-            <option value="0">Add Routes</option>
-            <option value="1">1 Route</option>
-            <option value="5">5 Routes</option>
-            <option value="10">10 Routes</option>
-        </select>
-    </div>
-    <div id="routes-container" class="space-y-3"></div>
-</div>
-            <div class="card">
                 <div class="flex justify-between items-center mb-6">
-                    <h2 class="text-lg font-bold flex items-center gap-3">
-                        <span class="w-7 h-7 bg-slate-800 text-white rounded-lg flex items-center justify-center text-xs italic">05</span>
-                        Special Event Multipliers
-                    </h2>
+                    <h2 class="section-header !mb-0 !border-0">SECTION: SPECIAL EVENTS</h2>
                     <button type="button" onclick="addEventRow()" class="text-xs font-bold bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition">+ Add Event</button>
                 </div>
                 <table class="w-full text-left">
                     <thead>
                         <tr class="text-[10px] uppercase text-gray-400">
-                            <th class="pb-2">Event Name</th>
-                            <th class="pb-2">Date</th>
-                            <th class="pb-2">Multiplier</th>
-                            <th></th>
+                            <th>Event Name</th><th>Date</th><th>Base ($)</th><th>Mile ($)</th><th>Mult</th><th></th>
                         </tr>
                     </thead>
                     <tbody id="event-body"></tbody>
@@ -126,13 +104,13 @@
 
         <div class="lg:col-span-1">
             <div class="sticky top-6 space-y-6">
-                <button onclick="saveToBackend()" id="save-btn" class="w-full bg-blue-600 text-white font-black py-5 rounded-2xl hover:bg-blue-700 transition-all shadow-xl shadow-blue-100 uppercase tracking-widest text-sm">
+                <button onclick="saveToBackend()" id="save-btn" class="w-full bg-blue-600 text-white font-black py-5 rounded-2xl hover:bg-blue-700 shadow-xl uppercase tracking-widest text-sm">
                     Sync to Cloud
                 </button>
                 <div class="bg-slate-900 rounded-[2rem] p-6 text-white">
-                    <h3 class="text-xs font-bold uppercase tracking-widest text-slate-400 mb-4">Embed Code</h3>
+                    <h3 class="text-xs font-bold uppercase tracking-widest text-slate-400 mb-4">Widget Embed Code</h3>
                     <pre id="embed-box" class="bg-black/50 p-4 rounded-xl text-[10px] text-green-400 font-mono overflow-x-auto border border-slate-700 min-h-[100px] whitespace-pre-wrap break-all mb-4"></pre>
-                    <button onclick="copyEmbed()" class="w-full bg-slate-800 hover:bg-slate-700 text-[10px] font-bold py-2 rounded-lg transition uppercase tracking-wider">
+                    <button onclick="copyEmbed()" class="w-full bg-slate-800 hover:bg-slate-700 text-[10px] font-bold py-2 rounded-lg uppercase tracking-wider">
                         Copy to Clipboard
                     </button>
                 </div>
@@ -142,151 +120,191 @@
 </div>
 
 <script>
-    const BACKEND_URL = "https://rideshare-scheduler-axx6.onrender.com"; 
+    const BACKEND_URL = "https://rideshare-scheduler-axx6.onrender.com/"; 
     const urlParams = new URLSearchParams(window.location.search);
-    const locationId = urlParams.get('location_id') || 'DEMO_MODE';
+    const locationId = urlParams.get('location_id') || 'LOC_DEMO'; 
     const VEHICLE_LIST = ["Standard Sedan", "Luxury Sedan", "Standard SUV", "Luxury SUV", "Standard XL SUV", "Luxury XL SUV"];
 
-    function updateEmbedCode() {
-        document.getElementById('embed-box').innerText = `<script src="${BACKEND_URL}/widget.js?loc=${locationId}"><\/script>`;
-    }
-
     function renderFleet(count, savedFleet = []) {
-    const body = document.getElementById('fleet-body');
-    body.innerHTML = ""; // Clear existing rows
-
-    const vehicleOptions = [
-        "Standard Sedan", "Luxury Sedan", "SUV", 
-        "Luxury SUV", "Van", "Limousine"
-    ];
-
-    for (let i = 1; i <= count; i++) {
-        const row = document.createElement('tr');
-        const s = savedFleet.find(f => f.vehicle_id === `${locationId}_vehicle_${i}`) || {};
-        
-        // Generate options for the dropdown
-        const optionsHtml = vehicleOptions.map(opt => 
-            `<option value="${opt}" ${s.vehicle_type === opt ? 'selected' : ''}>${opt}</option>`
-        ).join('');
-
-        row.innerHTML = `
-            <td class="p-4 text-xs font-mono text-slate-400">${locationId}_vehicle_${i}</td>
-            <td class="p-4">
-                <select class="v-type input-mini w-full">${optionsHtml}</select>
-            </td>
-            <td class="p-4">
-                <input type="number" class="v-base input-mini" value="${s.base_rate || 0}" placeholder="Base $">
-            </td>
-            <td class="p-4">
-                <input type="number" class="v-mile input-mini" value="${s.mile_rate || 0}" placeholder="Per Mile $">
-            </td>
-            <td class="p-4">
-                <input type="text" class="v-cal input-mini" value="${s.calendar_id || ''}" placeholder="Calendar ID">
-            </td>
-        `;
-        body.appendChild(row);
-    }
-}
-
-    function addPeakRow(data = {}) {
-        const tbody = document.getElementById('peak-body');
-        const tr = document.createElement('tr');
-        tr.className = "peak-row border-b border-slate-50";
-        tr.innerHTML = `
-            <td class="py-3 pr-2"><select class="p-day input-mini"><option ${data.day === 'Everyday' ? 'selected' : ''}>Everyday</option><option ${data.day === 'Weekdays' ? 'selected' : ''}>Weekdays</option><option ${data.day === 'Weekends' ? 'selected' : ''}>Weekends</option></select></td>
-            <td class="py-3 pr-2"><input type="time" class="p-start input-mini" value="${data.start_time || '17:00'}"></td>
-            <td class="py-3 pr-2"><input type="time" class="p-end input-mini" value="${data.end_time || '19:00'}"></td>
-            <td class="py-3 pr-2"><input type="number" step="0.1" class="p-mult input-mini" value="${data.multiplier || 1.5}"></td>
-            <td><button type="button" onclick="this.closest('tr').remove()" class="text-red-400 font-bold">&times;</button></td>
-        `;
-        tbody.appendChild(tr);
+        const tbody = document.getElementById('fleet-body');
+        tbody.innerHTML = "";
+        for (let i = 1; i <= count; i++) {
+            const slotId = `${locationId}_vehicle_${i}`;
+            const data = savedFleet.find(f => f.vehicle_id === slotId) || {};
+            const tr = document.createElement('tr');
+            tr.className = "border-b border-slate-50";
+            tr.innerHTML = `
+                <td class="py-4 font-mono text-[9px] text-slate-400 font-bold">${slotId}</td>
+                <td><select class="v-type input-mini font-bold">
+                    ${VEHICLE_LIST.map(v => `<option value="${v}" ${data.vehicle_type === v ? 'selected' : ''}>${v}</option>`).join('')}
+                </select></td>
+                <td><input type="number" class="v-base input-mini" value="${data.base_rate || 50}"></td>
+                <td><input type="number" step="0.1" class="v-mile input-mini" value="${data.mile_rate || 3.5}"></td>
+                <td><input type="text" class="v-cal input-mini" value="${data.calendar_id || ''}"></td>
+            `;
+            tbody.appendChild(tr);
+        }
     }
 
-    function addEventRow(data = {}) {
-        const tbody = document.getElementById('event-body');
-        const tr = document.createElement('tr');
-        tr.className = "event-row border-b border-slate-50";
-        tr.innerHTML = `
-            <td class="py-3 pr-2"><input type="text" class="e-name input-mini" placeholder="e.g. Super Bowl" value="${data.name || ''}"></td>
-            <td class="py-3 pr-2"><input type="date" class="e-date input-mini" value="${data.date || ''}"></td>
-            <td class="py-3 pr-2"><input type="number" step="0.1" class="e-mult input-mini" value="${data.multiplier || 2.0}"></td>
-            <td class="text-right"><button type="button" onclick="this.closest('tr').remove()" class="text-red-400 font-bold">&times;</button></td>
-        `;
-        tbody.appendChild(tr);
-    }
-
-    function syncRouteFields(savedData = []) {
-    const select = document.getElementById('route_count');
-    // If we have savedData, use its length; otherwise, use the dropdown value
-    const count = savedData.length > 0 ? savedData.length : parseInt(select.value);
-    const container = document.getElementById('routes-container');
-    container.innerHTML = "";
-    
-    for (let i = 0; i < count; i++) {
-        // We use the database keys: pickup_keyword, dropoff_keyword, and fixed_price
-        const d = savedData[i] || { pickup_keyword: '', dropoff_keyword: '', fixed_price: '' };
+    function addRouteRow(data = {}) {
+        const container = document.getElementById('routes-container');
         const div = document.createElement('div');
-        div.className = "flex flex-col md:flex-row gap-3 route-row p-4 bg-white rounded-xl border border-slate-200 shadow-sm mb-3";
+        div.className = "route-row border border-slate-200 p-4 rounded-xl bg-white space-y-3";
         const uid = Math.random().toString(36).substr(2, 5);
-        
         div.innerHTML = `
-            <div class="flex-1">
-                <label class="text-[9px] uppercase font-black text-slate-400 mb-1 block">Pickup Geofence (City/Coord)</label>
-                <input type="text" id="p-${uid}" class="r-pickup input-mini" 
-                       value="${d.pickup_keyword || ''}" placeholder="e.g. Los Angeles">
-            </div>
-            <div class="flex-1">
-                <label class="text-[9px] uppercase font-black text-slate-400 mb-1 block">Dropoff Geofence (City/Coord)</label>
-                <input type="text" id="d-${uid}" class="r-dropoff input-mini" 
-                       value="${d.dropoff_keyword || ''}" placeholder="e.g. LAX Airport">
-            </div>
-            <div class="w-full md:w-32">
-                <label class="text-[9px] uppercase font-black text-blue-600 mb-1 block">Flat Rate ($)</label>
-                <input type="number" step="0.01" class="r-price input-mini font-bold border-blue-200" 
-                       value="${d.fixed_price || ''}" placeholder="0.00">
+            <div class="flex flex-col md:flex-row gap-3">
+                <div class="flex-1">
+                    <label class="text-[9px] uppercase font-bold text-slate-400">Pickup Address</label>
+                    <input type="text" id="p-${uid}" class="r-pickup input-mini mb-1" value="${data.pickup || ''}" placeholder="Address">
+                    <div class="flex gap-1">
+                        <input type="text" class="r-p-lat input-mini coord-input" placeholder="Lat" value="${data.pickup_lat || ''}">
+                        <input type="text" class="r-p-lng input-mini coord-input" placeholder="Lng" value="${data.pickup_lng || ''}">
+                    </div>
+                </div>
+                <div class="flex-1">
+                    <label class="text-[9px] uppercase font-bold text-slate-400">Dropoff Address</label>
+                    <input type="text" id="d-${uid}" class="r-dropoff input-mini mb-1" value="${data.dropoff || ''}" placeholder="Address">
+                    <div class="flex gap-1">
+                        <input type="text" class="r-d-lat input-mini coord-input" placeholder="Lat" value="${data.dropoff_lat || ''}">
+                        <input type="text" class="r-d-lng input-mini coord-input" placeholder="Lng" value="${data.dropoff_lng || ''}">
+                    </div>
+                </div>
+                <div class="w-full md:w-32">
+                    <label class="text-[9px] uppercase font-bold text-slate-400">Flat Rate ($)</label>
+                    <input type="number" class="r-price input-mini h-[72px] text-lg font-bold" value="${data.price || ''}" placeholder="0.00">
+                </div>
+                <button onclick="this.closest('.route-row').remove()" class="text-red-400 px-2 font-bold self-center">&times;</button>
             </div>
         `;
         container.appendChild(div);
+
+        const pAuto = new google.maps.places.Autocomplete(document.getElementById(`p-${uid}`));
+        pAuto.addListener('place_changed', () => {
+            const place = pAuto.getPlace();
+            if (place.geometry) {
+                div.querySelector('.r-p-lat').value = place.geometry.location.lat();
+                div.querySelector('.r-p-lng').value = place.geometry.location.lng();
+            }
+        });
+        const dAuto = new google.maps.places.Autocomplete(document.getElementById(`d-${uid}`));
+        dAuto.addListener('place_changed', () => {
+            const place = dAuto.getPlace();
+            if (place.geometry) {
+                div.querySelector('.r-d-lat').value = place.geometry.location.lat();
+                div.querySelector('.r-d-lng').value = place.geometry.location.lng();
+            }
+        });
+    }
+
+    function addPeakRow(data = {}) {
+        const tr = document.createElement('tr');
+        tr.className = "peak-row border-b border-slate-50";
+        tr.innerHTML = `
+            <td class="py-3 pr-2"><select class="p-day input-mini"><option>Weekdays</option><option>Weekends</option><option>Everyday</option></select></td>
+            <td class="py-3 pr-2"><input type="time" class="p-start input-mini" value="${data.start_time || '17:00'}"></td>
+            <td class="py-3 pr-2"><input type="time" class="p-end input-mini" value="${data.end_time || '19:00'}"></td>
+            <td class="py-3 pr-2"><input type="number" step="0.1" class="p-mult input-mini" value="${data.multiplier || 1.5}"></td>
+            <td><button onclick="this.closest('tr').remove()" class="text-red-400 font-bold">&times;</button></td>
+        `;
+        document.getElementById('peak-body').appendChild(tr);
+    }
+
+    function addEventRow(data = {}) {
+        const tr = document.createElement('tr');
+        tr.className = "event-row border-b border-slate-50";
+        tr.innerHTML = `
+            <td class="py-3 pr-2"><input type="text" class="e-name input-mini" placeholder="Event" value="${data.name || ''}"></td>
+            <td class="py-3 pr-2"><input type="date" class="e-date input-mini" value="${data.date || ''}"></td>
+            <td class="py-3 pr-2"><input type="number" class="e-base input-mini" value="${data.base_rate || 50}"></td>
+            <td class="py-3 pr-2"><input type="number" step="0.1" class="e-mile input-mini" value="${data.mile_rate || 3.5}"></td>
+            <td class="py-3 pr-2"><input type="number" step="0.1" class="e-mult input-mini" value="${data.multiplier || 2.0}"></td>
+            <td class="text-right"><button onclick="this.closest('tr').remove()" class="text-red-400 font-bold">&times;</button></td>
+        `;
+        document.getElementById('event-body').appendChild(tr);
+    }
+
+    async function saveToBackend() {
+        const btn = document.getElementById('save-btn');
+        btn.innerText = "SYNCING...";
         
-        // Google Autocomplete attachment
-        if (typeof google !== 'undefined' && google.maps && google.maps.places) {
-            new google.maps.places.Autocomplete(document.getElementById(`p-${uid}`));
-            new google.maps.places.Autocomplete(document.getElementById(`d-${uid}`));
+        try {
+            const payload = {
+                saas_location_id: locationId,
+                // MAPS CRM Profile input to the payload field
+                crm_webhook_url: document.getElementById('saas_location_input').value,
+                maps_api_key: document.getElementById('maps_key').value,
+                tax_rate: document.getElementById('tax_rate').value,
+                fleet: Array.from(document.querySelectorAll('#fleet-body tr')).map(tr => ({
+                    vehicle_id: tr.cells[0].innerText,
+                    vehicle_type: tr.querySelector('.v-type').value,
+                    base_rate: tr.querySelector('.v-base').value,
+                    mile_rate: tr.querySelector('.v-mile').value,
+                    calendar_id: tr.querySelector('.v-cal').value
+                })),
+                fixed_rates: Array.from(document.querySelectorAll('.route-row')).map(r => ({
+                    pickup: r.querySelector('.r-pickup').value,
+                    pickup_lat: r.querySelector('.r-p-lat').value,
+                    pickup_lng: r.querySelector('.r-p-lng').value,
+                    dropoff: r.querySelector('.r-dropoff').value,
+                    dropoff_lat: r.querySelector('.r-d-lat').value,
+                    dropoff_lng: r.querySelector('.r-d-lng').value,
+                    price: r.querySelector('.r-price').value
+                })),
+                peak_windows: Array.from(document.querySelectorAll('.peak-row')).map(r => ({
+                    day: r.querySelector('.p-day').value,
+                    start_time: r.querySelector('.p-start').value,
+                    end_time: r.querySelector('.p-end').value,
+                    multiplier: r.querySelector('.p-mult').value
+                })),
+                events: Array.from(document.querySelectorAll('.event-row')).map(e => ({
+                    name: e.querySelector('.e-name').value,
+                    date: e.querySelector('.e-date').value,
+                    base_rate: e.querySelector('.e-base').value,
+                    mile_rate: e.querySelector('.e-mile').value,
+                    multiplier: e.querySelector('.e-mult').value
+                }))
+            };
+
+            const res = await fetch(`${BACKEND_URL}/api/update-profile-full`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(payload)
+            });
+
+            if (res.ok) alert("✅ Cloud Sync Successful!");
+            else alert("❌ Error: Sync Failed. Check server logs.");
+
+        } catch (e) { 
+            console.error(e);
+            alert("❌ Network Error. Make sure your server is running."); 
+        } finally { 
+            btn.innerText = "Sync to Cloud"; 
         }
     }
-}
+
     async function loadFromBackend() {
         document.getElementById('display-loc-id').innerText = locationId;
-        updateEmbedCode();
-
+        document.getElementById('embed-box').innerText = `<script src="${BACKEND_URL}/widget.js?loc=${locationId}"><\/script>`;
+        
         try {
             const res = await fetch(`${BACKEND_URL}/api/get-profile/${locationId}`);
             const data = await res.json();
-
             if (data && !data.error) {
                 document.getElementById('maps_key').value = data.maps_api_key || '';
-                document.getElementById('crm_api_key').value = data.crm_api_key || '';
+                // Load saved CRM ID into the input
+                document.getElementById('saas_location_input').value = data.crm_webhook_url || '';
                 document.getElementById('tax_rate').value = data.tax_rate || '0.00';
                 
                 const plan = data.plan_name || 'Starter';
                 document.getElementById('plan-badge').innerText = plan + " Plan";
-                const slotCount = (plan === 'Pro') ? 3 : (plan === 'Premium' ? 2 : 1);
+                const count = plan === 'Pro' ? 3 : (plan === 'Premium' ? 2 : 1);
                 
-                renderFleet(slotCount, data.fleet || []);
-                
+                renderFleet(count, data.fleet || []);
+                if (data.fixed_rates) data.fixed_rates.forEach(r => addRouteRow(r));
                 if (data.peak_windows) data.peak_windows.forEach(p => addPeakRow(p));
-                if (data.fixed_rates && data.fixed_rates.length > 0) {
-                    document.getElementById('route_count').value = data.fixed_rates.length;
-                    syncRouteFields(data.fixed_rates);
-                }
                 if (data.events) data.events.forEach(e => addEventRow(e));
-            } else {
-                renderFleet(1, []);
-            }
-        } catch (e) { 
-            console.error("Load error:", e);
-            renderFleet(1, []); 
-        }
+            } else { renderFleet(1); }
+        } catch (e) { renderFleet(1); }
     }
 
     async function runWebhookTest() {
@@ -329,8 +347,8 @@
     const payload = {
             saas_location_id: locationId,
             maps_api_key: document.getElementById('maps_key').value,
-            // 1. Map to crm_url instead of crm_api_key
-            crm_url: document.getElementById('crm_api_key').value, 
+            // 1. Map to crm_webhook_url instead of crm_api_key
+            crm_webhook_url: document.getElementById('crm_webhook_url').value, 
             tax_rate: parseFloat(document.getElementById('tax_rate').value) || 0,
             fleet: Array.from(document.querySelectorAll('#fleet-body tr')).map(tr => ({
                 vehicle_id: tr.cells[0].innerText,
@@ -389,3 +407,4 @@
 </script>
 </body>
 </html>
+
