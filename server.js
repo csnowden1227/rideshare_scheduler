@@ -102,6 +102,15 @@ async function validateMapsKey(key) {
   }
 }
 
+app.get('/test-signal', async (req, res) => {
+    try {
+        await pool.query("SELECT pg_notify('profile_updated', 'TEST_FROM_WEB')");
+        res.send("🚀 Test signal sent to Database. Check Render logs!");
+    } catch (err) {
+        res.status(500).send(err.message);
+    }
+});
+
 /* 🚗 Travel Time Calculation */
 async function getTravelTime(origin, destination, mapsApiKey) {
   if (!origin || !destination || !mapsApiKey) return 15;
