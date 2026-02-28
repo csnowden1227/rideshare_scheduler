@@ -837,57 +837,43 @@ app.post('/api/sync-fleet', async (req, res) => {
 }
 });
 
-// 9️⃣ GET PROFILE SETTINGS
-
-app.get("/api/get-profile/:location_id", async (req, res) => {
-  const { location_id } = req.params;
-  const client = await pool.connect();
-
-pool.connect((err, client, release) => {
-    if (err) return console.error('Error connecting to DB', err.stack);
-    
-    console.log('✅ Database Connected Globally. Listening for profile signals...');
-    client.query('LISTEN profile_updated');
-
-    client.on('notification', async (msg) => {
-        console.log(`🔔 Signal received for: ${msg.payload}`);
-        await triggerCrmWebhook(msg.payload); 
-    });
-    // Do NOT release this specific client, it needs to stay open to listen
-
-    // Start this when the server launches
+// 9️⃣ // --- DATABASE LISTENER (Runs 24/7) ---
 const startListener = async () => {
-  try {
-    const client = await pool.connect();
-    console.log("👂 Listening for Database Signals...");
-    
-    await client.query('LISTEN profile_updated');
+    let listenerClient;
+    try {
+        listenerClient = await pool.connect();
+        await listenerClient.query('LISTEN profile_updated');
+        console.log("👂 DB Listener: Online and waiting for signals...");
 
-    client.on('notification', async (msg) => {
-      console.log(`🔔 SIGNAL RECEIVED: ${msg.payload}`);
-      // This calls your webhook function
-      if (typeof triggerCrmWebhook === 'function') {
-        await triggerCrmWebhook(msg.payload);
-      }
-    });
+        listenerClient.on('notification', async (msg) => {
+            console.log(`🔔 Signal: ${msg.payload}`);
+            // This calls the "Full Payload" function above
+            await triggerCrmWebhook(msg.payload);
+        });
 
-    client.on('error', (err) => {
-      console.error('Database client error', err);
-      client.release();
-      setTimeout(startListener, 5000); // Restart if it fails
-    });
-
-  } catch (err) {
-    console.error('Failed to connect listener:', err);
-    setTimeout(startListener, 5000);
-  }
+        listenerClient.on('error', (err) => {
+            console.error('❌ Listener Error:', err);
+            listenerClient.release();
+            setTimeout(startListener, 5000); 
+        });
+    } catch (err) {
+        console.error('❌ Failed to connect listener:', err);
+        if (listenerClient) listenerClient.release();
+        setTimeout(startListener, 5000);
+    }
 };
 
 startListener();
-});
+
+// --- GET PROFILE SETTINGS ---
+app.get("/api/get-profile/:location_id", async (req, res) => {
+  const { location_id } = req.params;
+  let client;
 
   try {
-    // 1. Get the main profile (fleet, tax, maps key, webhook url)
+    client = await pool.connect();
+
+    // 1. Get the main profile
     const profileRes = await client.query(
       "SELECT * FROM profiles WHERE location_id = $1",
       [location_id]
@@ -905,27 +891,35 @@ startListener();
       [location_id]
     );
 
-    // 3. Combine the data into one clean object for the Frontend
+    // Helper for JSON parsing
+    const safeParse = (data) => {
+      if (!data) return [];
+      return typeof data === 'string' ? JSON.parse(data) : data;
+    };
+
+    // 3. Combine data
     const fullProfile = {
       location_id: profile.location_id,
       maps_api_key: profile.maps_api_key,
-      crm_url: profile.crm_url, // This matches the 'webhook' field in UI
+      crm_url: profile.crm_webhook_url, // Using your DB column name
       tax_rate: profile.tax_rate,
-      fleet: typeof profile.fleet === 'string' ? JSON.parse(profile.fleet) : profile.fleet,
-      peak_windows: typeof profile.peak_windows === 'string' ? JSON.parse(profile.peak_windows) : profile.peak_windows,
-      events: typeof profile.special_events === 'string' ? JSON.parse(profile.special_events) : profile.special_events,
-      fixed_rates: ratesRes.rows // Array of {pickup_keyword, dropoff_keyword, fixed_price}
+      fleet: safeParse(profile.fleet),
+      peak_windows: safeParse(profile.peak_windows),
+      events: safeParse(profile.special_events),
+      fixed_rates: ratesRes.rows 
     };
 
     res.json(fullProfile);
 
   } catch (err) {
-    console.error("❌ Error fetching profile:", err.message);
+    console.error("❌ Profile Route Error:", err.message);
     res.status(500).json({ error: "Server error fetching profile data" });
   } finally {
-    client.release();
+    if (client) client.release(); // Always release for standard routes
   }
 });
+
+
 
 // 2. Get Quote Route
 app.post('/api/get-quote', async (req, res) => {
