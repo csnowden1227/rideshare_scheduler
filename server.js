@@ -1081,30 +1081,40 @@ app.listen(PORT, () => {
 
 // 9️⃣ // --- DATABASE LISTENER (Runs 24/7) ---
 const startListener = async () => {
-    let listenerClient;
+    let client;
     try {
-        listenerClient = await pool.connect();
-        await listenerClient.query('LISTEN profile_updated');
-        console.log("👂 DB Listener: Online and waiting for signals...");
+        client = await pool.connect();
+        console.log("🟢 LISTENER: Connected and waiting...");
 
-        listenerClient.on('notification', async (msg) => {
-            console.log(`🔔 Signal: ${msg.payload}`);
-            // This calls the "Full Payload" function above
+        await client.query('LISTEN profile_updated');
+
+        // --- THE HEARTBEAT ---
+        // Every 45 seconds, we run a tiny query to keep the pipe open
+        const heartbeat = setInterval(async () => {
+            try {
+                await client.query('SELECT 1'); 
+            } catch (e) {
+                console.log("💔 Heartbeat failed, reconnecting...");
+                clearInterval(heartbeat);
+                client.release();
+                startListener();
+            }
+        }, 45000);
+
+        client.on('notification', async (msg) => {
+            console.log(`🔔 DB SIGNAL: Location ${msg.payload}`);
             await triggerCrmWebhook(msg.payload);
         });
 
-        listenerClient.on('error', (err) => {
-            console.error('❌ Listener Error:', err);
-            listenerClient.release();
-            setTimeout(startListener, 5000); 
+        client.on('error', (err) => {
+            console.error('❌ Connection Lost:', err);
+            clearInterval(heartbeat);
+            client.release();
+            setTimeout(startListener, 5000);
         });
+
     } catch (err) {
-        console.error('❌ Failed to connect listener:', err);
-        if (listenerClient) listenerClient.release();
+        console.error('❌ Start failed:', err);
         setTimeout(startListener, 5000);
     }
 };
-
-startListener();
-
-
