@@ -547,61 +547,83 @@ async function getCurrentMultiplier(locationId) {
 }
 
 async function triggerCrmWebhook(locationId) {
-    try {
-        console.log(`🔎 Triggering webhook for location: ${locationId}`);
-        
-        const profile = await pool.query('SELECT crm_webhook_url FROM profiles WHERE location_id = $1', [locationId]);
-        const booking = await pool.query('SELECT * FROM bookings WHERE saas_location_id = $1 ORDER BY created_at DESC LIMIT 1', [locationId]);
+  try {
+    console.log(`🔎 Database signal received for location: ${locationId}`);
 
-        if (profile.rows.length === 0 || booking.rows.length === 0) {
-            console.log("⚠️ Could not find profile or booking for this location.");
-            return;
-        }
+    // 1. Fetch Profile and Latest Booking
+    const profileRes = await pool.query('SELECT * FROM profiles WHERE location_id = $1', [locationId]);
+    const bookingRes = await pool.query('SELECT * FROM bookings WHERE saas_location_id = $1 ORDER BY created_at DESC LIMIT 1', [locationId]);
 
-        const webhookUrl = profile.rows[0].crm_webhook_url;
-        const b = booking.rows[0];
-
-        // Math: 15% tax on the total_price column
-        const dbPrice = parseFloat(b.total_price) || 0;
-        const grandTotal = dbPrice * 1.15;
-
-        // 🚀 FULL PAYLOAD: Every column from your 'bookings' table
-        const payload = {
-            booking_id: b.booking_id,
-            saas_location_id: b.saas_location_id,
-            vehicle_slot_id: b.vehicle_slot_id,
-            first_name: b.first_name,
-            last_name: b.last_name,
-            email: b.email,
-            phone: b.phone,
-            pickup_address: b.pickup_address,
-            pickup_coords: b.pickup_coords,
-            dropoff_address: b.dropoff_address,
-            dropoff_coords: b.dropoff_coords,
-            start_time: b.start_time,
-            end_time: b.end_time,
-            original_price: dbPrice.toFixed(2),
-            calculated_total_with_tax: grandTotal.toFixed(2), // The tax version
-            status: b.status,
-            created_at: b.created_at
-        };
-
-        console.log(`📡 Dispatching ALL data to CRM: ${webhookUrl}`);
-        
-        const response = await fetch(webhookUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        });
-
-        if (response.ok) {
-            console.log("✅ Full payload delivered successfully!");
-        } else {
-            console.error(`❌ CRM Error: ${response.status}`);
-        }
-    } catch (err) {
-        console.error("❌ Function Error:", err.message);
+    if (profileRes.rows.length === 0 || bookingRes.rows.length === 0) {
+      console.log("⚠️ Missing data: Either profile or booking not found.");
+      return;
     }
+
+    const p = profileRes.rows[0];
+    const b = bookingRes.rows[0];
+
+    // 2. Determine the Webhook URL (Priority to crm_webhook_url)
+    const targetUrl = p.crm_webhook_url || p.crm_url;
+
+    if (!targetUrl) {
+      console.error("❌ No Webhook URL found in database for this location.");
+      return;
+    }
+
+    // 3. Financial Calculation (Using your 15% tax requirement)
+    const baseAmount = parseFloat(b.total_price) || 0;
+    const finalTotal = (baseAmount * 1.15).toFixed(2);
+
+    // 4. Construct the Full Payload
+    const payload = {
+      location_info: {
+        id: p.location_id,
+        business_name: p.business_name
+      },
+      customer: {
+        first_name: b.first_name,
+        last_name: b.last_name,
+        email: b.email,
+        phone: b.phone
+      },
+      trip: {
+        pickup: b.pickup_address,
+        dropoff: b.dropoff_address,
+        pickup_lat_lng: b.pickup_coords,
+        dropoff_lat_lng: b.dropoff_coords,
+        start_time: b.start_time
+      },
+      financials: {
+        base_price: baseAmount.toFixed(2),
+        tax_applied: "15%",
+        grand_total: finalTotal
+      },
+      // These are 'jsonb' in your DB, so they are already objects
+      settings: {
+        fleet: p.fleet, 
+        special_events: p.special_events,
+        fixed_routes: p.fixed_routes
+      },
+      booking_status: b.status
+    };
+
+    // 5. Send to CRM
+    console.log(`📡 Sending payload to: ${targetUrl}`);
+    const response = await fetch(targetUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    if (response.ok) {
+      console.log("✅ Webhook delivery successful.");
+    } else {
+      console.error(`❌ CRM responded with status: ${response.status}`);
+    }
+
+  } catch (err) {
+    console.error("❌ Critical Webhook Error:", err.message);
+  }
 }
      
 app.post("/api/calculate-quote", async (req, res) => {
