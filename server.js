@@ -859,33 +859,7 @@ app.post('/api/sync-fleet', async (req, res) => {
 }
 });
 
-// 9️⃣ // --- DATABASE LISTENER (Runs 24/7) ---
-const startListener = async () => {
-    let listenerClient;
-    try {
-        listenerClient = await pool.connect();
-        await listenerClient.query('LISTEN profile_updated');
-        console.log("👂 DB Listener: Online and waiting for signals...");
 
-        listenerClient.on('notification', async (msg) => {
-            console.log(`🔔 Signal: ${msg.payload}`);
-            // This calls the "Full Payload" function above
-            await triggerCrmWebhook(msg.payload);
-        });
-
-        listenerClient.on('error', (err) => {
-            console.error('❌ Listener Error:', err);
-            listenerClient.release();
-            setTimeout(startListener, 5000); 
-        });
-    } catch (err) {
-        console.error('❌ Failed to connect listener:', err);
-        if (listenerClient) listenerClient.release();
-        setTimeout(startListener, 5000);
-    }
-};
-
-startListener();
 
 // --- GET PROFILE SETTINGS ---
 app.get("/api/get-profile/:location_id", async (req, res) => {
@@ -1104,3 +1078,33 @@ const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
   console.log(`🚀 Chauffeur SaaS Backend running on port ${PORT}`);
 });
+
+// 9️⃣ // --- DATABASE LISTENER (Runs 24/7) ---
+const startListener = async () => {
+    let listenerClient;
+    try {
+        listenerClient = await pool.connect();
+        await listenerClient.query('LISTEN profile_updated');
+        console.log("👂 DB Listener: Online and waiting for signals...");
+
+        listenerClient.on('notification', async (msg) => {
+            console.log(`🔔 Signal: ${msg.payload}`);
+            // This calls the "Full Payload" function above
+            await triggerCrmWebhook(msg.payload);
+        });
+
+        listenerClient.on('error', (err) => {
+            console.error('❌ Listener Error:', err);
+            listenerClient.release();
+            setTimeout(startListener, 5000); 
+        });
+    } catch (err) {
+        console.error('❌ Failed to connect listener:', err);
+        if (listenerClient) listenerClient.release();
+        setTimeout(startListener, 5000);
+    }
+};
+
+startListener();
+
+
