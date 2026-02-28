@@ -15,7 +15,7 @@ dotenv.config();
 const app = express(); // ✅ ADD THIS
 
 // 1. Define it at the top
-const CRM_WEBHOOK_URL = process.env.CRM_WEBHOOK_URL || "https://services.leadconnectorhq.com/hooks/VXE0UY17p7wnxdZ3sOLc/webhook-trigger/770d2b2e-e16b-4dd0-86aa-fb388a05af17";
+const CRM_WEBHOOK_URL = process.env.CRM_WEBHOOK_URL || "https://services.leadconnectorhq.com/hooks/VXE0UY17p7wnxdZ3sOLc/webhook-trigger/37726c47-85f7-4445-9cc6-df4467253f3a";
 
 // 2. Find your booking endpoint
 app.post('/api/create-booking', async (req, res) => {
@@ -772,7 +772,7 @@ if (fixedPrice) {
     await client.query("COMMIT");
 
     // 5. SEND TO CRM WEBHOOK (Outside transaction)
-    const CRM_WEBHOOK_URL = "https://services.leadconnectorhq.com/hooks/VXE0UY17p7wnxdZ3sOLc/webhook-trigger/770d2b2e-e16b-4dd0-86aa-fb388a05af17";
+    const CRM_WEBHOOK_URL = "https://services.leadconnectorhq.com/hooks/VXE0UY17p7wnxdZ3sOLc/webhook-trigger/37726c47-85f7-4445-9cc6-df4467253f3a";
     
     fetch(CRM_WEBHOOK_URL, {
       method: 'POST',
