@@ -548,36 +548,45 @@ async function getCurrentMultiplier(locationId) {
 
 async function triggerCrmWebhook(locationId) {
     try {
-        console.log(`🔎 Starting webhook trigger for location: ${locationId}`);
+        console.log(`🔎 Triggering webhook for location: ${locationId}`);
         
         const profile = await pool.query('SELECT crm_webhook_url FROM profiles WHERE location_id = $1', [locationId]);
         const booking = await pool.query('SELECT * FROM bookings WHERE saas_location_id = $1 ORDER BY created_at DESC LIMIT 1', [locationId]);
 
         if (profile.rows.length === 0 || booking.rows.length === 0) {
-            console.log("⚠️ Missing profile or booking data.");
+            console.log("⚠️ Could not find profile or booking for this location.");
             return;
         }
 
         const webhookUrl = profile.rows[0].crm_webhook_url;
         const b = booking.rows[0];
 
-        // Perform the Math
-        const basePrice = parseFloat(b.total_price) || 0;
-        const taxRate = 0.15; 
-        const totalWithTax = basePrice * (1 + taxRate);
+        // Math: 15% tax on the total_price column
+        const dbPrice = parseFloat(b.total_price) || 0;
+        const grandTotal = dbPrice * 1.15;
 
+        // 🚀 FULL PAYLOAD: Every column from your 'bookings' table
         const payload = {
+            booking_id: b.booking_id,
+            saas_location_id: b.saas_location_id,
+            vehicle_slot_id: b.vehicle_slot_id,
             first_name: b.first_name,
             last_name: b.last_name,
             email: b.email,
             phone: b.phone,
             pickup_address: b.pickup_address,
+            pickup_coords: b.pickup_coords,
             dropoff_address: b.dropoff_address,
-            calculated_total: totalWithTax.toFixed(2),
-            status: b.status
+            dropoff_coords: b.dropoff_coords,
+            start_time: b.start_time,
+            end_time: b.end_time,
+            original_price: dbPrice.toFixed(2),
+            calculated_total_with_tax: grandTotal.toFixed(2), // The tax version
+            status: b.status,
+            created_at: b.created_at
         };
 
-        console.log(`📡 Sending to CRM: ${webhookUrl}`);
+        console.log(`📡 Dispatching ALL data to CRM: ${webhookUrl}`);
         
         const response = await fetch(webhookUrl, {
             method: 'POST',
@@ -586,71 +595,14 @@ async function triggerCrmWebhook(locationId) {
         });
 
         if (response.ok) {
-            console.log("✅ Successfully delivered to CRM One Source!");
+            console.log("✅ Full payload delivered successfully!");
         } else {
-            console.error("❌ CRM One Source delivery failed. Status:", response.status);
+            console.error(`❌ CRM Error: ${response.status}`);
         }
     } catch (err) {
-        console.error("❌ Error in triggerCrmWebhook:", err.message);
+        console.error("❌ Function Error:", err.message);
     }
-} // Final closing brace
-
-async function triggerCrmWebhook(bookingId) {
-    try {
-        const query = `
-            SELECT b.*, p.tax_rate, p.crm_webhook_url
-            FROM bookings b
-            JOIN profiles p ON b.saas_location_id = p.location_id
-            WHERE b.booking_id = $1
-        `;
-        const res = await pool.query(query, [bookingId]);
-        const data = res.rows[0];
-
-        if (!data || !data.crm_webhook_url) {
-            console.log("⚠️ Missing booking or CRM One Source Webhook URL.");
-            return;
-        }
-
-        // --- THE FIX ---
-        // Use a unique name 'calculatedGrandTotal' so it never conflicts 
-        // with other variables named 'totalPrice' in your file.
-        const rawAmount = Number(data.total_price) || 0;
-        const currentTax = Number(data.tax_rate) || 0;
-        const calculatedGrandTotal = (rawAmount + (rawAmount * (currentTax / 100))).toFixed(2);
-
-        console.log(`📊 Math Check: Base(${rawAmount}) + Tax(${currentTax}%) = Total(${calculatedGrandTotal})`);
-
-        console.log(`📡 Dispatching to CRM One Source: ${data.crm_webhook_url}`);
-
-        const response = await fetch(data.crm_webhook_url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                source: "Rideshare Scheduler",
-                saas_location_id: data.saas_location_id,
-                firstName: data.first_name,
-                lastName: data.last_name,
-                email: data.email,
-                pickup_address: data.pickup_address,
-                dropoff_address: data.dropoff_address,
-                
-                // This 'totalPrice' is a label for CRM One Source. 
-                // We fill it with our uniquely named variable.
-                total_price: calculatedGrandTotal, 
-                
-                status: data.status
-            })
-        });
-
-if (response.ok) {
-            console.log("✅ Successfully delivered to CRM One Source!");
-        } else {
-            console.error("❌ CRM One Source delivery failed. Status:", response.status);
-        }
-    } catch (err) {
-        console.error("❌ Error in triggerCrmWebhook:", err.message);
-    }
-} // This is the final closing brace for the whole triggerCrmWebhook function
+}
      
 app.post("/api/calculate-quote", async (req, res) => {
     const { userId, serviceId, pickup, dropoff, startISO } = req.body;
