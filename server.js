@@ -1090,48 +1090,32 @@ app.post("/api/create-booking", async (req, res) => {
   }
 });
 
-// --- SERVER START ---
+
+// ... [Your existing routes like app.post and app.get] ...
+
+// --- THE WEB SERVER START ---
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
   console.log(`🚀 Chauffeur SaaS Backend running on port ${PORT}`);
+  
+  // THIS IS THE TRIGGER THAT TURNS ON THE AUTOMATION
+  startListener().catch(err => console.error("❌ Listener failed to start:", err));
 });
 
-// 9️⃣ // --- DATABASE LISTENER (Runs 24/7) ---
-const startListener = async () => {
-    let client;
-    try {
-        client = await pool.connect();
-        console.log("🟢 LISTENER: Connected and waiting...");
+// --- THE BACKGROUND LISTENER ---
+async function startListener() {
+    const client = await pool.connect();
+    console.log("🟢 LISTENER: Successfully connected to Postgres.");
+    
+    await client.query('LISTEN profile_updated');
+    
+    client.on('notification', async (msg) => {
+        console.log(`🔔 DB SIGNAL RECEIVED for Location: ${msg.payload}`);
+        await triggerCrmWebhook(msg.payload);
+    });
 
-        await client.query('LISTEN profile_updated');
-
-        // --- THE HEARTBEAT ---
-        // Every 45 seconds, we run a tiny query to keep the pipe open
-        const heartbeat = setInterval(async () => {
-            try {
-                await client.query('SELECT 1'); 
-            } catch (e) {
-                console.log("💔 Heartbeat failed, reconnecting...");
-                clearInterval(heartbeat);
-                client.release();
-                startListener();
-            }
-        }, 45000);
-
-        client.on('notification', async (msg) => {
-            console.log(`🔔 DB SIGNAL: Location ${msg.payload}`);
-            await triggerCrmWebhook(msg.payload);
-        });
-
-        client.on('error', (err) => {
-            console.error('❌ Connection Lost:', err);
-            clearInterval(heartbeat);
-            client.release();
-            setTimeout(startListener, 5000);
-        });
-
-    } catch (err) {
-        console.error('❌ Start failed:', err);
-        setTimeout(startListener, 5000);
-    }
-};
+    client.on('error', (err) => {
+        console.error('❌ DB Listener Connection Lost:', err);
+        setTimeout(startListener, 5000); // Reconnect if it drops
+    });
+}
