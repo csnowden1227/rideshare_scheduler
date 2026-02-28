@@ -562,12 +562,11 @@ async function triggerCrmWebhook(locationId) {
         const webhookUrl = profile.rows[0].crm_webhook_url;
         const b = booking.rows[0];
 
-        // Math for the CRM
-        const basePrice = parseFloat(b.base_price) || 0;
+        // Math: Using the existing total_price from your DB as the base
+        const dbPrice = parseFloat(b.total_price) || 0;
         const taxRate = 0.15; 
-        const totalWithTax = basePrice * (1 + taxRate);
+        const grandTotal = dbPrice * (1 + taxRate);
 
-        // 🚀 FULL PAYLOAD: Match these keys to your CRM custom fields
         const payload = {
             first_name: b.first_name,
             last_name: b.last_name,
@@ -575,12 +574,10 @@ async function triggerCrmWebhook(locationId) {
             phone: b.phone,
             pickup_address: b.pickup_address,
             dropoff_address: b.dropoff_address,
-            pickup_date: b.pickup_date,
-            pickup_time: b.pickup_time,
-            passengers: b.passengers,
-            flight_number: b.flight_number,
-            base_price: basePrice.toFixed(2),
-            total_price: totalWithTax.toFixed(2), // The calculated total
+            // Mapping the database 'start_time' to the CRM 'pickup_time'
+            pickup_time: b.start_time, 
+            // This is the new calculated value for the CRM
+            calculated_total: grandTotal.toFixed(2), 
             status: b.status,
             booking_id: b.booking_id
         };
