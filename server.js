@@ -564,142 +564,84 @@ async function getCurrentMultiplier(locationId) {
 }
 
 async function triggerCrmWebhook(locationId) {
-  try {
-    console.log(`🔎 Database signal received for location: ${locationId}`);
-
-    // 1. Fetch Profile and Latest Booking
-    const profileRes = await pool.query('SELECT * FROM profiles WHERE location_id = $1', [locationId]);
-    const bookingRes = await pool.query('SELECT * FROM bookings WHERE saas_location_id = $1 ORDER BY created_at DESC LIMIT 1', [locationId]);
-
-    if (profileRes.rows.length === 0 || bookingRes.rows.length === 0) {
-      console.log("⚠️ Missing data: Either profile or booking not found.");
-      return;
-    }
-
-    const p = profileRes.rows[0];
-    const b = bookingRes.rows[0];
-
-    // 2. Determine the Webhook URL (Priority to crm_webhook_url)
-    const targetUrl = p.crm_webhook_url || p.crm_url;
-
-    if (!targetUrl) {
-      console.error("❌ No Webhook URL found in database for this location.");
-      return;
-    }
-
-    // 3. Financial Calculation (Using your 15% tax requirement)
-    const baseAmount = parseFloat(b.total_price) || 0;
-    const finalTotal = (baseAmount * 1.15).toFixed(2);
-
-    // 4. Construct the Full Payload
-    const payload = {
-      location_info: {
-        id: p.location_id,
-        business_name: p.business_name
-      },
-      customer: {
-        first_name: b.first_name,
-        last_name: b.last_name,
-        email: b.email,
-        phone: b.phone
-      },
-      trip: {
-        pickup: b.pickup_address,
-        dropoff: b.dropoff_address,
-        pickup_lat_lng: b.pickup_coords,
-        dropoff_lat_lng: b.dropoff_coords,
-        start_time: b.start_time
-      },
-      financials: {
-        base_price: baseAmount.toFixed(2),
-        tax_applied: "15%",
-        grand_total: finalTotal
-      },
-      // These are 'jsonb' in your DB, so they are already objects
-      settings: {
-        fleet: p.fleet, 
-        special_events: p.special_events,
-        fixed_routes: p.fixed_routes
-      },
-      booking_status: b.status
-    };
-
-    // 5. Send to CRM
-    console.log(`📡 Sending payload to: ${targetUrl}`);
-    const response = await fetch(targetUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
-
-    if (response.ok) {
-      console.log("✅ Webhook delivery successful.");
-    } else {
-      console.error(`❌ CRM responded with status: ${response.status}`);
-    }
-
-  } catch (err) {
-    console.error("❌ Critical Webhook Error:", err.message);
-  }
-}
-     
-app.post("/api/calculate-quote", async (req, res) => {
-    const { userId, serviceId, pickup, dropoff, startISO } = req.body;
-
+    let client;
     try {
-        const userRes = await pool.query("SELECT tax_rate, maps_api_key, peak_multiplier FROM users WHERE id = $1", [userId]);
-        const serviceRes = await pool.query("SELECT * FROM services WHERE id = $1", [serviceId]);
+        client = await pool.connect();
 
-        if (!userRes.rows.length || !serviceRes.rows.length) {
-            return res.status(404).json({ error: "Config not found" });
+        // 1. Get the Profile (Fleet, Events, Tax, and the Webhook URL)
+        const profileRes = await client.query(
+            "SELECT fleet, special_events, tax_rate, crm_webhook_url FROM profiles WHERE location_id = $1", 
+            [locationId]
+        );
+
+        // 2. Get the Latest Booking for this location
+        const bookingRes = await client.query(
+            "SELECT * FROM bookings WHERE saas_location_id = $1 ORDER BY created_at DESC LIMIT 1", 
+            [locationId]
+        );
+
+        if (profileRes.rows.length === 0 || bookingRes.rows.length === 0) {
+            console.log("⚠️ Missing data for sync. Skipping.");
+            return;
         }
 
-        const user = userRes.rows[0];
-        const service = serviceRes.rows[0];
+        const p = profileRes.rows[0];
+        const b = bookingRes.rows[0];
 
-        // Check for fixed rate
-        const fixedPrice = await checkFixedRate(userId, serviceId, pickup, dropoff);
-        let priceBeforeTax = 0;
-        let miles = 0;
+        // 3. Calculate Financials (Price + 15% Tax)
+        const basePrice = parseFloat(b.total_price) || 0;
+        const taxRate = parseFloat(p.tax_rate) || 0.15; // Default to 15%
+        const totalWithTax = (basePrice * (1 + taxRate)).toFixed(2);
 
-        if (fixedPrice) {
-            priceBeforeTax = fixedPrice;
-        } else {
-            const mapsUrl = `https://maps.googleapis.com/maps/api/distancematrix/json?origins=${encodeURIComponent(pickup)}&destinations=${encodeURIComponent(dropoff)}&key=${user.maps_api_key}`;
-            const mapsResp = await fetch(mapsUrl);
-            const mapsData = await mapsResp.json();
-
-            if (mapsData.rows?.[0]?.elements?.[0]?.status === "OK") {
-                // Convert meters to miles
-                miles = mapsData.rows[0].elements[0].distance.value / 1609.34;
+        // 4. Construct the FULL PAYLOAD
+        const payload = {
+            location_id: locationId,
+            webhook_type: "BOOKING_SYNC",
+            customer: {
+                first_name: b.first_name,
+                last_name: b.last_name,
+                email: b.email,
+                phone: b.phone
+            },
+            trip: {
+                pickup: b.pickup_address,
+                destination: b.destination_address,
+                pickup_date: b.pickup_date,
+                pickup_time: b.pickup_time,
+                passengers: b.passengers
+            },
+            financials: {
+                subtotal: basePrice,
+                tax_applied: (taxRate * 100) + "%",
+                total_amount: totalWithTax
+            },
+            settings: {
+                selected_car: b.car_type,
+                fleet_snapshot: typeof p.fleet === 'string' ? JSON.parse(p.fleet) : p.fleet,
+                special_events: typeof p.special_events === 'string' ? JSON.parse(p.special_events) : p.special_events
             }
+        };
 
-            // CALCULATION: Base + (Miles * Per Mile Rate)
-            priceBeforeTax = parseFloat(service.base_rate || 0) + (miles * parseFloat(service.per_mile_rate || 0));
-        }
+        console.log(`📡 Dispatching Full Payload to: ${p.crm_webhook_url}`);
 
-        // Use the logic-based multiplier
-        const multiplier = getPeakMultiplier(startISO || new Date().toISOString(), service.peak_multiplier || user.peak_multiplier);
-
-        // Applying the Peak Multiplier
-        let subtotal = priceBeforeTax * multiplier;
-
-        const taxAmount = subtotal * (parseFloat(user.tax_rate || 0) / 100);
-        const finalTotal = subtotal + taxAmount;
-
-        res.json({
-            subtotal: subtotal.toFixed(2),
-            tax: taxAmount.toFixed(2),
-            total: finalTotal.toFixed(2),
-            miles: miles.toFixed(2)
+        const response = await fetch(p.crm_webhook_url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
         });
 
-    } catch (err) {
-        console.error("Quote Calculation Error:", err);
-        res.status(500).json({ error: "Internal Server Error" });
-    }
-});
+        if (response.ok) {
+            console.log("✅ CRM Sync Successful!");
+        } else {
+            console.error("❌ CRM rejected the payload:", response.statusText);
+        }
 
+    } catch (err) {
+        console.error("❌ Critical Error in triggerCrmWebhook:", err.message);
+    } finally {
+        if (client) client.release();
+    }
+}
 /*****************************************************
  7️⃣ BOOKING ENGINE
 *****************************************************/
@@ -879,56 +821,34 @@ app.post('/api/sync-fleet', async (req, res) => {
 
 
 // --- GET PROFILE SETTINGS ---
+// --- GET PROFILE SETTINGS ---
 app.get("/api/get-profile/:location_id", async (req, res) => {
   const { location_id } = req.params;
   let client;
-
   try {
     client = await pool.connect();
+    const profileRes = await client.query("SELECT * FROM profiles WHERE location_id = $1", [location_id]);
+    const ratesRes = await client.query("SELECT * FROM fixed_rates WHERE saas_location_id = $1", [location_id]);
 
-    // 1. Get the main profile
-    const profileRes = await client.query(
-      "SELECT * FROM profiles WHERE location_id = $1",
-      [location_id]
-    );
-
-    if (profileRes.rows.length === 0) {
-      return res.status(404).json({ error: "Profile not found" });
-    }
+    if (profileRes.rows.length === 0) return res.status(404).json({ error: "Profile not found" });
 
     const profile = profileRes.rows[0];
+    const safeParse = (data) => (!data ? [] : (typeof data === 'string' ? JSON.parse(data) : data));
 
-    // 2. Get the geofencing / fixed rates
-    const ratesRes = await client.query(
-      "SELECT pickup_keyword, dropoff_keyword, fixed_price FROM fixed_rates WHERE user_id = $1",
-      [location_id]
-    );
-
-    // Helper for JSON parsing
-    const safeParse = (data) => {
-      if (!data) return [];
-      return typeof data === 'string' ? JSON.parse(data) : data;
-    };
-
-    // 3. Combine data
-    const fullProfile = {
+    res.json({
       location_id: profile.location_id,
       maps_api_key: profile.maps_api_key,
-      crm_url: profile.crm_webhook_url, // Using your DB column name
+      crm_url: profile.crm_webhook_url,
       tax_rate: profile.tax_rate,
       fleet: safeParse(profile.fleet),
-      peak_windows: safeParse(profile.peak_windows),
       events: safeParse(profile.special_events),
       fixed_rates: ratesRes.rows 
-    };
-
-    res.json(fullProfile);
-
+    });
   } catch (err) {
     console.error("❌ Profile Route Error:", err.message);
-    res.status(500).json({ error: "Server error fetching profile data" });
+    res.status(500).json({ error: "Server error" });
   } finally {
-    if (client) client.release(); // Always release for standard routes
+    if (client) client.release();
   }
 });
 
@@ -1091,31 +1011,34 @@ app.post("/api/create-booking", async (req, res) => {
 });
 
 
-// ... [Your existing routes like app.post and app.get] ...
+// --- DATABASE LISTENER (Runs 24/7) ---
+const startListener = async () => {
+    let listenerClient;
+    try {
+        listenerClient = await pool.connect();
+        await listenerClient.query('LISTEN profile_updated');
+        console.log("🟢 DB Listener: Online and waiting for signals...");
 
-// --- THE WEB SERVER START ---
+        listenerClient.on('notification', async (msg) => {
+            console.log(`🔔 Signal: ${msg.payload}`);
+            await triggerCrmWebhook(msg.payload);
+        });
+
+        listenerClient.on('error', (err) => {
+            console.error('❌ Listener Error:', err);
+            listenerClient.release();
+            setTimeout(startListener, 5000); 
+        });
+    } catch (err) {
+        console.error('❌ Failed to connect listener:', err);
+        if (listenerClient) listenerClient.release();
+        setTimeout(startListener, 5000);
+    }
+};
+
+// --- START EVERYTHING ---
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
-  console.log(`🚀 Chauffeur SaaS Backend running on port ${PORT}`);
-  
-  // THIS IS THE TRIGGER THAT TURNS ON THE AUTOMATION
-  startListener().catch(err => console.error("❌ Listener failed to start:", err));
+    console.log(`🚀 Server running on port ${PORT}`);
+    startListener(); // Starts the ear as soon as the mouth is open
 });
-
-// --- THE BACKGROUND LISTENER ---
-async function startListener() {
-    const client = await pool.connect();
-    console.log("🟢 LISTENER: Successfully connected to Postgres.");
-    
-    await client.query('LISTEN profile_updated');
-    
-    client.on('notification', async (msg) => {
-        console.log(`🔔 DB SIGNAL RECEIVED for Location: ${msg.payload}`);
-        await triggerCrmWebhook(msg.payload);
-    });
-
-    client.on('error', (err) => {
-        console.error('❌ DB Listener Connection Lost:', err);
-        setTimeout(startListener, 5000); // Reconnect if it drops
-    });
-}
