@@ -546,6 +546,64 @@ async function getCurrentMultiplier(locationId) {
     }
 }
 
+async function triggerCrmWebhook(locationId) {
+    try {
+        console.log(`🔎 Starting webhook trigger for location: ${locationId}`);
+        
+        const profile = await pool.query('SELECT crm_webhook_url FROM profiles WHERE location_id = $1', [locationId]);
+        // Make sure we select all columns from bookings
+        const booking = await pool.query('SELECT * FROM bookings WHERE saas_location_id = $1 ORDER BY created_at DESC LIMIT 1', [locationId]);
+
+        if (profile.rows.length === 0 || booking.rows.length === 0) {
+            console.log("⚠️ Missing profile or booking data.");
+            return;
+        }
+
+        const webhookUrl = profile.rows[0].crm_webhook_url;
+        const b = booking.rows[0];
+
+        // Math for the CRM
+        const basePrice = parseFloat(b.base_price) || 0;
+        const taxRate = 0.15; 
+        const totalWithTax = basePrice * (1 + taxRate);
+
+        // 🚀 FULL PAYLOAD: Match these keys to your CRM custom fields
+        const payload = {
+            first_name: b.first_name,
+            last_name: b.last_name,
+            email: b.email,
+            phone: b.phone,
+            pickup_address: b.pickup_address,
+            dropoff_address: b.dropoff_address,
+            pickup_date: b.pickup_date,
+            pickup_time: b.pickup_time,
+            passengers: b.passengers,
+            flight_number: b.flight_number,
+            base_price: basePrice.toFixed(2),
+            total_price: totalWithTax.toFixed(2), // The calculated total
+            status: b.status,
+            booking_id: b.booking_id
+        };
+
+        console.log(`📡 Sending Full Payload to CRM: ${webhookUrl}`);
+        
+        const response = await fetch(webhookUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+
+        if (response.ok) {
+            console.log("✅ Successfully delivered full payload to CRM!");
+        } else {
+            const errorText = await response.text();
+            console.log(`❌ CRM rejected: ${response.status} - ${errorText}`);
+        }
+    } catch (err) {
+        console.error("🔴 Webhook Error:", err.message);
+    }
+}
+
 async function triggerCrmWebhook(bookingId) {
     try {
         const query = `
