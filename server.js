@@ -111,6 +111,23 @@ app.get('/test-signal', async (req, res) => {
     }
 });
 
+app.get('/test-webhook', async (req, res) => {
+    try {
+        // 1. TEST THE DB CONNECTION
+        const dbTest = await pool.query('SELECT NOW()');
+        console.log("✅ DB Connection Verified at:", dbTest.rows[0].now);
+
+        // 2. RUN THE SYNC MANUALLY
+        const locationId = '101'; // Your test ID
+        await triggerCrmWebhook(locationId);
+
+        res.send(`<h1>Success!</h1><p>DB is connected and signal sent to CRM for Location ${locationId}</p>`);
+    } catch (err) {
+        console.error("❌ Test Route Error:", err.message);
+        res.status(500).send(`<h1>DB Error</h1><p>${err.message}</p>`);
+    }
+});
+
 /* 🚗 Travel Time Calculation */
 async function getTravelTime(origin, destination, mapsApiKey) {
   if (!origin || !destination || !mapsApiKey) return 15;
