@@ -563,85 +563,143 @@ async function getCurrentMultiplier(locationId) {
     }
 }
 
-async function triggerCrmWebhook(locationId, bookingId) { 
-    let client;
-    try {
-        client = await pool.connect();
+async function triggerCrmWebhook(locationId, bookingId) {
+  let client;
+  try {
+    client = await pool.connect();
 
-        // 1. Get the Profile (Settings)
-        const profileRes = await client.query(
-            "SELECT fleet, special_events, tax_rate, crm_webhook_url FROM profiles WHERE location_id = $1", 
-            [locationId]
-        );
+    // 1) Load the booking (source of truth)
+    const bookingRes = await client.query(
+      "SELECT * FROM bookings WHERE id = $1",
+      [bookingId]
+    );
 
-        // 2. Get the SPECIFIC Booking instead of just the "latest" one
-        const bookingRes = await client.query(
-            "SELECT * FROM bookings WHERE id = $1", 
-            [bookingId]
-        );
-
-        if (profileRes.rows.length === 0 || bookingRes.rows.length === 0) {
-            console.log("⚠️ Missing data for sync. Skipping.");
-            return;
-        }
-
-        const p = profileRes.rows[0];
-        const b = bookingRes.rows[0];
-
-        // 3. Calculate Financials (Price + 15% Tax)
-        const basePrice = parseFloat(b.total_price) || 0;
-        const taxRate = parseFloat(p.tax_rate) || 0.15; // Default to 15%
-        const totalWithTax = (basePrice * (1 + taxRate)).toFixed(2);
-
-        // 4. Construct the FULL PAYLOAD
-        const payload = {
-            location_id: locationId,
-            webhook_type: "BOOKING_SYNC",
-            customer: {
-                first_name: b.first_name,
-                last_name: b.last_name,
-                email: b.email,
-                phone: b.phone
-            },
-            trip: {
-                pickup: b.pickup_address,
-                destination: b.destination_address,
-                pickup_date: b.pickup_date,
-                pickup_time: b.pickup_time,
-                passengers: b.passengers
-            },
-            financials: {
-                subtotal: basePrice,
-                tax_applied: (taxRate * 100) + "%",
-                total_amount: totalWithTax
-            },
-            settings: {
-                selected_car: b.car_type,
-                fleet_snapshot: typeof p.fleet === 'string' ? JSON.parse(p.fleet) : p.fleet,
-                special_events: typeof p.special_events === 'string' ? JSON.parse(p.special_events) : p.special_events
-            }
-        };
-
-        console.log(`📡 Dispatching Full Payload to: ${p.crm_webhook_url}`);
-
-        const response = await fetch(p.crm_webhook_url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        });
-
-        if (response.ok) {
-            console.log("✅ CRM Sync Successful!");
-        } else {
-            console.error("❌ CRM rejected the payload:", response.statusText);
-        }
-
-    } catch (err) {
-        console.error("❌ Critical Error in triggerCrmWebhook:", err.message);
-    } finally {
-        if (client) client.release();
+    if (bookingRes.rows.length === 0) {
+      console.log("⚠️ Missing data for CRM sync. Skipping.", {
+        bookingId,
+        missing: ["booking"],
+      });
+      return;
     }
+
+    const b = bookingRes.rows[0];
+
+    // 2) Load the tenant/user to get the CRM webhook URL (Option A)
+    // NOTE: bookings.user_id is a FK to users.id in your schema
+    const userRes = await client.query(
+      "SELECT id, business_name, crm_webhook_url FROM users WHERE id = $1",
+      [b.user_id]
+    );
+
+    if (userRes.rows.length === 0) {
+      console.log("⚠️ Missing data for CRM sync. Skipping.", {
+        bookingId,
+        tenantId: b.user_id,
+        missing: ["tenant/users row"],
+      });
+      return;
+    }
+
+    const u = userRes.rows[0];
+
+    // 3) Optionally load profile settings if you still want fleet/tax/special_events
+    // If profiles don't exist for a location yet, we DO NOT skip CRM sync.
+    let p = { fleet: null, special_events: null, tax_rate: 0.15 };
+    try {
+      const profileRes = await client.query(
+        "SELECT fleet, special_events, tax_rate FROM profiles WHERE location_id = $1",
+        [locationId]
+      );
+      if (profileRes.rows.length > 0) p = profileRes.rows[0];
+    } catch (e) {
+      // profiles table might not exist in some envs; still proceed
+    }
+
+    // 4) Minimal required fields for CRM sync (Option A)
+    const missing = [];
+    if (!u.crm_webhook_url) missing.push("users.crm_webhook_url");
+    if (!b.customer_email) missing.push("bookings.customer_email");
+    if (!b.pickup_address) missing.push("bookings.pickup_address");
+    if (!b.dropoff_address) missing.push("bookings.dropoff_address");
+    if (!b.start_time) missing.push("bookings.start_time");
+    if (!b.status) missing.push("bookings.status");
+
+    if (missing.length) {
+      console.log("⚠️ Missing data for CRM sync. Skipping.", {
+        bookingId,
+        tenantId: u.id,
+        missing,
+      });
+      return;
+    }
+
+    // 5) Financials
+    const basePrice = Number(b.total_price || 0);
+    const taxRate = Number(p.tax_rate ?? 0.15);
+    const totalWithTax = Number((basePrice * (1 + taxRate)).toFixed(2));
+
+    // 6) Payload aligned to YOUR bookings schema
+    const payload = {
+      webhook_type: "BOOKING_SYNC",
+      tenant: {
+        id: u.id,
+        business_name: u.business_name,
+      },
+      booking: {
+        id: b.id,
+        service_id: b.service_id,
+        driver_id: b.driver_id,
+        status: b.status,
+        payment_status: b.payment_status,
+        customer_email: b.customer_email,
+        pickup_address: b.pickup_address,
+        dropoff_address: b.dropoff_address,
+        start_time: b.start_time,
+        end_time: b.end_time,
+        total_price: basePrice,
+      },
+      financials: {
+        subtotal: basePrice,
+        tax_rate: taxRate,
+        total_amount: totalWithTax,
+      },
+      context: {
+        location_id: locationId,
+      },
+      settings: {
+        fleet_snapshot:
+          typeof p.fleet === "string" ? JSON.parse(p.fleet) : p.fleet,
+        special_events:
+          typeof p.special_events === "string"
+            ? JSON.parse(p.special_events)
+            : p.special_events,
+      },
+    };
+
+    // 7) POST to CRM webhook
+    console.log("➡️ Posting to CRM webhook:", u.crm_webhook_url, {
+      bookingId,
+      tenantId: u.id,
+    });
+
+    // If you already use fetch/axios elsewhere, keep consistent.
+    // Example with fetch (Node 18+):
+    const resp = await fetch(u.crm_webhook_url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    const respText = await resp.text().catch(() => "");
+    console.log("✅ CRM webhook response:", resp.status, respText.slice(0, 300));
+
+  } catch (err) {
+    console.error("❌ triggerCrmWebhook error:", err);
+  } finally {
+    if (client) client.release();
+  }
 }
+
 /*****************************************************
  7️⃣ BOOKING ENGINE
 *****************************************************/
