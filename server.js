@@ -563,21 +563,21 @@ async function getCurrentMultiplier(locationId) {
     }
 }
 
-async function triggerCrmWebhook(locationId) {
+async function triggerCrmWebhook(locationId, bookingId) { 
     let client;
     try {
         client = await pool.connect();
 
-        // 1. Get the Profile (Fleet, Events, Tax, and the Webhook URL)
+        // 1. Get the Profile (Settings)
         const profileRes = await client.query(
             "SELECT fleet, special_events, tax_rate, crm_webhook_url FROM profiles WHERE location_id = $1", 
             [locationId]
         );
 
-        // 2. Get the Latest Booking for this location
+        // 2. Get the SPECIFIC Booking instead of just the "latest" one
         const bookingRes = await client.query(
-            "SELECT * FROM bookings WHERE saas_location_id = $1 ORDER BY created_at DESC LIMIT 1", 
-            [locationId]
+            "SELECT * FROM bookings WHERE id = $1", 
+            [bookingId]
         );
 
         if (profileRes.rows.length === 0 || bookingRes.rows.length === 0) {
