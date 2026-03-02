@@ -1016,26 +1016,29 @@ const startListener = async () => {
     let listenerClient;
     try {
         listenerClient = await pool.connect();
+        // Listen to BOTH just in case
         await listenerClient.query('LISTEN profile_updated');
+        await listenerClient.query('LISTEN booking_updated'); 
+        
         console.log("🟢 DB Listener: Online and waiting for signals...");
 
         listenerClient.on('notification', async (msg) => {
-            console.log(`🔔 Signal: ${msg.payload}`);
-            await triggerCrmWebhook(msg.payload);
+            console.log(`🔔 Signal Received: ${msg.payload}`);
+            
+            // If the signal is just a number (like "6"), it's the locationId or bookingId
+            const identifier = msg.payload; 
+            await triggerCrmWebhook(identifier);
         });
 
         listenerClient.on('error', (err) => {
             console.error('❌ Listener Error:', err);
-            listenerClient.release();
             setTimeout(startListener, 5000); 
         });
     } catch (err) {
         console.error('❌ Failed to connect listener:', err);
-        if (listenerClient) listenerClient.release();
         setTimeout(startListener, 5000);
     }
 };
-
 // --- START EVERYTHING ---
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
