@@ -1069,7 +1069,6 @@ app.post("/api/create-booking", async (req, res) => {
 });
 
 // --- DATABASE LISTENER (Runs 24/7) ---
-import pkg from "pg";
 const { Client } = pkg;
 
 const startListener = async () => {
