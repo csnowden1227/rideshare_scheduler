@@ -1068,34 +1068,85 @@ app.post("/api/create-booking", async (req, res) => {
   }
 });
 
-
 // --- DATABASE LISTENER (Runs 24/7) ---
+import pkg from "pg";
+const { Client } = pkg;
+
 const startListener = async () => {
-    let listenerClient;
-    try {
-        listenerClient = await pool.connect();
-        // Listen to BOTH just in case
-        await listenerClient.query('LISTEN profile_updated');
-        await listenerClient.query('LISTEN booking_updated'); 
-        
-        console.log("🟢 DB Listener: Online and waiting for signals...");
+  try {
+    const listenerClient = new Client({
+      connectionString: process.env.DATABASE_URL,
+      ssl: { rejectUnauthorized: false },
+      keepAlive: true,
+    });
 
-        listenerClient.on('notification', async (msg) => {
-            console.log(`🔔 Signal Received: ${msg.payload}`);
-            
-            // If the signal is just a number (like "6"), it's the locationId or bookingId
-            const identifier = msg.payload; 
-            await triggerCrmWebhook(identifier);
-        });
+    await listenerClient.connect();
 
-        listenerClient.on('error', (err) => {
-            console.error('❌ Listener Error:', err);
-            setTimeout(startListener, 5000); 
-        });
-    } catch (err) {
-        console.error('❌ Failed to connect listener:', err);
-        setTimeout(startListener, 5000);
-    }
+    // Listen to BOTH channels
+    await listenerClient.query("LISTEN profile_updated;");
+    await listenerClient.query("LISTEN booking_updated;");
+
+    console.log("🟢 DB Listener: Online and waiting for signals...");
+
+    listenerClient.on("notification", async (msg) => {
+      try {
+        console.log(`🔔 Signal Received on ${msg.channel}: ${msg.payload}`);
+
+        const bookingId = Number(msg.payload);
+        if (!Number.isInteger(bookingId) || bookingId <= 0) {
+          console.log("⚠️ Invalid payload (expected bookingId number). Skipping.", {
+            channel: msg.channel,
+            payload: msg.payload,
+          });
+          return;
+        }
+
+        // Derive locationId from booking row
+        const bookingRes = await pool.query(
+          "SELECT id, location_id, user_id FROM bookings WHERE id = $1",
+          [bookingId]
+        );
+
+        if (bookingRes.rows.length === 0) {
+          console.log("⚠️ Booking not found. Skipping.", { bookingId });
+          return;
+        }
+
+        const locationId =
+          bookingRes.rows[0].location_id ||
+          bookingRes.rows[0].user_id ||
+          "default";
+
+        await triggerCrmWebhook(locationId, bookingId);
+      } catch (err) {
+        console.error("❌ Error handling notification:", err);
+      }
+    });
+
+    listenerClient.on("error", (err) => {
+      console.error("❌ Listener Error:", err);
+      // If the listener errors, try restarting after a short delay
+      setTimeout(startListener, 5000);
+    });
+
+    listenerClient.on("end", () => {
+      console.error("❌ Listener connection ended. Restarting...");
+      setTimeout(startListener, 5000);
+    });
+
+    // Optional: keepalive query to prevent idle disconnects
+    setInterval(async () => {
+      try {
+        await listenerClient.query("SELECT 1;");
+      } catch (e) {
+        // listenerClient 'error' / 'end' handlers will handle restart
+      }
+    }, 30000);
+
+  } catch (err) {
+    console.error("❌ Failed to connect listener:", err);
+    setTimeout(startListener, 5000);
+  }
 };
 // --- START EVERYTHING ---
 const PORT = process.env.PORT || 8080;
