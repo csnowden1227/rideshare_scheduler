@@ -122,7 +122,12 @@
 <script>
 const BACKEND_URL = "https://rideshare-scheduler-axx6.onrender.com"; 
      urlParams = new URLSearchParams(window.location.search);
-    const locationId = urlParams.get('location_id');
+    let locationId = urlParams.get('location_id');
+
+if (!locationId) {
+    console.warn("No location_id detected — loading demo mode.");
+    locationId = "LOC_DEMO";
+}
     const VEHICLE_LIST = ["Standard Sedan", "Luxury Sedan", "Standard SUV", "Luxury SUV", "Standard XL SUV", "Luxury XL SUV"];
 
     // --- UI RENDERERS ---
