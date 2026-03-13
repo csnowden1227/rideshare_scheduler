@@ -36,6 +36,7 @@ const googleMapsClient = new GoogleMapsClient({});
 
 app.use(cors());
 app.use(express.json());
+app.use(express.static(path.join(__dirname, "public")));
 
 /*****************************************************
  2️⃣ GLOBAL OAUTH2 CLIENT FOR GOOGLE
@@ -236,6 +237,9 @@ app.get('/api/test', (req, res) => {
     const fullUrl = `${req.protocol}://${host}${req.originalUrl}`;
 });
 
+app.get("/test-page", (req, res) => {
+  res.send("<h1>Server route works</h1>");
+});
     
 app.post('/api/update-profile-full', async (req, res) => {
     const {
