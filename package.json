@@ -26,14 +26,18 @@
   "dependencies": {
     "@googlemaps/google-maps-services-js": "^3.4.2",
     "@microsoft/microsoft-graph-client": "^3.0.7",
+    "axios": "^1.13.6",
     "cors": "^2.8.6",
     "dotenv": "^16.6.1",
     "express": "^4.22.1",
     "googleapis": "^134.0.0",
     "isomorphic-fetch": "^3.0.0",
-    "pg": "^8.18.0"
+    "pg": "^8.18.0",
+    "vue-router": "^4.6.4"
   },
   "devDependencies": {
-    "nodemon": "^3.1.4"
+    "@vitejs/plugin-vue": "^6.0.5",
+    "nodemon": "^3.1.4",
+    "vite": "^8.0.0"
   }
 }

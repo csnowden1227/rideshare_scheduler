@@ -228,6 +228,18 @@ app.post('/api/save-settings', async (req, res) => {
     }
 });
 
+app.post('/api/save-config', (req, res) => {
+    // We pull crm_webhook_url out of the request body
+    const { id, crm_webhook_url } = req.body;
+    
+    console.log(`Saving for ${id}: URL is ${crm_webhook_url}`);
+
+    // If you're using a database, you'd save it here
+    // configurations[id] = { webhook: crm_webhook_url };
+
+    res.json({ success: true });
+});
+
 app.get('/api/test', (req, res) => {
     const host = req.get('host'); 
     const fullUrl = `${req.protocol}://${host}${req.originalUrl}`;
