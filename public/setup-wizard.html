@@ -329,6 +329,8 @@ async function saveToBackend() {
         try {
             const res = await fetch(`${BACKEND_URL}/api/get-profile/${locationId}`);
             const data = await res.json();
+            const generatedWebhookUrl = `https://services.leadconnectorhq.com/hooks/${locationId}/webhook-trigger/e8f1fd42-8f7e-4818-a94d-dd7985e12838`;
+document.getElementById('saas_location_input').value = generatedWebhookUrl;
 
             if (data && !data.error) {
                 document.getElementById('maps_key').value = data.maps_api_key || '';
