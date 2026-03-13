@@ -201,11 +201,11 @@ function copyEmbedCode() {
     });
 }
 
-async function checkFixedRate(saas_location_id, pickupAddr, dropoffAddr) {
+async function checkFixedRate(location_id, pickupAddr, dropoffAddr) {
   // 1. Fetch all fixed routes for this specific location
   const result = await pool.query(
     "SELECT pickup_keyword, dropoff_keyword, fixed_price FROM fixed_rates WHERE user_id = $1 AND is_active = true",
-    [saas_location_id]
+    [location_id]
   );
 
   const activeRoutes = result.rows;
@@ -319,7 +319,7 @@ async function saveSettings() {
     const payload = {
         userId: locationId,
         maps_api_key: document.getElementById('maps_key').value,
-        saas_location_id: document.getElementById('CRM_WEBHOOK_URL')?.value, // Added safety
+        location_id: document.getElementById('CRM_WEBHOOK_URL')?.value, // Added safety
         tax_rate: document.getElementById('tax_rate')?.value || 0,
         fleet: fleet,
         peak_windows: peakTimes,
@@ -355,7 +355,7 @@ app.get('/api/test', (req, res) => {
 
 app.post('/api/update-profile-full', async (req, res) => {
     const {
-        saas_location_id,
+        location_id,
         crm_webhook_url, 
         maps_api_key,
         tax_rate,
@@ -386,7 +386,7 @@ app.post('/api/update-profile-full', async (req, res) => {
                 special_events = EXCLUDED.special_events,
                 peak_windows = EXCLUDED.peak_windows`,
             [
-                saas_location_id,
+                location_id,
                 crm_webhook_url,
                 maps_api_key,
                 tax_rate || 0,
@@ -397,19 +397,19 @@ app.post('/api/update-profile-full', async (req, res) => {
         );
 
         // 2. REFRESH SERVICES
-        await client.query('DELETE FROM services WHERE saas_location_id = $1', [saas_location_id]);
+        await client.query('DELETE FROM services WHERE location_id = $1', [location_id]);
         if (fleet && fleet.length > 0) {
             for (const vehicle of fleet) {
-                const staffId = `${saas_location_id}-${String(vehicle.vehicle_type || 'vehicle')
+                const staffId = `${location_id}-${String(vehicle.vehicle_type || 'vehicle')
                     .replace(/\s+/g, '-')
                     .toLowerCase()}`;
 
                 await client.query(
                     `INSERT INTO services (
-                        saas_location_id, vehicle_slot_id, name, base_rate, per_mile_rate, saas_location_staff_id
+                        location_id, vehicle_slot_id, name, base_rate, per_mile_rate, location_staff_id
                     ) VALUES ($1, $2, $3, $4, $5, $6)`,
                     [
-                        saas_location_id,
+                        location_id,
                         vehicle.vehicle_id || staffId,
                         vehicle.vehicle_type,
                         vehicle.base_rate,
@@ -421,21 +421,21 @@ app.post('/api/update-profile-full', async (req, res) => {
         }
 
         // 3. REFRESH FIXED RATES
-        await client.query('DELETE FROM fixed_rates WHERE user_id = $1', [saas_location_id]);
+        await client.query('DELETE FROM fixed_rates WHERE user_id = $1', [location_id]);
         if (fixed_rates && fixed_rates.length > 0) {
             for (const route of fixed_rates) {
                 if (route.pickup_keyword && route.dropoff_keyword) {
                     await client.query(
                         `INSERT INTO fixed_rates (user_id, pickup_keyword, dropoff_keyword, fixed_price, is_active)
                         VALUES ($1, $2, $3, $4, true)`,
-                        [saas_location_id, route.pickup_keyword, route.dropoff_keyword, route.fixed_price]
+                        [location_id, route.pickup_keyword, route.dropoff_keyword, route.fixed_price]
                     );
                 }
             }
         }
 
         await client.query('COMMIT');
-        console.log(`✅ Profile and Services synced for: ${saas_location_id}`);
+        console.log(`✅ Profile and Services synced for: ${location_id}`);
         res.json({ success: true, message: 'All settings and slots saved!' });
 
     } catch (err) {
@@ -452,20 +452,20 @@ app.post('/api/update-profile-full', async (req, res) => {
 *****************************************************/
 app.post("/api/availability", async (req, res) => {
   try {
-    const { saas_location_staff_id, pickup, dropoff, date } = req.body;
+    const { location_staff_id, pickup, dropoff, date } = req.body;
 
-    if (!saas_location_staff_id || !date) {
+    if (!location_staff_id || !date) {
       return res.status(400).json({
         slots: [],
         error: "Missing required data.",
       });
     }
 
-    const [saas_location_id] = saas_location_staff_id.split("_");
+    const [location_id] = location_staff_id.split("_");
 
     const userRes = await pool.query(
       "SELECT * FROM users WHERE id=$1",
-      [saas_location_id]
+      [location_id]
     );
 
     if (!userRes.rows.length) {
@@ -487,8 +487,8 @@ app.post("/api/availability", async (req, res) => {
     }
 
     const svcRes = await pool.query(
-      "SELECT * FROM services WHERE saas_location_staff_id=$1 LIMIT 1",
-      [saas_location_staff_id]
+      "SELECT * FROM services WHERE location_staff_id=$1 LIMIT 1",
+      [location_staff_id]
     );
 
     if (!svcRes.rows.length) {
@@ -540,7 +540,7 @@ async function getCurrentMultiplier(locationId) {
     try {
         // 1. Check for Special Events First (Date-based)
         const eventResult = await pool.query(
-            "SELECT multiplier FROM event_multipliers WHERE saas_location_id = $1 AND event_date = CURRENT_DATE",
+            "SELECT multiplier FROM event_multipliers WHERE location_id = $1 AND event_date = CURRENT_DATE",
             [locationId]
         );
         if (eventResult.rows.length > 0) return parseFloat(eventResult.rows[0].multiplier);
@@ -548,7 +548,7 @@ async function getCurrentMultiplier(locationId) {
         // 2. Check for Daily Peak Windows (Time-based Rush Hours)
         const peakResult = await pool.query(
             `SELECT multiplier FROM service_peak_multipliers 
-             WHERE saas_location_id = $1 
+             WHERE location_id = $1 
              AND CURRENT_TIME AT TIME ZONE 'UTC' BETWEEN start_time AND end_time`,
             [locationId]
         );
@@ -708,7 +708,7 @@ app.post("/api/book", async (req, res) => {
   
   try {
     const {
-      saas_location_id,
+      location_id,
       vehicle_slot_id,
       pickup_address,
       dropoff_address,
@@ -723,8 +723,8 @@ app.post("/api/book", async (req, res) => {
 
     // 1. VALIDATION & DATA RETRIEVAL
     const profileCheck = await client.query(
-      "SELECT * FROM profiles WHERE saas_location_id = $1",
-      [saas_location_id]
+      "SELECT * FROM profiles WHERE location_id = $1",
+      [location_id]
     );
 
     if (profileCheck.rows.length === 0) {
@@ -736,15 +736,15 @@ app.post("/api/book", async (req, res) => {
     const mapsApiKey = userConfig.maps_api_key;
 
     const serviceRes = await client.query(
-      "SELECT * FROM services WHERE vehicle_slot_id = $1 AND saas_location_id = $2",
-      [vehicle_slot_id, saas_location_id]
+      "SELECT * FROM services WHERE vehicle_slot_id = $1 AND location_id = $2",
+      [vehicle_slot_id, location_id]
     );
     const service = serviceRes.rows[0] || { base_rate: 50, per_mile_rate: 3 };
 
     // 2. PRICING LOGIC
     
     // Before calculating distance-based price, check for a Flat Rate
-const fixedPrice = await checkFixedRate(saas_location_id, pickup, dropoff);
+const fixedPrice = await checkFixedRate(location_id, pickup, dropoff);
 
 let totalPrice;
 if (fixedPrice) {
@@ -780,10 +780,10 @@ if (fixedPrice) {
     // 4. SAVE TO DATABASE
     await client.query(
       `INSERT INTO bookings (
-        saas_location_id, vehicle_slot_id, first_name, last_name, 
+        location_id, vehicle_slot_id, first_name, last_name, 
         email, phone, pickup_address, dropoff_address, total_price, status, start_time
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'confirmed', $10)`,
-      [saas_location_id, vehicle_slot_id, firstName, lastName, email, phone, pickup_address, dropoff_address, finalGrandTotal, startISO]
+      [location_id, vehicle_slot_id, firstName, lastName, email, phone, pickup_address, dropoff_address, finalGrandTotal, startISO]
     );
 
     await client.query("COMMIT");
@@ -804,7 +804,7 @@ if (fixedPrice) {
         totalPrice: finalGrandTotal.toFixed(2),
         miles: miles.toFixed(2),
         bookingDate: startISO,
-        locationId: saas_location_id
+        locationId: location_id
       })
     }).catch(e => console.error("Webhook failed:", e));
 
@@ -858,9 +858,9 @@ app.post('/api/sync-fleet', async (req, res) => {
         for (const v of vehicles) {
             // We use 'ON CONFLICT' to avoid duplicate errors
             await client.query(`
-                INSERT INTO services (name, saas_location_vehicle_id, user_id, is_active)
+                INSERT INTO services (name, location_vehicle_id, user_id, is_active)
                 VALUES ($1, $2, $3, true)
-                ON CONFLICT (saas_location_vehicle_id) 
+                ON CONFLICT (location_vehicle_id) 
                 DO UPDATE SET name = EXCLUDED.name
             `, [v.name, v.id, userId]);
         }
@@ -885,7 +885,7 @@ app.get("/api/get-profile/:location_id", async (req, res) => {
   try {
     client = await pool.connect();
     const profileRes = await client.query("SELECT * FROM profiles WHERE location_id = $1", [location_id]);
-    const ratesRes = await client.query("SELECT * FROM fixed_rates WHERE saas_location_id = $1", [location_id]);
+    const ratesRes = await client.query("SELECT * FROM fixed_rates WHERE location_id = $1", [location_id]);
 
     if (profileRes.rows.length === 0) return res.status(404).json({ error: "Profile not found" });
 
@@ -972,12 +972,12 @@ app.get("/api/get-profile-widget/:locationId", async (req, res) => {
 
     // Use pool (your Postgres connection), not db
     const profile = await pool.query(
-      "SELECT * FROM profiles WHERE saas_location_id = $1",
+      "SELECT * FROM profiles WHERE location_id = $1",
       [locationId]
     );
 
     const fleet = await pool.query(
-      "SELECT * FROM fleet_vehicles WHERE saas_location_id = $1",
+      "SELECT * FROM fleet_vehicles WHERE location_id = $1",
       [locationId]
     );
 
@@ -1005,7 +1005,7 @@ app.get("/api/get-profile-widget/:locationId", async (req, res) => {
 app.post("/api/create-booking", async (req, res) => {
   try {
     const {
-      saas_location_id,
+      location_id,
       vehicle_slot_id,
       first_name,
       last_name,
@@ -1022,29 +1022,29 @@ app.post("/api/create-booking", async (req, res) => {
     // 1. Save to your local Database
     await pool.query(
       `INSERT INTO bookings (
-        saas_location_id, vehicle_slot_id, first_name, last_name,
+        location_id, vehicle_slot_id, first_name, last_name,
         email, phone, pickup_address, pickup_coords,
         dropoff_address, dropoff_coords, start_time, total_price
       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
-      [saas_location_id, vehicle_slot_id, first_name, last_name, email, phone, pickup_address, pickup_coords, dropoff_address, dropoff_coords, start_time, total_price]
+      [location_id, vehicle_slot_id, first_name, last_name, email, phone, pickup_address, pickup_coords, dropoff_address, dropoff_coords, start_time, total_price]
     );
 
     // 2. THE BRIDGE: Get the Webhook URL for this specific user
     const userRes = await pool.query(
-      "SELECT crm_webhook_url FROM users WHERE saas_location_id = $1", 
-      [saas_location_id]
+      "SELECT crm_webhook_url FROM users WHERE location_id = $1", 
+      [location_id]
     );
     
     const webhookUrl = userRes.rows[0]?.crm_webhook_url;
 
-    // 3. Trigger the Webhook to GHL
+    // 3. Trigger the Webhook to CRM
     if (webhookUrl && webhookUrl.startsWith('http')) {
       // We don't 'await' this so the customer gets their confirmation instantly
       fetch(webhookUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          locationId: saas_location_id,
+          locationId: location_id,
           firstName: first_name,
           lastName: last_name,
           email: email,
