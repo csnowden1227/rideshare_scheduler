@@ -38,7 +38,7 @@
                     </div>
                     <div>
                         <label class="block text-[10px] font-bold mb-2 uppercase text-slate-400">CRM Webhook URL</label>
-                        <input type="text" id="saas_location_input" class="input-mini" placeholder="Webhook URL">
+                        <input type="text" id="location_input" class="input-mini" placeholder="Webhook URL">
                     </div>
                     <div>
                         <label class="block text-[10px] font-bold mb-2 uppercase text-slate-400">Tax Rate (%)</label>
@@ -240,7 +240,7 @@ const VEHICLE_LIST = [
     // --- THE SYNC FIX (DATA CLEANING) ---
 async function saveToBackend() {
     const btn = document.getElementById('save-btn');
-    const crmInput = document.getElementById('saas_location_input').value.trim();
+    const crmInput = document.getElementById('location_input').value.trim();
     
     // Quick validation before even trying
     if (crmInput && !crmInput.startsWith('http')) {
@@ -250,7 +250,7 @@ async function saveToBackend() {
     btn.innerText = "VALIDATING & SYNCING...";
     
     const payload = {
-        saas_location_id: locationId,
+        location_id: locationId,
         // Triple-mapping for database and webhook trigger compatibility
         crm_webhook_url: crmInput,
         
@@ -330,11 +330,11 @@ async function saveToBackend() {
             const res = await fetch(`${BACKEND_URL}/api/get-profile/${locationId}`);
             const data = await res.json();
             const generatedWebhookUrl = `https://services.leadconnectorhq.com/hooks/${locationId}/webhook-trigger/e8f1fd42-8f7e-4818-a94d-dd7985e12838`;
-document.getElementById('saas_location_input').value = generatedWebhookUrl;
+document.getElementById('location_input').value = generatedWebhookUrl;
 
             if (data && !data.error) {
                 document.getElementById('maps_key').value = data.maps_api_key || '';
-                document.getElementById('saas_location_input').value = data.crm_webhook_url || '';
+                document.getElementById('location_input').value = data.crm_webhook_url || '';
                 document.getElementById('tax_rate').value = data.tax_rate || '0.00';
                 
                 const rawPlan = (data.plan_name || 'Starter').toLowerCase().trim();
