@@ -800,7 +800,7 @@ app.get("/setup-wizard", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "setup-wizard.html"));
 });
 
-app.get("/setup-wizard/:location_id", (req, res) => {
+app.get("/setup-wizard?location_id={{location.id}}", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "setup-wizard.html"));
 });
 
