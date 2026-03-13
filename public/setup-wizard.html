@@ -252,8 +252,7 @@ async function saveToBackend() {
     const payload = {
         saas_location_id: locationId,
         // Triple-mapping for database and webhook trigger compatibility
-        crm_url: crmInput,
-        webhook_url: crmInput,
+        crm_webhook_url: crmInput,
         
         maps_api_key: document.getElementById('maps_key').value,
         tax_rate: parseFloat(document.getElementById('tax_rate').value) || 0,
@@ -333,7 +332,7 @@ async function saveToBackend() {
 
             if (data && !data.error) {
                 document.getElementById('maps_key').value = data.maps_api_key || '';
-                document.getElementById('saas_location_input').value = data.crm_url || '';
+                document.getElementById('saas_location_input').value = data.crm_webhook_url || '';
                 document.getElementById('tax_rate').value = data.tax_rate || '0.00';
                 
                 const rawPlan = (data.plan_name || 'Starter').toLowerCase().trim();
