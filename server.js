@@ -879,7 +879,6 @@ app.post('/api/sync-fleet', async (req, res) => {
 
 
 // --- GET PROFILE SETTINGS ---
-// --- GET PROFILE SETTINGS ---
 app.get("/api/get-profile/:location_id", async (req, res) => {
   const { location_id } = req.params;
   let client;
@@ -895,13 +894,15 @@ app.get("/api/get-profile/:location_id", async (req, res) => {
 
     res.json({
       location_id: profile.location_id,
+      plan_name: profile.plan_name || "Starter",
       maps_api_key: profile.maps_api_key,
       crm_url: profile.crm_webhook_url,
       tax_rate: profile.tax_rate,
       fleet: safeParse(profile.fleet),
       events: safeParse(profile.special_events),
-      fixed_rates: ratesRes.rows 
-    });
+      peak_windows: safeParse(profile.peak_windows),
+      fixed_rates: ratesRes.rows
+});
   } catch (err) {
     console.error("❌ Profile Route Error:", err.message);
     res.status(500).json({ error: "Server error" });
