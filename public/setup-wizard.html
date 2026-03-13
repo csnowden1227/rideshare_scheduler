@@ -120,17 +120,20 @@
 </div>
 
 <script>
-const BACKEND_URL = "https://rideshare-scheduler-axx6.onrender.com"; 
-     urlParams = new URLSearchParams(window.location.search);
-    let locationId = urlParams.get('location_id');
+const BACKEND_URL = "https://rideshare-scheduler-axx6.onrender.com";
+const urlParams = new URLSearchParams(window.location.search);
+let locationId = urlParams.get('location_id') || "LOC_DEMO";
 
-if (!locationId) {
-    console.warn("No location_id detected — loading demo mode.");
-    locationId = "LOC_DEMO";
-}
-    console.log("Detected Location ID:", locationId);    
-    const VEHICLE_LIST = ["Standard Sedan", "Luxury Sedan", "Standard SUV", "Luxury SUV", "Standard XL SUV", "Luxury XL SUV"];
+console.log("Frontend locationId:", locationId);
 
+const VEHICLE_LIST = [
+    "Standard Sedan",
+    "Luxury Sedan",
+    "Standard SUV",
+    "Luxury SUV",
+    "Standard XL SUV",
+    "Luxury XL SUV"
+];
     // --- UI RENDERERS ---
     function renderFleet(count, savedFleet = []) {
         const tbody = document.getElementById('fleet-body');
