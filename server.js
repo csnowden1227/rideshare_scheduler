@@ -85,7 +85,7 @@ app.get('/test-signal', async (req, res) => {
     }
 });
 
-app.get('/setup-wizard/:location_id', (req, res) => {
+app.get('/setup-wizard/location_id', (req, res) => {
   res.sendFile(path.join(__dirname, 'setup-wizard.html'));
 });
 
@@ -751,7 +751,7 @@ app.post('/api/sync-fleet', async (req, res) => {
 
 
 // --- GET PROFILE SETTINGS ---
-app.get("/api/get-profile/:location_id", async (req, res) => {
+app.get("/api/get-profile/location_id", async (req, res) => {
   const { location_id } = req.params;
   let client;
   try {
@@ -838,7 +838,7 @@ app.get("/api/db-check", async (req, res) => {
 // ✅ Keep ONE version of /api/get-profile. If you need BOTH "userId" and "locationId",
 // rename one of them to avoid route collision.
 // 1. ENDPOINT FOR THE WIDGET: Fetch specific configuration
-app.get("/api/get-profile-widget/:locationId", async (req, res) => {
+app.get("/api/get-profile-widget/location_id", async (req, res) => {
   try {
     const { locationId } = req.params;
 
