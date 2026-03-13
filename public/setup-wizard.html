@@ -125,13 +125,13 @@ const BACKEND_URL = "https://rideshare-scheduler-axx6.onrender.com";
 const params = new URLSearchParams(window.location.search);
 const pathParts = window.location.pathname.split('/').filter(Boolean);
 
-let locationId =
+let location_Id =
   params.get("location_id") ||
   pathParts[1] ||
   window.location.hostname.split('.')[0] ||
   "LOC_DEMO";
 
-console.log("Detected Location ID:", locationId);
+console.log("Detected Location ID:", location_Id);
 
 const VEHICLE_LIST = [
     "Standard Sedan",
@@ -146,7 +146,7 @@ const VEHICLE_LIST = [
         const tbody = document.getElementById('fleet-body');
         tbody.innerHTML = "";
         for (let i = 1; i <= count; i++) {
-            const slotId = `${locationId}_vehicle_${i}`;
+            const slotId = `${location_Id}_vehicle_${i}`;
             const data = savedFleet.find(f => f.vehicle_id === slotId) || {};
             const tr = document.createElement('tr');
             tr.className = "border-b border-slate-50";
@@ -172,7 +172,7 @@ const VEHICLE_LIST = [
             <div class="flex flex-col md:flex-row gap-3">
                 <div class="flex-1">
                     <label class="text-[9px] uppercase font-bold text-slate-400">Pickup Address</label>
-                    <input type="text" id="p-${uid}" class="r-pickup input-mini mb-1" value="${data.pickup_keyword || data.pickup || ''}" placeholder="Address">
+                    <input type="text" id="p-${uid}" class="r-pickup input-mini mb-1" value="${data.pickup_address_keyword || data.pickup || ''}" placeholder="Address">
                     <div class="flex gap-1">
                         <input type="text" class="r-p-lat input-mini coord-input" placeholder="Lat" value="${data.pickup_lat || ''}">
                         <input type="text" class="r-p-lng input-mini coord-input" placeholder="Lng" value="${data.pickup_lng || ''}">
@@ -253,7 +253,7 @@ async function saveToBackend() {
     btn.innerText = "VALIDATING & SYNCING...";
     
     const payload = {
-        location_id: locationId,
+        location_id: location_id,
         // Triple-mapping for database and webhook trigger compatibility
         crm_webhook_url: crmInput,
         
@@ -268,10 +268,10 @@ async function saveToBackend() {
             calendar_id: tr.querySelector('.v-cal').value
         })),
         fixed_rates: Array.from(document.querySelectorAll('.route-row')).map(r => ({
-            pickup_keyword: r.querySelector('.r-pickup').value,
+            pickup_address_keyword: r.querySelector('.r-pickup').value,
             pickup_lat: parseFloat(r.querySelector('.r-p-lat').value) || 0,
             pickup_lng: parseFloat(r.querySelector('.r-p-lng').value) || 0,
-            dropoff_keyword: r.querySelector('.r-dropoff').value,
+            dropoff_address_keyword: r.querySelector('.r-dropoff').value,
             dropoff_lat: parseFloat(r.querySelector('.r-d-lat').value) || 0,
             dropoff_lng: parseFloat(r.querySelector('.r-d-lng').value) || 0,
             fixed_price: parseFloat(r.querySelector('.r-price').value) || 0
@@ -343,13 +343,13 @@ async function saveSettings() {
     }));
 
     const routes = Array.from(document.querySelectorAll('.route-row')).map(row => ({
-        pickup: row.querySelector('.route-from').value,
-        dropoff: row.querySelector('.route-to').value,
+        pickup_address: row.querySelector('.route-from').value,
+        dropoff_address: row.querySelector('.route-to').value,
         price: row.querySelector('.route-price').value
     }));
 
     const payload = {
-        location_id: locationId,
+        location_id: location_id,
         maps_api_key: document.getElementById('maps_key').value,
         tax_rate: document.getElementById('tax_rate').value || 0,
         fleet: fleet,
@@ -368,7 +368,7 @@ async function saveSettings() {
 }
 
 }    async function loadFromBackend() {
-        if (!locationId) {
+        if (!location_id) {
             document.getElementById('display-loc-id').innerText = 'NO LOCATION';
             document.getElementById('plan-badge').innerText = 'Starter Plan';
             document.getElementById('embed-box').innerText = '';
@@ -376,13 +376,13 @@ async function saveSettings() {
             return;
         }
 
-        document.getElementById('display-loc-id').innerText = locationId;
-        document.getElementById('embed-box').innerText = `<script src="${BACKEND_URL}/widget.js?loc=${locationId}"><\/script>`;
+        document.getElementById('display-loc-id').innerText = location_id;
+        document.getElementById('embed-box').innerText = `<script src="${BACKEND_URL}/widget.js?loc=${location_id}"><\/script>`;
         
         try {
-            const res = await fetch(`${BACKEND_URL}/api/get-profile/${locationId}`);
+            const res = await fetch(`${BACKEND_URL}/api/get-profile/${location_id}`);
             const data = await res.json();
-            const generatedWebhookUrl = `https://services.leadconnectorhq.com/hooks/${locationId}/webhook-trigger/e8f1fd42-8f7e-4818-a94d-dd7985e12838`;
+            const generatedWebhookUrl = `https://services.leadconnectorhq.com/hooks/${location_id}/webhook-trigger/e8f1fd42-8f7e-4818-a94d-dd7985e12838`;
 document.getElementById('location_input').value = generatedWebhookUrl;
 
             if (data && !data.error) {

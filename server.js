@@ -55,10 +55,10 @@ const oauth2Client = new google.auth.OAuth2(
 const travelTimeCache = new Map();
 
 /* 🔐 Get Maps API Key from Database */
-async function getMapsKey(locationId) {
+async function getMapsKey(location_id) {
   const res = await pool.query(
     "SELECT maps_api_key FROM users WHERE id = $1",
-    [locationId]
+    [location_id]
   );
 
   if (!res.rows.length || !res.rows[0].maps_api_key) {
@@ -89,7 +89,7 @@ app.get('/test-signal', async (req, res) => {
     }
 });
 
-app.get('/setup-wizard/location_id', (req, res) => {
+app.get('/setup-wizard/:location_id', (req, res) => {
   res.sendFile(path.join(__dirname, 'setup-wizard.html'));
 });
 
@@ -100,10 +100,10 @@ app.get('/test-webhook', async (req, res) => {
         console.log("✅ DB Connection Verified at:", dbTest.rows[0].now);
 
         // 2. RUN THE SYNC MANUALLY
-        const locationId = '101'; // Your test ID
-        await triggerCrmWebhook(locationId);
+        const location_id = '101'; // Your test ID
+        await triggerCrmWebhook(location_id);
 
-        res.send(`<h1>Success!</h1><p>DB is connected and signal sent to CRM for Location ${locationId}</p>`);
+        res.send(`<h1>Success!</h1><p>DB is connected and signal sent to CRM for Location ${location_id}</p>`);
     } catch (err) {
         console.error("❌ Test Route Error:", err.message);
         res.status(500).send(`<h1>DB Error</h1><p>${err.message}</p>`);
@@ -190,7 +190,7 @@ async function checkFixedRate(location_id, pickupAddr, dropoffAddr) {
  4️⃣ SAVE SETTINGS ROUTE
 *****************************************************/
 app.post('/api/save-settings', async (req, res) => {
-    const { userId, mapsApiKey, taxRate, businessName } = req.body;
+    const { location_id, mapsApiKey, taxRate, businessName } = req.body;
 
     try {
         // 1. Validate the Maps Key before saving
@@ -213,13 +213,13 @@ app.post('/api/save-settings', async (req, res) => {
             RETURNING id;
         `;
 
-        const result = await pool.query(query, [mapsApiKey, taxRate, businessName, userId]);
+        const result = await pool.query(query, [mapsApiKey, taxRate, businessName, location_id]);
 
         if (result.rows.length === 0) {
             // If the user doesn't exist yet, create them
             await pool.query(
                 "INSERT INTO users (id, maps_api_key, tax_rate, business_name) VALUES ($1, $2, $3, $4)",
-                [userId, mapsApiKey, taxRate, businessName]
+                [location_id, mapsApiKey, taxRate, businessName]
             );
         }
 
@@ -420,12 +420,12 @@ app.post("/api/availability", async (req, res) => {
 *****************************************************/
 
 // Helper moved outside to prevent re-declaration on every request
-async function getCurrentMultiplier(locationId) {
+async function getCurrentMultiplier(location_id) {
     try {
         // 1. Check for Special Events First (Date-based)
         const eventResult = await pool.query(
             "SELECT multiplier FROM event_multipliers WHERE location_id = $1 AND event_date = CURRENT_DATE",
-            [locationId]
+            [location_id]
         );
         if (eventResult.rows.length > 0) return parseFloat(eventResult.rows[0].multiplier);
 
@@ -434,7 +434,7 @@ async function getCurrentMultiplier(locationId) {
             `SELECT multiplier FROM service_peak_multipliers 
              WHERE location_id = $1 
              AND CURRENT_TIME AT TIME ZONE 'UTC' BETWEEN start_time AND end_time`,
-            [locationId]
+            [location_id]
         );
 
         if (peakResult.rows.length > 0) return parseFloat(peakResult.rows[0].multiplier);
@@ -447,7 +447,7 @@ async function getCurrentMultiplier(locationId) {
     }
 }
 
-async function triggerCrmWebhook(locationId, bookingId) {
+async function triggerCrmWebhook(location_id, bookingId) {
   let client;
   try {
     client = await pool.connect();
@@ -492,7 +492,7 @@ async function triggerCrmWebhook(locationId, bookingId) {
     try {
       const profileRes = await client.query(
         "SELECT fleet, special_events, tax_rate FROM profiles WHERE location_id = $1",
-        [locationId]
+        [location_id]
       );
       if (profileRes.rows.length > 0) p = profileRes.rows[0];
     } catch (e) {
@@ -548,7 +548,7 @@ async function triggerCrmWebhook(locationId, bookingId) {
         total_amount: totalWithTax,
       },
       context: {
-        location_id: locationId,
+        location_id: location_id,
       },
       settings: {
         fleet_snapshot:
@@ -577,145 +577,19 @@ async function triggerCrmWebhook(locationId, bookingId) {
 }
 
 /*****************************************************
- 7️⃣ BOOKING ENGINE
-*****************************************************/
-app.post("/api/book", async (req, res) => {
-  const client = await pool.connect();
-  
-  try {
-    const {
-      location_id,
-      vehicle_slot_id,
-      pickup_address,
-      dropoff_address,
-      firstName,
-      lastName,
-      email,
-      phone,
-      startISO,
-    } = req.body;
-
-    await client.query("BEGIN");
-
-    // 1. VALIDATION & DATA RETRIEVAL
-    const profileCheck = await client.query(
-      "SELECT * FROM profiles WHERE location_id = $1",
-      [location_id]
-    );
-
-    if (profileCheck.rows.length === 0) {
-      await client.query("ROLLBACK");
-      return res.status(400).json({ error: "Location not registered." });
-    }
-
-    const userConfig = profileCheck.rows[0];
-    const mapsApiKey = userConfig.maps_api_key;
-
-    const serviceRes = await client.query(
-      "SELECT * FROM services WHERE vehicle_slot_id = $1 AND location_id = $2",
-      [vehicle_slot_id, location_id]
-    );
-    const service = serviceRes.rows[0] || { base_rate: 50, per_mile_rate: 3 };
-
-    // 2. PRICING LOGIC
-    
-    // Before calculating distance-based price, check for a Flat Rate
-const fixedPrice = await checkFixedRate(location_id, pickup, dropoff);
-
-let totalPrice;
-if (fixedPrice) {
-  totalPrice = fixedPrice; // Use the Flat Rate (Geofence match)
-} else {
-  // Use your existing distance logic: (Base + (Miles * Rate))
-  totalPrice = basePrice + (miles * perMileRate);
-}
-     
-    if (fixedPrice) {
-      priceBeforeTax = fixedPrice;
-    } else {
-      const mapsUrl = `https://maps.googleapis.com/maps/api/distancematrix/json?origins=${encodeURIComponent(pickup_address)}&destinations=${encodeURIComponent(dropoff_address)}&departure_time=now&key=${mapsApiKey}`;
-      const mapsResp = await fetch(mapsUrl);
-      const mapsData = await mapsResp.json();
-
-      if (mapsData.rows?.[0]?.elements?.[0]?.status === "OK") {
-        miles = mapsData.rows[0].elements[0].distance.value / 1609.34;
-      }
-      priceBeforeTax = parseFloat(service.base_rate || 50) + (miles * parseFloat(service.per_mile_rate || 3));
-    
-    }
-
-    // 3. APPLY MULTIPLIERS & TAX
-    const multiplier = getPeakMultiplier(startISO, service.peak_multiplier || userConfig.peak_multiplier);
-    let subtotal = priceBeforeTax * multiplier;
-
-    const taxRate = parseFloat(userConfig.tax_rate || 0);
-    const taxAmount = subtotal * (taxRate / 100);
-    const finalGrandTotal = subtotal + taxAmount;
-
-    
-    // 4. SAVE TO DATABASE
-    await client.query(
-      `INSERT INTO bookings (
-        location_id, vehicle_slot_id, first_name, last_name, 
-        email, phone, pickup_address, dropoff_address, total_price, status, start_time
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'confirmed', $10)`,
-      [location_id, vehicle_slot_id, firstName, lastName, email, phone, pickup_address, dropoff_address, finalGrandTotal, startISO]
-    );
-
-    await client.query("COMMIT");
-
-    // 5. SEND TO CRM WEBHOOK (Outside transaction)
-    const CRM_WEBHOOK_URL = "https://services.leadconnectorhq.com/hooks/VXE0UY17p7wnxdZ3sOLc/webhook-trigger/e8f1fd42-8f7e-4818-a94d-dd7985e12838";
-    
-    fetch(CRM_WEBHOOK_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        firstName,
-        lastName,
-        email,
-        phone,
-        pickup: pickup_address,
-        dropoff: dropoff_address,
-        totalPrice: finalGrandTotal.toFixed(2),
-        miles: miles.toFixed(2),
-        bookingDate: startISO,
-        locationId: location_id
-      })
-    }).catch(e => console.error("Webhook failed:", e));
-
-    // 6. FINAL RESPONSE
-    res.json({
-      success: true,
-      totalPrice: finalGrandTotal.toFixed(2),
-      subtotal: subtotal.toFixed(2),
-      tax: taxAmount.toFixed(2),
-      miles: miles.toFixed(2)
-    });
-
-  } catch (err) {
-    if (client) await client.query("ROLLBACK");
-    console.error("Booking Error:", err);
-    res.status(500).json({ error: err.message });
-  } finally {
-    client.release();
-  }
-});
-
-/*****************************************************
- 8️⃣ CRM_One_Source STAFF SYNC (FLEET GENERATION)
+ 7️⃣  CRM_One_Source STAFF SYNC (FLEET GENERATION)
 *****************************************************/
 app.post('/api/sync-fleet', async (req, res) => {
-    const { userId, token } = req.body;
+    const { location_id, token } = req.body;
 
-    if (!userId || !token) {
+    if (!location_id || !token) {
         return res.status(400).json({ success: false, error: "Missing Location ID or Access Token" });
     }
 
     try {
         // 1. CALL THE CRM API (GHL Example)
         // Adjust the URL based on your specific CRM's vehicle/custom field endpoint
-        const crmResponse = await fetch(`https://services.leadconnectorhq.com/locations/${userId}/customFields`, {
+        const crmResponse = await fetch(`https://services.leadconnectorhq.com/locations/${location_id}/customFields`, {
             method: 'GET',
             headers: {
                 'Authorization': `Bearer ${token}`,
@@ -738,10 +612,10 @@ app.post('/api/sync-fleet', async (req, res) => {
                 VALUES ($1, $2, $3, true)
                 ON CONFLICT (location_vehicle_id) 
                 DO UPDATE SET name = EXCLUDED.name
-            `, [v.name, v.id, userId]);
+            `, [v.name, v.id, location_id]);
         }
 
-        console.log(`✅ Fleet synced for Location: ${userId}`);
+        console.log(`✅ Fleet synced for Location: ${location_id}`);
         res.json({ success: true, message: "Fleet synced successfully!" });
 
 } catch (error) {
@@ -755,7 +629,7 @@ app.post('/api/sync-fleet', async (req, res) => {
 
 
 // --- GET PROFILE SETTINGS ---
-app.get("/api/get-profile/location_id", async (req, res) => {
+app.get("/api/get-profile/:location_id", async (req, res) => {
   const { location_id } = req.params;
   let client;
   try {
@@ -772,7 +646,7 @@ app.get("/api/get-profile/location_id", async (req, res) => {
       location_id: profile.location_id,
       plan_name: profile.plan_name || "Starter",
       maps_api_key: profile.maps_api_key,
-      crm_url: profile.crm_webhook_url,
+      crm_webhook_url: profile.crm_webhook_url,
       tax_rate: profile.tax_rate,
       fleet: safeParse(profile.fleet),
       events: safeParse(profile.special_events),
@@ -792,9 +666,9 @@ app.get("/api/get-profile/location_id", async (req, res) => {
 // 2. Get Quote Route
 app.post('/api/get-quote', async (req, res) => {
     try {
-        const { locationId, distance, serviceType } = req.body;
+        const { location_id, distance, serviceType } = req.body;
         const baseRate = 2.50; 
-        const multiplier = await getCurrentMultiplier(locationId);
+        const multiplier = await getCurrentMultiplier(location_id);
         const totalPrice = (distance * baseRate) * multiplier;
         
         res.json({ 
@@ -838,23 +712,22 @@ app.get("/api/db-check", async (req, res) => {
 // const app = express();
 // app.use(express.json());
 
-// 1. ENDPOINT FOR THE WIDGET: Fetch specific configuration (by locationId)
-// ✅ Keep ONE version of /api/get-profile. If you need BOTH "userId" and "locationId",
-// rename one of them to avoid route collision.
+// 1. ENDPOINT FOR THE WIDGET: Fetch specific configuration (by location_id)
+// ✅ Keep ONE version of /api/get-profile. 
 // 1. ENDPOINT FOR THE WIDGET: Fetch specific configuration
 app.get("/api/get-profile-widget/location_id", async (req, res) => {
   try {
-    const { locationId } = req.params;
+    const { location_id } = req.params;
 
     // Use pool (your Postgres connection), not db
     const profile = await pool.query(
       "SELECT * FROM profiles WHERE location_id = $1",
-      [locationId]
+      [location_id]
     );
 
     const fleet = await pool.query(
       "SELECT * FROM fleet_vehicles WHERE location_id = $1",
-      [locationId]
+      [location_id]
     );
 
     if (profile.rows.length === 0) {
@@ -920,7 +793,7 @@ app.post("/api/create-booking", async (req, res) => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          locationId: location_id,
+          location_id: location_id,
           firstName: first_name,
           lastName: last_name,
           email: email,
@@ -981,7 +854,7 @@ const startListener = async () => {
           return;
         }
 
-        // Derive locationId from booking row
+        // Derive location_id from booking row
         const bookingRes = await pool.query(
           "SELECT id, location_id, location_id FROM bookings WHERE id = $1",
           [bookingId]
@@ -992,12 +865,12 @@ const startListener = async () => {
           return;
         }
 
-        const locationId =
+        const location_id =
           bookingRes.rows[0].location_id ||
           bookingRes.rows[0].location_id ||
           "default";
 
-        await triggerCrmWebhook(locationId, bookingId);
+        await triggerCrmWebhook(location_id, bookingId);
       } catch (err) {
         console.error("❌ Error handling notification:", err);
       }
