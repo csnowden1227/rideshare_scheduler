@@ -121,8 +121,8 @@
 
 <script>
 const BACKEND_URL = "https://rideshare-scheduler-axx6.onrender.com"; 
-    const urlParams = new URLSearchParams(window.location.search);
-    const locationId = urlParams.get('location_id') || 'LOC_DEMO'; 
+     urlParams = new URLSearchParams(window.location.search);
+    const locationId = urlParams.get('location_id');
     const VEHICLE_LIST = ["Standard Sedan", "Luxury Sedan", "Standard SUV", "Luxury SUV", "Standard XL SUV", "Luxury XL SUV"];
 
     // --- UI RENDERERS ---
@@ -304,27 +304,57 @@ async function saveToBackend() {
         btn.innerText = "Sync to Cloud";
     }
 }    async function loadFromBackend() {
+        if (!locationId) {
+            document.getElementById('display-loc-id').innerText = 'NO LOCATION';
+            document.getElementById('plan-badge').innerText = 'Starter Plan';
+            document.getElementById('embed-box').innerText = '';
+            renderFleet(1);
+            return;
+        }
+
         document.getElementById('display-loc-id').innerText = locationId;
         document.getElementById('embed-box').innerText = `<script src="${BACKEND_URL}/widget.js?loc=${locationId}"><\/script>`;
         
         try {
             const res = await fetch(`${BACKEND_URL}/api/get-profile/${locationId}`);
             const data = await res.json();
+
             if (data && !data.error) {
                 document.getElementById('maps_key').value = data.maps_api_key || '';
                 document.getElementById('saas_location_input').value = data.crm_api_key || '';
                 document.getElementById('tax_rate').value = data.tax_rate || '0.00';
                 
-                const plan = data.plan_name || 'Starter';
-                document.getElementById('plan-badge').innerText = plan + " Plan";
-                const count = (plan === 'Pro') ? 3 : (plan === 'Premium' ? 2 : 1);
-                
+                const rawPlan = (data.plan_name || 'Starter').toLowerCase().trim();
+                let planLabel = 'Starter';
+                let count = 1;
+
+                if (rawPlan === 'premium') {
+                    planLabel = 'Premium';
+                    count = 2;
+                } else if (rawPlan === 'pro') {
+                    planLabel = 'Pro';
+                    count = 3;
+                }
+
+                document.getElementById('plan-badge').innerText = planLabel + " Plan";
+
+                document.getElementById('routes-container').innerHTML = '';
+                document.getElementById('peak-body').innerHTML = '';
+                document.getElementById('event-body').innerHTML = '';
+
                 renderFleet(count, data.fleet || []);
                 if (data.fixed_rates) data.fixed_rates.forEach(r => addRouteRow(r));
                 if (data.peak_windows) data.peak_windows.forEach(p => addPeakRow(p));
                 if (data.events) data.events.forEach(e => addEventRow(e));
-            } else { renderFleet(1); }
-        } catch (e) { renderFleet(1); }
+            } else {
+                document.getElementById('plan-badge').innerText = 'Starter Plan';
+                renderFleet(1);
+            }
+        } catch (e) {
+            console.error("loadFromBackend error:", e);
+            document.getElementById('plan-badge').innerText = 'Starter Plan';
+            renderFleet(1);
+        }
     }
 
     function copyEmbed() {
