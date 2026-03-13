@@ -90,10 +90,6 @@ app.get('/test-signal', async (req, res) => {
     }
 });
 
-app.get('/setup-wizard/:location_id', (req, res) => {
-  res.sendFile(path.join(__dirname, 'setup-wizard.html'));
-});
-
 app.get('/test-webhook', async (req, res) => {
     try {
         // 1. TEST THE DB CONNECTION
@@ -752,6 +748,16 @@ app.get("/api/get-profile-widget/location_id", async (req, res) => {
     console.error("Database Error:", err);
     return res.status(500).send("Database Error");
   }
+});
+
+app.use(express.static(path.join(__dirname, "public")));
+
+app.get("/setup-wizard", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "setup-wizard.html"));
+});
+
+app.get("/setup-wizard/:location_id", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "setup-wizard.html"));
 });
 
 // 2. ENDPOINT FOR BOOKING: Map vehicle and CRM token
