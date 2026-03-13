@@ -20,38 +20,53 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // 1. Define Environment Variables
 const CRM_WEBHOOK_URL = process.env.CRM_WEBHOOK_URL || "https://services.leadconnectorhq.com/hooks/VXE0UY17p7wnxdZ3sOLc/webhook-trigger/e8f1fd42-8f7e-4818-a94d-dd7985e12838";
 
-
-// 2. Database Connection (Postgres)
+/*****************************************************
+ 1️⃣ DATABASE CONFIGURATION
+*****************************************************/
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false }
+  ssl: { rejectUnauthorized: false } 
 });
+
+// Initialize the Google Maps Client for the Backend
+const googleMapsClient = new GoogleMapsClient({});
 
 // 3. Middleware
 app.use(cors());
 app.use(express.json());
+app.use(express.static(path.join(__dirname, "public")));
 
-// --- NEW: Setup Wizard API Route ---
-// This handles the "Save" button from your Vue frontend
+/*****************************************************
+ 2️⃣ API ROUTES (Wizard & Health)
+*****************************************************/
+
+// This fixes the "Cannot GET /api/health" error
+app.get('/api/health', (req, res) => {
+    res.json({ 
+        status: 'SaaS Master Engine Online', 
+        time: new Date().toISOString() 
+    });
+});
+
+// This handles the "Save" button from your Vue Wizard
 app.post('/api/save-config', async (req, res) => {
     const { id, crm_webhook_url } = req.body;
     
-    console.log(`🚀 Master Engine received config for ID: ${id}`);
-    console.log(`🔗 Custom Webhook set to: ${crm_webhook_url}`);
-
+    console.log(`🚀 Received config for ID: ${id}`);
+    
     try {
-        // Logic: Store this in your Postgres 'configs' table
-        // const query = 'INSERT INTO user_configs (crm_id, webhook_url) VALUES ($1, $2) ON CONFLICT (crm_id) DO UPDATE SET webhook_url = $2';
-        // await pool.query(query, [id, crm_webhook_url]);
+        const query = `
+            INSERT INTO user_configs (crm_id, webhook_url, updated_at) 
+            VALUES ($1, $2, NOW()) 
+            ON CONFLICT (crm_id) 
+            DO UPDATE SET webhook_url = $2, updated_at = NOW()
+        `;
+        await pool.query(query, [id, crm_webhook_url]);
         
-        res.json({ 
-            success: true, 
-            message: `Engine initialized for ${id}`,
-            savedUrl: crm_webhook_url 
-        });
+        res.json({ success: true, message: `Engine initialized for ${id}` });
     } catch (error) {
-        console.error("Database Error:", error);
-        res.status(500).json({ error: "Failed to save configuration to database" });
+        console.error("❌ Database Error:", error);
+        res.status(500).json({ error: "Failed to save configuration" });
     }
 });
 
