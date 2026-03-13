@@ -17,33 +17,7 @@ const app = express(); // ✅ ADD THIS
 // 1. Define it at the top
 const CRM_WEBHOOK_URL = process.env.CRM_WEBHOOK_URL || "https://services.leadconnectorhq.com/hooks/VXE0UY17p7wnxdZ3sOLc/webhook-trigger/e8f1fd42-8f7e-4818-a94d-dd7985e12838";
 
-// 2. Find your booking endpoint
-app.post('/api/create-booking', async (req, res) => {
-    const bookingData = req.body;
 
-    try {
-        // ... (Your code to save booking to Postgres) ...
-
-        // 3. TRIGGER THE WEBHOOK HERE
-        await fetch(CRM_WEBHOOK_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                customer_name: bookingData.name,
-                pickup: bookingData.pickup,
-                dropoff: bookingData.dropoff,
-                // Ensure your formula is used here
-                total_price: (bookingData.base + (bookingData.miles * bookingData.rate)) * bookingData.multiplier,
-                timestamp: new Date()
-            })
-        });
-
-        res.status(200).json({ success: true });
-    } catch (error) {
-        console.error("Webhook failed", error);
-        res.status(500).json({ error: "Booking saved but CRM sync failed" });
-    }
-});
 
 /*****************************************************
  1️⃣ DATABASE CONFIGURATION
@@ -109,6 +83,10 @@ app.get('/test-signal', async (req, res) => {
     } catch (err) {
         res.status(500).send(err.message);
     }
+});
+
+app.get('/setup-wizard/:location_id', (req, res) => {
+  res.sendFile(path.join(__dirname, 'setup-wizard.html'));
 });
 
 app.get('/test-webhook', async (req, res) => {
@@ -203,18 +181,6 @@ async function checkFixedRate(location_id, pickupAddr, dropoffAddr) {
   return null;
 }
 
-async function syncFleet() {
-    const res = await fetch(`${BACKEND_URL}/api/sync-fleet`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: locationId })
-    });
-    const data = await resp.json();
-    if (data.success) {
-        alert(`Synced ${data.count} vehicles from CRM!`);
-        location.reload(); // Refresh to show new rows
-    }
-}
 
 /*****************************************************
  4️⃣ SAVE SETTINGS ROUTE
@@ -266,26 +232,7 @@ app.get('/api/test', (req, res) => {
     const fullUrl = `${req.protocol}://${host}${req.originalUrl}`;
 });
 
-    try {
-        const res = await fetch(`${BACKEND_URL}/api/update-profile`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        });
-
-        if (res.ok) {
-            alert("✅ All settings, fleet info, and surge pricing saved!");
-        } else {
-            const errorData = await res.json();
-            alert("❌ Save failed: " + errorData.error);
-        }
-    } catch (err) {
-        console.error("Save Error:", err);
-        alert("❌ Network error. Check if backend is running.");
-    } finally {
-        btn.innerText = "SAVE ALL SETTINGS";
-    }
-
+    
 app.post('/api/update-profile-full', async (req, res) => {
     const {
         location_id,
@@ -613,14 +560,6 @@ async function triggerCrmWebhook(locationId, bookingId) {
     console.log("➡️ Posting to CRM webhook:", u.crm_webhook_url, {
       bookingId,
       tenantId: u.id,
-    });
-
-    // If you already use fetch/axios elsewhere, keep consistent.
-    // Example with fetch (Node 18+):
-    const resp = await fetch(u.crm_webhook_url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
     });
 
     const respText = await resp.text().catch(() => "");
