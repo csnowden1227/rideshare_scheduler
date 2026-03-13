@@ -122,8 +122,12 @@
 <script>
 const BACKEND_URL = "https://rideshare-scheduler-axx6.onrender.com";
 const urlParams = new URLSearchParams(window.location.search);
-let locationId = urlParams.get('location_id') || "LOC_DEMO";
+let locationId = urlParams.get('location_id');
 
+if (!locationId) {
+  console.warn("No location_id detected. Loading demo profile.");
+  locationId = "LOC_DEMO";
+}
 console.log("Frontend locationId:", locationId);
 
 const VEHICLE_LIST = [
