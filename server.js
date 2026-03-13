@@ -15,7 +15,7 @@ dotenv.config();
 const app = express(); // ✅ ADD THIS
 
 // 1. Define it at the top
-const CRM_WEBHOOK_URL = process.env.CRM_WEBHOOK_URL || "https://services.leadconnectorhq.com/hooks/VXE0UY17p7wnxdZ3sOLc/webhook-trigger/c50999ee-a93e-465e-a5c2-cd9dd6c229af";
+const CRM_WEBHOOK_URL = process.env.CRM_WEBHOOK_URL || "https://services.leadconnectorhq.com/hooks/VXE0UY17p7wnxdZ3sOLc/webhook-trigger/e8f1fd42-8f7e-4818-a94d-dd7985e12838";
 
 // 2. Find your booking endpoint
 app.post('/api/create-booking', async (req, res) => {
@@ -204,7 +204,7 @@ function copyEmbedCode() {
 async function checkFixedRate(location_id, pickupAddr, dropoffAddr) {
   // 1. Fetch all fixed routes for this specific location
   const result = await pool.query(
-    "SELECT pickup_keyword, dropoff_keyword, fixed_price FROM fixed_rates WHERE user_id = $1 AND is_active = true",
+    "SELECT pickup_keyword, dropoff_keyword, fixed_price FROM fixed_rates WHERE location_id = $1 AND is_active = true",
     [location_id]
   );
 
@@ -421,12 +421,12 @@ app.post('/api/update-profile-full', async (req, res) => {
         }
 
         // 3. REFRESH FIXED RATES
-        await client.query('DELETE FROM fixed_rates WHERE user_id = $1', [location_id]);
+        await client.query('DELETE FROM fixed_rates WHERE location_id = $1', [location_id]);
         if (fixed_rates && fixed_rates.length > 0) {
             for (const route of fixed_rates) {
                 if (route.pickup_keyword && route.dropoff_keyword) {
                     await client.query(
-                        `INSERT INTO fixed_rates (user_id, pickup_keyword, dropoff_keyword, fixed_price, is_active)
+                        `INSERT INTO fixed_rates (location_id, pickup_keyword, dropoff_keyword, fixed_price, is_active)
                         VALUES ($1, $2, $3, $4, true)`,
                         [location_id, route.pickup_keyword, route.dropoff_keyword, route.fixed_price]
                     );
@@ -585,16 +585,16 @@ async function triggerCrmWebhook(locationId, bookingId) {
     const b = bookingRes.rows[0];
 
     // 2) Load the tenant/user to get the CRM webhook URL (Option A)
-    // NOTE: bookings.user_id is a FK to users.id in your schema
+    // NOTE: bookings.location_id is a FK to users.id in your schema
     const userRes = await client.query(
       "SELECT id, business_name, crm_webhook_url FROM users WHERE id = $1",
-      [b.user_id]
+      [b.location_id]
     );
 
     if (userRes.rows.length === 0) {
       console.log("⚠️ Missing data for CRM sync. Skipping.", {
         bookingId,
-        tenantId: b.user_id,
+        tenantId: b.location_id,
         missing: ["tenant/users row"],
       });
       return;
@@ -789,7 +789,7 @@ if (fixedPrice) {
     await client.query("COMMIT");
 
     // 5. SEND TO CRM WEBHOOK (Outside transaction)
-    const CRM_WEBHOOK_URL = "https://services.leadconnectorhq.com/hooks/VXE0UY17p7wnxdZ3sOLc/webhook-trigger/c50999ee-a93e-465e-a5c2-cd9dd6c229af";
+    const CRM_WEBHOOK_URL = "https://services.leadconnectorhq.com/hooks/VXE0UY17p7wnxdZ3sOLc/webhook-trigger/e8f1fd42-8f7e-4818-a94d-dd7985e12838";
     
     fetch(CRM_WEBHOOK_URL, {
       method: 'POST',
@@ -858,7 +858,7 @@ app.post('/api/sync-fleet', async (req, res) => {
         for (const v of vehicles) {
             // We use 'ON CONFLICT' to avoid duplicate errors
             await client.query(`
-                INSERT INTO services (name, location_vehicle_id, user_id, is_active)
+                INSERT INTO services (name, location_vehicle_id, location_id, is_active)
                 VALUES ($1, $2, $3, true)
                 ON CONFLICT (location_vehicle_id) 
                 DO UPDATE SET name = EXCLUDED.name
@@ -1104,7 +1104,7 @@ const startListener = async () => {
 
         // Derive locationId from booking row
         const bookingRes = await pool.query(
-          "SELECT id, location_id, user_id FROM bookings WHERE id = $1",
+          "SELECT id, location_id, location_id FROM bookings WHERE id = $1",
           [bookingId]
         );
 
@@ -1115,7 +1115,7 @@ const startListener = async () => {
 
         const locationId =
           bookingRes.rows[0].location_id ||
-          bookingRes.rows[0].user_id ||
+          bookingRes.rows[0].location_id ||
           "default";
 
         await triggerCrmWebhook(locationId, bookingId);
