@@ -180,27 +180,6 @@ function getPeakMultiplier(dateISO, customMultiplier) {
   return 1.0;
 }
 
-function addPeakTimeRow(label = '', start = '', end = '', mult = '1.5') {
-    const container = document.getElementById('peak-times-body');
-    const tr = document.createElement('tr');
-    tr.className = "peak-time-row border-b border-gray-50";
-    tr.innerHTML = `
-        <td class="py-4 pr-2"><input type="text" class="peak-label input-mini" value="${label}" placeholder="Morning Rush"></td>
-        <td class="py-4 pr-2"><input type="time" class="peak-start input-mini" value="${start}"></td>
-        <td class="py-4 pr-2"><input type="time" class="peak-end input-mini" value="${end}"></td>
-        <td class="py-4 pr-2"><input type="number" step="0.1" class="peak-multiplier input-mini" value="${mult}"></td>
-        <td class="py-4 text-right"><button type="button" onclick="this.closest('tr').remove()" class="text-red-400 font-bold">×</button></td>
-    `;
-    container.appendChild(tr);
-}
-// 2. Add the Copy to Clipboard logic
-function copyEmbedCode() {
-    const code = document.getElementById('embed-code-box').innerText;
-    navigator.clipboard.writeText(code).then(() => {
-        alert("Embed code copied to clipboard!");
-    });
-}
-
 async function checkFixedRate(location_id, pickupAddr, dropoffAddr) {
   // 1. Fetch all fixed routes for this specific location
   const result = await pool.query(
@@ -282,51 +261,6 @@ app.post('/api/save-settings', async (req, res) => {
     }
 });
 
-async function saveSettings() {
-    const btn = document.getElementById('save-settings-btn');
-    btn.innerText = "SAVING...";
-
-    // 1. Collect Fleet / Service Pricing
-    const fleet = Array.from(document.querySelectorAll('.fleet-row')).map(row => ({
-        serviceId: row.dataset.id,
-        base_rate: row.querySelector('.base-rate').value,
-        per_mile: row.querySelector('.per-mile').value,
-    }));
-
-    // 2. Collect Daily Peak Windows
-    const peakTimes = Array.from(document.querySelectorAll('.peak-time-row')).map(row => ({
-        label: row.querySelector('.peak-label').value,
-        start_time: row.querySelector('.peak-start').value,
-        end_time: row.querySelector('.peak-end').value,
-        multiplier: row.querySelector('.peak-multiplier').value
-    }));
-
-    // 3. Collect Special Events
-    const events = Array.from(document.querySelectorAll('.event-row')).map(row => ({
-        name: row.querySelector('.event-name').value,
-        date: row.querySelector('.event-date').value,
-        multiplier: row.querySelector('.event-multiplier').value
-    }));
-
-    // 4. Collect Fixed Routes (Geofencing)
-    const routes = Array.from(document.querySelectorAll('.route-row')).map(row => ({
-        pickup: row.querySelector('.route-from').value,
-        dropoff: row.querySelector('.route-to').value,
-        price: row.querySelector('.route-price').value
-    }));
-
-    // 5. Construct Final Payload
-    const payload = {
-        userId: locationId,
-        maps_api_key: document.getElementById('maps_key').value,
-        location_id: document.getElementById('CRM_WEBHOOK_URL')?.value, // Added safety
-        tax_rate: document.getElementById('tax_rate')?.value || 0,
-        fleet: fleet,
-        peak_windows: peakTimes,
-        events: events,
-        fixed_rates: routes
-    };
-
 app.get('/api/test', (req, res) => {
     const host = req.get('host'); 
     const fullUrl = `${req.protocol}://${host}${req.originalUrl}`;
@@ -351,7 +285,6 @@ app.get('/api/test', (req, res) => {
     } finally {
         btn.innerText = "SAVE ALL SETTINGS";
     }
-}
 
 app.post('/api/update-profile-full', async (req, res) => {
     const {
