@@ -7,12 +7,16 @@ import pkg from 'pg';
 const { Pool } = pkg; 
 import dotenv from 'dotenv';
 import { Client as GoogleMapsClient } from "@googlemaps/google-maps-services-js";
-import { google } from 'googleapis'; // Add this to fix the OAuth error!
-import https from 'https'; // Required for your getTravelTime function
+import { google } from 'googleapis';
+import https from 'https';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
 dotenv.config();
 
-const app = express(); // ✅ ADD THIS
+const app = express();
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // 1. Define it at the top
 const CRM_WEBHOOK_URL = process.env.CRM_WEBHOOK_URL || "https://services.leadconnectorhq.com/hooks/VXE0UY17p7wnxdZ3sOLc/webhook-trigger/e8f1fd42-8f7e-4818-a94d-dd7985e12838";
@@ -941,6 +945,9 @@ app.post("/api/create-booking", async (req, res) => {
   }
 });
 
+app.get("/setup-wizard", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "setup-wizard.html"));
+});
 
 // --- DATABASE LISTENER (Runs 24/7) ---
 const { Client } = pkg;
