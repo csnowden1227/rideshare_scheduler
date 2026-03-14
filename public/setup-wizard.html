@@ -101,12 +101,14 @@
                 </table>
             </div>
 
-            <<div class="card">
+            
    <div class="card">
     <div class="flex justify-between items-center mb-6">
         <div>
             <h2 class="section-header !mb-0 !border-0">SECTION: ADD-ON SERVICES</h2>
-            <p class="text-[10px] text-slate-400 uppercase font-bold mt-1">Extras like Child Seats, Meet & Greet, or Heavy Luggage</p>
+            <p class="text-[10px] text-slate-400 uppercase font-bold mt-1">
+                Extras like Child Seats, Meet &amp; Greet, or Heavy Luggage
+            </p>
         </div>
         <button type="button" onclick="addAddonRow()" class="text-xs font-bold bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition">
             + Add Service
@@ -121,8 +123,7 @@
                 <th class="w-10"></th>
             </tr>
         </thead>
-        <tbody id="addon-body">
-            </tbody>
+        <tbody id="addon-body"></tbody>
     </table>
 </div>
         <div class="lg:col-span-1">
@@ -261,34 +262,7 @@ const VEHICLE_LIST = [
         document.getElementById('event-body').appendChild(tr);
     }
 
-    function addAddonRow(data = {}) {
-    const tbody = document.getElementById('addon-body');
-    if (!tbody) return;
-
-    const row = document.createElement('tr');
-    row.className = 'addon-row border-b border-slate-50';
-    
-    row.innerHTML = `
-        <td class="py-3 pr-2">
-            <input type="text" class="input-mini a-desc" value="${data.description || ''}" placeholder="e.g. Child Seat">
-        </td>
-        <td class="py-3 pr-2">
-            <input type="number" step="0.01" class="input-mini a-price" value="${data.price || 0}">
-        </td>
-        <td class="py-3 pr-2">
-            <select class="input-mini a-type font-bold">
-                <option value="per_booking" ${data.type === 'per_booking' ? 'selected' : ''}>Per Booking</option>
-                <option value="per_person" ${data.type === 'per_person' ? 'selected' : ''}>Per Person</option>
-            </select>
-        </td>
-        <td class="text-right">
-            <button type="button" class="text-red-400 font-bold hover:text-red-600 transition text-lg" onclick="this.closest('tr').remove()">
-                &times;
-            </button>
-        </td>
-    `;
-    tbody.appendChild(row);
-}
+   
 
    async function loadFromBackend() {
         if (!locationId) return;
@@ -336,54 +310,76 @@ const VEHICLE_LIST = [
             checkDefaultRows();
         }
     }    async function saveToBackend() {
-        const btn = document.getElementById('save-btn');
-        btn.innerText = "SYNCING TO CLOUD...";
-        const payload = {
-            id: locationId,
-            crm_webhook_url: document.getElementById('location_input').value.trim(),
-            maps_api_key: document.getElementById('maps_key').value,
-            tax_rate: parseFloat(document.getElementById('tax_rate').value) || 0,
-            fleet: Array.from(document.querySelectorAll('#fleet-body tr')).map(tr => ({
-                vehicle_id: tr.cells[0]?.innerText || 'N/A',
-                vehicle_type: tr.querySelector('.v-type')?.value || '',
-                base_rate: parseFloat(tr.querySelector('.v-base')?.value) || 0,
-                mile_rate: parseFloat(tr.querySelector('.v-mile')?.value) || 0,
-                calendar_id: tr.querySelector('.v-cal')?.value || ''
-            })),
-            fixed_rates: Array.from(document.querySelectorAll('.route-row')).map(r => ({
-                pickup_keyword: r.querySelector('.r-pickup')?.value || '',
-                dropoff_keyword: r.querySelector('.r-dropoff')?.value || '',
-                fixed_price: parseFloat(r.querySelector('.r-price')?.value) || 0
-            })),
-            peak_windows: Array.from(document.querySelectorAll('.peak-row')).map(r => ({
-                day: r.querySelector('.p-day')?.value || '',
-                start_time: r.querySelector('.p-start')?.value || '',
-                end_time: r.querySelector('.p-end')?.value || '',
-                multiplier: parseFloat(r.querySelector('.p-mult')?.value) || 1.0
-            })),
-            events: Array.from(document.querySelectorAll('.event-row')).map(e => ({
-                event_name: e.querySelector('.e-name')?.value || '',
-                event_date: e.querySelector('.e-date')?.value || '',
-                multiplier: parseFloat(e.querySelector('.e-mult')?.value) || 1.0
-            })),
-            addons: Array.from(document.querySelectorAll('.addon-row')).map(r => ({
-                description: r.querySelector('.a-desc').value,
-                price: parseFloat(r.querySelector('.a-price').value) || 0,
-                type: r.querySelector('.a-type').value
-            }))
-        };
+    const btn = document.getElementById('save-btn');
+    btn.innerText = "SYNCING TO CLOUD...";
 
-        try {
-            const res = await fetch(`${BACKEND_URL}/api/save-config`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
-            if (res.ok) alert("✅ Sync Successful!");
-            else alert("❌ Save Failed");
-        } catch (e) { alert("❌ Network Error"); }
-        finally { btn.innerText = "Sync to Cloud"; }
+    const payload = {
+        id: locationId,
+        crm_webhook_url: document.getElementById('location_input').value.trim(),
+        maps_api_key: document.getElementById('maps_key').value,
+        tax_rate: parseFloat(document.getElementById('tax_rate').value) || 0,
+
+        fleet: Array.from(document.querySelectorAll('#fleet-body tr')).map(tr => ({
+            vehicle_id: tr.cells[0]?.innerText.trim() || 'N/A',
+            vehicle_type: tr.querySelector('.v-type')?.value || '',
+            base_rate: parseFloat(tr.querySelector('.v-base')?.value) || 0,
+            mile_rate: parseFloat(tr.querySelector('.v-mile')?.value) || 0,
+            calendar_id: tr.querySelector('.v-cal')?.value || ''
+        })),
+
+        fixed_rates: Array.from(document.querySelectorAll('.route-row')).map(r => ({
+            pickup_keyword: r.querySelector('.r-pickup')?.value || '',
+            dropoff_keyword: r.querySelector('.r-dropoff')?.value || '',
+            pickup_lat: parseFloat(r.querySelector('.r-p-lat')?.value) || null,
+            pickup_lng: parseFloat(r.querySelector('.r-p-lng')?.value) || null,
+            dropoff_lat: parseFloat(r.querySelector('.r-d-lat')?.value) || null,
+            dropoff_lng: parseFloat(r.querySelector('.r-d-lng')?.value) || null,
+            fixed_price: parseFloat(r.querySelector('.r-price')?.value) || 0
+        })),
+
+        peak_windows: Array.from(document.querySelectorAll('.peak-row')).map(r => ({
+            day: r.querySelector('.p-day')?.value || '',
+            start_time: r.querySelector('.p-start')?.value || '',
+            end_time: r.querySelector('.p-end')?.value || '',
+            multiplier: parseFloat(r.querySelector('.p-mult')?.value) || 1.0
+        })),
+
+        events: Array.from(document.querySelectorAll('.event-row')).map(e => ({
+            event_name: e.querySelector('.e-name')?.value || '',
+            event_date: e.querySelector('.e-date')?.value || '',
+            base_rate: parseFloat(e.querySelector('.e-base')?.value) || 0,
+            mile_rate: parseFloat(e.querySelector('.e-mile')?.value) || 0,
+            multiplier: parseFloat(e.querySelector('.e-mult')?.value) || 1.0
+        })),
+
+        addons: Array.from(document.querySelectorAll('.addon-row')).map(r => ({
+            description: r.querySelector('.a-desc')?.value || '',
+            price: parseFloat(r.querySelector('.a-price')?.value) || 0,
+            type: r.querySelector('.a-type')?.value || 'per_booking'
+        }))
+    };
+
+    try {
+        const res = await fetch(`${BACKEND_URL}/api/save-config`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+
+        if (res.ok) {
+            alert("✅ Sync Successful!");
+        } else {
+            const errText = await res.text();
+            console.error(errText);
+            alert("❌ Save Failed");
+        }
+    } catch (e) {
+        console.error(e);
+        alert("❌ Network Error");
+    } finally {
+        btn.innerText = "Sync to Cloud";
     }
+}
 
  // --- CLIPBOARD LOGIC ---
 function copyEmbed() {
