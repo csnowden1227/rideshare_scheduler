@@ -1,7 +1,7 @@
 /*****************************************************
  🚀 SERVER.JS - GO HIGH LEVEL SAAS BACKEND
 *****************************************************/
-import 'dotenv/config'; // This loads your variables automatically
+import * as dotenv from 'dotenv'; // Define the variable here
 import express from 'express';
 import cors from 'cors';
 import pkg from 'pg';
@@ -13,7 +13,7 @@ import https from 'https';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
-dotenv.config();
+dotenv.config(); // Now this works because 'dotenv' exists
 
 const app = express();
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -33,7 +33,7 @@ const pool = new Pool({
 const googleMapsClient = new GoogleMapsClient({});
 
 // 3. Middleware
-aapp.use(cors({
+app.use(cors({
   origin: ['https://app.crmonesource.com']
 }));
 app.use(express.json());
