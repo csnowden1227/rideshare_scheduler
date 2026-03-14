@@ -32,9 +32,19 @@ const pool = new Pool({
 const googleMapsClient = new GoogleMapsClient({});
 
 // 3. Middleware
-app.use(cors());
+aapp.use(cors({
+  origin: ['https://app.crmonesource.com']
+}));
 app.use(express.json());
 app.use(express.static(path.join(__dirname, "public")));
+
+app.use((req, res, next) => {
+  res.setHeader(
+    "Content-Security-Policy", 
+    "frame-ancestors 'self' https://app.crmonesource.com https://*.gohighlevel.com https://*.msgsndr.com;"
+  );
+  next();
+});
 
 /*****************************************************
  2️⃣ API ROUTES (Wizard & Health)
@@ -68,6 +78,20 @@ app.post('/api/save-config', async (req, res) => {
         console.error("❌ Database Error:", error);
         res.status(500).json({ error: "Failed to save configuration" });
     }
+});
+
+app.post('/api/refresh-driver-token', async (req, res) => {
+  const { token, driverId } = req.body;
+  try {
+    await pool.query(
+      "UPDATE drivers SET google_access_token = $1, google_token_expiry = now() + interval '55 minutes' WHERE id = $2",
+      [token, driverId]
+    );
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Database update failed" });
+  }
 });
 
 /*****************************************************

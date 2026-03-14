@@ -90,16 +90,25 @@ async function getDriverCalendarClient(driverId) {
     access_token: rows[0].google_access_token
   });
 
-  // Auto-refresh if needed
-  const now = new Date();
-  const exp = rows[0].google_token_expiry ? new Date(rows[0].google_token_expiry) : null;
-  if (!exp || exp <= now) {
-    const refreshed = await o.getAccessToken();
-    if (refreshed?.token) {
-      await pool.query(
-        `update drivers set google_access_token=$1, google_token_expiry=now() + interval '55 minutes' where id=$2`,
-        [refreshed.token, driverId]
-      );
+ // Auto-refresh if needed
+const now = new Date();
+const exp = rows[0].google_token_expiry ? new Date(rows[0].google_token_expiry) : null;
+
+if (!exp || exp <= now) {
+  const refreshed = await o.getAccessToken();
+
+  if (refreshed?.token) {
+    // We send the data to our server.js route instead of doing SQL here
+    await fetch('/api/refresh-driver-token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        token: refreshed.token,
+        driverId: driverId
+      })
+    });
+  }
+}
     }
   }
 
