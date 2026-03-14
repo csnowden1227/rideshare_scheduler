@@ -285,33 +285,50 @@ const VEHICLE_LIST = [
     tbody.appendChild(row);
 }
 
-    async function loadFromBackend() {
-        if (!locationId) return;
-        document.getElementById('display-loc-id').innerText = locationId;
-        document.getElementById('embed-box').innerText = `<script src="${BACKEND_URL}/widget.js?loc=${locationId}"><\/script>`;
+   async function loadFromBackend() {
+    if (!locationId) return;
+    
+    // Set UI elements
+    document.getElementById('display-loc-id').innerText = locationId;
+    document.getElementById('embed-box').innerText = `<script src="${BACKEND_URL}/widget.js?loc=${locationId}"><\/script>`;
+
+    try {
+        const res = await fetch(`${BACKEND_URL}/api/get-profile/${locationId}`);
+        const data = await res.json();
         
-        try {
-            const res = await fetch(`${BACKEND_URL}/api/get-profile/${locationId}`);
-            const data = await res.json();
-            const generatedWebhookUrl = `https://services.leadconnectorhq.com/hooks/${locationId}/webhook-trigger/e8f1fd42-8f7e-4818-a94d-dd7985e12838`;
-            document.getElementById('location_input').value = generatedWebhookUrl;
+        const generatedWebhookUrl = `https://services.leadconnectorhq.com/hooks/${locationId}/webhook-trigger/e8f1fd42-8f7e-4818-a94d-dd7985e12838`;
+        document.getElementById('location_input').value = generatedWebhookUrl;
 
-            if (data && !data.error) {
-                document.getElementById('maps_key').value = data.maps_api_key || '';
-                document.getElementById('tax_rate').value = data.tax_rate || '0.00';
-                const rawPlan = (data.plan_name || 'Starter').toLowerCase().trim();
-                let count = rawPlan === 'premium' ? 2 : (rawPlan === 'pro' ? 3 : 1);
-                document.getElementById('plan-badge').innerText = rawPlan.charAt(0).toUpperCase() + rawPlan.slice(1) + " Plan";
+        if (data && !data.error) {
+            document.getElementById('maps_key').value = data.maps_api_key || '';
+            document.getElementById('tax_rate').value = data.tax_rate || '0.00';
+            
+            const rawPlan = (data.plan_name || 'Starter').toLowerCase().trim();
+            let count = rawPlan === 'premium' ? 2 : (rawPlan === 'pro' ? 3 : 1);
+            document.getElementById('plan-badge').innerText = rawPlan.charAt(0).toUpperCase() + rawPlan.slice(1) + " Plan";
 
-                renderFleet(count, data.fleet || []);
-                if (data.fixed_rates) data.fixed_rates.forEach(r => addRouteRow(r));
-                if (data.peak_windows) data.peak_windows.forEach(p => addPeakRow(p));
-                if (data.events) data.events.forEach(e => addEventRow(e));
-                if (data.addons) data.addons.forEach(a => addAddonRow(a));
+            // Render existing data
+            renderFleet(count, data.fleet || []);
+            if (data.fixed_rates) data.fixed_rates.forEach(r => addRouteRow(r));
+            if (data.peak_windows) data.peak_windows.forEach(p => addPeakRow(p));
+            if (data.events) data.events.forEach(e => addEventRow(e));
+            
+            // Render Add-ons and check for default row
+            if (data.addons && data.addons.length > 0) {
+                data.addons.forEach(a => addAddonRow(a));
+            } else {
+                addAddonRow(); // Add one blank row if none exist
             }
-        } catch (e) { console.error(e); }
+        } else {
+            // If new user/no data, ensure default rows for other sections too
+            checkDefaultRows(); 
+        }
+        
+    } catch (e) { 
+        console.error("Load Error:", e);
+        checkDefaultRows(); // Ensure UI isn't empty on network error
     }
-
+}
     async function saveToBackend() {
         const btn = document.getElementById('save-btn');
         btn.innerText = "SYNCING TO CLOUD...";
