@@ -160,20 +160,33 @@ const VEHICLE_LIST = [
 
     function renderFleet(count, savedFleet = []) {
         const tbody = document.getElementById('fleet-body');
+        if (!tbody) return;
         tbody.innerHTML = "";
+        
         for (let i = 1; i <= count; i++) {
+            // Standardizing the ID format
             const slotId = `${locationId}_vehicle_${i}`;
+            // Find existing data for this slot if it exists
             const data = savedFleet.find(f => f.vehicle_id === slotId) || {};
+            
             const tr = document.createElement('tr');
             tr.className = "border-b border-slate-50";
             tr.innerHTML = `
                 <td class="py-4 font-mono text-[9px] text-slate-400 font-bold">${slotId}</td>
-                <td><select class="v-type input-mini font-bold">
-                    ${VEHICLE_LIST.map(v => `<option value="${v}" ${data.vehicle_type === v ? 'selected' : ''}>${v}</option>`).join('')}
-                </select></td>
-                <td><input type="number" class="v-base input-mini" value="${data.base_rate || 50}"></td>
-                <td><input type="number" step="0.1" class="v-mile input-mini" value="${data.mile_rate || 3.5}"></td>
-                <td><input type="text" class="v-cal input-mini" value="${data.calendar_id || ''}"></td>
+                <td class="py-2">
+                    <select class="v-type input-mini font-bold">
+                        ${VEHICLE_LIST.map(v => `<option value="${v}" ${data.vehicle_type === v ? 'selected' : ''}>${v}</option>`).join('')}
+                    </select>
+                </td>
+                <td class="py-2 px-1">
+                    <input type="number" class="v-base input-mini" value="${data.base_rate || 50}">
+                </td>
+                <td class="py-2 px-1">
+                    <input type="number" step="0.1" class="v-mile input-mini" value="${data.mile_rate || 3.5}">
+                </td>
+                <td class="py-2 px-1">
+                    <input type="text" class="v-cal input-mini" placeholder="Calendar ID" value="${data.calendar_id || ''}">
+                </td>
             `;
             tbody.appendChild(tr);
         }
@@ -286,50 +299,51 @@ const VEHICLE_LIST = [
 }
 
    async function loadFromBackend() {
-    if (!locationId) return;
-    
-    // Set UI elements
-    document.getElementById('display-loc-id').innerText = locationId;
-    document.getElementById('embed-box').innerText = `<script src="${BACKEND_URL}/widget.js?loc=${locationId}"><\/script>`;
-
-    try {
-        const res = await fetch(`${BACKEND_URL}/api/get-profile/${locationId}`);
-        const data = await res.json();
+        if (!locationId) return;
         
-        const generatedWebhookUrl = `https://services.leadconnectorhq.com/hooks/${locationId}/webhook-trigger/e8f1fd42-8f7e-4818-a94d-dd7985e12838`;
-        document.getElementById('location_input').value = generatedWebhookUrl;
+        document.getElementById('display-loc-id').innerText = locationId;
+        document.getElementById('embed-box').innerText = `<script src="${BACKEND_URL}/widget.js?loc=${locationId}"><\/script>`;
 
-        if (data && !data.error) {
-            document.getElementById('maps_key').value = data.maps_api_key || '';
-            document.getElementById('tax_rate').value = data.tax_rate || '0.00';
+        try {
+            const res = await fetch(`${BACKEND_URL}/api/get-profile/${locationId}`);
+            const data = await res.json();
             
-            const rawPlan = (data.plan_name || 'Starter').toLowerCase().trim();
-            let count = rawPlan === 'premium' ? 2 : (rawPlan === 'pro' ? 3 : 1);
-            document.getElementById('plan-badge').innerText = rawPlan.charAt(0).toUpperCase() + rawPlan.slice(1) + " Plan";
+            const generatedWebhookUrl = `https://services.leadconnectorhq.com/hooks/${locationId}/webhook-trigger/e8f1fd42-8f7e-4818-a94d-dd7985e12838`;
+            document.getElementById('location_input').value = generatedWebhookUrl;
 
-            // Render existing data
-            renderFleet(count, data.fleet || []);
-            if (data.fixed_rates) data.fixed_rates.forEach(r => addRouteRow(r));
-            if (data.peak_windows) data.peak_windows.forEach(p => addPeakRow(p));
-            if (data.events) data.events.forEach(e => addEventRow(e));
-            
-            // Render Add-ons and check for default row
-            if (data.addons && data.addons.length > 0) {
-                data.addons.forEach(a => addAddonRow(a));
+            if (data && !data.error) {
+                document.getElementById('maps_key').value = data.maps_api_key || '';
+                document.getElementById('tax_rate').value = data.tax_rate || '0.00';
+                
+                const rawPlan = (data.plan_name || 'Starter').toLowerCase().trim();
+                // Determine slot count based on plan
+                let count = rawPlan === 'premium' ? 2 : (rawPlan === 'pro' ? 3 : 1);
+                document.getElementById('plan-badge').innerText = rawPlan.charAt(0).toUpperCase() + rawPlan.slice(1) + " Plan";
+
+                // RE-RUN FLEET RENDERER WITH DATA
+                renderFleet(count, data.fleet || []);
+                
+                if (data.fixed_rates) data.fixed_rates.forEach(r => addRouteRow(r));
+                if (data.peak_windows) data.peak_windows.forEach(p => addPeakRow(p));
+                if (data.events) data.events.forEach(e => addEventRow(e));
+                
+                if (data.addons && data.addons.length > 0) {
+                    data.addons.forEach(a => addAddonRow(a));
+                } else {
+                    addAddonRow(); 
+                }
             } else {
-                addAddonRow(); // Add one blank row if none exist
+                // Default render for new profiles (1 slot for Starter)
+                renderFleet(1, []);
+                checkDefaultRows(); 
             }
-        } else {
-            // If new user/no data, ensure default rows for other sections too
-            checkDefaultRows(); 
+            
+        } catch (e) { 
+            console.error("Load Error:", e);
+            renderFleet(1, []); // Fallback to 1 slot
+            checkDefaultRows();
         }
-        
-    } catch (e) { 
-        console.error("Load Error:", e);
-        checkDefaultRows(); // Ensure UI isn't empty on network error
-    }
-}
-    async function saveToBackend() {
+    }    async function saveToBackend() {
         const btn = document.getElementById('save-btn');
         btn.innerText = "SYNCING TO CLOUD...";
         const payload = {
