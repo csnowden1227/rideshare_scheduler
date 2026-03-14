@@ -1,6 +1,7 @@
 /*****************************************************
  🚀 SERVER.JS - GO HIGH LEVEL SAAS BACKEND
 *****************************************************/
+import 'dotenv/config'; // This is the shortest way to load it
 import express from 'express';
 import cors from 'cors';
 import pkg from 'pg';
