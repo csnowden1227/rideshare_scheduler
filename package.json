@@ -5,8 +5,9 @@
   "dependencies": {
     "@googlemaps/google-maps-services-js": "^3.4.2",
     "cors": "^2.8.6",
-    "dotenv": "^16.4.7",
-    "express": "^4.21.2",
+    "dotenv": "^16.6.1",
+    "express": "^4.22.1",
+    "googleapis": "^171.4.0",
     "pg": "^8.20.0"
   }
 }

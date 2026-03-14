@@ -1,12 +1,12 @@
 /*****************************************************
  🚀 SERVER.JS - GO HIGH LEVEL SAAS BACKEND
 *****************************************************/
-import 'dotenv/config'; // This is the shortest way to load it
+import 'dotenv/config'; // This loads your variables automatically
 import express from 'express';
 import cors from 'cors';
 import pkg from 'pg';
 const { Pool } = pkg; 
-import dotenv from 'dotenv';
+// import dotenv from 'dotenv'; <--- YOU CAN DELETE THIS LINE
 import { Client as GoogleMapsClient } from "@googlemaps/google-maps-services-js";
 import { google } from 'googleapis';
 import https from 'https';
