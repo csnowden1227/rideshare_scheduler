@@ -100,24 +100,29 @@
                     <tbody id="event-body"></tbody>
                 </table>
             </div>
+
+            <div class="card">
+                <div class="flex justify-between items-center mb-6">
+                    <div>
+                        <h2 class="section-header !mb-0 !border-0">SECTION: ADD-ON SERVICES</h2>
+                        <p class="text-[10px] font-bold uppercase text-slate-400 mt-1">Extras like Child Seats, Meet & Greet, or Heavy Luggage</p>
+                    </div>
+                    <button type="button" onclick="addAddonRow()" class="text-xs font-bold bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition">+ Add Service</button>
+                </div>
+                <table class="w-full text-left">
+                    <thead>
+                        <tr class="text-[10px] uppercase text-gray-400">
+                            <th>Description</th>
+                            <th>Price ($)</th>
+                            <th>Type</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody id="addon-body"></tbody>
+                </table>
+            </div>
         </div>
-<div class="section-box">
-    <h3>➕ Add-on Services</h3>
-    <p>Extras like Child Seats, Meet & Greet, or Heavy Luggage.</p>
-    <table class="table">
-        <thead>
-            <tr>
-                <th>Description</th>
-                <th>Price ($)</th>
-                <th>Type</th>
-                <th></th>
-            </tr>
-        </thead>
-        <tbody id="addon-body">
-            </tbody>
-    </table>
-    <button type="button" class="btn btn-sm btn-secondary" onclick="addAddonRow()">+ Add Service</button>
-</div>
+
         <div class="lg:col-span-1">
             <div class="sticky top-6 space-y-6">
                 <button onclick="saveToBackend()" id="save-btn" class="w-full bg-blue-600 text-white font-black py-5 rounded-2xl hover:bg-blue-700 shadow-xl uppercase tracking-widest text-sm">
@@ -138,24 +143,9 @@
 <script>
 const BACKEND_URL = "https://rideshare-scheduler-axx6.onrender.com";
 const urlParams = new URLSearchParams(window.location.search);
-// GET THE ID FROM THE URL PARAMETERS
 const crmId = urlParams.get('location_id') || urlParams.get('id'); 
 
-// FETCH USING THE ID, NOT THE WEBHOOK
-const response = await fetch(`https://your-backend.com/api/config/${crmId}`);
-const pathLocationId = pathParts[1] || '';
-
-let locationId =
-  urlParams.get('location_id') ||
-  pathLocationId ||
-  'LOC_DEMO';
-
-if (!locationId) {
-  console.warn("No location_id detected. Loading demo profile.");
-  locationId = "LOC_DEMO";
-}
-
-console.log("Frontend locationId:", locationId);
+let locationId = crmId || 'LOC_DEMO';
 
 const VEHICLE_LIST = [
     "Standard Sedan",
@@ -165,7 +155,7 @@ const VEHICLE_LIST = [
     "Standard XL SUV",
     "Luxury XL SUV"
 ];
-    // --- UI RENDERERS ---
+
     function renderFleet(count, savedFleet = []) {
         const tbody = document.getElementById('fleet-body');
         tbody.innerHTML = "";
@@ -265,96 +255,59 @@ const VEHICLE_LIST = [
     }
 
     function addAddonRow(data = {}) {
-    const tbody = document.getElementById('addon-body');
-    const row = document.createElement('tr');
-    row.className = 'addon-row';
-    row.innerHTML = `
-        <td><input type="text" class="form-control a-desc" value="${data.description || ''}" placeholder="e.g. Child Seat"></td>
-        <td><input type="number" class="form-control a-price" value="${data.price || 0}" step="0.01"></td>
-        <td>
-            <select class="form-control a-type">
-                <option value="per_booking" ${data.type === 'per_booking' ? 'selected' : ''}>Per Booking</option>
-                <option value="per_person" ${data.type === 'per_person' ? 'selected' : ''}>Per Person</option>
-            </select>
-        </td>
-        <td><button class="btn btn-danger btn-sm" onclick="this.closest('tr').remove()">×</button></td>
-    `;
-    tbody.appendChild(row);
-}
-
-    // --- THE SYNC FIX (DATA CLEANING) ---
-
+        const tbody = document.getElementById('addon-body');
+        if (!tbody) return;
+        const row = document.createElement('tr');
+        row.className = 'addon-row border-b border-slate-50';
+        row.innerHTML = `
+            <td class="py-3 pr-2"><input type="text" class="input-mini a-desc" value="${data.description || ''}" placeholder="e.g. Child Seat"></td>
+            <td class="py-3 pr-2"><input type="number" class="input-mini a-price" value="${data.price || 0}" step="0.01"></td>
+            <td class="py-3 pr-2">
+                <select class="input-mini a-type">
+                    <option value="per_booking" ${data.type === 'per_booking' ? 'selected' : ''}>Per Booking</option>
+                    <option value="per_person" ${data.type === 'per_person' ? 'selected' : ''}>Per Person</option>
+                </select>
+            </td>
+            <td class="text-right"><button type="button" class="text-red-400 font-bold" onclick="this.closest('tr').remove()">&times;</button></td>
+        `;
+        tbody.appendChild(row);
+    }
 
     async function loadFromBackend() {
-        if (!locationId) {
-            document.getElementById('display-loc-id').innerText = 'NO LOCATION';
-            document.getElementById('plan-badge').innerText = 'Starter Plan';
-            document.getElementById('embed-box').innerText = '';
-            if (typeof renderFleet === "function") renderFleet(1);
-            return;
-        }
-
+        if (!locationId) return;
         document.getElementById('display-loc-id').innerText = locationId;
         document.getElementById('embed-box').innerText = `<script src="${BACKEND_URL}/widget.js?loc=${locationId}"><\/script>`;
         
         try {
             const res = await fetch(`${BACKEND_URL}/api/get-profile/${locationId}`);
             const data = await res.json();
-
-            // Auto-fill the CRM Webhook field for the user
             const generatedWebhookUrl = `https://services.leadconnectorhq.com/hooks/${locationId}/webhook-trigger/e8f1fd42-8f7e-4818-a94d-dd7985e12838`;
             document.getElementById('location_input').value = generatedWebhookUrl;
 
             if (data && !data.error) {
                 document.getElementById('maps_key').value = data.maps_api_key || '';
                 document.getElementById('tax_rate').value = data.tax_rate || '0.00';
-                
                 const rawPlan = (data.plan_name || 'Starter').toLowerCase().trim();
-                let planLabel = rawPlan.charAt(0).toUpperCase() + rawPlan.slice(1);
                 let count = rawPlan === 'premium' ? 2 : (rawPlan === 'pro' ? 3 : 1);
+                document.getElementById('plan-badge').innerText = rawPlan.charAt(0).toUpperCase() + rawPlan.slice(1) + " Plan";
 
-                document.getElementById('plan-badge').innerText = planLabel + " Plan";
-
-                // Clear and Re-render Dynamic Rows
-                if(document.getElementById('routes-container')) document.getElementById('routes-container').innerHTML = '';
-                if(document.getElementById('peak-body')) document.getElementById('peak-body').innerHTML = '';
-                if(document.getElementById('event-body')) document.getElementById('event-body').innerHTML = '';
-
-                if (typeof renderFleet === "function") renderFleet(count, data.fleet || []);
-                if (data.fixed_rates && typeof addRouteRow === "function") data.fixed_rates.forEach(r => addRouteRow(r));
-                if (data.peak_windows && typeof addPeakRow === "function") data.peak_windows.forEach(p => addPeakRow(p));
-                if (data.events && typeof addEventRow === "function") data.events.forEach(e => addEventRow(e));
-            const addonBody = document.getElementById('addon-body');
-                if (addonBody) {
-                addonBody.innerHTML = ''; // Clear any placeholders
-                if (data.addons && Array.isArray(data.addons)) {
-                data.addons.forEach(item => addAddonRow(item));
-    }
-}
+                renderFleet(count, data.fleet || []);
+                if (data.fixed_rates) data.fixed_rates.forEach(r => addRouteRow(r));
+                if (data.peak_windows) data.peak_windows.forEach(p => addPeakRow(p));
+                if (data.events) data.events.forEach(e => addEventRow(e));
+                if (data.addons) data.addons.forEach(a => addAddonRow(a));
             }
-        } catch (e) {
-            console.error("❌ loadFromBackend error:", e);
-        }
+        } catch (e) { console.error(e); }
     }
 
     async function saveToBackend() {
-        const btn = document.getElementById('save-btn'); // Ensure your button has id="save-btn"
-        if (!btn) return;
-
-        if (!locationId) {
-            alert("❌ Missing Location ID! Cannot save.");
-            return;
-        }
-
+        const btn = document.getElementById('save-btn');
         btn.innerText = "SYNCING TO CLOUD...";
-
-        // Collect all dynamic data
         const payload = {
             id: locationId,
             crm_webhook_url: document.getElementById('location_input').value.trim(),
             maps_api_key: document.getElementById('maps_key').value,
             tax_rate: parseFloat(document.getElementById('tax_rate').value) || 0,
-            
             fleet: Array.from(document.querySelectorAll('#fleet-body tr')).map(tr => ({
                 vehicle_id: tr.cells[0]?.innerText || 'N/A',
                 vehicle_type: tr.querySelector('.v-type')?.value || '',
@@ -362,32 +315,28 @@ const VEHICLE_LIST = [
                 mile_rate: parseFloat(tr.querySelector('.v-mile')?.value) || 0,
                 calendar_id: tr.querySelector('.v-cal')?.value || ''
             })),
-            
             fixed_rates: Array.from(document.querySelectorAll('.route-row')).map(r => ({
                 pickup_keyword: r.querySelector('.r-pickup')?.value || '',
                 dropoff_keyword: r.querySelector('.r-dropoff')?.value || '',
                 fixed_price: parseFloat(r.querySelector('.r-price')?.value) || 0
             })),
-
             peak_windows: Array.from(document.querySelectorAll('.peak-row')).map(r => ({
                 day: r.querySelector('.p-day')?.value || '',
                 start_time: r.querySelector('.p-start')?.value || '',
                 end_time: r.querySelector('.p-end')?.value || '',
                 multiplier: parseFloat(r.querySelector('.p-mult')?.value) || 1.0
             })),
-
             events: Array.from(document.querySelectorAll('.event-row')).map(e => ({
-        event_name: e.querySelector('.e-name')?.value || '',
-        event_date: e.querySelector('.e-date')?.value || '',
-        multiplier: parseFloat(e.querySelector('.e-mult')?.value) || 1.0
-    })),
-
-    addons: Array.from(document.querySelectorAll('.addon-row')).map(r => ({
-        description: r.querySelector('.a-desc').value,
-        price: parseFloat(r.querySelector('.a-price').value) || 0,
-        type: r.querySelector('.a-type').value
-    }))
-}; // End of payload
+                event_name: e.querySelector('.e-name')?.value || '',
+                event_date: e.querySelector('.e-date')?.value || '',
+                multiplier: parseFloat(e.querySelector('.e-mult')?.value) || 1.0
+            })),
+            addons: Array.from(document.querySelectorAll('.addon-row')).map(r => ({
+                description: r.querySelector('.a-desc').value,
+                price: parseFloat(r.querySelector('.a-price').value) || 0,
+                type: r.querySelector('.a-type').value
+            }))
+        };
 
         try {
             const res = await fetch(`${BACKEND_URL}/api/save-config`, {
@@ -395,45 +344,15 @@ const VEHICLE_LIST = [
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
             });
-
-            if (res.ok) {
-                alert("✅ Sync Successful! Data is live.");
-                btn.innerText = "SYNCED";
-            } else {
-                const err = await res.json();
-                alert("❌ Save Failed: " + (err.error || "Unknown Error"));
-            }
-       } catch (e) {
-            alert("❌ Network Error: Backend unreachable.");
-        } finally {
-            setTimeout(() => { btn.innerText = "Sync to Cloud"; }, 2000);
-        }
-    } // Closes saveToBackend
-
-    function copyEmbed() {
-        const text = document.getElementById('embed-box').innerText;
-        navigator.clipboard.writeText(text);
-        alert("✅ Embed code copied!");
+            if (res.ok) alert("✅ Sync Successful!");
+            else alert("❌ Save Failed");
+        } catch (e) { alert("❌ Network Error"); }
+        finally { btn.innerText = "Sync to Cloud"; }
     }
 
-    function addAddonRow(data = {}) {
-        const tbody = document.getElementById('addon-body');
-        if (!tbody) return;
-
-        const row = document.createElement('tr');
-        row.className = 'addon-row';
-        row.innerHTML = `
-            <td><input type="text" class="form-control a-desc" value="${data.description || ''}" placeholder="e.g. Child Seat"></td>
-            <td><input type="number" class="form-control a-price" value="${data.price || 0}" step="0.01"></td>
-            <td>
-                <select class="form-control a-type">
-                    <option value="per_booking" ${data.type === 'per_booking' ? 'selected' : ''}>Per Booking</option>
-                    <option value="per_person" ${data.type === 'per_person' ? 'selected' : ''}>Per Person</option>
-                </select>
-            </td>
-            <td><button type="button" class="btn btn-danger btn-sm" onclick="this.closest('tr').remove()">×</button></td>
-        `;
-        tbody.appendChild(row);
+    function copyEmbed() {
+        navigator.clipboard.writeText(document.getElementById('embed-box').innerText);
+        alert("✅ Embed code copied!");
     }
 
     window.onload = loadFromBackend;
