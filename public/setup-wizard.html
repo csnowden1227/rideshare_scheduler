@@ -102,7 +102,7 @@
             </div>
 
             <<div class="card">
-    <div class="card">
+   <div class="card">
     <div class="flex justify-between items-center mb-6">
         <div>
             <h2 class="section-header !mb-0 !border-0">SECTION: ADD-ON SERVICES</h2>
@@ -118,7 +118,7 @@
                 <th>Description</th>
                 <th class="w-24">Price ($)</th>
                 <th class="w-1/3">Type</th>
-                <th></th>
+                <th class="w-10"></th>
             </tr>
         </thead>
         <tbody id="addon-body">
@@ -362,7 +362,7 @@ const VEHICLE_LIST = [
         finally { btn.innerText = "Sync to Cloud"; }
     }
 
-    // --- CLIPBOARD LOGIC ---
+ // --- CLIPBOARD LOGIC ---
 function copyEmbed() {
     const embedBox = document.getElementById('embed-box');
     if (!embedBox) return;
@@ -371,7 +371,7 @@ function copyEmbed() {
     navigator.clipboard.writeText(text).then(() => {
         alert("✅ Embed code copied to clipboard!");
     }).catch(err => {
-        alert("❌ Failed to copy. Please select and copy manually.");
+        alert("❌ Failed to copy. Please select manually.");
     });
 }
 
@@ -381,7 +381,6 @@ function addAddonRow(data = {}) {
     if (!tbody) return;
 
     const row = document.createElement('tr');
-    // border-b matches the fleet/event row dividers
     row.className = 'addon-row border-b border-slate-50'; 
     
     row.innerHTML = `
@@ -409,6 +408,15 @@ function addAddonRow(data = {}) {
         </td>
     `;
     tbody.appendChild(row);
+}
+
+// --- INITIALIZATION ---
+// This ensures that if no data is loaded, there is at least one empty row visible.
+function checkDefaultRows() {
+    const tbody = document.getElementById('addon-body');
+    if (tbody && tbody.children.length === 0) {
+        addAddonRow(); // Adds one empty row by default
+    }
 }
     window.onload = loadFromBackend;
 </script>
