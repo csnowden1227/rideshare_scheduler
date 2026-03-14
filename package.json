@@ -1,11 +1,12 @@
 {
   "name": "your-project-name",
   "version": "1.0.0",
-  "type": "module", 
+  "type": "module",
   "dependencies": {
+    "@googlemaps/google-maps-services-js": "^3.4.2",
+    "cors": "^2.8.6",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
-    "pg": "^8.13.3",
-    "cors": "^2.8.5"
+    "pg": "^8.20.0"
   }
 }
