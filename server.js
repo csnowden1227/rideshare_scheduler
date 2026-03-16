@@ -777,33 +777,33 @@ app.get("/api/db-check", async (req, res) => {
 // 1. ENDPOINT FOR THE WIDGET: Fetch specific configuration (by location_id)
 // ✅ Keep ONE version of /api/get-profile. 
 // 1. ENDPOINT FOR THE WIDGET: Fetch specific configuration
-app.get("/api/get-profile-widget/location_id", async (req, res) => {
+// 1. GET SETTINGS FOR WIDGET
+// Fixed: Added the colon (:) before location_id
+app.get("/api/get-profile-widget/:location_id", async (req, res) => {
   try {
     const { location_id } = req.params;
 
-    // Use pool (your Postgres connection), not db
-    const profile = await pool.query(
+    // Fetch profile (the source of truth)
+    const profileRes = await pool.query(
       "SELECT * FROM profiles WHERE location_id = $1",
       [location_id]
     );
 
-    const fleet = await pool.query(
-      "SELECT * FROM fleet_vehicles WHERE location_id = $1",
-      [location_id]
-    );
-
-    if (profile.rows.length === 0) {
+    if (profileRes.rows.length === 0) {
       return res.status(404).json({ error: "Location Not Found" });
     }
 
+    const p = profileRes.rows[0];
+
     // Map data to return to widget
+    // We use the JSONB columns from the profiles table
     return res.json({
-      maps_key: profile.rows[0].maps_api_key,
-      tax_rate: profile.rows[0].tax_rate,
-      fleet: fleet.rows,
-      fixed_rates: profile.rows[0].fixed_rates,
-      peak_windows: profile.rows[0].peak_windows,
-      events: profile.rows[0].events
+      maps_key: p.maps_api_key,
+      tax_rate: p.tax_rate,
+      fleet: p.fleet,         // Using the JSONB fleet from profiles
+      fixed_rates: p.fixed_rates,
+      peak_windows: p.peak_windows,
+      events: p.special_events
     });
 
   } catch (err) {
@@ -812,82 +812,65 @@ app.get("/api/get-profile-widget/location_id", async (req, res) => {
   }
 });
 
-app.use(express.static(path.join(__dirname, "public")));
-
-app.get("/setup-wizard", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "setup-wizard.html"));
-});
-
-app.get("/setup-wizard?location_id={{location.id}}", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "setup-wizard.html"));
-});
-
-// 2. ENDPOINT FOR BOOKING: Map vehicle and CRM token
+// 2. ENDPOINT FOR BOOKING
 app.post("/api/create-booking", async (req, res) => {
   try {
     const {
-      location_id,
-      vehicle_slot_id,
-      first_name,
-      last_name,
-      email,
-      phone,
-      pickup_address,
-      pickup_coords,
-      dropoff_address,
-      dropoff_coords,
-      start_time,
-      total_price
+      location_id, vehicle_slot_id, first_name, last_name,
+      email, phone, pickup_address, dropoff_address, pickup_lat, pickup_lng, dropoff_lat, dropoff_lng,
+      start_time, total_price
     } = req.body;
 
-    // 1. Save to your local Database
+    // 1. Save to local Database
     await pool.query(
       `INSERT INTO bookings (
-        location_id, vehicle_slot_id, first_name, last_name,
-        email, phone, pickup_address, pickup_coords,
-        dropoff_address, dropoff_coords, start_time, total_price
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
-      [location_id, vehicle_slot_id, first_name, last_name, email, phone, pickup_address, pickup_coords, dropoff_address, dropoff_coords, start_time, total_price]
+        location_id, vehicle_slot_id, customer_name,
+        customer_email, customer_phone, pickup_address,
+        dropoff_address, pickup_datetime, total_price
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+      [
+        location_id, vehicle_slot_id, `${first_name} ${last_name}`, 
+        email, phone, pickup_address, dropoff_address, pickup_lat, pickup_lng, dropoff_lat, dropoff_lng, start_time, total_price
+      ]
     );
 
-    // 2. THE BRIDGE: Get the Webhook URL for this specific user
-    const userRes = await pool.query(
-      "SELECT crm_webhook_url FROM users WHERE location_id = $1", 
+    // 2. THE BRIDGE: Get the Webhook from PROFILES (the unified table)
+    const profileLookup = await pool.query(
+      "SELECT crm_webhook_url FROM profiles WHERE location_id = $1", 
       [location_id]
     );
     
-    const webhookUrl = userRes.rows[0]?.crm_webhook_url;
-    const WORKFLOW_ID = "e8f1fd42-8f7e-4818-a94d-dd7985e12838";
+    const webhookUrl = profileLookup.rows[0]?.crm_webhook_url;
 
-    // 3. Trigger the Webhook to CRM
+    // 3. Trigger the Webhook
     if (webhookUrl && webhookUrl.startsWith('http')) {
-      // We don't 'await' this so the customer gets their confirmation instantly
       fetch(webhookUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          location_id: location_id,
+          location_id,
           firstName: first_name,
           lastName: last_name,
-          email: email,
-          phone: phone,
+          email,
+          phone,
           pickup: pickup_address,
           dropoff: dropoff_address,
+          pickup_lat: pickup_lat,
+          pickup_lng: pickup_lng,
+          dropoff_lat: dropoff_lat,
+          dropoff_lng: dropoff_lng,
           totalPrice: total_price,
           startTime: start_time,
           vehicle_Id: vehicle_slot_id
         })
-      }).catch(e => console.error("CRM One Source Webhook Trigger Failed:", e));
+      }).catch(e => console.error("Webhook Failed:", e));
     }
 
-    // 4. Send success back to the frontend widget
     return res.json({ success: true, message: "Booking confirmed" });
 
   } catch (err) {
     console.error("Booking Error:", err);
-    if (!res.headersSent) {
-      return res.status(500).json({ error: "Booking could not be processed" });
-    }
+    return res.status(500).json({ error: "Booking could not be processed" });
   }
 });
 
