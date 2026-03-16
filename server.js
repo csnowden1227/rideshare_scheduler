@@ -883,7 +883,7 @@ app.post("/api/create-booking", async (req, res) => {
           startTime: start_time,
           vehicleId: vehicle_slot_id
         })
-      }).catch(e => console.error("GHL Webhook Trigger Failed:", e));
+      }).catch(e => console.error("CRM One Source Webhook Trigger Failed:", e));
     }
 
     // 4. Send success back to the frontend widget
