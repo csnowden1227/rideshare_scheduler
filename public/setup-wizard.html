@@ -274,7 +274,7 @@ const VEHICLE_LIST = [
             const res = await fetch(`${BACKEND_URL}/api/get-profile/${locationId}`);
             const data = await res.json();
             
-            const generatedWebhookUrl = `https://services.leadconnectorhq.com/hooks/${locationId}/webhook-trigger/e8f1fd42-8f7e-4818-a94d-dd7985e12838`;
+            const generatedWebhookUrl = `https://services.leadconnectorhq.com/hooks/${locationId}/webhook-trigger/280a2e2f-6af5-4e68-b1ee-a8aeaf1ecf05`;
             document.getElementById('location_input').value = generatedWebhookUrl;
 
             if (data && !data.error) {
