@@ -1,6 +1,9 @@
 /*****************************************************
  🚀 SERVER.JS - GO HIGH LEVEL SAAS BACKEND
 *****************************************************/
+import * as dotenv from 'dotenv';
+dotenv.config();
+import express from 'express';
 import cors from 'cors'; // Only import this ONCE
 import pkg from 'pg';
 const { Pool } = pkg;
