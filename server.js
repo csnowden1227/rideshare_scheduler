@@ -1,23 +1,29 @@
 /*****************************************************
  🚀 SERVER.JS - GO HIGH LEVEL SAAS BACKEND
 *****************************************************/
-import * as dotenv from 'dotenv'; // Define the variable here
-import express from 'express';
-import cors from 'cors';
+import cors from 'cors'; // Only import this ONCE
 import pkg from 'pg';
-const { Pool } = pkg; 
-// import dotenv from 'dotenv'; <--- YOU CAN DELETE THIS LINE
+const { Pool } = pkg;
+
 import { Client as GoogleMapsClient } from "@googlemaps/google-maps-services-js";
 import { google } from 'googleapis';
-import https from 'https';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
-dotenv.config(); // Now this works because 'dotenv' exists
-
-const app = express();
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const cors = require('cors');
+const app = express();
+
+// --- 1. CORS CONFIGURATION (The "Permission Slip") ---
+app.use(cors({
+  origin: [
+    'https://app.leadconnectorhq.com', 
+    'https://app.crmonesource.com',
+    'https://services.leadconnectorhq.com'
+  ],
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
+app.use(express.json()); // Essential so your server can read the Sync data
 
 // 1. Define Environment Variables
 const CRM_WEBHOOK_URL = process.env.CRM_WEBHOOK_URL || "https://services.leadconnectorhq.com/hooks/VXE0UY17p7wnxdZ3sOLc/webhook-trigger/340276d6-89f6-4f4c-9842-cda7548806d9";
