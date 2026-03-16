@@ -165,9 +165,14 @@
 
 <script>
 const BACKEND_URL = "https://rideshare-scheduler-axx6.onrender.com";
+
+// Use ONE source of truth for the ID
 const urlParams = new URLSearchParams(window.location.search);
-const crmId = urlParams.get('location_id') || urlParams.get('id'); 
-let locationId = crmId || 'LOC_DEMO';
+let rawId = urlParams.get('location_id') || urlParams.get('id') || "101";
+
+// Clean any GHL brackets if they exist
+const location_Id = rawId.replace('{{', '').replace('}}', '').trim();
+
 
 let map, circle, marker, autocomplete;
 const VEHICLE_LIST = ["Standard Sedan", "Luxury Sedan", "Standard SUV", "Luxury SUV", "Standard XL SUV", "Luxury XL SUV"];
@@ -390,7 +395,7 @@ async function loadFromBackend() {
 
 async function saveToBackend() {
     const payload = {
-        id: locationId,
+        location_id: locationId, // Use the variable we cleaned at the top
         crm_webhook_url: document.getElementById('webhook_url').value,
         maps_api_key: document.getElementById('maps_key').value,
         tax_rate: parseFloat(document.getElementById('tax_rate').value),
