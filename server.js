@@ -61,16 +61,16 @@ app.get('/api/health', (req, res) => {
 
 // This handles the "Save" button from your Vue Wizard
 app.post('/api/save-config', async (req, res) => {
-    const { id, crm_webhook_url } = req.body;
+    const { crm_id, crm_webhook_url } = req.body;
     
     console.log(`🚀 Received config for ID: ${id}`);
     
     try {
         const query = `
-            INSERT INTO user_configs (crm_id, webhook_url, updated_at) 
+            INSERT INTO user_configs (crm_id, crm_webhook_url, updated_at) 
             VALUES ($1, $2, NOW()) 
             ON CONFLICT (crm_id) 
-            DO UPDATE SET webhook_url = $2, updated_at = NOW()
+            DO UPDATE SET crm_webhook_url = $2, updated_at = NOW()
         `;
         await pool.query(query, [id, crm_webhook_url]);
         
@@ -318,7 +318,6 @@ app.post('/api/update-profile-full', async (req, res) => {
         events
     } = req.body;
 
-    // 1. Declare client outside try so 'finally' can see it
     let client;
 
     try {
@@ -349,25 +348,30 @@ app.post('/api/update-profile-full', async (req, res) => {
             ]
         );
 
-        // 2. REFRESH SERVICES
+        // 2. CLEAR AND REFRESH FLEET SLOTS
         await client.query('DELETE FROM services WHERE location_id = $1', [location_id]);
+
         if (fleet && fleet.length > 0) {
             for (const vehicle of fleet) {
-                const staffId = `${location_id}-${String(vehicle.vehicle_type || 'vehicle')
-                    .replace(/\s+/g, '-')
-                    .toLowerCase()}`;
+                // FIXED: Corrected the string template and added .replace to handle spaces
+                const vehicle_slot_id = `${location_id}-${String(vehicle.vehicle_type || 'vehicle').replace(/\s+/g, '-')}`;
 
                 await client.query(
                     `INSERT INTO services (
-                        location_id, vehicle_slot_id, name, base_rate, per_mile_rate, location_staff_id
+                        location_id, 
+                        vehicle_slot_id, 
+                        name, 
+                        base_rate, 
+                        per_mile_rate, 
+                        calendar_id
                     ) VALUES ($1, $2, $3, $4, $5, $6)`,
                     [
-                        location_id,
-                        vehicle.vehicle_id || staffId,
-                        vehicle.vehicle_type,
-                        vehicle.base_rate,
-                        vehicle.mile_rate,
-                        staffId
+                        location_id,                                // $1
+                        vehicle_slot_id,                            // $2
+                        vehicle.vehicle_type,                       // $3
+                        parseFloat(vehicle.base_rate) || 0,         // $4
+                        parseFloat(vehicle.mile_rate) || 0,         // $5
+                        vehicle.calendar_id || null                 // $6
                     ]
                 );
             }
@@ -381,7 +385,7 @@ app.post('/api/update-profile-full', async (req, res) => {
                     await client.query(
                         `INSERT INTO fixed_rates (location_id, pickup_keyword, dropoff_keyword, fixed_price, is_active)
                         VALUES ($1, $2, $3, $4, true)`,
-                        [location_id, route.pickup_keyword, route.dropoff_keyword, route.fixed_price]
+                        [location_id, route.pickup_keyword, route.dropoff_keyword, parseFloat(route.fixed_price) || 0]
                     );
                 }
             }
@@ -398,23 +402,20 @@ app.post('/api/update-profile-full', async (req, res) => {
     } finally {
         if (client) client.release();
     }
-}); // End of POST route
-
+});
    /*****************************************************
  5️⃣ AVAILABILITY ENGINE
 *****************************************************/
 app.post("/api/availability", async (req, res) => {
   try {
-    const { location_staff_id, pickup, dropoff, date } = req.body;
+    const { location_id, pickup, dropoff, date } = req.body;
 
-    if (!location_staff_id || !date) {
+    if (!location_id || !date) {
       return res.status(400).json({
         slots: [],
         error: "Missing required data.",
       });
     }
-
-    const [location_id] = location_staff_id.split("_");
 
     const userRes = await pool.query(
       "SELECT * FROM users WHERE id=$1",
@@ -439,15 +440,7 @@ app.post("/api/availability", async (req, res) => {
       });
     }
 
-    const svcRes = await pool.query(
-      "SELECT * FROM services WHERE location_staff_id=$1 LIMIT 1",
-      [location_staff_id]
-    );
-
-    if (!svcRes.rows.length) {
-      return res.json({ slots: [], error: "Service not found" });
-    }
-
+    
     const service = svcRes.rows[0];
 
     const durationMin = service.duration_min || 60;
@@ -485,7 +478,7 @@ app.post("/api/availability", async (req, res) => {
 });
 
 /*****************************************************
- 6️⃣ PRICING SIMULATOR (QUOTE CALCULATION)
+ 6️⃣ PRICING SIMULATOR (Quote CALCULATION)
 *****************************************************/
 
 // Helper moved outside to prevent re-declaration on every request
@@ -516,7 +509,7 @@ async function getCurrentMultiplier(location_id) {
     }
 }
 
-async function triggerCrmWebhook(location_id, bookingId) {
+async function triggerCrmWebhook(location_id, booking_id) {
   let client;
   try {
     client = await pool.connect();
@@ -524,12 +517,12 @@ async function triggerCrmWebhook(location_id, bookingId) {
     // 1) Load the booking (source of truth)
     const bookingRes = await client.query(
       "SELECT * FROM bookings WHERE id = $1",
-      [bookingId]
+      [booking_id]
     );
 
     if (bookingRes.rows.length === 0) {
       console.log("⚠️ Missing data for CRM sync. Skipping.", {
-        bookingId,
+        booking_Id,
         missing: ["booking"],
       });
       return;
@@ -546,7 +539,7 @@ async function triggerCrmWebhook(location_id, bookingId) {
 
     if (userRes.rows.length === 0) {
       console.log("⚠️ Missing data for CRM sync. Skipping.", {
-        bookingId,
+        booking_id,
         tenantId: b.location_id,
         missing: ["tenant/users row"],
       });
@@ -579,7 +572,7 @@ async function triggerCrmWebhook(location_id, bookingId) {
 
     if (missing.length) {
       console.log("⚠️ Missing data for CRM sync. Skipping.", {
-        bookingId,
+        booking_id: b.id,
         tenantId: u.id,
         missing,
       });
@@ -595,12 +588,12 @@ async function triggerCrmWebhook(location_id, bookingId) {
     const payload = {
       webhook_type: "BOOKING_SYNC",
       tenant: {
-        id: u.id,
+        location_id: u.location_id,
         business_name: u.business_name,
       },
       booking: {
         id: b.id,
-        service_id: b.service_id,
+        service_id: b.vehicle/slot_id,
         driver_id: b.driver_id,
         status: b.status,
         payment_status: b.payment_status,
@@ -631,7 +624,7 @@ async function triggerCrmWebhook(location_id, bookingId) {
 
     // 7) POST to CRM webhook
     console.log("➡️ Posting to CRM webhook:", u.crm_webhook_url, {
-      bookingId,
+      booking_id,
       tenantId: u.id,
     });
 
@@ -735,7 +728,7 @@ app.get("/api/get-profile/:location_id", async (req, res) => {
 // 2. Get Quote Route
 app.post('/api/get-quote', async (req, res) => {
     try {
-        const { location_id, distance, serviceType } = req.body;
+        const { location_id, distance, vehicle_slot_id } = req.body;
         const baseRate = 2.50; 
         const multiplier = await getCurrentMultiplier(location_id);
         const totalPrice = (distance * baseRate) * multiplier;
@@ -864,6 +857,7 @@ app.post("/api/create-booking", async (req, res) => {
     );
     
     const webhookUrl = userRes.rows[0]?.crm_webhook_url;
+    const WORKFLOW_ID = "e8f1fd42-8f7e-4818-a94d-dd7985e12838";
 
     // 3. Trigger the Webhook to CRM
     if (webhookUrl && webhookUrl.startsWith('http')) {
@@ -881,7 +875,7 @@ app.post("/api/create-booking", async (req, res) => {
           dropoff: dropoff_address,
           totalPrice: total_price,
           startTime: start_time,
-          vehicleId: vehicle_slot_id
+          vehicle_Id: vehicle_slot_id
         })
       }).catch(e => console.error("CRM One Source Webhook Trigger Failed:", e));
     }
@@ -933,9 +927,9 @@ const startListener = async () => {
       try {
         console.log(`🔔 Signal Received on ${msg.channel}: ${msg.payload}`);
 
-        const bookingId = Number(msg.payload);
-        if (!Number.isInteger(bookingId) || bookingId <= 0) {
-          console.log("⚠️ Invalid payload (expected bookingId number). Skipping.", {
+        const booking_id = Number(msg.payload);
+        if (!Number.isInteger(booking_id) || booking_id <= 0) {
+          console.log("⚠️ Invalid payload (expected booking_id number). Skipping.", {
             channel: msg.channel,
             payload: msg.payload,
           });
@@ -945,11 +939,11 @@ const startListener = async () => {
         // Derive location_id from booking row
         const bookingRes = await pool.query(
           "SELECT id, location_id, location_id FROM bookings WHERE id = $1",
-          [bookingId]
+          [booking_id]
         );
 
         if (bookingRes.rows.length === 0) {
-          console.log("⚠️ Booking not found. Skipping.", { bookingId });
+          console.log("⚠️ Booking not found. Skipping.", { booking_id });
           return;
         }
 
@@ -958,7 +952,7 @@ const startListener = async () => {
           bookingRes.rows[0].location_id ||
           "default";
 
-        await triggerCrmWebhook(location_id, bookingId);
+        await triggerCrmWebhook(location_id, booking_id);
       } catch (err) {
         console.error("❌ Error handling notification:", err);
       }
