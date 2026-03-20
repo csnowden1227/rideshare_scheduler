@@ -165,14 +165,9 @@
 
 <script>
 const BACKEND_URL = "https://rideshare-scheduler-axx6.onrender.com";
-
-// Use ONE source of truth for the ID
 const urlParams = new URLSearchParams(window.location.search);
-let rawId = urlParams.get('location_id') || urlParams.get('id') || "101";
-
-// Clean any GHL brackets if they exist
-const location_Id = rawId.replace('{{', '').replace('}}', '').trim();
-
+const crmId = urlParams.get('location_id') || urlParams.get('id'); 
+let locationId = crmId || 'LOC_DEMO';
 
 let map, circle, marker, autocomplete;
 const VEHICLE_LIST = ["Standard Sedan", "Luxury Sedan", "Standard SUV", "Luxury SUV", "Standard XL SUV", "Luxury XL SUV"];
@@ -366,7 +361,7 @@ async function loadFromBackend() {
         const data = await res.json();
         
         // Default Webhook if none exists
-        document.getElementById('webhook_url').value = data.crm_webhook_url || `https://services.leadconnectorhq.com/hooks/${locationId}/webhook-trigger/default`;
+        document.getElementById('webhook_url').value = data.crm_webhook_url || `https://services.leadconnectorhq.com/hooks/VXE0UY17p7wnxdZ3sOLc/webhook-trigger/a7699638-aca6-4480-a0ce-25df857c9b33`;
         
         if (data && !data.error) {
             document.getElementById('maps_key').value = data.maps_api_key || '';
@@ -395,7 +390,7 @@ async function loadFromBackend() {
 
 async function saveToBackend() {
     const payload = {
-        location_id: locationId, // Use the variable we cleaned at the top
+        id: locationId,
         crm_webhook_url: document.getElementById('webhook_url').value,
         maps_api_key: document.getElementById('maps_key').value,
         tax_rate: parseFloat(document.getElementById('tax_rate').value),

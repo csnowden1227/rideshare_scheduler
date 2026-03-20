@@ -29,7 +29,7 @@ app.use(cors({
 app.use(express.json()); // Essential so your server can read the Sync data
 
 // 1. Define Environment Variables
-const CRM_WEBHOOK_URL = process.env.CRM_WEBHOOK_URL || "https://services.leadconnectorhq.com/hooks/VXE0UY17p7wnxdZ3sOLc/webhook-trigger/340276d6-89f6-4f4c-9842-cda7548806d9";
+const CRM_WEBHOOK_URL = process.env.CRM_WEBHOOK_URL || "https://services.leadconnectorhq.com/hooks/VXE0UY17p7wnxdZ3sOLc/webhook-trigger/a7699638-aca6-4480-a0ce-25df857c9b33";
 
 /*****************************************************
  1️⃣ DATABASE CONFIGURATION
