@@ -361,7 +361,7 @@ async function loadFromBackend() {
         const data = await res.json();
         
         // Default Webhook if none exists
-        document.getElementById('webhook_url').value = data.crm_webhook_url || `https://services.leadconnectorhq.com/hooks/VXE0UY17p7wnxdZ3sOLc/webhook-trigger/a7699638-aca6-4480-a0ce-25df857c9b33`;
+        document.getElementById('webhook_url').value = data.crm_webhook_url || `https://services.leadconnectorhq.com/hooks/${locationId}/webhook-trigger/default`;
         
         if (data && !data.error) {
             document.getElementById('maps_key').value = data.maps_api_key || '';
@@ -397,13 +397,15 @@ async function saveToBackend() {
         service_lat: parseFloat(document.getElementById('svc_lat').value),
         service_lng: parseFloat(document.getElementById('svc_lng').value),
         service_radius: parseFloat(document.getElementById('svc_radius').value),
-        fleet: Array.from(document.querySelectorAll('#fleet-body tr')).map(tr => ({
-            vehicle_id: tr.cells[0].innerText,
-            vehicle_type: tr.querySelector('.v-type').value,
-            base_rate: parseFloat(tr.querySelector('.v-base').value),
-            mile_rate: parseFloat(tr.querySelector('.v-mile').value),
-            calendar_id: tr.querySelector('.v-cal').value
-        })),
+fleet: Array.from(document.querySelectorAll('#fleet-body tr')).map(tr => ({
+    // Changed vehicle_id to vehicle_slot_id to match your server logic
+    vehicle_slot_id: tr.cells[0].innerText, 
+    vehicle_type: tr.querySelector('.v-type').value,
+    base_rate: parseFloat(tr.querySelector('.v-base').value),
+    mile_rate: parseFloat(tr.querySelector('.v-mile').value),
+    calendar_id: tr.querySelector('.v-cal').value // This is the CRITICAL link for GHL
+})),
+
         fixed_rates: Array.from(document.querySelectorAll('.route-row')).map(r => ({
             pickup_keyword: r.querySelector('.r-pickup').value,
             dropoff_keyword: r.querySelector('.r-dropoff').value,
