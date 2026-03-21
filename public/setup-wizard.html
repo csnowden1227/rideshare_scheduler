@@ -63,7 +63,6 @@
                     </thead>
                     <tbody id="fleet-body"></tbody>
                 </table>
-                <p class="mt-4 text-[10px] text-slate-400 italic">Formula: Total = ((Base + (Miles × Rate)) × Multiplier) + Tax</p>
             </div>
 
             <div class="card">
@@ -92,12 +91,26 @@
                 </button>
             </div>
 
-            <div class="card">
-                <div class="flex justify-between items-center mb-6">
-                    <h2 class="section-header !mb-0 !border-0">SECTION: FIXED ROUTES</h2>
-                    <button type="button" onclick="addRouteRow()" class="text-xs font-bold bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition">+ Add Geofence</button>
+            <div class="card mt-6">
+                <h3 class="section-header italic font-bold text-lg mb-4">Fixed Rate Zones (Specific Locations)</h3>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse">
+                        <thead>
+                            <tr class="border-b border-slate-100 text-[10px] uppercase tracking-widest text-gray-400">
+                                <th class="p-2">Location Name</th>
+                                <th class="p-2">Latitude</th>
+                                <th class="p-2">Longitude</th>
+                                <th class="p-2">Radius (Mi)</th>
+                                <th class="p-2 w-32">Flat Price</th>
+                                <th class="p-2 w-16"></th>
+                            </tr>
+                        </thead>
+                        <tbody id="route-body"></tbody>
+                    </table>
                 </div>
-                <div id="routes-container" class="space-y-4"></div>
+                <button onclick="addRouteRow()" class="mt-4 px-4 py-2 bg-slate-800 text-white rounded-lg text-xs font-bold hover:bg-slate-700 transition">
+                    + Add New Fixed Location
+                </button>
             </div>
 
             <div class="card">
@@ -164,12 +177,11 @@
 </div>
 
 <script>
-const BACKEND_URL = "https://rideshare-scheduler-axx6.onrender.com";
 const urlParams = new URLSearchParams(window.location.search);
-const crmId = urlParams.get('location_id') || urlParams.get('id'); 
-let locationId = crmId || 'LOC_DEMO';
-
+const locationId = urlParams.get('loc') || urlParams.get('location_id') || urlParams.get('id') || 'VXE0UY17p7wnxdZ3sOLc';
+const BACKEND_URL = "https://rideshare-scheduler-axx6.onrender.com";
 let map, circle, marker, autocomplete;
+let routeCircles = []; 
 const VEHICLE_LIST = ["Standard Sedan", "Luxury Sedan", "Standard SUV", "Luxury SUV", "Standard XL SUV", "Luxury XL SUV"];
 
 // --- MAP LOGIC ---
@@ -186,7 +198,7 @@ function initServiceMap(lat = 34.0522, lng = -118.2437, radiusMiles = 90) {
     circle = new google.maps.Circle({
         map: map,
         center: center,
-        radius: radiusMiles * 1609.34, // convert to meters
+        radius: radiusMiles * 1609.34,
         fillColor: '#2563eb',
         fillOpacity: 0.2,
         strokeColor: '#2563eb',
@@ -195,7 +207,6 @@ function initServiceMap(lat = 34.0522, lng = -118.2437, radiusMiles = 90) {
         draggable: true
     });
 
-    // Update fields when circle moves/resizes
     const updateFields = () => {
         const center = circle.getCenter();
         const radMeters = circle.getRadius();
@@ -209,7 +220,6 @@ function initServiceMap(lat = 34.0522, lng = -118.2437, radiusMiles = 90) {
     circle.addListener('radius_changed', updateFields);
     marker.addListener('drag', () => circle.setCenter(marker.getPosition()));
 
-    // Search Box
     const searchInput = document.getElementById('map-search');
     autocomplete = new google.maps.places.Autocomplete(searchInput);
     autocomplete.addListener('place_changed', () => {
@@ -251,13 +261,57 @@ function confirmLocation() {
     alert("Location validated. You can now Sync to Cloud.");
 }
 
+// --- FIXED ROUTE LOGIC (WITH OPTION A MAP SYNC) ---
+function addRouteRow(data = {}) {
+    const tbody = document.getElementById('route-body');
+    const tr = document.createElement('tr');
+    tr.className = "route-row border-b border-slate-50";
+    
+    tr.innerHTML = `
+        <td class="p-2"><input type="text" class="r-name w-full text-xs p-1 border rounded" value="${data.location_name || ''}" placeholder="e.g. LAX Terminal"></td>
+        <td class="p-2"><input type="number" class="r-lat w-full text-xs p-1 border rounded" step="any" value="${data.lat || ''}" oninput="updateRouteMap()"></td>
+        <td class="p-2"><input type="number" class="r-lng w-full text-xs p-1 border rounded" step="any" value="${data.lng || ''}" oninput="updateRouteMap()"></td>
+        <td class="p-2"><input type="number" class="r-rad w-full text-xs p-1 border rounded" value="${data.radius || 2}" oninput="updateRouteMap()"></td>
+        <td class="p-2"><input type="number" class="r-price w-full text-xs p-1 border rounded" value="${data.fixed_price || ''}" placeholder="150"></td>
+        <td class="p-2 text-right">
+            <button onclick="this.closest('tr').remove(); updateRouteMap();" class="text-red-400">×</button>
+        </td>
+    `;
+    tbody.appendChild(tr);
+    updateRouteMap();
+}
+
+function updateRouteMap() {
+    routeCircles.forEach(c => c.setMap(null));
+    routeCircles = [];
+
+    document.querySelectorAll('.route-row').forEach(row => {
+        const lat = parseFloat(row.querySelector('.r-lat').value);
+        const lng = parseFloat(row.querySelector('.r-lng').value);
+        const rad = parseFloat(row.querySelector('.r-rad').value) || 1;
+
+        if (!isNaN(lat) && !isNaN(lng)) {
+            const c = new google.maps.Circle({
+                map: map,
+                center: { lat, lng },
+                radius: rad * 1609.34,
+                fillColor: "#10b981",
+                fillOpacity: 0.2,
+                strokeColor: "#059669",
+                strokeWeight: 1
+            });
+            routeCircles.push(c);
+        }
+    });
+}
+
 // --- RENDERERS ---
 function renderFleet(count, savedFleet = []) {
     const tbody = document.getElementById('fleet-body');
     tbody.innerHTML = "";
     for (let i = 1; i <= count; i++) {
         const slotId = `${locationId}_vehicle_${i}`;
-        const data = savedFleet.find(f => f.vehicle_id === slotId) || {};
+        const data = savedFleet.find(f => f.vehicle_slot_id === slotId) || {};
         const tr = document.createElement('tr');
         tr.className = "border-b border-slate-50";
         tr.innerHTML = `
@@ -269,47 +323,6 @@ function renderFleet(count, savedFleet = []) {
         `;
         tbody.appendChild(tr);
     }
-}
-
-function addRouteRow(data = {}) {
-    const container = document.getElementById('routes-container');
-    const uid = Math.random().toString(36).substr(2, 5);
-    const div = document.createElement('div');
-    div.className = "route-row border border-slate-200 p-4 rounded-xl bg-white space-y-3";
-    div.innerHTML = `
-        <div class="flex flex-col md:flex-row gap-3">
-            <div class="flex-1">
-                <label class="text-[9px] uppercase font-bold text-slate-400">Pickup</label>
-                <input type="text" id="p-${uid}" class="r-pickup input-mini mb-1" value="${data.pickup_keyword || ''}">
-                <div class="flex gap-1">
-                    <input type="text" class="r-p-lat input-mini coord-input" placeholder="Lat" value="${data.pickup_lat || ''}">
-                    <input type="text" class="r-p-lng input-mini coord-input" placeholder="Lng" value="${data.pickup_lng || ''}">
-                </div>
-            </div>
-            <div class="flex-1">
-                <label class="text-[9px] uppercase font-bold text-slate-400">Dropoff</label>
-                <input type="text" id="d-${uid}" class="r-dropoff input-mini mb-1" value="${data.dropoff_keyword || ''}">
-                <div class="flex gap-1">
-                    <input type="text" class="r-d-lat input-mini coord-input" placeholder="Lat" value="${data.dropoff_lat || ''}">
-                    <input type="text" class="r-d-lng input-mini coord-input" placeholder="Lng" value="${data.dropoff_lng || ''}">
-                </div>
-            </div>
-            <div class="w-32">
-                <label class="text-[9px] uppercase font-bold text-slate-400">Flat Rate</label>
-                <input type="number" class="r-price input-mini h-[72px] text-lg font-bold" value="${data.fixed_price || ''}">
-            </div>
-            <button onclick="this.closest('.route-row').remove()" class="text-red-400">&times;</button>
-        </div>
-    `;
-    container.appendChild(div);
-    new google.maps.places.Autocomplete(document.getElementById(`p-${uid}`)).addListener('place_changed', function(){
-        let p = this.getPlace();
-        if(p.geometry){ div.querySelector('.r-p-lat').value = p.geometry.location.lat(); div.querySelector('.r-p-lng').value = p.geometry.location.lng(); }
-    });
-    new google.maps.places.Autocomplete(document.getElementById(`d-${uid}`)).addListener('place_changed', function(){
-        let p = this.getPlace();
-        if(p.geometry){ div.querySelector('.r-d-lat').value = p.geometry.location.lat(); div.querySelector('.r-d-lng').value = p.geometry.location.lng(); }
-    });
 }
 
 function addPeakRow(data = {}) {
@@ -360,10 +373,8 @@ async function loadFromBackend() {
         const res = await fetch(`${BACKEND_URL}/api/get-profile/${locationId}`);
         const data = await res.json();
         
-        // Default Webhook if none exists
-        document.getElementById('webhook_url').value = data.crm_webhook_url || `https://services.leadconnectorhq.com/hooks/${locationId}/webhook-trigger/default`;
-        
         if (data && !data.error) {
+            document.getElementById('webhook_url').value = data.crm_webhook_url || '';
             document.getElementById('maps_key').value = data.maps_api_key || '';
             document.getElementById('tax_rate').value = data.tax_rate || '8.25';
             
@@ -375,7 +386,6 @@ async function loadFromBackend() {
             if (data.events) data.events.forEach(e => addEventRow(e));
             if (data.addons) data.addons.forEach(a => addAddonRow(a));
 
-            // Init Map with saved coords
             initServiceMap(data.service_lat || 34.0522, data.service_lng || -118.2437, data.service_radius || 90);
         } else {
             renderFleet(1, []);
@@ -388,95 +398,49 @@ async function loadFromBackend() {
     }
 }
 
-async function syncToWebhook() {
-    const WEBHOOK_URL = "https://services.leadconnectorhq.com/hooks/VXE0UY17p7wnxdZ3sOLc/webhook-trigger/a7699638-aca6-4480-a0ce-25df857c9b33"; // Replace with your actual URL
-
-    // 1. Build the payload from your UI fields
-    const payload = {
-        location_id: document.getElementById('location_id').value,
-        config: {
-            service_radius: document.getElementById('svc_radius').value,
-            base_lat: document.getElementById('svc_lat').value,
-            base_lng: document.getElementById('svc_lng').value,
-            fleet: Array.from(document.querySelectorAll('.fleet-row')).map(r => ({
-                type: r.querySelector('.v-type').value,
-                base_rate: r.querySelector('.v-base').value,
-                mile_rate: r.querySelector('.v-mile').value
-            }))
-        },
-        timestamp: new Date().toISOString()
-    };
-
-    try {
-        const response = await fetch(WEBHOOK_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        });
-
-        if (response.ok) {
-            alert("🚀 Configuration synced to Webhook successfully!");
-        } else {
-            alert("⚠️ Sync failed. Check console for details.");
-        }
-    } catch (error) {
-        console.error("Webhook Error:", error);
-    }
-}
-
 async function saveToBackend() {
+    const mapsKey = document.getElementById('maps_key').value;
+    const webhookUrl = document.getElementById('webhook_url').value;
+    const taxRate = document.getElementById('tax_rate').value;
+    const fleetRows = document.querySelectorAll('#fleet-body tr');
+
+    if (!mapsKey || !webhookUrl || !taxRate || fleetRows.length === 0) {
+        alert("❌ Error: Credentials, Tax, and at least one Fleet Slot are REQUIRED.");
+        return;
+    }
+
     const payload = {
         id: locationId,
-        crm_webhook_url: document.getElementById('webhook_url').value,
-        maps_api_key: document.getElementById('maps_key').value,
-        tax_rate: parseFloat(document.getElementById('tax_rate').value),
+        crm_webhook_url: webhookUrl,
+        maps_api_key: mapsKey,
+        tax_rate: parseFloat(taxRate) || 0,
         service_lat: parseFloat(document.getElementById('svc_lat').value),
         service_lng: parseFloat(document.getElementById('svc_lng').value),
         service_radius: parseFloat(document.getElementById('svc_radius').value),
-
-fleet: Array.from(document.querySelectorAll('#fleet-body tr')).map(tr => {
-
-    // Get the flat deposit value and convert to cents for the database
-
-    const flatDepositVal = parseFloat(tr.querySelector('.v-dep-flat').value) || 0;
-
-    
-
-    return {
-
-        // vehicle_slot_id links to your database ID
-
-        vehicle_slot_id: tr.cells[0].innerText.trim(), 
-
-        base_rate: parseFloat(tr.querySelector('.v-base').value) || 0,
-
-        mile_rate: parseFloat(tr.querySelector('.v-mile').value) || 0,
-
-        calendar_id: tr.querySelector('.v-cal').value, // The link to GHL Calendar UI
-
-        deposit_pct: parseFloat(tr.querySelector('.v-dep-pct').value) || 0,
-
-        deposit_flat_cents: Math.round(flatDepositVal * 100)
-
-    };
-
-}),
-
-        fixed_rates: Array.from(document.querySelectorAll('.route-row')).map(r => ({
-            pickup_keyword: r.querySelector('.r-pickup').value,
-            dropoff_keyword: r.querySelector('.r-dropoff').value,
-            pickup_lat: parseFloat(r.querySelector('.r-p-lat').value),
-            pickup_lng: parseFloat(r.querySelector('.r-p-lng').value),
-            dropoff_lat: parseFloat(r.querySelector('.r-d-lat').value),
-            dropoff_lng: parseFloat(r.querySelector('.r-d-lng').value),
-            fixed_price: parseFloat(r.querySelector('.r-price').value)
+        
+        fleet: Array.from(fleetRows).map(tr => ({
+            vehicle_slot_id: tr.cells[0].innerText.trim(), 
+            vehicle_type: tr.querySelector('.v-type').value,
+            base_rate: parseFloat(tr.querySelector('.v-base').value) || 0,
+            mile_rate: parseFloat(tr.querySelector('.v-mile').value) || 0,
+            calendar_id: tr.querySelector('.v-cal').value
         })),
+
         peak_windows: Array.from(document.querySelectorAll('.peak-row')).map(r => ({
             day: r.querySelector('.p-day').value,
             start_time: r.querySelector('.p-start').value,
             end_time: r.querySelector('.p-end').value,
             multiplier: parseFloat(r.querySelector('.p-mult').value)
         })),
+
+        fixed_rates: Array.from(document.querySelectorAll('.route-row')).map(r => ({
+            location_name: r.querySelector('.r-name').value,
+            lat: parseFloat(r.querySelector('.r-lat').value) || 0,
+            lng: parseFloat(r.querySelector('.r-lng').value) || 0,
+            radius: parseFloat(r.querySelector('.r-rad').value) || 0,
+            fixed_price: parseFloat(r.querySelector('.r-price').value) || 0
+        })),
+
         events: Array.from(document.querySelectorAll('.event-row')).map(e => ({
             event_name: e.querySelector('.e-name').value,
             event_date: e.querySelector('.e-date').value,
@@ -484,6 +448,7 @@ fleet: Array.from(document.querySelectorAll('#fleet-body tr')).map(tr => {
             mile_rate: parseFloat(e.querySelector('.e-mile').value),
             multiplier: parseFloat(e.querySelector('.e-mult').value)
         })),
+
         addons: Array.from(document.querySelectorAll('.addon-row')).map(r => ({
             description: r.querySelector('.a-desc').value,
             price: parseFloat(r.querySelector('.a-price').value),
@@ -491,12 +456,16 @@ fleet: Array.from(document.querySelectorAll('#fleet-body tr')).map(tr => {
         }))
     };
 
-    const res = await fetch(`${BACKEND_URL}/api/save-config`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-    });
-    if(res.ok) alert("✅ Sync Successful!");
+    try {
+        const res = await fetch(`${BACKEND_URL}/api/save-config`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        if(res.ok) alert("✅ Snowden Luxury Profile Locked & Synced!");
+    } catch (err) {
+        alert("❌ Connection Error: Ensure Render is active.");
+    }
 }
 
 function copyEmbed() {

@@ -1,30 +1,90 @@
-<div id="booking-widget">
-  <h3>Book Your Ride</h3>
-  <form id="ride-form">
-    <div class="row">
-      <input type="text" id="first_name" placeholder="First Name" required>
-      <input type="text" id="last_name" placeholder="Last Name" required>
-    </div>
-
-    <input type="email" id="email" placeholder="Email Address" required>
-    <input type="tel" id="phone" placeholder="Phone Number" required>
-
-    <input type="text" id="pickup_address" placeholder="Pickup Address" required>
-    <input type="text" id="dropoff_address" placeholder="Dropoff Address" required>
+<<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Snowden Luxury Rides | Private Chauffeur</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
     
-    <div class="row">
-      <input type="datetime-local" id="start_time" required>
-      <select id="vehicle_type">
-        <option value="sedan-101">Luxury Sedan</option>
-        <option value="suv-202">Premium SUV</option>
-      </select>
+    <style>
+        :root {
+            --gold: #D4AF37;
+            --charcoal: #121212;
+            --slate-gray: #1E1E1E;
+        }
+        body {
+            background-color: var(--charcoal);
+            font-family: 'Inter', sans-serif;
+            color: white;
+            background-image: linear-gradient(rgba(0,0,0,0.7), rgba(0,0,0,0.7)), url('https://images.unsplash.com/photo-1514316454349-750a7fd3da3a?auto=format&fit=crop&q=80&w=2000');
+            background-size: cover;
+            background-attachment: fixed;
+        }
+        .luxury-heading { font-family: 'Playfair Display', serif; }
+        .gold-border { border-color: var(--gold); }
+        .gold-text { color: var(--gold); }
+        .glass-card {
+            background: rgba(30, 30, 30, 0.85);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(212, 175, 55, 0.2);
+        }
+        input, select {
+            background: rgba(255,255,255,0.05) !important;
+            border: 1px solid rgba(255,255,255,0.1) !important;
+            color: white !important;
+            transition: all 0.3s ease;
+        }
+        input:focus, select:focus {
+            border-color: var(--gold) !important;
+            background: rgba(255,255,255,0.1) !important;
+            outline: none;
+        }
+        .btn-gold {
+            background: var(--gold);
+            color: black;
+            font-weight: 700;
+            letter-spacing: 0.1em;
+            transition: all 0.3s ease;
+        }
+        .btn-gold:hover {
+            background: #f1c40f;
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(212, 175, 55, 0.3);
+        }
+    </style>
+</head>
+<body class="min-h-screen flex items-center justify-center p-6">
+
+    <div class="max-w-4xl w-full grid grid-cols-1 lg:grid-cols-2 gap-0 overflow-hidden rounded-3xl shadow-2xl glass-card">
+        
+        <div class="p-10 flex flex-col justify-center bg-black/40 border-r border-white/10">
+            <h1 class="luxury-heading text-5xl font-bold mb-4 italic">Snowden</h1>
+            <h2 class="luxury-heading text-2xl gold-text tracking-widest uppercase mb-8">Luxury Rides</h2>
+            <p class="text-gray-400 leading-relaxed mb-6 font-light">
+                Experience the pinnacle of professional chauffeured transportation. 
+                Our fleet is at your service for executive travel, special events, and seamless airport transfers.
+            </p>
+            <ul class="text-sm space-y-3 text-gray-300">
+                <li class="flex items-center"><span class="gold-text mr-2">✓</span> Professional Uniformed Chauffeurs</li>
+                <li class="flex items-center"><span class="gold-text mr-2">✓</span> Real-time Flight & Traffic Tracking</li>
+                <li class="flex items-center"><span class="gold-text mr-2">✓</span> Complimentary Amenities & WiFi</li>
+            </ul>
+        </div>
+
+        <div class="p-10" id="booking-widget">
+            <h3 class="luxury-heading text-2xl mb-8 text-center uppercase tracking-widest">Reserve Your Entry</h3>
+            
+            <div id="chauffeur-booking-widget">
+                <div class="flex flex-col items-center justify-center py-10">
+                    <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-gold"></div>
+                    <p class="mt-4 text-xs uppercase tracking-widest text-gray-500">Securing Connection...</p>
+                </div>
+            </div>
+        </div>
     </div>
 
-    <div id="price-summary">
-      <p>Total Quote: <span id="display-total">$0.00</span></p>
-      <p>Deposit Due Now: <span id="display-deposit">$0.00</span></p>
-    </div>
+    <script src="https://rideshare-scheduler-axx6.onrender.com/widget.js?loc=VXE0UY17p7wnxdZ3sOLc"></script>
 
-    <button type="submit">Confirm Booking</button>
-  </form>
-</div>
+</body>
+</html>
