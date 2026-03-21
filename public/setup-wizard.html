@@ -178,7 +178,7 @@
 
 <script>
 const urlParams = new URLSearchParams(window.location.search);
-const locationId = urlParams.get('loc') || urlParams.get('location_id') || urlParams.get('id') || 'VXE0UY17p7wnxdZ3sOLc';
+const location_id = urlParams.get('location_id') || 'VXE0UY17p7wnxdZ3sOLc';
 const BACKEND_URL = "https://rideshare-scheduler-axx6.onrender.com";
 let map, circle, marker, autocomplete;
 let routeCircles = []; 
@@ -310,7 +310,7 @@ function renderFleet(count, savedFleet = []) {
     const tbody = document.getElementById('fleet-body');
     tbody.innerHTML = "";
     for (let i = 1; i <= count; i++) {
-        const slotId = `${locationId}_vehicle_${i}`;
+        const slotId = `${location_id}_vehicle_${i}`;
         const data = savedFleet.find(f => f.vehicle_slot_id === slotId) || {};
         const tr = document.createElement('tr');
         tr.className = "border-b border-slate-50";
@@ -366,11 +366,11 @@ function addAddonRow(data = {}) {
 
 // --- BACKEND OPS ---
 async function loadFromBackend() {
-    document.getElementById('display-loc-id').innerText = locationId;
-    document.getElementById('embed-box').innerText = `<script src="${BACKEND_URL}/widget.js?loc=${locationId}"><\/script>`;
+    document.getElementById('display-loc-id').innerText = location_id;
+    document.getElementById('embed-box').innerText = `<script src="${BACKEND_URL}/widget.js?loc=${location_id}"><\/script>`;
     
     try {
-        const res = await fetch(`${BACKEND_URL}/api/get-profile/${locationId}`);
+        const res = await fetch(`${BACKEND_URL}/api/get-profile/${location_id}`);
         const data = await res.json();
         
         if (data && !data.error) {
@@ -410,8 +410,8 @@ async function saveToBackend() {
     }
 
     const payload = {
-        id: locationId,
-        crm_webhook_url: webhookUrl,
+        id: location_id,
+        crm_webhook_url: document.getElementById('webhook_url').value,
         maps_api_key: mapsKey,
         tax_rate: parseFloat(taxRate) || 0,
         service_lat: parseFloat(document.getElementById('svc_lat').value),
