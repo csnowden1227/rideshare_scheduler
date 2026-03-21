@@ -253,7 +253,9 @@ function useCurrentLocation() {
 
 function confirmLocation() {
     const lockBtn = document.getElementById('lock-btn');
-    const syncBtn = document.getElementById('save-btn');
+    const syncBtn = document.getElementById('save-btn'); // Make sure your button has id="save-btn"
+syncBtn.disabled = false;
+syncBtn.classList.remove('disabled-btn');
     lockBtn.innerText = "✅ LOCATION LOCKED";
     lockBtn.classList.add('bg-slate-800');
     syncBtn.disabled = false;
@@ -369,9 +371,12 @@ async function loadFromBackend() {
     document.getElementById('display-loc-id').innerText = location_id;
     document.getElementById('embed-box').innerText = `<script src="${BACKEND_URL}/widget.js?loc=${location_id}"><\/script>`;
     
-    try {
-        const res = await fetch(`${BACKEND_URL}/api/get-profile/${location_id}`);
-        const data = await res.json();
+try {
+    const res = await fetch(`${BACKEND_URL}/api/get-profile/${location_id}`);
+    const data = await res.json();
+    
+    // ADD THIS LINE FOR DEBUGGING:
+    console.log("Database says:", data);
         
         if (data && !data.error) {
             document.getElementById('webhook_url').value = data.crm_webhook_url || '';
@@ -411,7 +416,7 @@ async function saveToBackend() {
 
     const payload = {
         id: location_id,
-        crm_webhook_url: document.getElementById('https://services.leadconnectorhq.com/hooks/VXE0UY17p7wnxdZ3sOLc/webhook-trigger/a7699638-aca6-4480-a0ce-25df857c9b33').value,
+        crm_webhook_url: document.getElementById('webhook_url').value,
         maps_api_key: mapsKey,
         tax_rate: parseFloat(taxRate) || 0,
         service_lat: parseFloat(document.getElementById('svc_lat').value),
