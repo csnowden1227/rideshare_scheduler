@@ -388,6 +388,42 @@ async function loadFromBackend() {
     }
 }
 
+async function syncToWebhook() {
+    const WEBHOOK_URL = "https://services.leadconnectorhq.com/hooks/VXE0UY17p7wnxdZ3sOLc/webhook-trigger/a7699638-aca6-4480-a0ce-25df857c9b33"; // Replace with your actual URL
+
+    // 1. Build the payload from your UI fields
+    const payload = {
+        location_id: document.getElementById('location_id').value,
+        config: {
+            service_radius: document.getElementById('svc_radius').value,
+            base_lat: document.getElementById('svc_lat').value,
+            base_lng: document.getElementById('svc_lng').value,
+            fleet: Array.from(document.querySelectorAll('.fleet-row')).map(r => ({
+                type: r.querySelector('.v-type').value,
+                base_rate: r.querySelector('.v-base').value,
+                mile_rate: r.querySelector('.v-mile').value
+            }))
+        },
+        timestamp: new Date().toISOString()
+    };
+
+    try {
+        const response = await fetch(WEBHOOK_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+
+        if (response.ok) {
+            alert("🚀 Configuration synced to Webhook successfully!");
+        } else {
+            alert("⚠️ Sync failed. Check console for details.");
+        }
+    } catch (error) {
+        console.error("Webhook Error:", error);
+    }
+}
+
 async function saveToBackend() {
     const payload = {
         id: locationId,

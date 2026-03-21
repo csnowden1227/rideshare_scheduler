@@ -303,6 +303,23 @@ app.post('/api/save-settings', async (req, res) => {
     }
 });
 
+app.post("/api/sync-ghl", async (req, res) => {
+    const GHL_WEBHOOK_URL = "https://services.leadconnectorhq.com/hooks/VXE0UY17p7wnxdZ3sOLc/webhook-trigger/a7699638-aca6-4480-a0ce-25df857c9b33";
+
+    try {
+        const response = await fetch(GHL_WEBHOOK_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(req.body)
+        });
+
+        const data = await response.json();
+        res.json({ success: true, ghl_response: data });
+    } catch (err) {
+        res.status(500).json({ error: "Failed to forward to GHL" });
+    }
+});
+
 app.post('/api/save-config', (req, res) => {
     // We pull crm_webhook_url out of the request body
     const { id, crm_webhook_url } = req.body;
@@ -367,33 +384,38 @@ app.post('/api/update-profile-full', async (req, res) => {
         );
 
         // 2. CLEAR AND REFRESH FLEET SLOTS
-        await client.query('DELETE FROM services WHERE location_id = $1', [location_id]);
+await client.query('DELETE FROM services WHERE location_id = $1', [location_id]);
 
-        if (fleet && fleet.length > 0) {
-            for (const vehicle of fleet) {
-                // FIXED: Corrected the string template and added .replace to handle spaces
-                const vehicle_slot_id = `${location_id}-${String(vehicle.vehicle_type || 'vehicle').replace(/\s+/g, '-')}`;
+if (fleet && fleet.length > 0) {
+    for (const vehicle of fleet) {
+        // Handle spaces in IDs for cleaner URL/lookup strings
+        const vehicle_type_slug = String(vehicle.vehicle_type || 'vehicle').replace(/\s+/g, '-').toLowerCase();
+        const vehicle_slot_id = `${location_id}-${vehicle_type_slug}`;
 
-                await client.query(
-                    `INSERT INTO services (
-                        location_id, 
-                        vehicle_slot_id, 
-                        name, 
-                        base_rate, 
-                        per_mile_rate, 
-                        calendar_id
-                    ) VALUES ($1, $2, $3, $4, $5, $6)`,
-                    [
-                        location_id,                                // $1
-                        vehicle_slot_id,                            // $2
-                        vehicle.vehicle_type,                       // $3
-                        parseFloat(vehicle.base_rate) || 0,         // $4
-                        parseFloat(vehicle.mile_rate) || 0,         // $5
-                        vehicle.calendar_id || null                 // $6
-                    ]
-                );
-            }
-        }
+        await client.query(
+            `INSERT INTO services (
+                location_id,        -- $1
+                vehicle_slot_id,    -- $2
+                name,               -- $3
+                base_rate,          -- $4
+                per_mile_rate,      -- $5
+                calendar_id,        -- $6
+                deposit_pct,        -- $7
+                deposit_flat_cents  -- $8
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+            [
+                location_id,                                    // $1
+                vehicle_slot_id,                                // $2
+                vehicle.vehicle_type || null,                   // $3
+                parseFloat(vehicle.base_rate) || 0,             // $4
+                parseFloat(vehicle.mile_rate) || 0,             // $5
+                vehicle.calendar_id || null,                    // $6
+                parseFloat(vehicle.deposit_pct) || 0,           // $7
+                parseInt(vehicle.deposit_flat_cents) || 0       // $8
+            ]
+        );
+    }
+}
 
         // 3. REFRESH FIXED RATES
         await client.query('DELETE FROM fixed_rates WHERE location_id = $1', [location_id]);
