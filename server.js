@@ -42,20 +42,43 @@ const pool = new Pool({
 // Initialize the Google Maps Client for the Backend
 const googleMapsClient = new GoogleMapsClient({});
 
-// 3. Middleware
-app.use(cors({
-  origin: ['https://app.crmonesource.com']
-}));
-app.use(express.json());
+// --- 1. MIDDLEWARE & SECURITY CONFIG ---
+app.use(express.json()); // Essential for reading JSON payloads
 app.use(express.static(path.join(__dirname, "public")));
 
+// Consolidated CORS - Add all your known origins here
+const allowedOrigins = [
+  'https://app.leadconnectorhq.com', 
+  'https://app.crmonesource.com',
+  'https://services.leadconnectorhq.com',
+  'https://rideshare-scheduler-axx6.onrender.com', // Your backend URL
+  'http://localhost:5173', // For local Vite development
+  'http://localhost:8080'  // For local testing
+];
+
+app.use(cors({
+  origin: function (origin, callback) {
+    // allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.indexOf(origin) === -1) {
+      const msg = 'The CORS policy for this site does not allow access from the specified Origin.';
+      return callback(new Error(msg), false);
+    }
+    return callback(null, true);
+  },
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
+
+// --- 2. IFRAME & SECURITY POLICY ---
 app.use((req, res, next) => {
   res.setHeader(
     "Content-Security-Policy", 
-    "frame-ancestors 'self' https://app.crmonesource.com https://*.gohighlevel.com https://*.msgsndr.com;"
+    "frame-ancestors 'self' https://app.crmonesource.com https://*.gohighlevel.com https://*.msgsndr.com https://*.leadconnectorhq.com;"
   );
   next();
 });
+
 
 /*****************************************************
  2️⃣ API ROUTES (Wizard & Health)
@@ -73,42 +96,53 @@ app.get('/api/health', (req, res) => {
 app.post("/api/save-config", async (req, res) => {
     const client = await pool.connect();
     try {
-        const data = req.body; // The big JSON payload
+        const data = req.body; 
+        const { id, businessName, taxRate, mapsApiKey, fleet } = data; // Destructure from payload
+
         await client.query('BEGIN');
 
-        // A. Save/Update Profile
-        await client.query(
-            `INSERT INTO profiles (id, maps_api_key, tax_rate, service_lat, service_lng)
-             VALUES ($1, $2, $3, $4, $5)
-             ON CONFLICT (id) DO UPDATE SET maps_api_key=$2, tax_rate=$3`,
-            [data.id, data.maps_api_key, data.tax_rate, data.service_lat, data.service_lng]
-        );
+      // --- 1. UPDATE PROFILE OWNER DETAILS (Including Service Area) ---
+const updateProfileQuery = `
+  INSERT INTO profiles (location_id, business_name, tax_rate, maps_api_key, service_lat, service_lng)
+  VALUES ($1, $2, $3, $4, $5, $6)
+  ON CONFLICT (location_id) DO UPDATE SET 
+    business_name = EXCLUDED.business_name,
+    tax_rate = EXCLUDED.tax_rate,
+    maps_api_key = EXCLUDED.maps_api_key,
+    service_lat = EXCLUDED.service_lat,
+    service_lng = EXCLUDED.service_lng
+  RETURNING *;
+`;
 
-        // B. Clear and Re-sync Fleet
-        await client.query(`DELETE FROM fleet_settings WHERE location_id = $1`, [data.id]);
-        for (const v of data.fleet) {
-            await client.query(
-                `INSERT INTO fleet_settings (id, location_id, vehicle_slot_id, base_rate_cents, mile_rate_cents, calendar_id)
-                 VALUES ($1, $2, $3, $4, $5, $6)`,
-                [v.vehicle_slot_id, data.id, v.vehicle_type, v.base_rate * 100, v.mile_rate * 100, v.calendar_id]
-            );
-        }
+// Make sure these names match exactly what you're sending from the Wizard
+const profileValues = [id, businessName, taxRate, mapsApiKey, service_lat, service_lng];
 
-        // C. Clear and Re-sync Events
-        await client.query(`DELETE FROM special_events WHERE location_id = $1`, [data.id]);
-        for (const e of data.events) {
+await client.query(updateProfileQuery, profileValues);
+
+        // --- 2. CLEAR AND RE-SYNC FLEET ---
+        await client.query(`DELETE FROM fleet_settings WHERE location_id = $1`, [id]);
+        
+        for (const v of fleet) {
             await client.query(
-                `INSERT INTO special_events (location_id, event_name, event_date, base_rate_cents, mile_rate_cents, multiplier)
-                 VALUES ($1, $2, $3, $4, $5, $6)`,
-                [data.id, e.event_name, e.event_date, e.base_rate * 100, e.mile_rate * 100, e.multiplier]
+                `INSERT INTO fleet_settings (location_id, vehicle_slot_id, base_rate_cents, mile_rate_cents, calendar_id)
+                 VALUES ($1, $2, $3, $4, $5)`,
+                [
+                    id, 
+                    v.vehicle_type, 
+                    Math.round(v.base_rate * 100), 
+                    Math.round(v.mile_rate * 100), 
+                    v.calendar_id
+                ]
             );
         }
 
         await client.query('COMMIT');
-        res.json({ success: true });
+        res.json({ success: true, message: "Profile and Fleet updated successfully" });
+
     } catch (err) {
         await client.query('ROLLBACK');
-        res.status(500).send(err.message);
+        console.error("❌ Setup Wizard Error:", err);
+        res.status(500).json({ error: "Failed to save settings" });
     } finally {
         client.release();
     }
@@ -116,7 +150,7 @@ app.post("/api/save-config", async (req, res) => {
 /*****************************************************
  2️⃣ GLOBAL OAUTH2 CLIENT FOR GOOGLE
 *****************************************************/
-// This allows your app to connect to users' Google Calendars
+// This allows your app to connect to profile' Google Calendars
 const oauth2Client = new google.auth.OAuth2(
   process.env.GOOGLE_OAUTH_CLIENT_ID,
   process.env.GOOGLE_OAUTH_CLIENT_SECRET,
@@ -133,7 +167,7 @@ const travelTimeCache = new Map();
 /* 🔐 Get Maps API Key from Database */
 async function getMapsKey(location_id) {
   const res = await pool.query(
-    "SELECT maps_api_key FROM users WHERE id = $1",
+    "SELECT maps_api_key FROM profile WHERE id = $1",
     [location_id]
   );
 
@@ -551,125 +585,76 @@ async function triggerCrmWebhook(location_id, booking_id) {
   try {
     client = await pool.connect();
 
-    // 1) Load the booking (source of truth)
+    // 1. Get the Booking (Source of Truth)
     const bookingRes = await client.query(
       "SELECT * FROM bookings WHERE id = $1",
       [booking_id]
     );
-
-    if (bookingRes.rows.length === 0) {
-      console.log("⚠️ Missing data for CRM sync. Skipping.", {
-        booking_Id,
-        missing: ["booking"],
-      });
-      return;
-    }
-
+    if (bookingRes.rows.length === 0) return console.log("⚠️ Booking not found.");
     const b = bookingRes.rows[0];
 
-    // 2) Load the tenant/user to get the CRM webhook URL (Option A)
-    // NOTE: bookings.location_id is a FK to users.id in your schema
-    const userRes = await client.query(
-      "SELECT id, business_name, crm_webhook_url FROM users WHERE id = $1",
-      [b.location_id]
+    // 2. Get the Profile Owner's Webhook & Tax Rate
+    const profileRes = await client.query(
+      "SELECT crm_webhook_url, tax_rate, business_name FROM profiles WHERE location_id = $1",
+      [location_id]
     );
+    const p = profileRes.rows[0];
 
-    if (userRes.rows.length === 0) {
-      console.log("⚠️ Missing data for CRM sync. Skipping.", {
-        booking_id,
-        tenantId: b.location_id,
-        missing: ["tenant/users row"],
-      });
-      return;
+    if (!p?.crm_webhook_url) {
+      return console.log(`⚠️ No CRM Webhook found for location: ${location_id}`);
     }
 
-    const u = userRes.rows[0];
-
-    // 3) Optionally load profile settings if you still want fleet/tax/special_events
-    // If profiles don't exist for a location yet, we DO NOT skip CRM sync.
-    let p = { fleet: null, special_events: null, tax_rate: 0.15 };
-    try {
-      const profileRes = await client.query(
-        "SELECT fleet, special_events, tax_rate FROM profiles WHERE location_id = $1",
-        [location_id]
-      );
-      if (profileRes.rows.length > 0) p = profileRes.rows[0];
-    } catch (e) {
-      // profiles table might not exist in some envs; still proceed
-    }
-
-    // 4) Minimal required fields for CRM sync (Option A)
-    const missing = [];
-    if (!u.crm_webhook_url) missing.push("users.crm_webhook_url");
-    if (!b.customer_email) missing.push("bookings.customer_email");
-    if (!b.pickup_address) missing.push("bookings.pickup_address");
-    if (!b.dropoff_address) missing.push("bookings.dropoff_address");
-    if (!b.start_time) missing.push("bookings.start_time");
-    if (!b.status) missing.push("bookings.status");
-
-    if (missing.length) {
-      console.log("⚠️ Missing data for CRM sync. Skipping.", {
-        booking_id: b.id,
-        tenantId: u.id,
-        missing,
-      });
-      return;
-    }
-
-    // 5) Financials
+    // 3. Financial Calculations
     const basePrice = Number(b.total_price || 0);
-    const taxRate = Number(p.tax_rate ?? 0.15);
-    const totalWithTax = Number((basePrice * (1 + taxRate)).toFixed(2));
+    const taxRate = Number(p.tax_rate || 0);
+    const totalWithTax = (basePrice * (1 + taxRate)).toFixed(2);
+    const balanceDue = (totalWithTax - Number(b.deposit_amount || 0)).toFixed(2);
 
-    // 6) Payload aligned to YOUR bookings schema
+    // 4. Build the Categorized Payload
     const payload = {
       webhook_type: "BOOKING_SYNC",
-      tenant: {
-        location_id: u.location_id,
-        business_name: u.business_name,
+      locationId: location_id,
+      calendarId: String(b.calendar_id), // Guaranteed to be the UID string
+      businessName: p.business_name,
+      customer: {
+        firstName: b.first_name,
+        lastName: b.last_name,
+        email: b.customer_email,
+        phone: b.customer_phone
       },
-      booking: {
-        id: b.id,
-        service_id: b.vehicle/slot_id,
-        driver_id: b.driver_id,
-        status: b.status,
-        payment_status: b.payment_status,
-        customer_email: b.customer_email,
-        pickup_address: b.pickup_address,
-        dropoff_address: b.dropoff_address,
-        start_time: b.start_time,
-        end_time: b.end_time,
-        total_price: basePrice,
+      trip: {
+        bookingId: b.id,
+        status: b.status || 'pending',
+        pickup: b.pickup_address,
+        dropoff: b.dropoff_address,
+        // ADDING COORDINATES HERE:
+        pickupLat: b.pickup_lat,
+        pickupLng: b.pickup_lng,
+        dropoffLat: b.dropoff_lat,
+        dropoffLng: b.dropoff_lng,
+        startTime: b.start_time,
+        endTime: b.end_time
       },
       financials: {
         subtotal: basePrice,
-        tax_rate: taxRate,
-        total_amount: totalWithTax,
-      },
-      context: {
-        location_id: location_id,
-      },
-      settings: {
-        fleet_snapshot:
-          typeof p.fleet === "string" ? JSON.parse(p.fleet) : p.fleet,
-        special_events:
-          typeof p.special_events === "string"
-            ? JSON.parse(p.special_events)
-            : p.special_events,
-      },
+        taxRate: taxRate,
+        totalWithTax: totalWithTax,
+        depositPaid: b.deposit_amount,
+        balanceRemaining: balanceDue
+      }
     };
 
-    // 7) POST to CRM webhook
-    console.log("➡️ Posting to CRM webhook:", u.crm_webhook_url, {
-      booking_id,
-      tenantId: u.id,
+    // 5. Send to GHL
+    const resp = await fetch(p.crm_webhook_url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
     });
 
-    const respText = await resp.text().catch(() => "");
-    console.log("✅ CRM webhook response:", resp.status, respText.slice(0, 300));
+    console.log(`✅ Webhook sent to GHL. Status: ${resp.status}`);
 
   } catch (err) {
-    console.error("❌ triggerCrmWebhook error:", err);
+    console.error("❌ Webhook Trigger Error:", err);
   } finally {
     if (client) client.release();
   }
@@ -933,55 +918,76 @@ const end_time = new Date(new Date(start_time).getTime() + (60 + 45) * 60000).to
     const calendar_id = fleetLookup.rows[0]?.calendar_id;
 
     // 3. SAVE TO LOCAL DATABASE
-    await pool.query(
-      `INSERT INTO bookings (
-        location_id, vehicle_slot_id, customer_name, customer_email, 
-        customer_phone, pickup_address, dropoff_address, pickup_lat, 
-        pickup_lng, dropoff_lat, dropoff_lng, start_time, total_price,
-        calendar_id, deposit_amount, deposit_percent
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
-      [
-        location_id, vehicle_slot_id, `${first_name} ${last_name}`, email, 
-        phone, pickup_address, dropoff_address, pickup_lat, pickup_lng, 
-        dropoff_lat, dropoff_lng, start_time, total_price,
-        calendar_id, deposit_amount, deposit_percent
-      ]
-    );
+    // Calculate the balance before the database query
+const balance_due = (Number(total_price) - Number(deposit_amount)).toFixed(2);
 
-    // 4. TRIGGER THE WEBHOOK (Combined into one clean call)
-    if (webhookUrl && webhookUrl.startsWith('http')) {
-      fetch(webhookUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          location_id,
-          calendar_id, 
-          firstName: first_name,
-          lastName: last_name,
-          email,
-          phone,
-          pickup: pickup_address,
-          dropoff: dropoff_address,
-          pickup_lat,
-          pickup_lng,
-          dropoff_lat,
-          dropoff_lng,
-          totalPrice: total_price,
-          startTime: start_time,
-          endTime: end_time,
-          vehicle_Id: vehicle_slot_id,
-          depositPercent: deposit_percent, 
-          depositAmount: deposit_amount,
-          balanceRemaining: (Number(total_price) - Number(deposit_amount)).toFixed(2)
-        })
-      }).catch(e => console.error("Webhook Failed:", e));
-    }
+await pool.query(
+  `INSERT INTO bookings (
+    location_id, vehicle_slot_id, first_name, last_name, customer_email, 
+    customer_phone, pickup_address, dropoff_address, pickup_lat, 
+    pickup_lng, dropoff_lat, dropoff_lng, start_time, total_price,
+    calendar_id, deposit_amount, deposit_percent, balance_due
+  ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
+  [
+    location_id, vehicle_slot_id, first_name, last_name, email, 
+    phone, pickup_address, dropoff_address, pickup_lat, pickup_lng, 
+    dropoff_lat, dropoff_lng, start_time, total_price,
+    calendar_id, deposit_amount, deposit_percent, balance_due // <--- ADDED HERE
+  ]
+);
 
-    return res.json({ success: true, message: "Booking confirmed" });
+    // 4. TRIGGER THE WEBHOOK (Categorized for better organization)
+if (webhookUrl && webhookUrl.startsWith('http')) {
+  fetch(webhookUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      // Core IDs
+      location_id,
+      calendar_id: String(calendar_id), // Ensures the alphanumeric ID is treated as a string
+      vehicle_Id: vehicle_slot_id,
+
+      // Category 1: Customer Details
+      customer: {
+        firstName: first_name,
+        lastName: last_name,
+        email: email,
+        phone: phone
+      },
+
+      // Category 2: Trip Details
+      trip: {
+        pickup: pickup_address,
+        dropoff: dropoff_address,
+        pickup_lat,
+        pickup_lng,
+        dropoff_lat,
+        dropoff_lng,
+        startTime: start_time,
+        endTime: end_time
+      },
+
+      // Category 3: Financials
+      financials: {
+        totalPrice: total_price,
+        depositPercent: deposit_percent,
+        depositAmount: deposit_amount,
+        balanceRemaining: (Number(total_price) - Number(deposit_amount)).toFixed(2)
+      }
+    })
+  }).catch(e => console.error("Webhook Failed:", e));
+}
+
+    // 5. RESPOND TO THE WIDGET
+    res.status(200).json({ 
+      success: true, 
+      message: "Booking saved and webhook triggered",
+      booking_id: result?.rows?.[0]?.id 
+    });
 
   } catch (err) {
-    console.error("Booking Error:", err);
-    return res.status(500).json({ error: "Booking could not be processed" });
+    console.error("❌ Error in create-booking:", err);
+    res.status(500).json({ error: "Failed to create booking" });
   }
 });
 

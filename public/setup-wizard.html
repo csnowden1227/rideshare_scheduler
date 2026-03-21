@@ -433,14 +433,34 @@ async function saveToBackend() {
         service_lat: parseFloat(document.getElementById('svc_lat').value),
         service_lng: parseFloat(document.getElementById('svc_lng').value),
         service_radius: parseFloat(document.getElementById('svc_radius').value),
-fleet: Array.from(document.querySelectorAll('#fleet-body tr')).map(tr => ({
-    // Changed vehicle_id to vehicle_slot_id to match your server logic
-    vehicle_slot_id: tr.cells[0].innerText, 
-    vehicle_type: tr.querySelector('.v-type').value,
-    base_rate: parseFloat(tr.querySelector('.v-base').value),
-    mile_rate: parseFloat(tr.querySelector('.v-mile').value),
-    calendar_id: tr.querySelector('.v-cal').value // This is the CRITICAL link for GHL
-})),
+
+fleet: Array.from(document.querySelectorAll('#fleet-body tr')).map(tr => {
+
+    // Get the flat deposit value and convert to cents for the database
+
+    const flatDepositVal = parseFloat(tr.querySelector('.v-dep-flat').value) || 0;
+
+    
+
+    return {
+
+        // vehicle_slot_id links to your database ID
+
+        vehicle_slot_id: tr.cells[0].innerText.trim(), 
+
+        base_rate: parseFloat(tr.querySelector('.v-base').value) || 0,
+
+        mile_rate: parseFloat(tr.querySelector('.v-mile').value) || 0,
+
+        calendar_id: tr.querySelector('.v-cal').value, // The link to GHL Calendar UI
+
+        deposit_pct: parseFloat(tr.querySelector('.v-dep-pct').value) || 0,
+
+        deposit_flat_cents: Math.round(flatDepositVal * 100)
+
+    };
+
+}),
 
         fixed_rates: Array.from(document.querySelectorAll('.route-row')).map(r => ({
             pickup_keyword: r.querySelector('.r-pickup').value,
