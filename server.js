@@ -591,6 +591,102 @@ app.post("/api/calculate-quote", async (req, res) => {
     return res.status(500).json({ error: "Failed to calculate quote." });
   }
 });
+
+async function triggerCrmWebhook(location_id, booking_id) {
+  let client;
+  try {
+    client = await pool.connect();
+
+    // 1. Get the booking details
+    const bookingRes = await client.query(
+      "SELECT * FROM bookings WHERE id = $1",
+      [booking_id]
+    );
+
+    if (!bookingRes.rows.length) {
+      return console.log(`⚠️ Webhook aborted: Booking #${booking_id} not found.`);
+    }
+
+    const b = bookingRes.rows[0];
+
+    // 2. Get the profile AND set the fallback URL
+    const profileRes = await client.query(
+      "SELECT crm_webhook_url, tax_rate, business_name FROM profiles WHERE location_id = $1",
+      [location_id]
+    );
+    const p = profileRes.rows[0];
+
+    // LOGIC: Use the user's saved URL, or the Master URL from your .env file
+    const webhookToCall = p?.crm_webhook_url || process.env.MASTER_CRM_WEBHOOK;
+
+    if (!webhookToCall) {
+      return console.log(`⚠️ No CRM Webhook found and no Master Webhook configured for: ${location_id}`);
+    }
+
+    // --- (Your Financial Calculations remain exactly the same) ---
+    const total = Number(b.total_price || 0);
+    const taxRate = Number(p?.tax_rate || 0);
+    const taxAmount = total * (taxRate / 100);
+    const totalWithTax = total + taxAmount;
+    const depositPaid = Number(b.deposit_amount || 0);
+    const balanceDue = totalWithTax - depositPaid;
+
+    const payload = {
+      webhook_type: "BOOKING_SYNC",
+      location_id: b.location_id,
+      vehicle_slot_id: b.vehicle_slot_id,
+      calendar_id: b.calendar_id || "",
+      businessName: p?.business_name || "",
+      customer: {
+        firstName: b.first_name,
+        lastName: b.last_name,
+        email: b.customer_email,
+        phone: b.customer_phone
+      },
+      trip: {
+        booking_id: b.id,
+        status: b.status || 'pending',
+        pickup: b.pickup_address,
+        dropoff: b.dropoff_address,
+        startTime: b.start_time ? new Date(b.start_time).toISOString() : null,
+        endTime: b.end_time ? new Date(b.end_time).toISOString() : null,
+        selectedEventName: b.selected_event_name || null
+      },
+      luggage: {
+        carryOnCount: Number(b.carry_on_count || 0),
+        checkedBagCount: Number(b.checked_bag_count || 0),
+        additionalItemsAboard: b.additional_items_aboard || ""
+      },
+      addons: typeof b.selected_addons === 'string' ? JSON.parse(b.selected_addons) : (b.selected_addons || []),
+      financials: {
+        subtotal: Number(total.toFixed(2)),
+        taxRate,
+        taxAmount: Number(taxAmount.toFixed(2)),
+        totalWithTax: Number(totalWithTax.toFixed(2)),
+        depositPaid: Number(depositPaid.toFixed(2)),
+        balanceRemaining: Number(balanceDue.toFixed(2))
+      }
+    };
+
+    // 3. Fire the Webhook to the chosen URL
+    const resp = await fetch(webhookToCall, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    if (resp.ok) {
+      console.log(`✅ Webhook SUCCESS: Sent to ${webhookToCall === p?.crm_webhook_url ? 'User CRM' : 'Master CRM'} for Booking #${b.id}`);
+    } else {
+      console.error(`❌ Webhook ERROR: CRM returned ${resp.status} for Booking #${b.id}`);
+    }
+  } catch (err) {
+    console.error("❌ Critical Webhook Trigger Error:", err.message);
+  } finally {
+    if (client) client.release();
+  }
+}
+
 app.post("/api/create-booking", async (req, res) => {
   try {
     const {
@@ -699,41 +795,56 @@ async function triggerCrmWebhook(location_id, booking_id) {
   try {
     client = await pool.connect();
 
+    // 1. Get booking
     const bookingRes = await client.query(
       "SELECT * FROM bookings WHERE id = $1",
       [booking_id]
     );
-
-    if (!bookingRes.rows.length) {
-      return console.log(`⚠️ Webhook aborted: Booking #${booking_id} not found.`);
-    }
-
+    if (!bookingRes.rows.length) return console.log(`⚠️ Webhook aborted: Booking #${booking_id} not found.`);
     const b = bookingRes.rows[0];
 
+    // 2. Get profile and determine Webhook URL
     const profileRes = await client.query(
       "SELECT crm_webhook_url, tax_rate, business_name FROM profiles WHERE location_id = $1",
       [location_id]
     );
     const p = profileRes.rows[0];
 
-    if (!p?.crm_webhook_url) {
+    // FALLBACK LOGIC: Use user URL or Master URL from .env
+    const webhookToCall = p?.crm_webhook_url || process.env.MASTER_CRM_WEBHOOK;
+
+    if (!webhookToCall) {
       return console.log(`⚠️ No CRM Webhook found for location: ${location_id}`);
     }
 
+    // 3. Financial Calculations
     const total = Number(b.total_price || 0);
-    const taxRate = Number(p.tax_rate || 0);
+    const taxRate = Number(p?.tax_rate || 0);
     const taxAmount = total * (taxRate / 100);
     const totalWithTax = total + taxAmount;
     const depositPaid = Number(b.deposit_amount || 0);
     const balanceDue = totalWithTax - depositPaid;
 
+    // 4. Vehicle Type Flag Logic
+    const vehicleTypeStr = (b.selected_vehicle_type || "").toLowerCase().replace(/\s/g, '');
+    const vehicleTypeFlags = {
+      standardsuv: vehicleTypeStr === "standardsuv",
+      standardsedan: vehicleTypeStr === "standardsedan",
+      luxuryxlsuv: vehicleTypeStr === "luxuryxlsuv",
+      standardxlsuv: vehicleTypeStr === "standardxlsuv",
+      luxurysedan: vehicleTypeStr === "luxurysedan",
+      luxurysuv: vehicleTypeStr === "luxurysuv"
+    };
+
+    // 5. Construct Payload (Clean and Synced)
     const payload = {
       webhook_type: "BOOKING_SYNC",
       location_id: b.location_id,
       vehicle_slot_id: b.vehicle_slot_id,
       calendar_id: b.calendar_id || "",
-      businessName: p.business_name || "",
-
+      businessName: p?.business_name || "Snowden Luxury",
+      vehicle_Type: vehicleTypeFlags,
+      
       customer: {
         firstName: b.first_name,
         lastName: b.last_name,
@@ -751,21 +862,14 @@ async function triggerCrmWebhook(location_id, booking_id) {
         dropoffLat: b.dropoff_lat,
         dropoffLng: b.dropoff_lng,
         startTime: b.start_time ? new Date(b.start_time).toISOString() : null,
-        endTime: b.end_time ? new Date(b.end_time).toISOString() : null,
-        selectedEventName: b.selected_event_name || null
+        endTime: b.end_time ? new Date(b.end_time).toISOString() : null
       },
 
-      luggage: {
-        carryOnCount: Number(b.carry_on_count || 0),
-        checkedBagCount: Number(b.checked_bag_count || 0),
-        additionalItemsAboard: b.additional_items_aboard || ""
-      },
-
-      addons: safeParse(b.selected_addons, []),
+      addons: typeof b.selected_addons === 'string' ? JSON.parse(b.selected_addons) : (b.selected_addons || []),
 
       financials: {
         subtotal: Number(total.toFixed(2)),
-        taxRate,
+        taxRate: taxRate / 100, // 0.09 format
         taxAmount: Number(taxAmount.toFixed(2)),
         totalWithTax: Number(totalWithTax.toFixed(2)),
         depositPaid: Number(depositPaid.toFixed(2)),
@@ -773,7 +877,8 @@ async function triggerCrmWebhook(location_id, booking_id) {
       }
     };
 
-    const resp = await fetch(p.crm_webhook_url, {
+    // 6. Send to CRM
+    const resp = await fetch(webhookToCall, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
@@ -789,6 +894,31 @@ async function triggerCrmWebhook(location_id, booking_id) {
   } finally {
     if (client) client.release();
   }
+}
+
+async function bookGHLAppointment(contactId, calendarId, startTime) {
+    const response = await fetch('https://services.leadconnectorhq.com/calendars/events/appointments', {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${process.env.GHL_PRIVATE_TOKEN}`,
+            'Version': '2021-04-15',
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            calendarId: calendarId,
+            contactId: contactId,
+            startTime: startTime, 
+            title: "Rideshare Booking",
+            appointmentStatus: 'confirmed'
+        })
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+        console.error("❌ GHL Booking Error:", data);
+        throw new Error(data.message || "Failed to book GHL appointment");
+    }
+    return data;
 }
 
 app.post('/api/sync-crm', async (req, res) => {

@@ -344,18 +344,27 @@ function updateRouteMap() {
 // --- RENDERERS ---
 function renderFleet(count, savedFleet = []) {
     const tbody = document.getElementById('fleet-body');
-    tbody.innerHTML = "";
+    tbody.innerHTML = ""; // Clear existing rows
+    
     for (let i = 1; i <= count; i++) {
         const slotId = `${location_id}_vehicle_${i}`;
         const data = savedFleet.find(f => f.vehicle_slot_id === slotId) || {};
+        
         const tr = document.createElement('tr');
         tr.className = "border-b border-slate-50";
+        
+        // This is the JS version of the HTML snippet you provided:
         tr.innerHTML = `
             <td class="py-4 font-mono text-[9px] text-slate-400 font-bold">${slotId}</td>
-            <td class="py-2"><select class="v-type input-mini font-bold">${VEHICLE_LIST.map(v => `<option value="${v}" ${data.vehicle_type === v ? 'selected' : ''}>${v}</option>`).join('')}</select></td>
-            <td class="py-2 px-1"><input type="number" class="v-base input-mini" value="${data.base_rate || 50}"></td>
+            <td class="py-2">
+                <select class="v-type input-mini font-bold">
+                    <option value="Luxury Sedan" ${data.vehicle_type === 'Luxury Sedan' ? 'selected' : ''}>Luxury Sedan</option>
+                    <option value="SUV XL" ${data.vehicle_type === 'SUV XL' ? 'selected' : ''}>SUV XL</option>
+                    </select>
+            </td>
+            <td class="py-2 px-1"><input type="number" class="v-base input-mini" value="${data.base_rate || 75}"></td>
             <td class="py-2 px-1"><input type="number" step="0.1" class="v-mile input-mini" value="${data.mile_rate || 3.5}"></td>
-            <td class="py-2 px-1"><input type="text" class="v-cal input-mini" placeholder="Calendar ID" value="${data.calendar_id || ''}"></td>
+            <td class="py-2 px-1"><input type="text" class="v-cal input-mini" placeholder="GHL Calendar ID" value="${data.calendar_id || ''}"></td>
         `;
         tbody.appendChild(tr);
     }
@@ -502,34 +511,45 @@ async function saveToBackend() {
             multiplier: parseFloat(e.querySelector('.e-mult').value)
         })),
 
-        addons: Array.from(document.querySelectorAll('.addon-row')).map(r => ({
-            description: r.querySelector('.a-desc').value,
-            price: parseFloat(r.querySelector('.a-price').value),
-            type: r.querySelector('.a-type').value
-        }))
+       // Inside saveConfig() function
+addons: Array.from(document.querySelectorAll('.addon-row')).map(r => {
+    const desc = r.querySelector('.a-desc').value;
+    // Get existing ID if it exists, otherwise create a permanent slug
+    const existingId = r.dataset.addonId; 
+    const slugId = existingId || desc.toLowerCase().replace(/[^a-z0-9]/g, '_') + '_' + Math.random().toString(36).substr(2, 5);
+    
+    // Store it back on the row so it persists during the session
+    r.dataset.addonId = slugId;
+
+    return {
+        id: slugId, // <--- NEW PERMANENT ID
+        description: desc,
+        price: parseFloat(r.querySelector('.a-price').value) || 0,
+        type: r.querySelector('.a-type').value
+    };
+})
     };
 
     try {
-        const endpoints = ['/api/update-profile-full', '/api/save-config'];
-        let res = null;
+    // We only need ONE clear endpoint. Match this to your server.js
+    const endpoint = '/api/save-config'; 
 
-        for (const endpoint of endpoints) {
-            res = await fetch(`${BACKEND_URL}${endpoint}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
-            if (res.ok) break;
-        }
+    const res = await fetch(`${BACKEND_URL}${endpoint}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    });
 
-        if (res && res.ok) {
-            alert("✅ Snowden Luxury Profile Locked & Synced!");
-        } else {
-            alert("❌ Save failed. Please verify backend route alignment.");
-        }
-    } catch (err) {
-        alert("❌ Connection Error: Ensure Render is active.");
+    if (res.ok) {
+        alert("✅ Snowden Luxury Profile Locked & Synced!");
+    } else {
+        // This helps you see WHY it failed (e.g., 404 or 500)
+        console.error("Server Response Error:", res.status);
+        alert(`❌ Save failed (Error ${res.status}). Verify backend route alignment.`);
     }
+} catch (err) {
+    console.error("Fetch Error:", err);
+    alert("❌ Connection Error: Ensure Render is active and CORS is enabled.");
 }
 
 function copyEmbed() {
