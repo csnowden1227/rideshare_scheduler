@@ -1,4 +1,3 @@
-(() => {
   const scriptTag = document.currentScript;
   const params = new URL(scriptTag.src).searchParams;
   const locationId = params.get('loc');
@@ -107,20 +106,12 @@
   }
 
   function selectedAddons() {
-    const configAddons = Array.isArray(state.config?.addons) ? state.config.addons : [];
-    const chosen = [];
-    document.querySelectorAll('.cd-addon-check').forEach(checkbox => {
-  checkbox.addEventListener('change', (e) => {
-    const addonId = e.target.getAttribute('data-id');
-    if (e.target.checked) {
-      if (!state.selected_addons.includes(addonId)) state.selected_addons.push(addonId);
-    } else {
-      state.selected_addons = state.selected_addons.filter(id => id !== addonId);
-    }
-    // Recalculate quote or re-render to update the total price display
-    calculateQuote(); 
-  });
-});
+    // Simply grab the IDs of all checkboxes that are currently checked
+    const checked = [];
+    document.querySelectorAll('.cd-addon-check:checked').forEach(checkbox => {
+      checked.push(checkbox.getAttribute('data-id'));
+    });
+    return checked;
   }
 
   function formPayload() {
@@ -134,12 +125,44 @@
       pickup_address: document.getElementById('cd_pickup').value.trim(),
       dropoff_address: document.getElementById('cd_dropoff').value.trim(),
       start_time: document.getElementById('cd_start_time').value,
-      selected_event_name: document.getElementById('cd_special_event') ? document.getElementById('cd_special_event').value || null : null,
-      selected_addons: selectedAddons(),
+      selected_event_name: document.getElementById('cd_special_event') ? document.getElementById('cd_special_event').value : null,
+      selected_addons: selectedAddons(), // This now correctly returns an array of IDs
       carry_on_count: Number(document.getElementById('cd_carry_on_count').value || 0),
       checked_bag_count: Number(document.getElementById('cd_checked_bag_count').value || 0),
-      additional_items_aboard: JSON.stringify({ preset: document.getElementById('cd_additional_item_select').value || '', custom: document.getElementById('cd_additional_item_custom').value.trim() })
+      additional_items_aboard: JSON.stringify({ 
+        preset: document.getElementById('cd_additional_item_select').value || '', 
+        custom: document.getElementById('cd_additional_item_custom').value.trim() 
+      })
     };
+  }
+
+function renderSuccess(bookingId, payload) {
+    const root = getRoot();
+    const businessName = state.config.business_name || 'Our Team';
+
+    root.innerHTML = `
+      <div style="max-width:820px; margin:0 auto; background:#fff; border:1px solid #e5e7eb; border-radius:20px; overflow:hidden; box-shadow:0 18px 50px rgba(15,23,42,.12); font-family:Inter,Arial,sans-serif; text-align:center; padding:60px 20px;">
+        <div style="width:80px; height:80px; background:#f0fdf4; color:#16a34a; border-radius:50%; display:flex; align-items:center; justify-content:center; margin:0 auto 24px; font-size:40px;">✓</div>
+        
+        <h2 style="font-size:30px; font-weight:800; color:#0f172a; margin-bottom:8px;">Booking Confirmed!</h2>
+        <p style="color:#64748b; font-size:16px; margin-bottom:32px;">Thank you, ${payload.first_name}. Your reservation has been synced with our fleet.</p>
+        
+        <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:16px; padding:24px; max-width:400px; margin:0 auto 32px; text-align:left;">
+          <div style="margin-bottom:12px; font-size:14px; color:#64748b;">Confirmation ID: <strong style="color:#0f172a;">#${bookingId}</strong></div>
+          <div style="margin-bottom:12px; font-size:14px; color:#64748b;">Pickup: <span style="color:#0f172a; display:block; font-weight:500;">${payload.pickup_address}</span></div>
+          <div style="font-size:14px; color:#64748b;">Time: <span style="color:#0f172a; display:block; font-weight:500;">${new Date(payload.start_time).toLocaleString()}</span></div>
+        </div>
+
+        <p style="font-size:13px; color:#94a3b8; margin-bottom:24px;">A confirmation SMS and email from ${businessName} are on their way.</p>
+        
+        <button onclick="window.location.reload()" style="padding:14px 28px; border:none; border-radius:12px; background:#0f172a; color:#fff; font-weight:700; cursor:pointer; transition:all 0.2s;">
+          Book Another Ride
+        </button>
+      </div>
+    `;
+    
+    // Scroll to top of widget so they see the success message
+    root.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
   async function getQuote() {
@@ -178,16 +201,26 @@
     });
     const btn = document.getElementById('cd_btn_book');
     const original = btn.textContent;
-    btn.textContent = 'Booking...'; btn.disabled = true;
+    btn.textContent = 'Confirming...'; btn.disabled = true;
+
     try {
-      const res = await fetch(`${BACKEND_URL}/api/create-booking`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      const res = await fetch(`${BACKEND_URL}/api/create-booking`, { 
+        method: 'POST', 
+        headers: { 'Content-Type': 'application/json' }, 
+        body: JSON.stringify(payload) 
+      });
+      
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Booking failed.');
-      alert('Booking confirmed.');
-      window.location.reload();
+
+      // NEW: Call the success renderer instead of an alert
+      renderSuccess(data.booking_id, payload);
+      
     } catch (error) {
       showError(error.message || 'Booking failed.');
-    } finally { btn.textContent = original; btn.disabled = false; }
+      btn.textContent = original; 
+      btn.disabled = false;
+    }
   }
 
 (async function init() {
