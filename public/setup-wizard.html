@@ -530,27 +530,27 @@ addons: Array.from(document.querySelectorAll('.addon-row')).map(r => {
 })
     };
 
-    try {
-    // We only need ONE clear endpoint. Match this to your server.js
-    const endpoint = '/api/save-config'; 
+try {
+        // We only need ONE clear endpoint. Match this to your server.js
+        const endpoint = '/api/save-config'; 
 
-    const res = await fetch(`${BACKEND_URL}${endpoint}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-    });
+        const res = await fetch(`${BACKEND_URL}${endpoint}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
 
-    if (res.ok) {
-        alert("✅ Snowden Luxury Profile Locked & Synced!");
-    } else {
-        // This helps you see WHY it failed (e.g., 404 or 500)
-        console.error("Server Response Error:", res.status);
-        alert(`❌ Save failed (Error ${res.status}). Verify backend route alignment.`);
+        if (res.ok) {
+            alert("✅ Snowden Luxury Profile Locked & Synced!");
+        } else {
+            console.error("Server Response Error:", res.status);
+            alert(`❌ Save failed (Error ${res.status}). Verify backend route alignment.`);
+        }
+    } catch (err) {
+        console.error("Fetch Error:", err);
+        alert("❌ Connection Error: Ensure Render is active and CORS is enabled.");
     }
-} catch (err) {
-    console.error("Fetch Error:", err);
-    alert("❌ Connection Error: Ensure Render is active and CORS is enabled.");
-}
+} // <--- THIS BRACE CLOSES THE saveToBackend FUNCTION
 
 function copyEmbed() {
     navigator.clipboard.writeText(document.getElementById('embed-box').innerText);
