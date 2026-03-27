@@ -49,7 +49,11 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
-app.use(express.json());
+// Replace your old app.use(express.json()) with these two lines:
+app.use(express.json({ limit: '10mb' })); 
+app.use(express.urlencoded({ limit: '10mb', extended: true }));
+
+// Keep your static path as is
 app.use(express.static(path.join(__dirname, "public")));
 
 app.use((req, res, next) => {
