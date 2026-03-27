@@ -625,6 +625,7 @@ async function triggerCrmWebhook(location_id, booking_id) {
     }
 
     // --- (Your Financial Calculations remain exactly the same) ---
+   // --- (Your Financial Calculations remain exactly the same) ---
     const total = Number(b.total_price || 0);
     const taxRate = Number(p?.tax_rate || 0);
     const taxAmount = total * (taxRate / 100);
@@ -632,23 +633,43 @@ async function triggerCrmWebhook(location_id, booking_id) {
     const depositPaid = Number(b.deposit_amount || 0);
     const balanceDue = totalWithTax - depositPaid;
 
+    // 1. DEFINE THE FLAGS FIRST (Before the payload)
+    const vehicleTypeStr = (b.selected_vehicle_type || "").toLowerCase().replace(/\s/g, '');
+    
+    const vehicleTypeFlags = {
+      standardsuv: vehicleTypeStr === "standardsuv",
+      standardsedan: vehicleTypeStr === "standardsedan",
+      luxuryxlsuv: vehicleTypeStr === "luxuryxlsuv",
+      standardxlsuv: vehicleTypeStr === "standardxlsuv",
+      luxurysedan: vehicleTypeStr === "luxurysedan",
+      luxurysuv: vehicleTypeStr === "luxurysuv"
+    };
+
+    // 2. NOW BUILD THE PAYLOAD
     const payload = {
       webhook_type: "BOOKING_SYNC",
       location_id: b.location_id,
       vehicle_slot_id: b.vehicle_slot_id,
       calendar_id: b.calendar_id || "",
       businessName: p?.business_name || "",
+      
+      // We spread the flags here so GHL sees individual "True/False" fields
+      ...vehicleTypeFlags, 
+
       customer: {
         firstName: b.first_name,
         lastName: b.last_name,
         email: b.customer_email,
         phone: b.customer_phone
       },
+
       trip: {
         booking_id: b.id,
         status: b.status || 'pending',
+        vehicleType: vehicleTypeStr, // Added this for easy branching
         pickup: b.pickup_address,
         dropoff: b.dropoff_address,
+        // Using .toISOString() ensures GHL can read the date for the "Create Appointment" step
         startTime: b.start_time ? new Date(b.start_time).toISOString() : null,
         endTime: b.end_time ? new Date(b.end_time).toISOString() : null,
         selectedEventName: b.selected_event_name || null
@@ -667,49 +688,43 @@ async function triggerCrmWebhook(location_id, booking_id) {
         depositPaid: Number(depositPaid.toFixed(2)),
         balanceRemaining: Number(balanceDue.toFixed(2))
       }
-    };
+    
+    }; // closes payload
 
-    // 3. Fire the Webhook to the chosen URL
+    // 3. Fire the Webhook (as we fixed in the previous step)
     const resp = await fetch(webhookToCall, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     });
+    
+    // ... rest of your error handling and finally block
 
     if (resp.ok) {
-      console.log(`✅ Webhook SUCCESS: Sent to ${webhookToCall === p?.crm_webhook_url ? 'User CRM' : 'Master CRM'} for Booking #${b.id}`);
+      console.log(`✅ Webhook SUCCESS: Sent to CRM for Booking #${b.id}`);
     } else {
-      console.error(`❌ Webhook ERROR: CRM returned ${resp.status} for Booking #${b.id}`);
+      console.error(`❌ Webhook ERROR: CRM returned ${resp.status}`);
     }
+
   } catch (err) {
     console.error("❌ Critical Webhook Trigger Error:", err.message);
   } finally {
     if (client) client.release();
   }
-}
+} // <--- THIS ONE SEALS THE ENTIRE triggerCrmWebhook FUNCTION
 
-app.post("/api/create-booking", async (req, res) => {
+
+app.post('/api/create-booking', async (req, res) => {
   try {
     const {
-      location_id,
-      vehicle_slot_id,
-      first_name,
-      last_name,
-      email,
-      phone,
-      pickup_address,
-      dropoff_address,
-      start_time,
-      selected_event_name = null,
-      selected_addons = [],
-      carry_on_count = 0,
-      checked_bag_count = 0,
-      additional_items_aboard = "",
-      quoted_price = 0,
-      total_price = 0,
-      deposit_percent = 0,
-      deposit_amount = 0
+      location_id, vehicle_slot_id, first_name, last_name, email, phone,
+      pickup_address, dropoff_address, start_time, quoted_price,
+      total_price, deposit_amount, deposit_percent, carry_on_count,
+      checked_bag_count, additional_items_aboard, selected_event_name,
+      selected_addons
     } = req.body;
+
+    // ... continue with your validation logic
 
     if (!location_id || !vehicle_slot_id || !first_name || !last_name || !email || !phone || !pickup_address || !dropoff_address || !start_time) {
       return res.status(400).json({ error: "Missing required booking fields." });
@@ -727,57 +742,29 @@ app.post("/api/create-booking", async (req, res) => {
 
     const dbResult = await pool.query(
       `INSERT INTO bookings (
-        location_id,
-        vehicle_slot_id,
-        calendar_id,
-        first_name,
-        last_name,
-        customer_email,
-        customer_phone,
-        pickup_address,
-        dropoff_address,
-        start_time,
-        end_time,
-        quoted_price,
-        total_price,
-        deposit_amount,
-        deposit_percent,
-        status,
-        carry_on_count,
-        checked_bag_count,
-        additional_items_aboard,
-        selected_event_name,
-        selected_addons
+        location_id, vehicle_slot_id, calendar_id, first_name, last_name,
+        customer_email, customer_phone, pickup_address, dropoff_address,
+        start_time, end_time, quoted_price, total_price, deposit_amount,
+        deposit_percent, status, carry_on_count, checked_bag_count,
+        additional_items_aboard, selected_event_name, selected_addons
       )
       VALUES (
         $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,'pending',$16,$17,$18,$19,$20::jsonb
       )
       RETURNING id`,
       [
-        location_id,
-        vehicle_slot_id,
-        slot.calendar_id || null,
-        first_name,
-        last_name,
-        email,
-        phone,
-        pickup_address,
-        dropoff_address,
-        startDate.toISOString(),
-        endDate.toISOString(),
-        quoted_price,
-        total_price,
-        deposit_amount,
-        deposit_percent,
-        carry_on_count,
-        checked_bag_count,
-        additional_items_aboard,
-        selected_event_name,
+        location_id, vehicle_slot_id, slot.calendar_id || null,
+        first_name, last_name, email, phone, pickup_address, dropoff_address,
+        startDate.toISOString(), endDate.toISOString(), quoted_price,
+        total_price, deposit_amount, deposit_percent, carry_on_count,
+        checked_bag_count, additional_items_aboard, selected_event_name,
         JSON.stringify(selected_addons || [])
       ]
     );
 
     const booking_id = dbResult.rows[0].id;
+    
+    // This calls the function we just fixed!
     await triggerCrmWebhook(location_id, booking_id);
 
     res.status(200).json({
@@ -790,137 +777,6 @@ app.post("/api/create-booking", async (req, res) => {
     res.status(500).json({ error: "Internal Server Error" });
   }
 });
-
-async function triggerCrmWebhook(location_id, booking_id) {
-  let client;
-  try {
-    client = await pool.connect();
-
-    // 1. Get booking
-    const bookingRes = await client.query(
-      "SELECT * FROM bookings WHERE id = $1",
-      [booking_id]
-    );
-    if (!bookingRes.rows.length) return console.log(`⚠️ Webhook aborted: Booking #${booking_id} not found.`);
-    const b = bookingRes.rows[0];
-
-    // 2. Get profile and determine Webhook URL
-    const profileRes = await client.query(
-      "SELECT crm_webhook_url, tax_rate, business_name FROM profiles WHERE location_id = $1",
-      [location_id]
-    );
-    const p = profileRes.rows[0];
-
-    // FALLBACK LOGIC: Use user URL or Master URL from .env
-    const webhookToCall = p?.crm_webhook_url || process.env.MASTER_CRM_WEBHOOK;
-
-    if (!webhookToCall) {
-      return console.log(`⚠️ No CRM Webhook found for location: ${location_id}`);
-    }
-
-    // 3. Financial Calculations
-    const total = Number(b.total_price || 0);
-    const taxRate = Number(p?.tax_rate || 0);
-    const taxAmount = total * (taxRate / 100);
-    const totalWithTax = total + taxAmount;
-    const depositPaid = Number(b.deposit_amount || 0);
-    const balanceDue = totalWithTax - depositPaid;
-
-    // 4. Vehicle Type Flag Logic
-    const vehicleTypeStr = (b.selected_vehicle_type || "").toLowerCase().replace(/\s/g, '');
-    const vehicleTypeFlags = {
-      standardsuv: vehicleTypeStr === "standardsuv",
-      standardsedan: vehicleTypeStr === "standardsedan",
-      luxuryxlsuv: vehicleTypeStr === "luxuryxlsuv",
-      standardxlsuv: vehicleTypeStr === "standardxlsuv",
-      luxurysedan: vehicleTypeStr === "luxurysedan",
-      luxurysuv: vehicleTypeStr === "luxurysuv"
-    };
-
-    // 5. Construct Payload (Clean and Synced)
-    const payload = {
-      webhook_type: "BOOKING_SYNC",
-      location_id: b.location_id,
-      vehicle_slot_id: b.vehicle_slot_id,
-      calendar_id: b.calendar_id || "",
-      businessName: p?.business_name || "Snowden Luxury",
-      vehicle_Type: vehicleTypeFlags,
-      
-      customer: {
-        firstName: b.first_name,
-        lastName: b.last_name,
-        email: b.customer_email,
-        phone: b.customer_phone
-      },
-
-      trip: {
-        booking_id: b.id,
-        status: b.status || 'pending',
-        pickup: b.pickup_address,
-        dropoff: b.dropoff_address,
-        pickupLat: b.pickup_lat,
-        pickupLng: b.pickup_lng,
-        dropoffLat: b.dropoff_lat,
-        dropoffLng: b.dropoff_lng,
-        startTime: b.start_time ? new Date(b.start_time).toISOString() : null,
-        endTime: b.end_time ? new Date(b.end_time).toISOString() : null
-      },
-
-      addons: typeof b.selected_addons === 'string' ? JSON.parse(b.selected_addons) : (b.selected_addons || []),
-
-      financials: {
-        subtotal: Number(total.toFixed(2)),
-        taxRate: taxRate / 100, // 0.09 format
-        taxAmount: Number(taxAmount.toFixed(2)),
-        totalWithTax: Number(totalWithTax.toFixed(2)),
-        depositPaid: Number(depositPaid.toFixed(2)),
-        balanceRemaining: Number(balanceDue.toFixed(2))
-      }
-    };
-
-    // 6. Send to CRM
-    const resp = await fetch(webhookToCall, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
-
-    if (resp.ok) {
-      console.log(`✅ Webhook SUCCESS: Sent to CRM for Booking #${b.id}`);
-    } else {
-      console.error(`❌ Webhook ERROR: CRM returned ${resp.status} for Booking #${b.id}`);
-    }
-  } catch (err) {
-    console.error("❌ Critical Webhook Trigger Error:", err.message);
-  } finally {
-    if (client) client.release();
-  }
-}
-
-async function bookGHLAppointment(contactId, calendarId, startTime) {
-    const response = await fetch('https://services.leadconnectorhq.com/calendars/events/appointments', {
-        method: 'POST',
-        headers: {
-            'Authorization': `Bearer ${process.env.GHL_PRIVATE_TOKEN}`,
-            'Version': '2021-04-15',
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-            calendarId: calendarId,
-            contactId: contactId,
-            startTime: startTime, 
-            title: "Rideshare Booking",
-            appointmentStatus: 'confirmed'
-        })
-    });
-
-    const data = await response.json();
-    if (!response.ok) {
-        console.error("❌ GHL Booking Error:", data);
-        throw new Error(data.message || "Failed to book GHL appointment");
-    }
-    return data;
-}
 
 app.post('/api/sync-crm', async (req, res) => {
   try {
@@ -1017,18 +873,17 @@ app.get("/setup-wizard", (_req, res) => {
 app.get("/test-page", (_req, res) => {
   res.send("<h1>Server route works</h1>");
 });
-
 /*****************************************************
  4️⃣ DATABASE LISTENER
 *****************************************************/
 const startListener = async () => {
-  try {
-    const listenerClient = new Client({
-      connectionString: process.env.DATABASE_URL,
-      ssl: { rejectUnauthorized: false },
-      keepAlive: true
-    });
+  const listenerClient = new Client({
+    connectionString: process.env.DATABASE_URL,
+    ssl: { rejectUnauthorized: false },
+    keepAlive: true
+  });
 
+  try {
     await listenerClient.connect();
     await listenerClient.query("LISTEN profile_updated;");
     await listenerClient.query("LISTEN booking_updated;");
@@ -1040,52 +895,45 @@ const startListener = async () => {
         console.log(`🔔 Signal Received on ${msg.channel}: ${msg.payload}`);
 
         const booking_id = Number(msg.payload);
-        if (!Number.isInteger(booking_id) || booking_id <= 0) {
-          console.log("⚠️ Invalid payload (expected booking_id number). Skipping.", {
-            channel: msg.channel,
-            payload: msg.payload
-          });
-          return;
-        }
+        if (!booking_id || booking_id <= 0) return;
 
+        // Fetch location_id so the webhook knows which CRM to hit
         const bookingRes = await pool.query(
-          "SELECT id, location_id FROM bookings WHERE id = $1",
+          "SELECT location_id FROM bookings WHERE id = $1",
           [booking_id]
         );
 
-        if (!bookingRes.rows.length) {
-          console.log("⚠️ Booking not found. Skipping.", { booking_id });
-          return;
-        }
-
-        const location_id = bookingRes.rows[0].location_id || "default";
+        const location_id = bookingRes.rows[0]?.location_id || "default";
         await triggerCrmWebhook(location_id, booking_id);
+        
       } catch (err) {
         console.error("❌ Error handling notification:", err);
       }
     });
 
     listenerClient.on("error", (err) => {
-      console.error("❌ Listener Error:", err);
+      console.error("❌ Listener Connection Error:", err);
       setTimeout(startListener, 5000);
     });
 
-    listenerClient.on("end", () => {
-      console.error("❌ Listener connection ended. Restarting...");
-      setTimeout(startListener, 5000);
-    });
-
-    setInterval(async () => {
-      try {
-        await listenerClient.query("SELECT 1;");
-      } catch (_e) {
+    // Heartbeat to prevent connection timeout
+    const heartbeat = setInterval(async () => {
+      try { 
+        await listenerClient.query("SELECT 1;"); 
+      } catch (e) { 
+        clearInterval(heartbeat);
       }
     }, 30000);
+
   } catch (err) {
     console.error("❌ Failed to connect listener:", err);
     setTimeout(startListener, 5000);
   }
 };
+
+
+
+
 /*****************************************************
  5️⃣ START SERVER
 *****************************************************/
@@ -1093,6 +941,6 @@ const PORT = process.env.PORT || 8080;
 
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
-  // This starts the database 'LISTEN' for new bookings
+  // Kick off the listener
   startListener();
 });
