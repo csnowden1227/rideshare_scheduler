@@ -1090,7 +1090,9 @@ const startListener = async () => {
  5️⃣ START SERVER
 *****************************************************/
 const PORT = process.env.PORT || 8080;
+
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
+  // This starts the database 'LISTEN' for new bookings
   startListener();
-}); // <--- This was the error. Ensure it looks exactly like this.
+});
