@@ -109,11 +109,18 @@
   function selectedAddons() {
     const configAddons = Array.isArray(state.config?.addons) ? state.config.addons : [];
     const chosen = [];
-    document.querySelectorAll('.cd-addon:checked').forEach((el) => {
-      const match = configAddons.find((addon, idx) => String(addon.id || addon.description || `addon_${idx}`) === el.value);
-      if (match) chosen.push(match);
-    });
-    return chosen;
+    document.querySelectorAll('.cd-addon-check').forEach(checkbox => {
+  checkbox.addEventListener('change', (e) => {
+    const addonId = e.target.getAttribute('data-id');
+    if (e.target.checked) {
+      if (!state.selected_addons.includes(addonId)) state.selected_addons.push(addonId);
+    } else {
+      state.selected_addons = state.selected_addons.filter(id => id !== addonId);
+    }
+    // Recalculate quote or re-render to update the total price display
+    calculateQuote(); 
+  });
+});
   }
 
   function formPayload() {
@@ -183,15 +190,35 @@
     } finally { btn.textContent = original; btn.disabled = false; }
   }
 
-  (async function init() {
+(async function init() {
     try {
       if (!locationId) throw new Error('Missing location id.');
+      
+      // 1. Fetch the profile (including your Fixed Rates and Maps Key)
       await loadConfig();
+
+      // 2. Wait for Google Maps to be ready if it's being injected
+      if (state.config.maps_api_key) {
+          await new Promise((resolve) => {
+              const check = setInterval(() => {
+                  if (window.google && window.google.maps) {
+                      clearInterval(check);
+                      resolve();
+                  }
+              }, 100);
+          });
+      }
+
+      // 3. Now it is safe to draw the UI
       render();
+      
     } catch (error) {
-      console.error(error);
+      console.error("🚀 Widget Init Error:", error);
       const root = getRoot();
-      if (root) root.innerHTML = `<div style="padding:16px;color:#991b1b;background:#fef2f2;border:1px solid #fecaca;border-radius:12px;">Booking widget unavailable.</div>`;
+      if (root) {
+        root.innerHTML = `<div style="padding:16px;color:#991b1b;background:#fef2f2;border:1px solid #fecaca;border-radius:12px;font-family:sans-serif;">
+            <strong>Maintenance:</strong> Our booking system is currently updating. Please refresh in a moment.
+        </div>`;
+      }
     }
   })();
-})();

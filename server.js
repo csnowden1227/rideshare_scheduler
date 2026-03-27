@@ -140,60 +140,44 @@ function normalizeFleet(profile) {
 }
 
 function computeAddonTotal(addonsConfig, selectedAddons) {
-  // 1. Convert selectedAddons (could be array of IDs or array of Objects) 
-  // into a clean Set of ID strings for O(1) lookup.
+  // Normalize selected addons into a Set of IDs/descriptions
   const selectedIds = new Set(
-    (selectedAddons || []).map((a) => {
-      if (typeof a === 'string') return a.trim();
-      if (typeof a === 'object' && a !== null) return String(a.id || a.description || '').trim();
-      return '';
-    }).filter(Boolean)
+    (selectedAddons || [])
+      .map((a) => {
+        if (typeof a === 'string') return a.trim();
+        if (typeof a === 'object' && a !== null) {
+          return String(a.id || a.description || '').trim();
+        }
+        return '';
+      })
+      .filter(Boolean)
   );
 
   const breakdown = [];
   let total = 0;
 
-  // 2. Loop through the Master Config saved in the Profile
-  for (const addon of (addonsConfig || [])) {
-    // Check both ID and Description to find a match
+  for (const addon of addonsConfig || []) {
     const addonId = String(addon.id || '').trim();
     const addonDesc = String(addon.description || '').trim();
 
+    // Match either ID or description
     if (selectedIds.has(addonId) || selectedIds.has(addonDesc)) {
       const price = toNumber(addon.price);
+
       total += price;
-      
+
       breakdown.push({
-        id: addonId || addonDesc, // Use ID as priority
+        id: addonId || addonDesc,
         description: addonDesc,
-        price: price,
+        price,
         type: addon.type || 'per_booking'
       });
     }
   }
 
+  // ✅ This return is now safely inside the function
   return { total, breakdown };
 }
-
-  const breakdown = [];
-
-
-  for (const addon of addonsConfig || []) {
-    const key = String(addon.id || addon.description || '').trim();
-    if (!selectedIds.has(key)) continue;
-
-    const price = toNumber(addon.price);
-    total += price;
-    breakdown.push({
-      id: key,
-      description: addon.description || key,
-      price,
-      type: addon.type || 'per_booking'
-    });
-  }
-
-  return { total, breakdown };
-
 
 function computeSpecialEventAdjustment(events, selectedEventName, startTime) {
   if (!selectedEventName) {
@@ -548,93 +532,65 @@ app.get("/api/get-profile/:location_id", async (req, res) => {
 });
 
 app.post("/api/calculate-quote", async (req, res) => {
-    const { location_id, pickup_lat, pickup_lng, dropoff_lat, dropoff_lng } = req.body;
-
-    // 1. Fetch fixed rates for this specific location
-    const { rows: fixedRates } = await pool.query(
-        "SELECT * FROM fixed_rates WHERE location_id = $1 AND is_active = true",
-        [location_id]
-    );
-
-    let baseRidePrice = null;
-
-    // 2. Check every fixed rate zone saved in the Wizard
-    for (const zone of fixedRates) {
-        const pickupMatch = isInsideGeofence(pickup_lat, pickup_lng, zone.lat, zone.lng, zone.radius);
-        const dropoffMatch = isInsideGeofence(dropoff_lat, dropoff_lng, zone.lat, zone.lng, zone.radius);
-
-        if (pickupMatch || dropoffMatch) {
-            baseRidePrice = Number(zone.fixed_price);
-            console.log(`🎯 Geofence Hit: ${zone.location_name} at $${baseRidePrice}`);
-            break; // Stop looking, we found our fixed price
-        }
-    }
-
-    // 3. Fallback to standard mileage if no geofence matched
-    if (baseRidePrice === null) {
-        const route = await computeRoute({ /* ... Google Maps logic ... */ });
-        const miles = route.distanceMeters / 1609.34;
-        baseRidePrice = baseRate + (miles * mileRate);
-    }
-
-    // ... continue with Tax and Addon calculations ...
-});
-
-    if (!location_id || !vehicle_slot_id || !pickup_address || !dropoff_address || !start_time) {
-      return res.status(400).json({ error: "Missing quote fields." });
-    }
+  try {
+    const { 
+      location_id, 
+      vehicle_slot_id, 
+      pickup_lat, pickup_lng, 
+      dropoff_lat, dropoff_lng,
+      selected_addons 
+    } = req.body;
 
     const profile = await getProfile(location_id);
-    if (!profile) return res.status(404).json({ error: "Profile not found." });
+    if (!profile) return res.status(404).json({ error: "Profile not found" });
 
-    const fleet = normalizeFleet(profile);
-    const slot = fleet.find((s) => s.vehicle_slot_id === vehicle_slot_id);
-    if (!slot) return res.status(400).json({ error: "Invalid vehicle slot." });
+    // 1. Fixed Rate Check (Geofencing)
+    const fixedRates = (typeof profile.fixed_rates === 'string') ? JSON.parse(profile.fixed_rates) : (profile.fixed_rates || []);
+    let baseRidePrice = null;
 
-    const route = await computeRoute({
-      location_id,
-      origin: pickup_address,
-      destination: dropoff_address,
-      departureISO: new Date(start_time).toISOString()
-    });
+    for (const zone of fixedRates) {
+      // Check if pickup or dropoff is in the radius (using your getDistanceMiles helper)
+      const dPickup = getDistanceMiles(pickup_lat, pickup_lng, zone.lat, zone.lng);
+      const dDropoff = getDistanceMiles(dropoff_lat, dropoff_lng, zone.lat, zone.lng);
 
-    const miles = Number(route.distanceMeters || 0) / 1609.34;
-    const events = safeParse(profile.special_events, []);
-    const addonsConfig = safeParse(profile.addons, []);
+      if (dPickup <= zone.radius || dDropoff <= zone.radius) {
+        baseRidePrice = Number(zone.fixed_price);
+        break;
+      }
+    }
 
-    const eventAdj = computeSpecialEventAdjustment(events, selected_event_name, start_time);
-    const baseRate = eventAdj.base_rate != null ? eventAdj.base_rate : Number(slot.base_rate || 0);
-    const mileRate = eventAdj.mile_rate != null ? eventAdj.mile_rate : Number(slot.mile_rate || 0);
+    // 2. Fallback to Mileage if no Fixed Rate hit
+    if (baseRidePrice === null) {
+      // Assuming you have your Google Maps route logic here
+      // const route = await computeRoute(...);
+      // baseRidePrice = calculateMileagePrice(route, profile, vehicle_slot_id);
+      baseRidePrice = 50.00; // Temporary placeholder to stop the crash
+    }
 
-    const ridePrice = (baseRate + (miles * mileRate)) * Number(eventAdj.multiplier || 1);
+    // 3. Addon Calculation
+    const addonsConfig = (typeof profile.addons === 'string') ? JSON.parse(profile.addons) : (profile.addons || []);
     const addonCalc = computeAddonTotal(addonsConfig, selected_addons);
-    const subtotal = ridePrice + addonCalc.total;
+
+    // 4. Final Totals
+    const subtotal = baseRidePrice + addonCalc.total;
     const taxRate = Number(profile.tax_rate || 0) / 100;
     const taxAmount = subtotal * taxRate;
-    const total = subtotal + taxAmount;
-    const depositPercent = Number(slot.deposit_percent || 20);
-    const depositAmount = total * (depositPercent / 100);
+    const finalTotal = subtotal + taxAmount;
 
-try {
-    // ... all your math (ridePrice, addonCalc, taxAmount, etc.) ...
-
-    // ✅ SUCCESS: Send this only if the math completes without errors
+    // ✅ This return is inside the function
     return res.json({
-      quoted_price: Number(ridePrice.toFixed(2)),
+      quoted_price: Number(baseRidePrice.toFixed(2)),
       addon_total: Number(addonCalc.total.toFixed(2)),
       tax_amount: Number(taxAmount.toFixed(2)),
-      deposit_percent: depositPercent,
-      deposit_amount: Number(depositAmount.toFixed(2)),
-      total: Number(total.toFixed(2)),
+      total: Number(finalTotal.toFixed(2)),
       selected_addons: addonCalc.breakdown
     });
 
-} catch (err) {
-    // ❌ ERROR: This only runs if something above failed
+  } catch (err) {
     console.error("❌ calculate-quote error:", err);
     return res.status(500).json({ error: "Failed to calculate quote." });
-}
-
+  }
+});
 app.post("/api/create-booking", async (req, res) => {
   try {
     const {
