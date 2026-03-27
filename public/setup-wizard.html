@@ -346,21 +346,27 @@ function renderFleet(count, savedFleet = []) {
     const tbody = document.getElementById('fleet-body');
     tbody.innerHTML = ""; // Clear existing rows
     
+    // The list of vehicles you want in the dropdown
+    const VEHICLE_LIST = ["Standard Sedan", "Luxury Sedan", "Standard SUV", "Luxury SUV", "Standard XL SUV", "Luxury XL SUV"];
+
     for (let i = 1; i <= count; i++) {
         const slotId = `${location_id}_vehicle_${i}`;
         const data = savedFleet.find(f => f.vehicle_slot_id === slotId) || {};
         
+        // Generate the <option> tags dynamically
+        const optionsHtml = VEHICLE_LIST.map(v => 
+            `<option value="${v}" ${data.vehicle_type === v ? 'selected' : ''}>${v}</option>`
+        ).join('');
+
         const tr = document.createElement('tr');
         tr.className = "border-b border-slate-50";
         
-        // This is the JS version of the HTML snippet you provided:
         tr.innerHTML = `
             <td class="py-4 font-mono text-[9px] text-slate-400 font-bold">${slotId}</td>
             <td class="py-2">
                 <select class="v-type input-mini font-bold">
-                    <option value="Luxury Sedan" ${data.vehicle_type === 'Luxury Sedan' ? 'selected' : ''}>Luxury Sedan</option>
-                    <option value="SUV XL" ${data.vehicle_type === 'SUV XL' ? 'selected' : ''}>SUV XL</option>
-                    </select>
+                    ${optionsHtml}
+                </select>
             </td>
             <td class="py-2 px-1"><input type="number" class="v-base input-mini" value="${data.base_rate || 75}"></td>
             <td class="py-2 px-1"><input type="number" step="0.1" class="v-mile input-mini" value="${data.mile_rate || 3.5}"></td>
