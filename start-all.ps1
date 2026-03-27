@@ -32,7 +32,7 @@ $cleanup = {
 # -----------------------
 # Function: Ensure ngrok is installed
 # -----------------------
-function Ensure-Ngrok {
+function Ngrok {
     $ngrokPath = "$PSScriptRoot\ngrok.exe"
     if (-Not (Test-Path $ngrokPath)) {
         Write-Host "ngrok not found. Downloading latest version..."
@@ -129,7 +129,7 @@ $adminUrl = Start-NgrokTunnel -name "admin" -port $adminServer.Port
 # -----------------------
 # Self-healing tunnels
 # -----------------------
-function Monitor-NgrokTunnel($name, $port) {
+function Ngrok Tunnel($name, $port) {
     while ($true) {
         Start-Sleep -Seconds 5
         try {

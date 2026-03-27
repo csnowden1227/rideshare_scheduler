@@ -615,11 +615,7 @@ app.post("/api/calculate-quote", async (req, res) => {
     const depositPercent = Number(slot.deposit_percent || 20);
     const depositAmount = total * (depositPercent / 100);
 
-try {
-    // ... all your math (ridePrice, addonCalc, taxAmount, etc.) ...
-
-    // ✅ SUCCESS: Send this only if the math completes without errors
-    return res.json({
+    res.json({
       quoted_price: Number(ridePrice.toFixed(2)),
       addon_total: Number(addonCalc.total.toFixed(2)),
       tax_amount: Number(taxAmount.toFixed(2)),
@@ -628,12 +624,9 @@ try {
       total: Number(total.toFixed(2)),
       selected_addons: addonCalc.breakdown
     });
-
-} catch (err) {
-    // ❌ ERROR: This only runs if something above failed
     console.error("❌ calculate-quote error:", err);
-    return res.status(500).json({ error: "Failed to calculate quote." });
-}
+    res.status(500).json({ error: "Failed to calculate quote." });
+
 
 app.post("/api/create-booking", async (req, res) => {
   try {
