@@ -485,7 +485,6 @@ async function saveConfigHandler(req, res) {
 app.post('/api/save-config', saveConfigHandler);
 
 // 1. Ensure CORS is enabled at the top of your file
-const cors = require('cors');
 app.use(cors());
 app.use(express.json()); // Essential to read the "payload"
 
