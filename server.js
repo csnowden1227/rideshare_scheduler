@@ -483,6 +483,49 @@ async function saveConfigHandler(req, res) {
 }
 
 app.post('/api/save-config', saveConfigHandler);
+
+// 1. Ensure CORS is enabled at the top of your file
+const cors = require('cors');
+app.use(cors());
+app.use(express.json()); // Essential to read the "payload"
+
+// 2. The Route that matches your Wizard exactly
+app.post('/api/save-config', async (req, res) => {
+    try {
+        const config = req.body;
+        const locationId = config.location_id;
+
+        if (!locationId) {
+            return res.status(400).json({ error: "Missing Location ID" });
+        }
+
+        console.log(`🚀 Saving configuration for Location: ${locationId}`);
+
+        // 3. Save to Database (Example using Supabase)
+        const { data, error } = await supabase
+            .from('profiles')
+            .upsert({ 
+                id: locationId, 
+                location_id: locationId,
+                business_name: config.business_name,
+                crm_webhook_url: config.crm_webhook_url,
+                maps_api_key: config.maps_api_key,
+                tax_rate: config.tax_rate,
+                fleet: config.fleet, // JSONB column
+                addons: config.addons, // JSONB column
+                updated_at: new Date()
+            });
+
+        if (error) throw error;
+
+        res.status(200).json({ success: true, message: "Profile Saved!" });
+
+    } catch (err) {
+        console.error("❌ Database Error:", err.message);
+        res.status(500).json({ error: "Internal Server Error", details: err.message });
+    }
+});
+
 app.post('/api/update-profile-full', saveConfigHandler);
 
 app.get("/api/get-profile/:location_id", async (req, res) => {
