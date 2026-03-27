@@ -486,6 +486,76 @@ async function saveConfigHandler(req, res) {
   }
 }
 
+app.post('/api/save-config', async (req, res) => {
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN'); // Start transaction for data integrity
+
+        const { 
+            location_id, business_name, logo_url, crm_webhook_url, 
+            maps_api_key, tax_rate, fleet, events, addons, 
+            peak_windows, fixed_rates, service_lat, service_lng, service_radius 
+        } = req.body;
+
+        // 1. SAVE TO PROFILES TABLE
+        await client.query(
+            `INSERT INTO profiles (
+                location_id, business_name, logo_url, crm_webhook_url, 
+                maps_api_key, tax_rate, fleet, special_events, addons, 
+                peak_windows, service_lat, service_lng, service_radius
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+            ON CONFLICT (location_id) 
+            DO UPDATE SET 
+                business_name = EXCLUDED.business_name,
+                logo_url = EXCLUDED.logo_url,
+                crm_webhook_url = EXCLUDED.crm_webhook_url,
+                maps_api_key = EXCLUDED.maps_api_key,
+                tax_rate = EXCLUDED.tax_rate,
+                fleet = EXCLUDED.fleet,
+                special_events = EXCLUDED.special_events,
+                addons = EXCLUDED.addons,
+                peak_windows = EXCLUDED.peak_windows,
+                service_lat = EXCLUDED.service_lat,
+                service_lng = EXCLUDED.service_lng,
+                service_radius = EXCLUDED.service_radius`,
+            [
+                location_id, business_name, logo_url, crm_webhook_url, 
+                maps_api_key, tax_rate, 
+                JSON.stringify(fleet), 
+                JSON.stringify(events), 
+                JSON.stringify(addons), 
+                JSON.stringify(peak_windows),
+                service_lat, service_lng, service_radius
+            ]
+        );
+
+        // 2. SAVE TO FIXED_RATES TABLE (Separate table sync)
+        // First, clear existing rates for this location
+        await client.query("DELETE FROM fixed_rates WHERE location_id = $1", [location_id]);
+        
+        // Then, insert the new ones from your array
+        if (fixed_rates && fixed_rates.length > 0) {
+            for (const rate of fixed_rates) {
+                await client.query(
+                    `INSERT INTO fixed_rates (location_id, location_name, lat, lng, radius, fixed_price)
+                     VALUES ($1, $2, $3, $4, $5, $6)`,
+                    [location_id, rate.location_name, rate.lat, rate.lng, rate.radius, rate.fixed_price]
+                );
+            }
+        }
+
+        await client.query('COMMIT');
+        res.json({ success: true });
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error("❌ FULL SAVE ERROR:", err.message);
+        res.status(500).json({ error: err.message });
+    } finally {
+        client.release();
+    }
+});
+
 // Map both potential frontend calls to the same handler
 app.post('/api/save-config', saveConfigHandler);
 app.post('/api/update-profile-full', saveConfigHandler);
