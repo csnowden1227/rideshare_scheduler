@@ -482,6 +482,8 @@ async function saveConfigHandler(req, res) {
   }
 }
 
+// Map both potential frontend calls to the same handler
+app.post('/api/save-config', saveConfigHandler);
 app.post('/api/update-profile-full', saveConfigHandler);
 
 app.get("/api/get-profile/:location_id", async (req, res) => {
@@ -1084,7 +1086,6 @@ const startListener = async () => {
     setTimeout(startListener, 5000);
   }
 };
-
 /*****************************************************
  5️⃣ START SERVER
 *****************************************************/
@@ -1092,4 +1093,4 @@ const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
   startListener();
-});
+}); // <--- This was the error. Ensure it looks exactly like this.
