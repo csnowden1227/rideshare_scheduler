@@ -500,7 +500,7 @@ async function saveConfigHandler(req, res) {
 app.post('/api/save-config', async (req, res) => {
     const client = await pool.connect();
     try {
-        await client.query('BEGIN'); // Start transaction for data integrity
+        await client.query('BEGIN');
 
         const { 
             location_id, business_name, logo_url, crm_webhook_url, 
@@ -508,7 +508,7 @@ app.post('/api/save-config', async (req, res) => {
             peak_windows, fixed_rates, service_lat, service_lng, service_radius 
         } = req.body;
 
-        // 1. SAVE TO PROFILES TABLE
+        // 1. Update the Profiles Table (Handles all JSON logic)
         await client.query(
             `INSERT INTO profiles (
                 location_id, business_name, logo_url, crm_webhook_url, 
@@ -533,19 +533,18 @@ app.post('/api/save-config', async (req, res) => {
             [
                 location_id, business_name, logo_url, crm_webhook_url, 
                 maps_api_key, tax_rate, 
-                JSON.stringify(fleet), 
-                JSON.stringify(events), 
-                JSON.stringify(addons), 
-                JSON.stringify(peak_windows),
-                service_lat, service_lng, service_radius
+                JSON.stringify(fleet || []), 
+                JSON.stringify(events || []), 
+                JSON.stringify(addons || []), 
+                JSON.stringify(peak_windows || []),
+                service_lat || 0, service_lng || 0, service_radius || 50
             ]
         );
 
-        // 2. SAVE TO FIXED_RATES TABLE (Separate table sync)
-        // First, clear existing rates for this location
+        // 2. Sync Fixed Rates Table
+        // We delete old ones and insert new ones to keep the list clean
         await client.query("DELETE FROM fixed_rates WHERE location_id = $1", [location_id]);
         
-        // Then, insert the new ones from your array
         if (fixed_rates && fixed_rates.length > 0) {
             for (const rate of fixed_rates) {
                 await client.query(
@@ -557,16 +556,17 @@ app.post('/api/save-config', async (req, res) => {
         }
 
         await client.query('COMMIT');
+        console.log(`✅ Config saved for location: ${location_id}`);
         res.json({ success: true });
+
     } catch (err) {
         await client.query('ROLLBACK');
-        console.error("❌ FULL SAVE ERROR:", err.message);
+        console.error("❌ DATABASE SAVE ERROR:", err.message);
         res.status(500).json({ error: err.message });
     } finally {
         client.release();
     }
 });
-
 // Map both potential frontend calls to the same handler
 app.post('/api/save-config', saveConfigHandler);
 app.post('/api/update-profile-full', saveConfigHandler);
