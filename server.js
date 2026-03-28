@@ -652,6 +652,42 @@ async function triggerCrmWebhook(location_id, booking_id) {
     }
 };
   
+// --- GOOGLE PLACES AUTOCOMPLETE ---
+window.initAutocomplete = function() {
+    const input = document.getElementById('map-search');
+    if (!input) return;
+
+    const autocomplete = new google.maps.places.Autocomplete(input);
+    
+    // Bind the search bar to the map
+    autocomplete.addListener('place_changed', function() {
+        const place = autocomplete.getPlace();
+        
+        if (!place.geometry) {
+            console.log("No details available for input: '" + place.name + "'");
+            return;
+        }
+
+        const lat = place.geometry.location.lat();
+        const lng = place.geometry.location.lng();
+
+        // 1. Update the Hidden Inputs (Crucial for the Sync Button!)
+        document.getElementById('svc_lat').value = lat;
+        document.getElementById('svc_lng').value = lng;
+
+        // 2. Center the Map and Marker
+        if (map) {
+            map.setCenter({ lat, lng });
+            map.setZoom(11);
+            marker.setPosition({ lat, lng });
+            serviceCircle.setCenter({ lat, lng });
+        }
+        
+        console.log(`📍 Map moved to: ${lat}, ${lng}`);
+    });
+};
+
+// Call this inside your existing window.onload or startMyWizard
 
     // 5. Send to GHL
     const resp = await fetch(p.crm_webhook_url, {
