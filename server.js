@@ -15,6 +15,7 @@ const { Pool, Client } = pkg;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 
+
 /*****************************************************
  1️⃣ APP / DB CONFIG
 *****************************************************/
@@ -22,6 +23,11 @@ const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false }
 });
+
+const toNumber = (v) => {
+    const n = parseFloat(v);
+    return isNaN(n) ? 0 : n;
+};
 
 const googleMapsClient = new GoogleMapsClient({});
 const CRM_WEBHOOK_URL =
@@ -442,19 +448,23 @@ if (await tableExists('fixed_rates')) {
     await client.query(`DELETE FROM fixed_rates WHERE location_id = $1`, [location_id]);
 
     // 2. SAVE NEW FIXED RATES
-    if (fixed_rates && Array.isArray(fixed_rates) && fixed_rates.length > 0) {
-        for (const route of fixed_rates) {
-            await client.query(
-                `INSERT INTO fixed_rates (location_id, location_name, lat, lng, radius, fixed_price)
-                 VALUES ($1, $2, $3, $4, $5, $6)`,
-                [
-                    location_id, 
-                    route.location_name || null, 
-                    route.lat ?? null, 
-                    route.lng ?? null, 
-                    route.radius ?? null, 
-                    parseFloat(route.fixed_price) || 0
-                ]
+if (fixed_rates && Array.isArray(fixed_rates)) {
+    // 1. Clear old rates for this location
+    await client.query("DELETE FROM fixed_rates WHERE location_id = $1", [location_id]);
+
+    // 2. Insert new rates one by one
+    for (const route of fixed_rates) {
+        await client.query(
+            `INSERT INTO fixed_rates (location_id, location_name, lat, lng, radius, fixed_price)
+             VALUES ($1, $2, $3, $4, $5, $6)`,
+            [
+                location_id, 
+                route.location_name, 
+                route.lat || 0, 
+                route.lng || 0, 
+                route.radius || 0, 
+                route.fixed_price || 0
+            ]
             );
         }
         console.log(`✅ Synced ${fixed_rates.length} fixed rate zones for ${location_id}`);

@@ -464,10 +464,11 @@ async function saveToBackend() {
     const taxRate = document.getElementById('tax_rate').value;
     const fleetRows = document.querySelectorAll('#fleet-body tr');
 
-    if (!mapsKey || !webhookUrl || !taxRate || fleetRows.length === 0) {
-        alert("❌ Error: Credentials, Tax, and at least one Fleet Slot are REQUIRED.");
-        return;
-    }
+
+if (!mapsKey || !webhookUrl || !taxRate || fleetRows.length === 0) {
+    alert("❌ Error: Credentials, Tax, and at least one Fleet Slot are REQUIRED.");
+    return;
+}
 
     const payload = {
         location_id: location_id,
