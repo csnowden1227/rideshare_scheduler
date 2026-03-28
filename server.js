@@ -74,7 +74,7 @@ app.use(express.static(path.join(__dirname, "public")));
 app.use((req, res, next) => {
   res.setHeader(
     "Content-Security-Policy",
-    "frame-ancestors 'self' https://app.crmonesource.com https://*.gohighlevel.com https://*.msgsndr.com https://*.leadconnectorhq.com;"
+    "frame-ancestors 'self' https://app.crmonesource.com https://*.msgsndr.com https://*.leadconnectorhq.com;"
   );
   next();
 });
@@ -371,7 +371,7 @@ app.get("/api/get-profile/:location_id", async (req, res) => {
       crm_webhook_url: profile.crm_webhook_url || "",
       tax_rate: profile.tax_rate || 0,
       fleet: safeParse(profile.fleet),
-      events: safeParse(profile.events),
+      events: safeParse(profile.events || profile.special_events || []),
       addons: safeParse(profile.addons),
       peak_windows: safeParse(profile.peak_windows),
       fixed_rates: ratesRes.rows,
@@ -508,7 +508,7 @@ async function triggerCrmWebhook(location_id, booking_id) {
       calendar_id: b.calendar_id || "",
       businessName: p?.business_name || "",
       
-      // We spread the flags here so GHL sees individual "True/False" fields
+      // We spread the flags here so crm sees individual "True/False" fields
       ...vehicleTypeFlags, 
 
       customer: {
@@ -524,7 +524,7 @@ async function triggerCrmWebhook(location_id, booking_id) {
         vehicleType: vehicleTypeStr, // Added this for easy branching
         pickup: b.pickup_address,
         dropoff: b.dropoff_address,
-        // Using .toISOString() ensures GHL can read the date for the "Create Appointment" step
+        // Using .toISOString() ensures crm can read the date for the "Create Appointment" step
         startTime: b.start_time ? new Date(b.start_time).toISOString() : null,
         endTime: b.end_time ? new Date(b.end_time).toISOString() : null,
         selectedEventName: b.selected_event_name || null
