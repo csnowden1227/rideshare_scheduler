@@ -156,7 +156,7 @@
                             <th>Event Name</th><th>Date</th><th>Base ($)</th><th>Mile ($)</th><th>Mult</th><th></th>
                         </tr>
                     </thead>
-                    <tbody id="event-body"></tbody>
+                    <tbody id="events-body"></tbody>
                 </table>
             </div>
 
@@ -386,7 +386,7 @@ function addPeakRow(data = {}) {
 
 function addEventRow(data = {}) {
     const tr = document.createElement('tr');
-    tr.className = "event-row border-b border-slate-50";
+    tr.className = "events-row border-b border-slate-50";
     tr.innerHTML = `
         <td class="py-3"><input type="text" class="e-name input-mini" value="${data.event_name || ''}"></td>
         <td class="py-3"><input type="date" class="e-date input-mini" value="${data.event_date || ''}"></td>
@@ -395,7 +395,7 @@ function addEventRow(data = {}) {
         <td class="py-3"><input type="number" step="0.1" class="e-mult input-mini" value="${data.multiplier || 2.0}"></td>
         <td><button onclick="this.closest('tr').remove()" class="text-red-400">&times;</button></td>
     `;
-    document.getElementById('event-body').appendChild(tr);
+    document.getElementById('events-body').appendChild(tr);
 }
 
 function addAddonRow(data = {}) {
@@ -504,7 +504,7 @@ if (!mapsKey || !webhookUrl || !taxRate || fleetRows.length === 0) {
             fixed_price: parseFloat(r.querySelector('.r-price').value) || 0
         })),
 
-        events: Array.from(document.querySelectorAll('.event-row')).map(e => ({
+        events: Array.from(document.querySelectorAll('.events-row')).map(e => ({
             event_name: e.querySelector('.e-name').value,
             event_date: e.querySelector('.e-date').value,
             base_rate: parseFloat(e.querySelector('.e-base').value),

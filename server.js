@@ -188,27 +188,27 @@ function computeAddonTotal(addonsConfig, selectedAddons) {
   return { total, breakdown };
 }
 
-function computeSpecialEventAdjustment(events, selectedEventName, startTime) {
+function computEventsAdjustment(events, selectedEventName, startTime) {
   if (!selectedEventName) {
-    return { multiplier: 1, event: null, base_rate: null, mile_rate: null };
+    return { multiplier: 1, events: null, base_rate: null, mile_rate: null };
   }
 
   const startDate = String(startTime || '').slice(0, 10);
-  const event = (events || []).find(
+  const events = (events || []).find(
     (e) =>
       String(e.event_name || '').trim() === String(selectedEventName).trim() &&
       (!e.event_date || e.event_date === startDate)
   );
 
-  if (!event) {
-    return { multiplier: 1, event: null, base_rate: null, mile_rate: null };
+  if (events) {
+    return { multiplier: 1, events: null, base_rate: null, mile_rate: null };
   }
 
   return {
-    multiplier: asNum(event.multiplier, 1),
-    event,
-    base_rate: event.base_rate != null ? asNum(event.base_rate) : null,
-    mile_rate: event.mile_rate != null ? asNum(event.mile_rate) : null
+    multiplier: asNum(events.multiplier, 1),
+    events,
+    base_rate: events.base_rate != null ? asNum(events.base_rate) : null,
+    mile_rate: events.mile_rate != null ? asNum(events.mile_rate) : null
   };
 }
 
