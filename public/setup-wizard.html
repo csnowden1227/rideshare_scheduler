@@ -184,37 +184,28 @@
 const urlParams = new URLSearchParams(window.location.search);
 const location_id = urlParams.get('location_id') || 'VXE0UY17p7wnxdZ3sOLc';
 const BACKEND_URL = "https://rideshare-scheduler-axx6.onrender.com";
-let map, circle, marker, autocomplete;
-let routeCircles = []; 
-const VEHICLE_LIST = ["Standard Sedan", "Luxury Sedan", "Standard SUV", "Luxury SUV", "Standard XL SUV", "Luxury XL SUV"];
+// 1. Initialize Global Variables at the top
+let map, marker, circle, autocomplete;
+let routeCircles = [];
 
-let logoBase64 = "";
-function previewLogo(input) {
-    const file = input.files && input.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = function(e) {
-        logoBase64 = e.target.result;
-        const img = document.getElementById('logo-preview');
-        if (img) {
-            img.src = logoBase64;
-            img.classList.remove('hidden');
-        }
-    };
-    reader.readAsDataURL(file);
-}
+// 2. Standardize the function name to initServiceMap
+function initServiceMap(lat = 30.4515, lng = -91.1871, radiusMiles = 50) {
+    const center = { lat: parseFloat(lat), lng: parseFloat(lng) };
+    
+    const mapElement = document.getElementById("map");
+    if (!mapElement) return;
 
-
-// --- MAP LOGIC ---
-function initServiceMap(lat = 34.0522, lng = -118.2437, radiusMiles = 90) {
-    const center = { lat, lng };
-    map = new google.maps.Map(document.getElementById("map"), {
-        zoom: 8,
+    map = new google.maps.Map(mapElement, {
+        zoom: 9,
         center: center,
         styles: [{ featureType: "poi", elementType: "labels", stylers: [{ visibility: "off" }] }]
     });
 
-    marker = new google.maps.Marker({ position: center, map: map, draggable: true });
+    marker = new google.maps.Marker({ 
+        position: center, 
+        map: map, 
+        draggable: true 
+    });
     
     circle = new google.maps.Circle({
         map: map,
@@ -229,85 +220,45 @@ function initServiceMap(lat = 34.0522, lng = -118.2437, radiusMiles = 90) {
     });
 
     const updateFields = () => {
-        const center = circle.getCenter();
+        const currentCenter = circle.getCenter();
         const radMeters = circle.getRadius();
-        document.getElementById('svc_lat').value = center.lat().toFixed(6);
-        document.getElementById('svc_lng').value = center.lng().toFixed(6);
-        document.getElementById('svc_radius').value = Math.round(radMeters / 1609.34);
-        marker.setPosition(center);
+        
+        // Write to hidden inputs so the Sync button can see them
+        const latInput = document.getElementById('svc_lat');
+        const lngInput = document.getElementById('svc_lng');
+        const radInput = document.getElementById('svc_radius');
+        
+        if (latInput) latInput.value = currentCenter.lat().toFixed(6);
+        if (lngInput) lngInput.value = currentCenter.lng().toFixed(6);
+        if (radInput) radInput.value = Math.round(radMeters / 1609.34);
+        
+        marker.setPosition(currentCenter);
     };
 
+    // Listeners for changes
     circle.addListener('center_changed', updateFields);
     circle.addListener('radius_changed', updateFields);
     marker.addListener('drag', () => circle.setCenter(marker.getPosition()));
 
-
-    
+    // Search Box Logic
     const searchInput = document.getElementById('map-search');
-    autocomplete = new google.maps.places.Autocomplete(searchInput);
-    autocomplete.addListener('place_changed', () => {
-        const place = autocomplete.getPlace();
-        if (place.geometry) {
-            map.setCenter(place.geometry.location);
-            circle.setCenter(place.geometry.location);
-            marker.setPosition(place.geometry.location);
-            updateFields();
-        }
-    });
+    if (searchInput) {
+        autocomplete = new google.maps.places.Autocomplete(searchInput);
+        autocomplete.addListener('place_changed', () => {
+            const place = autocomplete.getPlace();
+            if (place.geometry) {
+                map.setCenter(place.geometry.location);
+                circle.setCenter(place.geometry.location);
+                marker.setPosition(place.geometry.location);
+                updateFields();
+            }
+        });
+    }
 
     updateFields();
 }
 
-function updateCircleFromInput() {
-    const r = parseFloat(document.getElementById('svc_radius').value) || 90;
-    circle.setRadius(r * 1609.34);
-}
-
-function useCurrentLocation() {
-    if (navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition(p => {
-            const pos = { lat: p.coords.latitude, lng: p.coords.longitude };
-            map.setCenter(pos);
-            circle.setCenter(pos);
-            marker.setPosition(pos);
-        });
-    }
-}
-
-function confirmLocation() {
-    const lockBtn = document.getElementById('lock-btn');
-    const syncBtn = document.getElementById('save-btn'); // Make sure your button has id="save-btn"
-syncBtn.disabled = false;
-syncBtn.classList.remove('disabled-btn');
-    lockBtn.innerText = "✅ LOCATION LOCKED";
-    lockBtn.classList.add('bg-slate-800');
-    syncBtn.disabled = false;
-    syncBtn.classList.remove('disabled-btn');
-    alert("Location validated. You can now Sync to Cloud.");
-}
-
-// --- FIXED ROUTE LOGIC (WITH OPTION A MAP SYNC) ---
-function addRouteRow(data = {}) {
-    const tbody = document.getElementById('route-body');
-    const tr = document.createElement('tr');
-    tr.className = "route-row border-b border-slate-50";
-    
-    tr.innerHTML = `
-        <td class="p-2"><input type="text" class="r-name w-full text-xs p-1 border rounded" value="${data.location_name || ''}" placeholder="e.g. LAX Terminal"></td>
-        <td class="p-2"><input type="number" class="r-lat w-full text-xs p-1 border rounded" step="any" value="${data.lat || ''}" oninput="updateRouteMap()"></td>
-        <td class="p-2"><input type="number" class="r-lng w-full text-xs p-1 border rounded" step="any" value="${data.lng || ''}" oninput="updateRouteMap()"></td>
-        <td class="p-2"><input type="number" class="r-rad w-full text-xs p-1 border rounded" value="${data.radius || 2}" oninput="updateRouteMap()"></td>
-        <td class="p-2"><input type="number" class="r-price w-full text-xs p-1 border rounded" value="${data.fixed_price || ''}" placeholder="150"></td>
-        <td class="p-2 text-right">
-            <button onclick="this.closest('tr').remove(); updateRouteMap();" class="text-red-400">×</button>
-        </td>
-    `;
-    tbody.appendChild(tr);
-    updateRouteMap();
-}
-
-
-
+// 3. Fix the Location Button
 window.useCurrentLocation = function() {
     console.log("📍 Attempting to get current location...");
     if (navigator.geolocation) {
@@ -317,15 +268,15 @@ window.useCurrentLocation = function() {
                 const lng = position.coords.longitude;
                 console.log(`✅ Location found: ${lat}, ${lng}`);
                 
-                // Update your map and hidden inputs
-                if (window.initMyWizardMap) {
-                    window.initMyWizardMap(lat, lng);
+                // If map already exists, move it. If not, create it.
+                if (map) {
+                    const pos = { lat, lng };
+                    map.setCenter(pos);
+                    circle.setCenter(pos);
+                    marker.setPosition(pos);
+                } else {
+                    initServiceMap(lat, lng);
                 }
-                
-                // Update hidden inputs so the Sync button can find them
-                document.getElementById('svc_lat').value = lat;
-                document.getElementById('svc_lng').value = lng;
-                
                 showToast("📍 Location Updated!", "success");
             },
             (error) => {
