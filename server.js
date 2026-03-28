@@ -367,7 +367,7 @@ app.get("/api/get-profile/:location_id", async (req, res) => {
       crm_webhook_url: profile.crm_webhook_url || "",
       tax_rate: profile.tax_rate || 0,
       fleet: safeParse(profile.fleet),
-      events: safeParse(profile.special_events),
+      events: safeParse(profile.events),
       addons: safeParse(profile.addons),
       peak_windows: safeParse(profile.peak_windows),
       fixed_rates: ratesRes.rows,
@@ -742,7 +742,7 @@ app.post('/api/save-config', async (req, res) => {
         await client.query(
             `INSERT INTO profiles (
                 location_id, business_name, logo_url, crm_webhook_url, 
-                maps_api_key, tax_rate, fleet, special_events, addons, 
+                maps_api_key, tax_rate, fleet, events, addons, 
                 peak_windows, service_lat, service_lng, service_radius
             )
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
@@ -754,7 +754,7 @@ app.post('/api/save-config', async (req, res) => {
                 maps_api_key = EXCLUDED.maps_api_key,
                 tax_rate = EXCLUDED.tax_rate,
                 fleet = EXCLUDED.fleet,
-                special_events = EXCLUDED.special_events,
+                events = EXCLUDED.events,
                 addons = EXCLUDED.addons,
                 peak_windows = EXCLUDED.peak_windows,
                 service_lat = EXCLUDED.service_lat,
