@@ -286,12 +286,7 @@ function useCurrentLocation() {
 }
 
 function confirmLocation() {
-    const lockBtn = document.getElementById('lock-btn');
-    const syncBtn = document.getElementById('save-btn'); // Make sure your button has id="save-btn"
-syncBtn.disabled = false;
-syncBtn.classList.remove('disabled-btn');
-    lockBtn.innerText = "✅ LOCATION LOCKED";
-    lockBtn.classList.add('bg-slate-800');
+    const syncBtn = document.getElementById('save-btn');
     syncBtn.disabled = false;
     syncBtn.classList.remove('disabled-btn');
     alert("Location validated. You can now Sync to Cloud.");
