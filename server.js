@@ -732,7 +732,7 @@ app.get("/test-page", (_req, res) => {
 app.post('/api/save-config', async (req, res) => {
     const client = await pool.connect();
     try {
-        await client.query('BEGIN');
+        await client.query('BEGIN'); // Starts a secure transaction
 
         const { 
             location_id, business_name, logo_url, crm_webhook_url, 
@@ -740,7 +740,9 @@ app.post('/api/save-config', async (req, res) => {
             peak_windows, fixed_rates, service_lat, service_lng, service_radius 
         } = req.body;
 
-        // 1. Update the Profiles Table (Handles all JSON logic)
+        if (!location_id) throw new Error("location_id is required");
+
+        // 1. UPDATE PROFILE TABLE
         await client.query(
             `INSERT INTO profiles (
                 location_id, business_name, logo_url, crm_webhook_url, 
@@ -764,39 +766,48 @@ app.post('/api/save-config', async (req, res) => {
                 service_radius = EXCLUDED.service_radius`,
             [
                 location_id, business_name, logo_url, crm_webhook_url, 
-                maps_api_key, tax_rate, 
+                maps_api_key, parseFloat(tax_rate) || 0, 
                 JSON.stringify(fleet || []), 
                 JSON.stringify(events || []), 
                 JSON.stringify(addons || []), 
                 JSON.stringify(peak_windows || []),
-                service_lat || 0, service_lng || 0, service_radius || 50
+                parseFloat(service_lat) || 0, 
+                parseFloat(service_lng) || 0, 
+                parseFloat(service_radius) || 50
             ]
         );
 
-        // 2. Sync Fixed Rates Table
-        // We delete old ones and insert new ones to keep the list clean
+        // 2. UPDATE FIXED RATES (The Clean Way)
+        // Delete once, then loop through the array
         await client.query("DELETE FROM fixed_rates WHERE location_id = $1", [location_id]);
         
-        if (fixed_rates && fixed_rates.length > 0) {
-            for (const rate of fixed_rates) {
+        if (Array.isArray(fixed_rates) && fixed_rates.length > 0) {
+            for (const route of fixed_rates) {
                 await client.query(
                     `INSERT INTO fixed_rates (location_id, location_name, lat, lng, radius, fixed_price)
                      VALUES ($1, $2, $3, $4, $5, $6)`,
-                    [location_id, rate.location_name, rate.lat, rate.lng, rate.radius, rate.fixed_price]
+                    [
+                        location_id, 
+                        route.location_name || 'Unnamed Zone', 
+                        parseFloat(route.lat) || 0, 
+                        parseFloat(route.lng) || 0, 
+                        parseFloat(route.radius) || 0, 
+                        parseFloat(route.fixed_price) || 0
+                    ]
                 );
             }
         }
 
-        await client.query('COMMIT');
-        console.log(`✅ Config saved for location: ${location_id}`);
+        await client.query('COMMIT'); // Saves everything at once
+        console.log(`🚀 Sync Complete for: ${location_id}`);
         res.json({ success: true });
 
     } catch (err) {
-        await client.query('ROLLBACK');
-        console.error("❌ DATABASE SAVE ERROR:", err.message);
+        await client.query('ROLLBACK'); // Undoes changes if an error occurs
+        console.error("❌ SERVER ERROR:", err.message);
         res.status(500).json({ error: err.message });
     } finally {
-        client.release();
+        client.release(); // Releases the database connection
     }
 });
 /*****************************************************
