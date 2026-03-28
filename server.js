@@ -67,26 +67,16 @@ app.use((req, res, next) => {
 /*****************************************************
  2️⃣ HELPERS
 *****************************************************/
-function safeParse(data) {
-    if (!data) return [];
+function safeParse(data, fallback = []) {
+    if (data == null) return fallback;
     if (typeof data === 'object') return data; // If Postgres already parsed it
     try {
-        return JSON.parse(data);
+        return typeof data === 'string' ? JSON.parse(data) : data;
     } catch (e) {
-        return [];
+        console.error("JSON Parse Error:", e);
+        return fallback;
     }
 }
-
-function safeParse(value, fallback = []) {
-  try {
-    if (value == null) return fallback;
-    if (typeof value === "string") return JSON.parse(value);
-    return value;
-  } catch {
-    return fallback;
-  }
-}
-
 
 function isInsideGeofence(userLat, userLng, fenceLat, fenceLng, radiusMiles) {
     const R = 3958.8; // Earth's radius in miles
