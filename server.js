@@ -361,7 +361,6 @@ app.get("/api/get-profile/:location_id", async (req, res) => {
     res.json({
       location_id: profile.location_id,
       business_name: profile.business_name || "",
-      logo_url: profile.logo_url || "",
       plan_name: profile.plan_name || "Starter",
       maps_api_key: profile.maps_api_key || "",
       crm_webhook_url: profile.crm_webhook_url || "",
@@ -731,7 +730,7 @@ app.post('/api/save-config', async (req, res) => {
         await client.query('BEGIN'); // Starts a secure transaction
 
         const { 
-            location_id, business_name, logo_url, crm_webhook_url, 
+            location_id, business_name, crm_webhook_url, 
             maps_api_key, tax_rate, fleet, events, addons, 
             peak_windows, fixed_rates, service_lat, service_lng, service_radius 
         } = req.body;
@@ -741,7 +740,7 @@ app.post('/api/save-config', async (req, res) => {
         // 1. UPDATE PROFILE TABLE
         await client.query(
             `INSERT INTO profiles (
-                location_id, business_name, logo_url, crm_webhook_url, 
+                location_id, business_name, crm_webhook_url, 
                 maps_api_key, tax_rate, fleet, events, addons, 
                 peak_windows, service_lat, service_lng, service_radius
             )
@@ -749,7 +748,6 @@ app.post('/api/save-config', async (req, res) => {
             ON CONFLICT (location_id) 
             DO UPDATE SET 
                 business_name = EXCLUDED.business_name,
-                logo_url = EXCLUDED.logo_url,
                 crm_webhook_url = EXCLUDED.crm_webhook_url,
                 maps_api_key = EXCLUDED.maps_api_key,
                 tax_rate = EXCLUDED.tax_rate,
@@ -761,7 +759,7 @@ app.post('/api/save-config', async (req, res) => {
                 service_lng = EXCLUDED.service_lng,
                 service_radius = EXCLUDED.service_radius`,
             [
-                location_id, business_name, logo_url, crm_webhook_url, 
+                location_id, business_name, crm_webhook_url, 
                 maps_api_key, parseFloat(tax_rate) || 0, 
                 JSON.stringify(fleet || []), 
                 JSON.stringify(events || []), 

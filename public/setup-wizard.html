@@ -473,7 +473,6 @@ if (!mapsKey || !webhookUrl || !taxRate || fleetRows.length === 0) {
     const payload = {
         location_id: location_id,
         business_name: document.getElementById('business_name').value.trim(),
-        logo_url: logoBase64,
         crm_webhook_url: webhookUrl,
         maps_api_key: mapsKey,
         tax_rate: parseFloat(taxRate) || 0,
