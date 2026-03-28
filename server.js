@@ -11,6 +11,8 @@ import { Client as GoogleMapsClient } from "@googlemaps/google-maps-services-js"
 import path from 'path';
 import { fileURLToPath } from 'url';
 
+
+
 // 1. EXTRACT POOL FROM THE PACKAGE (Crucial Step)
 const { Pool, Client } = pkg;
 
@@ -345,43 +347,54 @@ app.get('/api/health', (_req, res) => {
 app.get("/api/get-profile/:location_id", async (req, res) => {
   const { location_id } = req.params;
   let client;
+  
   try {
     client = await pool.connect();
 
+    // 1. Get Profile Data
     const profileRes = await client.query(
       "SELECT * FROM profiles WHERE location_id = $1 LIMIT 1",
       [location_id]
     );
-    const ratesRes = await client.query(
-      "SELECT * FROM fixed_rates WHERE location_id = $1",
-      [location_id]
-    );
 
-    if (!profileRes.rows.length) {
+    // 2. Get Rates Data (Safety Wrapped)
+    let rates = [];
+    try {
+      const ratesRes = await client.query("SELECT * FROM fixed_rates WHERE location_id = $1", [location_id]);
+      rates = ratesRes.rows;
+    } catch (e) {
+      console.log("⚠️ fixed_rates table missing, defaulting to empty array.");
+      rates = []; 
+    }
+
+    if (!profileRes.rows || profileRes.rows.length === 0) {
       return res.status(404).json({ error: "Profile not found" });
     }
 
     const profile = profileRes.rows[0];
 
+    // 3. Send cleaned data using your new helpers
     res.json({
       location_id: profile.location_id,
       business_name: profile.business_name || "",
       plan_name: profile.plan_name || "Starter",
       maps_api_key: profile.maps_api_key || "",
       crm_webhook_url: profile.crm_webhook_url || "",
-      tax_rate: profile.tax_rate || 0,
+      tax_rate: toNumber(profile.tax_rate),
+      per_mile_rate: toNumber(profile.per_mile_rate), // Uses the column we just fixed!
       fleet: safeParse(profile.fleet),
-      events: safeParse(profile.events || profile.special_events || []),
+      events: safeParse(profile.events || profile.special_events),
       addons: safeParse(profile.addons),
       peak_windows: safeParse(profile.peak_windows),
-      fixed_rates: ratesRes.rows,
-      service_lat: profile.service_lat,
-      service_lng: profile.service_lng,
-      service_radius: profile.service_radius
+      fixed_rates: rates,
+      service_lat: toNumber(profile.service_lat),
+      service_lng: toNumber(profile.service_lng),
+      service_radius: toNumber(profile.service_radius)
     });
+
   } catch (err) {
     console.error("❌ Profile Route Error:", err.message);
-    res.status(500).json({ error: "Server error" });
+    res.status(500).json({ error: "Server error: " + err.message });
   } finally {
     if (client) client.release();
   }
