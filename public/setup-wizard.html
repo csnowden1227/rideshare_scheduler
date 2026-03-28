@@ -16,6 +16,12 @@
         #map { height: 400px; width: 100%; border-radius: 1rem; }
         .disabled-btn { opacity: 0.5; cursor: not-allowed; filter: grayscale(1); }
         #logo-preview { max-height: 60px; object-fit: contain; border-radius: 8px; }
+        
+        /* Toast Notification Animation */
+        @keyframes slideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
     </style>
 </head>
 <body class="bg-slate-50 text-slate-900 p-4 md:p-12">
@@ -202,6 +208,21 @@ let routeCircles = [];
 let logoBase64 = '';
 const VEHICLE_LIST = ["Standard Sedan", "Luxury Sedan", "Standard SUV", "Luxury SUV", "Standard XL SUV", "Luxury XL SUV"];
 
+// --- UI NOTIFICATION HELPER ---
+function showNotification(message, isSuccess = true) {
+    const toast = document.createElement('div');
+    toast.className = `fixed bottom-8 right-8 px-6 py-4 rounded-2xl shadow-2xl text-white font-bold text-sm z-[9999] flex items-center gap-3 animate-[slideIn_0.3s_ease-out] ${isSuccess ? 'bg-green-600' : 'bg-red-600'}`;
+    toast.innerHTML = `
+        <span>${isSuccess ? '✅' : '❌'}</span>
+        <span>${message}</span>
+    `;
+    document.body.appendChild(toast);
+    setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transition = 'opacity 0.5s ease';
+        setTimeout(() => toast.remove(), 500);
+    }, 4000);
+}
 
 function previewLogo(input) {
     const file = input?.files?.[0];
@@ -287,17 +308,15 @@ function useCurrentLocation() {
 
 function confirmLocation() {
     const lockBtn = document.getElementById('lock-btn');
-    const syncBtn = document.getElementById('save-btn'); // Make sure your button has id="save-btn"
-syncBtn.disabled = false;
-syncBtn.classList.remove('disabled-btn');
-    lockBtn.innerText = "✅ LOCATION LOCKED";
-    lockBtn.classList.add('bg-slate-800');
+    const syncBtn = document.getElementById('save-btn');
     syncBtn.disabled = false;
     syncBtn.classList.remove('disabled-btn');
-    alert("Location validated. You can now Sync to Cloud.");
+    lockBtn.innerText = "✅ LOCATION LOCKED";
+    lockBtn.classList.add('bg-slate-800');
+    showNotification("Location validated and locked!");
 }
 
-// --- FIXED ROUTE LOGIC (WITH OPTION A MAP SYNC) ---
+// --- FIXED ROUTE LOGIC ---
 function addRouteRow(data = {}) {
     const tbody = document.getElementById('route-body');
     const tr = document.createElement('tr');
@@ -403,15 +422,13 @@ function addAddonRow(data = {}) {
 // --- BACKEND OPS ---
 async function loadFromBackend() {
     document.getElementById('display-loc-id').innerText = location_id;
-    document.getElementById('embed-box').innerText = `<div id="chauffeur-booking-widget"></div>
-<script src="${BACKEND_URL}/widget.js?loc=${location_id}"><\/script>`;
+    document.getElementById('embed-box').innerText = `<div id="chauffeur-booking-widget"></div>\n<script src="${BACKEND_URL}/widget.js?loc=${location_id}"><\/script>`;
     
-try {
-    const res = await fetch(`${BACKEND_URL}/api/get-profile/${location_id}`);
-    const data = await res.json();
-    
-    // ADD THIS LINE FOR DEBUGGING:
-    console.log("Database says:", data);
+    try {
+        const res = await fetch(`${BACKEND_URL}/api/get-profile/${location_id}`);
+        const data = await res.json();
+        
+        console.log("Database says:", data);
         
         if (data && !data.error) {
             document.getElementById('business_name').value = data.business_name || '';
@@ -455,7 +472,7 @@ async function saveToBackend() {
     const fleetRows = document.querySelectorAll('#fleet-body tr');
 
     if (!mapsKey || !webhookUrl || !taxRate || fleetRows.length === 0) {
-        alert("❌ Error: Credentials, Tax, and at least one Fleet Slot are REQUIRED.");
+        showNotification("Credentials, Tax, and Fleet Slot are REQUIRED.", false);
         return;
     }
 
@@ -523,18 +540,18 @@ async function saveToBackend() {
         }
 
         if (res && res.ok) {
-            alert("✅ Snowden Luxury Profile Locked & Synced!");
+            showNotification("Snowden Luxury Profile Locked & Synced!");
         } else {
-            alert("❌ Save failed. Please verify backend route alignment.");
+            showNotification("Save failed. Verify backend alignment.", false);
         }
     } catch (err) {
-        alert("❌ Connection Error: Ensure Render is active.");
+        showNotification("Connection Error: Ensure Render is active.", false);
     }
 }
 
 function copyEmbed() {
     navigator.clipboard.writeText(document.getElementById('embed-box').innerText);
-    alert("Copied!");
+    showNotification("Code copied to clipboard!");
 }
 
 window.onload = loadFromBackend;
