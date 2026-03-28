@@ -193,24 +193,29 @@ function computEventsAdjustment(events, selectedEventName, startTime) {
     return { multiplier: 1, events: null, base_rate: null, mile_rate: null };
   }
 
-  const startDate = String(startTime || '').slice(0, 10);
-  const events = (events || []).find(
-    (e) =>
-      String(e.event_name || '').trim() === String(selectedEventName).trim() &&
-      (!e.event_date || e.event_date === startDate)
-  );
+// 1. Format the date (e.g., "2026-03-27")
+const startDate = String(startTime || '').slice(0, 10);
 
-  if (events) {
-    return { multiplier: 1, events: null, base_rate: null, mile_rate: null };
-  }
+// 2. Find the match in the "events" array
+const matchedEvent = (events || []).find(e => 
+  String(e.event_name || '').trim() === String(selectedEventName).trim() &&
+  (!e.event_date || e.event_date === startDate)
+);
 
+// 3. If we found one, use those specific rates
+if (matchedEvent) {
   return {
-    multiplier: asNum(events.multiplier, 1),
-    events,
-    base_rate: events.base_rate != null ? asNum(events.base_rate) : null,
-    mile_rate: events.mile_rate != null ? asNum(events.mile_rate) : null
+    multiplier: toNumber(matchedEvent.multiplier, 1),
+    base_rate: toNumber(matchedEvent.base_rate),
+    mile_rate: toNumber(matchedEvent.mile_rate),
+    event_name: matchedEvent.event_name
   };
 }
+
+// 4. Default if no event matches
+return { multiplier: 1, base_rate: null, mile_rate: null };
+  };
+
 
 /* 🔐 Get Maps API Key from Database */
 async function getMapsKey(location_id) {
