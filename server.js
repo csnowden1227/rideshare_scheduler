@@ -14,10 +14,21 @@ import { fileURLToPath } from 'url';
 // 1. EXTRACT POOL FROM THE PACKAGE (Crucial Step)
 const { Pool, Client } = pkg;
 
-// 2. DEFINE HELPER (Only once!)
+// ✅ Correct: The name is followed by an '=' and the function
 const toNumber = (v, defaultVal = 0) => {
   const n = parseFloat(v);
   return isNaN(n) ? defaultVal : n;
+};
+
+// ✅ Correct: The name is followed by an '=' and the function
+const safeParse = (data) => {
+  if (!data) return [];
+  if (typeof data === 'object') return data;
+  try {
+    return JSON.parse(data);
+  } catch (e) {
+    return [];
+  }
 };
 
 // 3. NOW INITIALIZE POOL
@@ -71,17 +82,6 @@ app.use((req, res, next) => {
 /*****************************************************
  2️⃣ HELPERS
 *****************************************************/
-function safeParse(data, fallback = []) {
-    if (data == null) return fallback;
-    if (typeof data === 'object') return data; // If Postgres already parsed it
-    try {
-        return typeof data === 'string' ? JSON.parse(data) : data;
-    } catch (e) {
-        console.error("JSON Parse Error:", e);
-        return fallback;
-    }
-}
-
 function isInsideGeofence(userLat, userLng, fenceLat, fenceLng, radiusMiles) {
     const R = 3958.8; // Earth's radius in miles
     const dLat = (fenceLat - userLat) * Math.PI / 180;
