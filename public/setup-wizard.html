@@ -15,6 +15,7 @@
         .coord-input { font-family: monospace; font-size: 10px; color: #64748b; background-color: #f8fafc; }
         #map { height: 400px; width: 100%; border-radius: 1rem; }
         .disabled-btn { opacity: 0.5; cursor: not-allowed; filter: grayscale(1); }
+        #logo-preview { max-height: 60px; object-fit: contain; border-radius: 8px; }
     </style>
 </head>
 <body class="bg-slate-50 text-slate-900 p-4 md:p-12">
@@ -31,6 +32,22 @@
     <div class="grid grid-cols-1 lg:grid-cols-4 gap-8">
         <div class="lg:col-span-3">
             
+            <div class="card border-2 border-blue-100">
+                <h2 class="section-header text-blue-600">SECTION: BUSINESS BRANDING</h2>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
+                    <div>
+                        <label class="block text-[10px] font-bold mb-2 uppercase text-slate-400">Business Name</label>
+                        <input type="text" id="business_name" class="input-mini" placeholder="e.g. Snowden Luxury Travel">
+                    </div>
+                    <div>
+                        <label class="block text-[10px] font-bold mb-2 uppercase text-slate-400">Business Logo</label>
+                        <div class="flex items-center gap-4">
+                            <input type="file" id="logo_upload" accept="image/*" class="text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100" onchange="previewLogo(this)">
+                            <img id="logo-preview" src="" class="hidden border bg-white p-1">
+                        </div>
+                    </div>
+                </div>
+            </div>
             <div class="card">
                 <h2 class="section-header">SECTION: CREDENTIALS</h2>
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -159,10 +176,6 @@
             </div>
         </div>
 
-        <input type="hidden" id="svc_lat" value="30.4515">
-    <input type="hidden" id="svc_lng" value="-91.1871">
-    <input type="hidden" id="svc_radius" value="50">
-
         <div class="lg:col-span-1">
             <div class="sticky top-6 space-y-6">
                 <button onclick="saveToBackend()" id="save-btn" class="w-full bg-blue-600 text-white font-black py-5 rounded-2xl shadow-xl uppercase tracking-widest text-sm disabled-btn" disabled>
@@ -184,28 +197,37 @@
 const urlParams = new URLSearchParams(window.location.search);
 const location_id = urlParams.get('location_id') || 'VXE0UY17p7wnxdZ3sOLc';
 const BACKEND_URL = "https://rideshare-scheduler-axx6.onrender.com";
-// 1. Initialize Global Variables at the top
-let map, marker, circle, autocomplete;
-let routeCircles = [];
+let map, circle, marker, autocomplete;
+let routeCircles = []; 
+let logoBase64 = '';
+const VEHICLE_LIST = ["Standard Sedan", "Luxury Sedan", "Standard SUV", "Luxury SUV", "Standard XL SUV", "Luxury XL SUV"];
 
-// 2. Standardize the function name to initServiceMap
-function initServiceMap(lat = 30.4515, lng = -91.1871, radiusMiles = 50) {
-    const center = { lat: parseFloat(lat), lng: parseFloat(lng) };
-    
-    const mapElement = document.getElementById("map");
-    if (!mapElement) return;
 
-    map = new google.maps.Map(mapElement, {
-        zoom: 9,
+function previewLogo(input) {
+    const file = input?.files?.[0];
+    const preview = document.getElementById('logo-preview');
+    if (!file || !preview) return;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        logoBase64 = e.target.result || '';
+        preview.src = logoBase64;
+        preview.classList.remove('hidden');
+    };
+    reader.readAsDataURL(file);
+}
+
+// --- MAP LOGIC ---
+
+function initServiceMap(lat = 34.0522, lng = -118.2437, radiusMiles = 90) {
+    const center = { lat, lng };
+    map = new google.maps.Map(document.getElementById("map"), {
+        zoom: 8,
         center: center,
         styles: [{ featureType: "poi", elementType: "labels", stylers: [{ visibility: "off" }] }]
     });
 
-    marker = new google.maps.Marker({ 
-        position: center, 
-        map: map, 
-        draggable: true 
-    });
+    marker = new google.maps.Marker({ position: center, map: map, draggable: true });
     
     circle = new google.maps.Circle({
         map: map,
@@ -220,74 +242,80 @@ function initServiceMap(lat = 30.4515, lng = -91.1871, radiusMiles = 50) {
     });
 
     const updateFields = () => {
-        const currentCenter = circle.getCenter();
+        const center = circle.getCenter();
         const radMeters = circle.getRadius();
-        
-        // Write to hidden inputs so the Sync button can see them
-        const latInput = document.getElementById('svc_lat');
-        const lngInput = document.getElementById('svc_lng');
-        const radInput = document.getElementById('svc_radius');
-        
-        if (latInput) latInput.value = currentCenter.lat().toFixed(6);
-        if (lngInput) lngInput.value = currentCenter.lng().toFixed(6);
-        if (radInput) radInput.value = Math.round(radMeters / 1609.34);
-        
-        marker.setPosition(currentCenter);
+        document.getElementById('svc_lat').value = center.lat().toFixed(6);
+        document.getElementById('svc_lng').value = center.lng().toFixed(6);
+        document.getElementById('svc_radius').value = Math.round(radMeters / 1609.34);
+        marker.setPosition(center);
     };
 
-    // Listeners for changes
     circle.addListener('center_changed', updateFields);
     circle.addListener('radius_changed', updateFields);
     marker.addListener('drag', () => circle.setCenter(marker.getPosition()));
 
-    // Search Box Logic
     const searchInput = document.getElementById('map-search');
-    if (searchInput) {
-        autocomplete = new google.maps.places.Autocomplete(searchInput);
-        autocomplete.addListener('place_changed', () => {
-            const place = autocomplete.getPlace();
-            if (place.geometry) {
-                map.setCenter(place.geometry.location);
-                circle.setCenter(place.geometry.location);
-                marker.setPosition(place.geometry.location);
-                updateFields();
-            }
-        });
-    }
+    autocomplete = new google.maps.places.Autocomplete(searchInput);
+    autocomplete.addListener('place_changed', () => {
+        const place = autocomplete.getPlace();
+        if (place.geometry) {
+            map.setCenter(place.geometry.location);
+            circle.setCenter(place.geometry.location);
+            marker.setPosition(place.geometry.location);
+            updateFields();
+        }
+    });
 
     updateFields();
 }
 
-// 3. Fix the Location Button
-window.useCurrentLocation = function() {
-    console.log("📍 Attempting to get current location...");
+function updateCircleFromInput() {
+    const r = parseFloat(document.getElementById('svc_radius').value) || 90;
+    circle.setRadius(r * 1609.34);
+}
+
+function useCurrentLocation() {
     if (navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition(
-            (position) => {
-                const lat = position.coords.latitude;
-                const lng = position.coords.longitude;
-                console.log(`✅ Location found: ${lat}, ${lng}`);
-                
-                // If map already exists, move it. If not, create it.
-                if (map) {
-                    const pos = { lat, lng };
-                    map.setCenter(pos);
-                    circle.setCenter(pos);
-                    marker.setPosition(pos);
-                } else {
-                    initServiceMap(lat, lng);
-                }
-                showToast("📍 Location Updated!", "success");
-            },
-            (error) => {
-                console.error("❌ Geolocation error:", error);
-                alert("Could not get location. Please search manually.");
-            }
-        );
-    } else {
-        alert("Geolocation is not supported by this browser.");
+        navigator.geolocation.getCurrentPosition(p => {
+            const pos = { lat: p.coords.latitude, lng: p.coords.longitude };
+            map.setCenter(pos);
+            circle.setCenter(pos);
+            marker.setPosition(pos);
+        });
     }
-};
+}
+
+function confirmLocation() {
+    const lockBtn = document.getElementById('lock-btn');
+    const syncBtn = document.getElementById('save-btn'); // Make sure your button has id="save-btn"
+syncBtn.disabled = false;
+syncBtn.classList.remove('disabled-btn');
+    lockBtn.innerText = "✅ LOCATION LOCKED";
+    lockBtn.classList.add('bg-slate-800');
+    syncBtn.disabled = false;
+    syncBtn.classList.remove('disabled-btn');
+    alert("Location validated. You can now Sync to Cloud.");
+}
+
+// --- FIXED ROUTE LOGIC (WITH OPTION A MAP SYNC) ---
+function addRouteRow(data = {}) {
+    const tbody = document.getElementById('route-body');
+    const tr = document.createElement('tr');
+    tr.className = "route-row border-b border-slate-50";
+    
+    tr.innerHTML = `
+        <td class="p-2"><input type="text" class="r-name w-full text-xs p-1 border rounded" value="${data.location_name || ''}" placeholder="e.g. LAX Terminal"></td>
+        <td class="p-2"><input type="number" class="r-lat w-full text-xs p-1 border rounded" step="any" value="${data.lat || ''}" oninput="updateRouteMap()"></td>
+        <td class="p-2"><input type="number" class="r-lng w-full text-xs p-1 border rounded" step="any" value="${data.lng || ''}" oninput="updateRouteMap()"></td>
+        <td class="p-2"><input type="number" class="r-rad w-full text-xs p-1 border rounded" value="${data.radius || 2}" oninput="updateRouteMap()"></td>
+        <td class="p-2"><input type="number" class="r-price w-full text-xs p-1 border rounded" value="${data.fixed_price || ''}" placeholder="150"></td>
+        <td class="p-2 text-right">
+            <button onclick="this.closest('tr').remove(); updateRouteMap();" class="text-red-400">×</button>
+        </td>
+    `;
+    tbody.appendChild(tr);
+    updateRouteMap();
+}
 
 function updateRouteMap() {
     routeCircles.forEach(c => c.setMap(null));
@@ -388,9 +416,17 @@ try {
         if (data && !data.error) {
             document.getElementById('business_name').value = data.business_name || '';
             document.getElementById('webhook_url').value = data.crm_webhook_url || '';
-            if (data.logo_url) { logoBase64 = data.logo_url; const img = document.getElementById('logo-preview'); if (img) { img.src = data.logo_url; img.classList.remove('hidden'); } }
             document.getElementById('maps_key').value = data.maps_api_key || '';
             document.getElementById('tax_rate').value = data.tax_rate || '8.25';
+
+            if (data.logo_url) {
+                logoBase64 = data.logo_url;
+                const logoPreview = document.getElementById('logo-preview');
+                if (logoPreview) {
+                    logoPreview.src = data.logo_url;
+                    logoPreview.classList.remove('hidden');
+                }
+            }
             
             let count = (data.plan_name === 'pro') ? 3 : (data.plan_name === 'premium' ? 2 : 1);
             renderFleet(count, data.fleet || []);
@@ -425,6 +461,7 @@ async function saveToBackend() {
 
     const payload = {
         id: location_id,
+        location_id,
         business_name: document.getElementById('business_name').value.trim(),
         logo_url: logoBase64,
         crm_webhook_url: webhookUrl,
@@ -473,52 +510,26 @@ async function saveToBackend() {
     };
 
     try {
-        const res = await fetch(`${BACKEND_URL}/api/save-config`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        });
-        
-        if (res.ok) {
-            // --- NEW NOTIFICATION LOGIC ---
-            showToast("✅ Sync Successful: Snowden Luxury Profile Updated", "success");
+        const endpoints = ['/api/update-profile-full', '/api/save-config'];
+        let res = null;
+
+        for (const endpoint of endpoints) {
+            res = await fetch(`${BACKEND_URL}${endpoint}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            if (res.ok) break;
+        }
+
+        if (res && res.ok) {
+            alert("✅ Snowden Luxury Profile Locked & Synced!");
         } else {
-            const errorData = await res.json();
-            showToast(`❌ Sync Failed: ${errorData.error || "Server Error"}`, "error");
+            alert("❌ Save failed. Please verify backend route alignment.");
         }
     } catch (err) {
-        console.error("Fetch Error:", err);
-        showToast("❌ Connection Error: Is the Render server awake?", "error");
+        alert("❌ Connection Error: Ensure Render is active.");
     }
-}
-
-// --- HELPER FUNCTION FOR THE NOTIFICATION ---
-function showToast(message, type) {
-    const toast = document.createElement("div");
-    toast.innerText = message;
-    
-    // Styling the notification
-    Object.assign(toast.style, {
-        position: "fixed",
-        bottom: "20px",
-        right: "20px",
-        padding: "12px 24px",
-        borderRadius: "8px",
-        color: "white",
-        fontWeight: "bold",
-        zIndex: "9999",
-        transition: "opacity 0.5s ease",
-        backgroundColor: type === "success" ? "#10b981" : "#ef4444", // Green for success, Red for error
-        boxShadow: "0 4px 6px rgba(0,0,0,0.1)"
-    });
-
-    document.body.appendChild(toast);
-
-    // Fade out and remove after 3 seconds
-    setTimeout(() => {
-        toast.style.opacity = "0";
-        setTimeout(() => toast.remove(), 500);
-    }, 3000);
 }
 
 function copyEmbed() {
