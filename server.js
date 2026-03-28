@@ -338,225 +338,7 @@ app.get('/api/health', (_req, res) => {
   });
 });
 
-async function saveConfigHandler(req, res) {
-  const body = req.body || {};
-  const location_id = String(body.location_id || body.id || '').trim();
-  if (!location_id) return res.status(400).json({ error: 'Missing location_id.' });
-
-  const business_name = body.business_name || body.businessName || null;
-  const logo_url = body.logo_url || null;
-  const crm_webhook_url = body.crm_webhook_url || body.webhook_url || null;
-  const maps_api_key = body.maps_api_key || body.mapsApiKey || null;
-  const tax_rate = toNumber(body.tax_rate ?? body.taxRate, 0);
-  const service_lat = body.service_lat ?? null;
-  const service_lng = body.service_lng ?? null;
-  const service_radius = toNumber(body.service_radius ?? body.service_radius_miles, 90);
-
-  const fleet = (body.fleet || []).map((slot) => ({
-    vehicle_slot_id: String(slot.vehicle_slot_id || '').trim(),
-    vehicle_type: slot.vehicle_type || slot.name || '',
-    name: slot.name || slot.vehicle_type || '',
-    calendar_id: slot.calendar_id || '',
-    base_rate: toNumber(slot.base_rate),
-    mile_rate: toNumber(slot.mile_rate),
-    minimum_fare: toNumber(slot.minimum_fare),
-    deposit_percent: toNumber(slot.deposit_percent, 20),
-    duration_min: toNumber(slot.duration_min, 105),
-    slot_interval_min: toNumber(slot.slot_interval_min, 30),
-    min_notice_min: toNumber(slot.min_notice_min, 120)
-  })).filter((slot) => slot.vehicle_slot_id);
-
-  const fixed_rates = (body.fixed_rates || []).map(r => ({
-    location_name: r.location_name,
-    lat: toNumber(r.lat),
-    lng: toNumber(r.lng),
-    radius: toNumber(r.radius),
-    fixed_price: toNumber(r.fixed_price)
-}));
-
-  const events = (body.events || []).map((event) => ({
-    event_name: event.event_name || '',
-    event_date: event.event_date || null,
-    base_rate: toNumber(event.base_rate),
-    mile_rate: toNumber(event.mile_rate),
-    multiplier: toNumber(event.multiplier, 1)
-  }));
-
-
-  const addons = (body.addons || []).map((addon) => ({
-    id: addon.id || addon.description || '',
-    description: addon.description || '',
-    price: toNumber(addon.price),
-    type: addon.type || 'per_booking'
-  }));
-
-  const peak_windows = body.peak_windows || [];
-
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
-
-    await client.query(
-      `INSERT INTO profiles (
-        location_id,
-        business_name,
-        logo_url,
-        crm_webhook_url,
-        maps_api_key,
-        tax_rate,
-        fleet,
-        special_events,
-        addons,
-        peak_windows,
-        service_lat,
-        service_lng,
-        service_radius
-      )
-      VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb,$9::jsonb,$10::jsonb,$11,$12,$13)
-      ON CONFLICT (location_id) DO UPDATE SET
-        business_name = EXCLUDED.business_name,
-        logo_url = EXCLUDED.logo_url,
-        crm_webhook_url = EXCLUDED.crm_webhook_url,
-        maps_api_key = EXCLUDED.maps_api_key,
-        tax_rate = EXCLUDED.tax_rate,
-        fleet = EXCLUDED.fleet,
-        special_events = EXCLUDED.special_events,
-        addons = EXCLUDED.addons,
-        peak_windows = EXCLUDED.peak_windows,
-        service_lat = EXCLUDED.service_lat,
-        service_lng = EXCLUDED.service_lng,
-        service_radius = EXCLUDED.service_radius`,
-      [
-        location_id,
-        business_name,
-        logo_url,
-        crm_webhook_url,
-        maps_api_key,
-        tax_rate,
-        JSON.stringify(fleet),
-        JSON.stringify(events),
-        JSON.stringify(addons),
-        JSON.stringify(peak_windows),
-        service_lat,
-        service_lng,
-        service_radius
-      ]
-    );
-// 1. CHECK IF TABLE EXISTS & CLEAR OLD DATA
-if (await tableExists('fixed_rates')) {
-    // Clear existing rates for this location once to avoid duplicates
-    await client.query(`DELETE FROM fixed_rates WHERE location_id = $1`, [location_id]);
-
-    // 2. SAVE NEW FIXED RATES
-if (fixed_rates && Array.isArray(fixed_rates)) {
-    // 1. Clear old rates for this location
-    await client.query("DELETE FROM fixed_rates WHERE location_id = $1", [location_id]);
-
-    // 2. Insert new rates one by one
-    for (const route of fixed_rates) {
-        await client.query(
-            `INSERT INTO fixed_rates (location_id, location_name, lat, lng, radius, fixed_price)
-             VALUES ($1, $2, $3, $4, $5, $6)`,
-            [
-                location_id, 
-                route.location_name, 
-                route.lat || 0, 
-                route.lng || 0, 
-                route.radius || 0, 
-                route.fixed_price || 0
-            ]
-            );
-        }
-        console.log(`✅ Synced ${fixed_rates.length} fixed rate zones for ${location_id}`);
-    }
-}
-
-
-    await syncFleetSettings(location_id, fleet);
-
-    await client.query('COMMIT');
-    res.json({ success: true, message: 'All settings and slots saved!' });
-  } catch (error) {
-    await client.query('ROLLBACK');
-    console.error('save-config error:', error);
-    res.status(500).json({ error: error.message || 'Failed to save settings.' });
-  } finally {
-    client.release();
-  }
-}
-
-app.post('/api/save-config', async (req, res) => {
-    const client = await pool.connect();
-    try {
-        await client.query('BEGIN');
-
-        const { 
-            location_id, business_name, logo_url, crm_webhook_url, 
-            maps_api_key, tax_rate, fleet, events, addons, 
-            peak_windows, fixed_rates, service_lat, service_lng, service_radius 
-        } = req.body;
-
-        // 1. Update the Profiles Table (Handles all JSON logic)
-        await client.query(
-            `INSERT INTO profiles (
-                location_id, business_name, logo_url, crm_webhook_url, 
-                maps_api_key, tax_rate, fleet, special_events, addons, 
-                peak_windows, service_lat, service_lng, service_radius
-            )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-            ON CONFLICT (location_id) 
-            DO UPDATE SET 
-                business_name = EXCLUDED.business_name,
-                logo_url = EXCLUDED.logo_url,
-                crm_webhook_url = EXCLUDED.crm_webhook_url,
-                maps_api_key = EXCLUDED.maps_api_key,
-                tax_rate = EXCLUDED.tax_rate,
-                fleet = EXCLUDED.fleet,
-                special_events = EXCLUDED.special_events,
-                addons = EXCLUDED.addons,
-                peak_windows = EXCLUDED.peak_windows,
-                service_lat = EXCLUDED.service_lat,
-                service_lng = EXCLUDED.service_lng,
-                service_radius = EXCLUDED.service_radius`,
-            [
-                location_id, business_name, logo_url, crm_webhook_url, 
-                maps_api_key, tax_rate, 
-                JSON.stringify(fleet || []), 
-                JSON.stringify(events || []), 
-                JSON.stringify(addons || []), 
-                JSON.stringify(peak_windows || []),
-                service_lat || 0, service_lng || 0, service_radius || 50
-            ]
-        );
-
-        // 2. Sync Fixed Rates Table
-        // We delete old ones and insert new ones to keep the list clean
-        await client.query("DELETE FROM fixed_rates WHERE location_id = $1", [location_id]);
-        
-        if (fixed_rates && fixed_rates.length > 0) {
-            for (const rate of fixed_rates) {
-                await client.query(
-                    `INSERT INTO fixed_rates (location_id, location_name, lat, lng, radius, fixed_price)
-                     VALUES ($1, $2, $3, $4, $5, $6)`,
-                    [location_id, rate.location_name, rate.lat, rate.lng, rate.radius, rate.fixed_price]
-                );
-            }
-        }
-
-        await client.query('COMMIT');
-        console.log(`✅ Config saved for location: ${location_id}`);
-        res.json({ success: true });
-
-    } catch (err) {
-        await client.query('ROLLBACK');
-        console.error("❌ DATABASE SAVE ERROR:", err.message);
-        res.status(500).json({ error: err.message });
-    } finally {
-        client.release();
-    }
-});
-// Map both potential frontend calls to the same handler
-app.post('/api/save-config', saveConfigHandler);
+   
 app.post('/api/update-profile-full', saveConfigHandler);
 
 app.get("/api/get-profile/:location_id", async (req, res) => {
@@ -945,6 +727,77 @@ app.get("/setup-wizard", (_req, res) => {
 
 app.get("/test-page", (_req, res) => {
   res.send("<h1>Server route works</h1>");
+});
+
+app.post('/api/save-config', async (req, res) => {
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+
+        const { 
+            location_id, business_name, logo_url, crm_webhook_url, 
+            maps_api_key, tax_rate, fleet, events, addons, 
+            peak_windows, fixed_rates, service_lat, service_lng, service_radius 
+        } = req.body;
+
+        // 1. Update the Profiles Table (Handles all JSON logic)
+        await client.query(
+            `INSERT INTO profiles (
+                location_id, business_name, logo_url, crm_webhook_url, 
+                maps_api_key, tax_rate, fleet, special_events, addons, 
+                peak_windows, service_lat, service_lng, service_radius
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+            ON CONFLICT (location_id) 
+            DO UPDATE SET 
+                business_name = EXCLUDED.business_name,
+                logo_url = EXCLUDED.logo_url,
+                crm_webhook_url = EXCLUDED.crm_webhook_url,
+                maps_api_key = EXCLUDED.maps_api_key,
+                tax_rate = EXCLUDED.tax_rate,
+                fleet = EXCLUDED.fleet,
+                special_events = EXCLUDED.special_events,
+                addons = EXCLUDED.addons,
+                peak_windows = EXCLUDED.peak_windows,
+                service_lat = EXCLUDED.service_lat,
+                service_lng = EXCLUDED.service_lng,
+                service_radius = EXCLUDED.service_radius`,
+            [
+                location_id, business_name, logo_url, crm_webhook_url, 
+                maps_api_key, tax_rate, 
+                JSON.stringify(fleet || []), 
+                JSON.stringify(events || []), 
+                JSON.stringify(addons || []), 
+                JSON.stringify(peak_windows || []),
+                service_lat || 0, service_lng || 0, service_radius || 50
+            ]
+        );
+
+        // 2. Sync Fixed Rates Table
+        // We delete old ones and insert new ones to keep the list clean
+        await client.query("DELETE FROM fixed_rates WHERE location_id = $1", [location_id]);
+        
+        if (fixed_rates && fixed_rates.length > 0) {
+            for (const rate of fixed_rates) {
+                await client.query(
+                    `INSERT INTO fixed_rates (location_id, location_name, lat, lng, radius, fixed_price)
+                     VALUES ($1, $2, $3, $4, $5, $6)`,
+                    [location_id, rate.location_name, rate.lat, rate.lng, rate.radius, rate.fixed_price]
+                );
+            }
+        }
+
+        await client.query('COMMIT');
+        console.log(`✅ Config saved for location: ${location_id}`);
+        res.json({ success: true });
+
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error("❌ DATABASE SAVE ERROR:", err.message);
+        res.status(500).json({ error: err.message });
+    } finally {
+        client.release();
+    }
 });
 /*****************************************************
  4️⃣ DATABASE LISTENER
