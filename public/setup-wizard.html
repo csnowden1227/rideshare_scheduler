@@ -27,21 +27,36 @@
 <script src="https://link.ghl.com/js/ghl-sdk.js"></script>
 
 <script>
-  // Force your custom script to wait for the SDK
-  window.addEventListener('load', () => {
-    const checkSDK = setInterval(() => {
-      if (typeof ghl !== 'undefined') {
-        clearInterval(checkSDK);
-        ghl.init();
-        console.log("✅ SDK Initialized. Now loading support scripts.");
-        
-        // Dynamically load your support script only after SDK is ready
-        let script = document.createElement('script');
-        script.src = "mycrmsupport.js";
-        document.head.appendChild(script);
-      }
-    }, 100);
-  });
+    window.addEventListener('load', () => {
+        // 1. Try to find the SDK under different possible names
+        const sdk = window.crm || window.ghl || (window.parent && window.parent.crm);
+
+        if (sdk && typeof sdk.init === 'function') {
+            sdk.init();
+            console.log("✅ SDK Bridge Initialized");
+
+            // 2. Immediately try to get the Location ID
+            sdk.get('location', (data) => {
+                if (data && data.id) {
+                    console.log("📍 Found Location ID:", data.id);
+                    // Now trigger your backend fetch
+                    window.locationId = data.id;
+                    if (typeof loadProfile === 'function') loadProfile(data.id);
+                }
+            });
+        } else {
+            console.error("❌ SDK not found. Ensure the script tag for link.ghl.com or link.crmonesource.com is above this block.");
+            
+            // 3. EMERGENCY FALLBACK: Try to pull ID from URL if SDK fails
+            const urlParams = new URLSearchParams(window.location.search);
+            const locId = urlParams.get('location_id');
+            if (locId) {
+                console.warn("⚠️ SDK failed, but found ID in URL:", locId);
+                window.locationId = locId;
+                if (typeof loadProfile === 'function') loadProfile(locId);
+            }
+        }
+    });
 </script>
 </head>
 <body class="bg-slate-50 text-slate-900 p-4 md:p-12">
@@ -310,6 +325,21 @@ function useCurrentLocation() {
         });
     }
 }
+
+function startMyWizard() {
+  // Check if the CRM's custom script (the one you pasted) already loaded Google
+  if (window.google && window.google.maps && window.google.maps.places) {
+    console.log("✅ Google Maps already loaded by CRM, using existing instance.");
+    initMyWizardMap(); // Call your function to draw the map
+  } else {
+    // If NOT loaded, we wait a second or load it ourselves
+    console.log("⏳ Waiting for Google Maps to initialize...");
+    setTimeout(startMyWizard, 1000); 
+  }
+}
+
+// Call this when your Wizard opens
+startMyWizard();
 
 function confirmLocation() {
     const syncBtn = document.getElementById('save-btn');

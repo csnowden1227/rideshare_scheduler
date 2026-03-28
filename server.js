@@ -344,57 +344,78 @@ app.get('/api/health', (_req, res) => {
 });
 
    
-app.get("/api/get-profile/:location_id", async (req, res) => {
-  const { location_id } = req.params;
+app.post("/api/save-profile", async (req, res) => {
+  const {
+    location_id,
+    business_name,
+    maps_api_key,
+    crm_webhook_url,
+    tax_rate,
+    per_mile_rate, // 👈 Matching our new DB column
+    service_lat,
+    service_lng,
+    service_radius,
+    fleet,
+    events,
+    addons,
+    peak_windows,
+    plan_name
+  } = req.body;
+
+  if (!location_id) {
+    return res.status(400).json({ error: "Missing location_id" });
+  }
+
   let client;
-  
   try {
     client = await pool.connect();
 
-    // 1. Get Profile Data
-    const profileRes = await client.query(
-      "SELECT * FROM profiles WHERE location_id = $1 LIMIT 1",
-      [location_id]
-    );
+    const query = `
+      INSERT INTO profiles (
+        location_id, business_name, maps_api_key, crm_webhook_url, 
+        tax_rate, per_mile_rate, service_lat, service_lng, service_radius,
+        fleet, events, addons, peak_windows, plan_name
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+      ON CONFLICT (location_id) DO UPDATE SET
+        business_name = EXCLUDED.business_name,
+        maps_api_key = EXCLUDED.maps_api_key,
+        crm_webhook_url = EXCLUDED.crm_webhook_url,
+        tax_rate = EXCLUDED.tax_rate,
+        per_mile_rate = EXCLUDED.per_mile_rate,
+        service_lat = EXCLUDED.service_lat,
+        service_lng = EXCLUDED.service_lng,
+        service_radius = EXCLUDED.service_radius,
+        fleet = EXCLUDED.fleet,
+        events = EXCLUDED.events,
+        addons = EXCLUDED.addons,
+        peak_windows = EXCLUDED.peak_windows,
+        plan_name = EXCLUDED.plan_name
+      RETURNING *;
+    `;
 
-    // 2. Get Rates Data (Safety Wrapped)
-    let rates = [];
-    try {
-      const ratesRes = await client.query("SELECT * FROM fixed_rates WHERE location_id = $1", [location_id]);
-      rates = ratesRes.rows;
-    } catch (e) {
-      console.log("⚠️ fixed_rates table missing, defaulting to empty array.");
-      rates = []; 
-    }
+    const values = [
+      location_id,
+      business_name || "",
+      maps_api_key || "",
+      crm_webhook_url || "",
+      toNumber(tax_rate),
+      toNumber(per_mile_rate), // 👈 Using your helper
+      toNumber(service_lat),
+      toNumber(service_lng),
+      toNumber(service_radius),
+      JSON.stringify(fleet || []),
+      JSON.stringify(events || []),
+      JSON.stringify(addons || []),
+      JSON.stringify(peak_windows || []),
+      plan_name || "Starter"
+    ];
 
-    if (!profileRes.rows || profileRes.rows.length === 0) {
-      return res.status(404).json({ error: "Profile not found" });
-    }
-
-    const profile = profileRes.rows[0];
-
-    // 3. Send cleaned data using your new helpers
-    res.json({
-      location_id: profile.location_id,
-      business_name: profile.business_name || "",
-      plan_name: profile.plan_name || "Starter",
-      maps_api_key: profile.maps_api_key || "",
-      crm_webhook_url: profile.crm_webhook_url || "",
-      tax_rate: toNumber(profile.tax_rate),
-      per_mile_rate: toNumber(profile.per_mile_rate), // Uses the column we just fixed!
-      fleet: safeParse(profile.fleet),
-      events: safeParse(profile.events || profile.special_events),
-      addons: safeParse(profile.addons),
-      peak_windows: safeParse(profile.peak_windows),
-      fixed_rates: rates,
-      service_lat: toNumber(profile.service_lat),
-      service_lng: toNumber(profile.service_lng),
-      service_radius: toNumber(profile.service_radius)
-    });
+    const result = await client.query(query, values);
+    res.json({ success: true, profile: result.rows[0] });
 
   } catch (err) {
-    console.error("❌ Profile Route Error:", err.message);
-    res.status(500).json({ error: "Server error: " + err.message });
+    console.error("❌ Save Profile Error:", err.message);
+    res.status(500).json({ error: "Failed to save profile: " + err.message });
   } finally {
     if (client) client.release();
   }
@@ -410,49 +431,77 @@ app.post("/api/calculate-quote", async (req, res) => {
       selected_addons 
     } = req.body;
 
-    const profile = await getProfile(location_id);
-    if (!profile) return res.status(404).json({ error: "Profile not found" });
+    // 1. Get Profile (The main priority)
+    const profileRes = await client.query(
+      "SELECT * FROM profiles WHERE location_id = $1 LIMIT 1",
+      [location_id]
+    );
+
+    // 2. Get Rates (The "Safe" way)
+    let rates = [];
+    try {
+        const ratesRes = await client.query(
+            "SELECT * FROM fixed_rates WHERE location_id = $1", 
+            [location_id]
+        );
+        rates = ratesRes.rows;
+    } catch (e) {
+        // If the table doesn't exist yet, we don't crash! 
+        // We just log it and send back an empty array.
+        console.log("ℹ️ fixed_rates table not found or empty for this location.");
+        rates = []; 
+    }
+
+   // 3. Now check if the profile exists
+    if (!profileRes.rows || profileRes.rows.length === 0) {
+      return res.status(404).json({ error: "Profile not found" });
+    }
+
+    // ✅ CRITICAL FIX: Define the profile variable
+    const profile = profileRes.rows[0];
 
     // 1. Fixed Rate Check (Geofencing)
-    const fixedRates = (typeof profile.fixed_rates === 'string') ? JSON.parse(profile.fixed_rates) : (profile.fixed_rates || []);
+    // ✅ Use the 'rates' variable from the safe fetch above
     let baseRidePrice = null;
 
-    for (const zone of fixedRates) {
-      // Check if pickup or dropoff is in the radius (using your getDistanceMiles helper)
-      const dPickup = getDistanceMiles(pickup_lat, pickup_lng, zone.lat, zone.lng);
-      const dDropoff = getDistanceMiles(dropoff_lat, dropoff_lng, zone.lat, zone.lng);
+    if (rates && rates.length > 0) {
+      for (const zone of rates) {
+        // Ensure lat/lng/radius are treated as numbers
+        const zLat = toNumber(zone.lat);
+        const zLng = toNumber(zone.lng);
+        const zRad = toNumber(zone.radius);
 
-      if (dPickup <= zone.radius || dDropoff <= zone.radius) {
-        baseRidePrice = Number(zone.fixed_price);
-        break;
+        const dPickup = getDistanceMiles(pickup_lat, pickup_lng, zLat, zLng);
+        const dDropoff = getDistanceMiles(dropoff_lat, dropoff_lng, zLat, zLng);
+
+        if (dPickup <= zRad || dDropoff <= zRad) {
+          baseRidePrice = Number(zone.fixed_price);
+          break;
+        }
       }
     }
 
-    // 2. Fallback to Mileage if no Fixed Rate hit
+    // 2. Fallback to Mileage
     if (baseRidePrice === null) {
-      // Assuming you have your Google Maps route logic here
-      // const route = await computeRoute(...);
-      // baseRidePrice = calculateMileagePrice(route, profile, vehicle_slot_id);
-      baseRidePrice = 50.00; // Temporary placeholder to stop the crash
+      baseRidePrice = 50.00; // Your temporary placeholder
     }
 
-    // 3. Addon Calculation
-    const addonsConfig = (typeof profile.addons === 'string') ? JSON.parse(profile.addons) : (profile.addons || []);
+    // 3. Addon Calculation (Using safeParse to be extra safe)
+    const addonsConfig = safeParse(profile.addons);
     const addonCalc = computeAddonTotal(addonsConfig, selected_addons);
 
     // 4. Final Totals
-    const subtotal = baseRidePrice + addonCalc.total;
-    const taxRate = Number(profile.tax_rate || 0) / 100;
+    const subtotal = baseRidePrice + (addonCalc?.total || 0);
+    const taxRate = toNumber(profile.tax_rate) / 100;
     const taxAmount = subtotal * taxRate;
     const finalTotal = subtotal + taxAmount;
 
-    // ✅ This return is inside the function
     return res.json({
       quoted_price: Number(baseRidePrice.toFixed(2)),
-      addon_total: Number(addonCalc.total.toFixed(2)),
+      addon_total: Number((addonCalc?.total || 0).toFixed(2)),
       tax_amount: Number(taxAmount.toFixed(2)),
       total: Number(finalTotal.toFixed(2)),
-      selected_addons: addonCalc.breakdown
+      selected_addons: addonCalc?.breakdown || []
     });
 
   } catch (err) {
@@ -740,6 +789,69 @@ app.get("/setup-wizard", (_req, res) => {
 
 app.get("/test-page", (_req, res) => {
   res.send("<h1>Server route works</h1>");
+});
+
+// GET PROFILE ROUTE
+app.get("/api/get-profile/:location_id", async (req, res) => {
+  const { location_id } = req.params;
+
+  let client;
+  try {
+    client = await pool.connect();
+
+    // 1. Get Profile (The main priority)
+    const profileRes = await client.query(
+      "SELECT * FROM profiles WHERE location_id = $1 LIMIT 1",
+      [location_id]
+    );
+
+    // 2. Get Rates (The "Safe" way)
+    let rates = [];
+    try {
+        const ratesRes = await client.query(
+            "SELECT * FROM fixed_rates WHERE location_id = $1", 
+            [location_id]
+        );
+        rates = ratesRes.rows;
+    } catch (e) {
+        console.log("ℹ️ fixed_rates table not found or empty for this location.");
+        rates = []; 
+    }
+
+    // 3. Now check if the profile exists
+    if (!profileRes.rows || profileRes.rows.length === 0) {
+      return res.status(404).json({ error: "Profile not found" });
+    }
+
+    // 4. Extract the profile object
+    const profile = profileRes.rows[0];
+
+    // ✅ FINAL CLEANED RESPONSE OBJECT (Where your code goes)
+    res.json({
+      location_id: profile.location_id,
+      business_name: profile.business_name || "",
+      maps_api_key: profile.maps_api_key || "",
+      crm_webhook_url: profile.crm_webhook_url || "",
+      tax_rate: toNumber(profile.tax_rate),
+      per_mile_rate: toNumber(profile.per_mile_rate), 
+      fleet: safeParse(profile.fleet),
+      // Combines legacy 'special_events' with new 'events' column
+      events: safeParse(profile.events || profile.special_events || []),
+      addons: safeParse(profile.addons),
+      peak_windows: safeParse(profile.peak_windows),
+      fixed_rates: rates, // Using the 'rates' variable from step 2
+      service_lat: toNumber(profile.service_lat),
+      service_lng: toNumber(profile.service_lng),
+      service_radius: toNumber(profile.service_radius),
+      plan_name: profile.plan_name || "Starter"
+    });
+
+  } catch (err) {
+    console.error("❌ Profile Route Error:", err.message);
+    res.status(500).json({ error: "Internal Server Error: " + err.message });
+  } finally {
+    if (client) client.release();
+  }
 });
 
 app.post('/api/save-config', async (req, res) => {
