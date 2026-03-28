@@ -159,6 +159,10 @@
             </div>
         </div>
 
+        <input type="hidden" id="svc_lat" value="30.4515">
+    <input type="hidden" id="svc_lng" value="-91.1871">
+    <input type="hidden" id="svc_radius" value="50">
+
         <div class="lg:col-span-1">
             <div class="sticky top-6 space-y-6">
                 <button onclick="saveToBackend()" id="save-btn" class="w-full bg-blue-600 text-white font-black py-5 rounded-2xl shadow-xl uppercase tracking-widest text-sm disabled-btn" disabled>
@@ -237,6 +241,8 @@ function initServiceMap(lat = 34.0522, lng = -118.2437, radiusMiles = 90) {
     circle.addListener('radius_changed', updateFields);
     marker.addListener('drag', () => circle.setCenter(marker.getPosition()));
 
+
+    
     const searchInput = document.getElementById('map-search');
     autocomplete = new google.maps.places.Autocomplete(searchInput);
     autocomplete.addListener('place_changed', () => {
@@ -299,6 +305,38 @@ function addRouteRow(data = {}) {
     tbody.appendChild(tr);
     updateRouteMap();
 }
+
+
+
+window.useCurrentLocation = function() {
+    console.log("📍 Attempting to get current location...");
+    if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+            (position) => {
+                const lat = position.coords.latitude;
+                const lng = position.coords.longitude;
+                console.log(`✅ Location found: ${lat}, ${lng}`);
+                
+                // Update your map and hidden inputs
+                if (window.initMyWizardMap) {
+                    window.initMyWizardMap(lat, lng);
+                }
+                
+                // Update hidden inputs so the Sync button can find them
+                document.getElementById('svc_lat').value = lat;
+                document.getElementById('svc_lng').value = lng;
+                
+                showToast("📍 Location Updated!", "success");
+            },
+            (error) => {
+                console.error("❌ Geolocation error:", error);
+                alert("Could not get location. Please search manually.");
+            }
+        );
+    } else {
+        alert("Geolocation is not supported by this browser.");
+    }
+};
 
 function updateRouteMap() {
     routeCircles.forEach(c => c.setMap(null));
