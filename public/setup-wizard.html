@@ -3,12 +3,17 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Chauffeur Deluxe | Setup Wizard</title>
+    <title>Snowden Luxury | Setup Wizard</title>
+
+    <script src="https://link.crmonesource.com/js/ghl-sdk.js"></script>
+
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
     <script src="https://maps.googleapis.com/maps/api/js?libraries=places"></script>
+
     <style>
         .input-mini { width: 100%; padding: 0.6rem; border: 1px solid #e2e8f0; border-radius: 0.5rem; font-size: 0.85rem; transition: all 0.2s; }
-        .input-mini:focus { border-color: #2563eb; ring: 2px; ring-color: #dbeafe; outline: none; }
+        .input-mini:focus { border-color: #2563eb; outline: none; box-shadow: 0 0 0 2px #dbeafe; }
         .card { background: white; padding: 2rem; border-radius: 1.5rem; border: 1px solid #f1f5f9; margin-bottom: 2rem; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.05); }
         th { text-align: left; padding-bottom: 1rem; color: #64748b; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.1em; }
         .section-header { text-transform: uppercase; font-style: italic; font-weight: 800; color: #1e293b; border-bottom: 2px solid #e2e8f0; padding-bottom: 0.5rem; margin-bottom: 1.5rem; }
@@ -17,6 +22,17 @@
         .disabled-btn { opacity: 0.5; cursor: not-allowed; filter: grayscale(1); }
         #logo-preview { max-height: 60px; object-fit: contain; border-radius: 8px; }
     </style>
+
+    <script>
+        window.addEventListener('load', () => {
+            if (typeof ghl !== 'undefined') {
+                ghl.init();
+                console.log("✅ CRMOneSource Bridge Initialized");
+            } else {
+                console.error("❌ SDK failed to load from link.crmonesource.com");
+            }
+        });
+    </script>
 </head>
 <body class="bg-slate-50 text-slate-900 p-4 md:p-12">
 
