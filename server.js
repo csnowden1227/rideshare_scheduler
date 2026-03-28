@@ -1,38 +1,36 @@
 /*****************************************************
- 🚀 SERVER.JS - GO HIGH LEVEL SAAS BACKEND (CLEANED)
+ 🚀 SERVER.JS - GO HIGH LEVEL SAAS BACKEND
 *****************************************************/
 import * as dotenv from 'dotenv';
 dotenv.config();
 
 import express from 'express';
 import cors from 'cors';
-import pkg from 'pg';
+import pkg from 'pg'; 
 import { Client as GoogleMapsClient } from "@googlemaps/google-maps-services-js";
 import path from 'path';
 import { fileURLToPath } from 'url';
 
+// 1. EXTRACT POOL FROM THE PACKAGE (Crucial Step)
 const { Pool, Client } = pkg;
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const app = express();
 
+// 2. DEFINE HELPER (Only once!)
+const toNumber = (v, defaultVal = 0) => {
+  const n = parseFloat(v);
+  return isNaN(n) ? defaultVal : n;
+};
 
-/*****************************************************
- 1️⃣ APP / DB CONFIG
-*****************************************************/
+// 3. NOW INITIALIZE POOL
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false }
 });
 
-const toNumber = (v) => {
-    const n = parseFloat(v);
-    return isNaN(n) ? 0 : n;
-};
-
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const app = express();
 const googleMapsClient = new GoogleMapsClient({});
-const CRM_WEBHOOK_URL =
-  process.env.CRM_WEBHOOK_URL ||
-  "https://services.leadconnectorhq.com/hooks/VXE0UY17p7wnxdZ3sOLc/webhook-trigger/a7699638-aca6-4480-a0ce-25df857c9b33";
+
+const CRM_WEBHOOK_URL = process.env.CRM_WEBHOOK_URL || "https://services.leadconnectorhq.com/hooks/VXE0UY17p7wnxdZ3sOLc/webhook-trigger/a7699638-aca6-4480-a0ce-25df857c9b33";
 
 const allowedOrigins = [
   'https://app.leadconnectorhq.com',
@@ -99,7 +97,7 @@ function isInsideGeofence(userLat, userLng, fenceLat, fenceLng, radiusMiles) {
     return distance <= radiusMiles;
 }
 
-function toNumber(value, fallback = 0) {
+function asNum(value, fallback = 0) {
   const n = Number(value);
   return Number.isFinite(n) ? n : fallback;
 }
@@ -140,13 +138,13 @@ function normalizeFleet(profile) {
     vehicle_type: slot.vehicle_type || slot.name || '',
     name: slot.name || slot.vehicle_type || '',
     calendar_id: slot.calendar_id || '',
-    base_rate: toNumber(slot.base_rate),
-    mile_rate: toNumber(slot.mile_rate ?? slot.per_mile_rate),
-    minimum_fare: toNumber(slot.minimum_fare),
-    deposit_percent: toNumber(slot.deposit_percent, 20),
-    duration_min: toNumber(slot.duration_min, 105),
-    slot_interval_min: toNumber(slot.slot_interval_min, 30),
-    min_notice_min: toNumber(slot.min_notice_min, 120)
+    base_rate: asNum(slot.base_rate),
+    mile_rate: asNum(slot.mile_rate ?? slot.per_mile_rate),
+    minimum_fare: asNum(slot.minimum_fare),
+    deposit_percent: asNum(slot.deposit_percent, 20),
+    duration_min: asNum(slot.duration_min, 105),
+    slot_interval_min: asNum(slot.slot_interval_min, 30),
+    min_notice_min: asNum(slot.min_notice_min, 120)
   })).filter((slot) => slot.vehicle_slot_id);
 }
 
@@ -173,7 +171,7 @@ function computeAddonTotal(addonsConfig, selectedAddons) {
 
     // Match either ID or description
     if (selectedIds.has(addonId) || selectedIds.has(addonDesc)) {
-      const price = toNumber(addon.price);
+      const price = asNum(addon.price);
 
       total += price;
 
@@ -207,10 +205,10 @@ function computeSpecialEventAdjustment(events, selectedEventName, startTime) {
   }
 
   return {
-    multiplier: toNumber(event.multiplier, 1),
+    multiplier: asNum(event.multiplier, 1),
     event,
-    base_rate: event.base_rate != null ? toNumber(event.base_rate) : null,
-    mile_rate: event.mile_rate != null ? toNumber(event.mile_rate) : null
+    base_rate: event.base_rate != null ? asNum(event.base_rate) : null,
+    mile_rate: event.mile_rate != null ? asNum(event.mile_rate) : null
   };
 }
 
@@ -306,14 +304,14 @@ async function syncFleetSettings(location_id, fleet) {
     push('vehicle_type', slot.vehicle_type || slot.name || null);
     push('name', slot.name || slot.vehicle_type || null);
     push('calendar_id', slot.calendar_id || null);
-    push('base_rate', toNumber(slot.base_rate));
-    push('mile_rate', toNumber(slot.mile_rate));
-    push('per_mile_rate', toNumber(slot.mile_rate));
-    push('minimum_fare', toNumber(slot.minimum_fare));
-    push('deposit_percent', toNumber(slot.deposit_percent, 20));
-    push('duration_min', toNumber(slot.duration_min, 105));
-    push('slot_interval_min', toNumber(slot.slot_interval_min, 30));
-    push('min_notice_min', toNumber(slot.min_notice_min, 120));
+    push('base_rate', asNum(slot.base_rate));
+    push('mile_rate', asNum(slot.mile_rate));
+    push('per_mile_rate', asNum(slot.mile_rate));
+    push('minimum_fare', asNum(slot.minimum_fare));
+    push('deposit_percent', asNum(slot.deposit_percent, 20));
+    push('duration_min', asNum(slot.duration_min, 105));
+    push('slot_interval_min', asNum(slot.slot_interval_min, 30));
+    push('min_notice_min', asNum(slot.min_notice_min, 120));
     push('is_active', true);
 
     if (!fields.length) continue;
@@ -339,8 +337,6 @@ app.get('/api/health', (_req, res) => {
 });
 
    
-app.post('/api/update-profile-full', saveConfigHandler);
-
 app.get("/api/get-profile/:location_id", async (req, res) => {
   const { location_id } = req.params;
   let client;
@@ -479,7 +475,7 @@ async function triggerCrmWebhook(location_id, booking_id) {
       return console.log(`⚠️ No CRM Webhook found and no Master Webhook configured for: ${location_id}`);
     }
 
-    // --- (Your Financial Calculations remain exactly the same) ---
+
    // --- (Your Financial Calculations remain exactly the same) ---
     const total = Number(b.total_price || 0);
     const taxRate = Number(p?.tax_rate || 0);
