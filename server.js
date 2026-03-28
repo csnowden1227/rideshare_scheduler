@@ -13,7 +13,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import * as turf from '@turf/turf';
 
-const { Pool } = pkg;
+const { Pool, Client } = pkg;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 
@@ -82,6 +82,7 @@ app.post("/api/save-config", async (req, res) => {
     const {
       location_id,
       business_name,
+      logo_url,
       crm_webhook_url,
       maps_api_key,
       tax_rate,
@@ -103,6 +104,7 @@ app.post("/api/save-config", async (req, res) => {
       INSERT INTO profiles (
         location_id,
         business_name,
+        logo_url,
         crm_webhook_url,
         maps_api_key,
         tax_rate,
@@ -115,10 +117,11 @@ app.post("/api/save-config", async (req, res) => {
         events,
         addons
       )
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
       ON CONFLICT (location_id)
       DO UPDATE SET
         business_name = EXCLUDED.business_name,
+        logo_url = EXCLUDED.logo_url,
         crm_webhook_url = EXCLUDED.crm_webhook_url,
         maps_api_key = EXCLUDED.maps_api_key,
         tax_rate = EXCLUDED.tax_rate,
@@ -134,6 +137,7 @@ app.post("/api/save-config", async (req, res) => {
       [
         location_id,
         business_name,
+        logo_url || null,
         crm_webhook_url,
         maps_api_key,
         tax_rate,
@@ -385,13 +389,19 @@ app.get("/test-page", (req, res) => {
 app.post('/api/update-profile-full', async (req, res) => {
     const {
         location_id,
+        business_name,
+        logo_url,
         crm_webhook_url, 
         maps_api_key,
         tax_rate,
+        service_lat,
+        service_lng,
+        service_radius,
         fleet,
         fixed_rates,
         peak_windows,
-        events
+        events,
+        addons
     } = req.body;
 
     let client;
@@ -403,29 +413,43 @@ app.post('/api/update-profile-full', async (req, res) => {
         // 1. UPSERT THE MAIN PROFILE
         await client.query(
             `INSERT INTO profiles (
-                location_id, crm_webhook_url, maps_api_key, tax_rate, fleet, events, peak_windows
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+                location_id, business_name, logo_url, crm_webhook_url, maps_api_key, tax_rate, service_lat, service_lng, service_radius, fleet, fixed_rates, events, peak_windows, addons
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
             ON CONFLICT (location_id) 
             DO UPDATE SET 
+                business_name = EXCLUDED.business_name,
+                logo_url = EXCLUDED.logo_url,
                 crm_webhook_url = EXCLUDED.crm_webhook_url,
                 maps_api_key = EXCLUDED.maps_api_key,
                 tax_rate = EXCLUDED.tax_rate,
+                service_lat = EXCLUDED.service_lat,
+                service_lng = EXCLUDED.service_lng,
+                service_radius = EXCLUDED.service_radius,
                 fleet = EXCLUDED.fleet,
+                fixed_rates = EXCLUDED.fixed_rates,
                 events = EXCLUDED.events,
-                peak_windows = EXCLUDED.peak_windows`,
+                peak_windows = EXCLUDED.peak_windows,
+                addons = EXCLUDED.addons`,
             [
                 location_id,
+                business_name || null,
+                logo_url || null,
                 crm_webhook_url,
                 maps_api_key,
                 tax_rate || 0,
+                service_lat || null,
+                service_lng || null,
+                service_radius || null,
                 JSON.stringify(fleet || []),
+                JSON.stringify(fixed_rates || []),
                 JSON.stringify(events || []),
-                JSON.stringify(peak_windows || [])
+                JSON.stringify(peak_windows || []),
+                JSON.stringify(addons || [])
             ]
         );
 
         // 2. CLEAR AND REFRESH FLEET SLOTS
-await client.query('DELETE FROM services WHERE location_id = $1', [location_id]);
+await client.query('DELETE FROM fleet_slots WHERE location_id = $1', [location_id]);
 
 if (fleet && fleet.length > 0) {
     for (const vehicle of fleet) {
@@ -457,20 +481,6 @@ if (fleet && fleet.length > 0) {
         );
     }
 }
-
-        // 3. REFRESH FIXED RATES
-        await client.query('DELETE FROM fixed_rates WHERE location_id = $1', [location_id]);
-        if (fixed_rates && fixed_rates.length > 0) {
-            for (const route of fixed_rates) {
-                if (route.pickup_keyword && route.dropoff_keyword) {
-                    await client.query(
-                        `INSERT INTO fixed_rates (location_id, pickup_keyword, dropoff_keyword, fixed_price, is_active)
-                        VALUES ($1, $2, $3, $4, true)`,
-                        [location_id, route.pickup_keyword, route.dropoff_keyword, parseFloat(route.fixed_price) || 0]
-                    );
-                }
-            }
-        }
 
         await client.query('COMMIT');
         console.log(`✅ Profile and FleetSlots synced for: ${location_id}`);
@@ -731,7 +741,6 @@ app.get("/api/get-profile/:location_id", async (req, res) => {
   try {
     client = await pool.connect();
     const profileRes = await client.query("SELECT * FROM profiles WHERE location_id = $1", [location_id]);
-    const ratesRes = await client.query("SELECT * FROM fixed_rates WHERE location_id = $1", [location_id]);
 
     if (profileRes.rows.length === 0) return res.status(404).json({ error: "Profile not found" });
 
@@ -746,6 +755,11 @@ app.get("/api/get-profile/:location_id", async (req, res) => {
   }
 };
 
+const parsedFixedRates = safeParse(profile.fixed_rates);
+const parsedEvents = safeParse(profile.events);
+const parsedPeakWindows = safeParse(profile.peak_windows);
+const parsedAddons = safeParse(profile.addons);
+
 res.json({
   location_id: profile.location_id,
   plan_name: profile.plan_name || "Starter",
@@ -754,6 +768,7 @@ res.json({
   logo_url: profile.logo_url,
   maps_api_key: profile.maps_api_key,
   crm_webhook_url: profile.crm_webhook_url,
+  tax_rate: parseFloat(profile.tax_rate) || 0,
 
   financials: {
     tax_rate: parseFloat(profile.tax_rate) || 0,
@@ -787,10 +802,10 @@ res.json({
     calendar_id: v.calendar_id || null
   })),
 
-  events: safeParse(profile.events),
-  peak_windows: safeParse(profile.peak_windows),
-  fixed_rates: ratesRes.rows,
-  addons: safeParse(profile.addons),
+  events: parsedEvents,
+  peak_windows: parsedPeakWindows,
+  fixed_rates: parsedFixedRates,
+  addons: parsedAddons,
 
   service_lat: profile.service_lat,
   service_lng: profile.service_lng,

@@ -242,11 +242,58 @@ function previewLogo(input) {
 
 // --- MAP LOGIC ---
 
+function initServiceMap(lat = 34.0522, lng = -118.2437, radiusMiles = 90) {
+    if (!google?.maps) return;
+
+    const center = {
+        lat: Number(lat) || 34.0522,
+        lng: Number(lng) || -118.2437
+    };
+
+    map = new google.maps.Map(document.getElementById('map'), {
+        center,
+        zoom: 10,
+        mapTypeControl: false,
+        streetViewControl: false,
+        fullscreenControl: true
+    });
+
+    marker = new google.maps.Marker({ position: center, map, draggable: true });
+
+    circle = new google.maps.Circle({
+        map,
+        center,
+        radius: (Number(radiusMiles) || 90) * 1609.34,
+        fillColor: '#2563eb',
+        fillOpacity: 0.2,
+        strokeColor: '#2563eb',
+        strokeWeight: 2,
+        editable: true,
+        draggable: true
+    });
+
+    const updateFields = () => {
+        const currentCenter = circle.getCenter();
+        const radMeters = circle.getRadius();
+        document.getElementById('svc_lat').value = currentCenter.lat().toFixed(6);
+        document.getElementById('svc_lng').value = currentCenter.lng().toFixed(6);
+        document.getElementById('svc_radius').value = Math.round(radMeters / 1609.34);
+        marker.setPosition(currentCenter);
+    };
+
+    circle.addListener('center_changed', updateFields);
+    circle.addListener('radius_changed', updateFields);
+    marker.addListener('drag', () => circle.setCenter(marker.getPosition()));
+
+    updateFields();
+    initAutocomplete();
+}
+
 function initAutocomplete() {
     const input = document.getElementById('map-search');
     if (!input || !google?.maps?.places) return;
 
-    const autocomplete = new google.maps.places.Autocomplete(input, {
+    autocomplete = new google.maps.places.Autocomplete(input, {
         componentRestrictions: { country: ['us'] },
         fields: ['geometry', 'name', 'formatted_address']
     });
@@ -278,7 +325,7 @@ function initAutocomplete() {
     });
 }
 
-    marker = new google.maps.Marker({ position: center, map: map, draggable: true });
+/*    marker = new google.maps.Marker({ position: center, map: map, draggable: true });
     
     circle = new google.maps.Circle({
         map: map,
@@ -317,7 +364,7 @@ function initAutocomplete() {
         }
     });
 
-    updateFields();
+    updateFields(); */
 
 function updateCircleFromInput() {
     const r = parseFloat(document.getElementById('svc_radius').value) || 90;
@@ -463,7 +510,7 @@ async function loadFromBackend() {
             document.getElementById('business_name').value = data.business_name || '';
             document.getElementById('webhook_url').value = data.crm_webhook_url || '';
             document.getElementById('maps_key').value = data.maps_api_key || '';
-            document.getElementById('tax_rate').value = data.tax_rate || '8.25';
+            document.getElementById('tax_rate').value = data.tax_rate ?? data.financials?.tax_rate ?? '8.25';
 
             if (data.logo_url) {
                 logoBase64 = data.logo_url;
