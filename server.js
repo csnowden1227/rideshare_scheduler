@@ -3,66 +3,54 @@
 *****************************************************/
 import * as dotenv from 'dotenv';
 dotenv.config();
-import express from 'express';
-import cors from 'cors'; // Only import this ONCE
-import pkg from 'pg';
-const { Pool } = pkg;
 
+import express from 'express';
+import cors from 'cors';
+import pkg from 'pg';
 import { Client as GoogleMapsClient } from "@googlemaps/google-maps-services-js";
 import { google } from 'googleapis';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import * as turf from '@turf/turf';
 
+const { Pool } = pkg;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 
-// --- 1. CORS CONFIGURATION (The "Permission Slip") ---
-app.use(cors({
-  origin: [
-    'https://app.leadconnectorhq.com', 
-    'https://app.crmonesource.com',
-    'https://services.leadconnectorhq.com'
-  ],
-  methods: ['GET', 'POST', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
-}));
-app.use(express.json()); // Essential so your server can read the Sync data
-
 // 1. Define Environment Variables
-const CRM_WEBHOOK_URL = process.env.CRM_WEBHOOK_URL || "https://services.leadconnectorhq.com/hooks/VXE0UY17p7wnxdZ3sOLc/webhook-trigger/a7699638-aca6-4480-a0ce-25df857c9b33";
+const CRM_WEBHOOK_URL =
+  process.env.CRM_WEBHOOK_URL ||
+  "https://services.leadconnectorhq.com/hooks/VXE0UY17p7wnxdZ3sOLc/webhook-trigger/a7699638-aca6-4480-a0ce-25df857c9b33";
 
 /*****************************************************
  1️⃣ DATABASE CONFIGURATION
 *****************************************************/
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false } 
+  ssl: { rejectUnauthorized: false }
 });
 
 // Initialize the Google Maps Client for the Backend
 const googleMapsClient = new GoogleMapsClient({});
 
-// --- 1. MIDDLEWARE & SECURITY CONFIG ---
-app.use(express.json()); // Essential for reading JSON payloads
-app.use(express.static(path.join(__dirname, "public")));
-
-// Consolidated CORS - Add all your known origins here
+// --- MIDDLEWARE & SECURITY CONFIG ---
 const allowedOrigins = [
-  'https://app.leadconnectorhq.com', 
+  'https://app.leadconnectorhq.com',
   'https://app.crmonesource.com',
   'https://services.leadconnectorhq.com',
-  'https://rideshare-scheduler-axx6.onrender.com', // Your backend URL
-  'http://localhost:5173', // For local Vite development
-  'http://localhost:8080'  // For local testing
+  'https://rideshare-scheduler-axx6.onrender.com',
+  'http://localhost:5173',
+  'http://localhost:8080'
 ];
 
 app.use(cors({
-  origin: function (origin, callback) {
-    // allow requests with no origin (like mobile apps or curl requests)
+  origin(origin, callback) {
     if (!origin) return callback(null, true);
-    if (allowedOrigins.indexOf(origin) === -1) {
-      const msg = 'The CORS policy for this site does not allow access from the specified Origin.';
-      return callback(new Error(msg), false);
+    if (!allowedOrigins.includes(origin)) {
+      return callback(
+        new Error('The CORS policy for this site does not allow access from the specified Origin.'),
+        false
+      );
     }
     return callback(null, true);
   },
@@ -70,19 +58,144 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
-// --- 2. IFRAME & SECURITY POLICY ---
+app.use(express.json());
+app.use(express.static(path.join(__dirname, "public")));
+
+// --- IFRAME & SECURITY POLICY ---
 app.use((req, res, next) => {
   res.setHeader(
-    "Content-Security-Policy", 
+    "Content-Security-Policy",
     "frame-ancestors 'self' https://app.crmonesource.com https://*.gohighlevel.com https://*.msgsndr.com https://*.leadconnectorhq.com;"
   );
   next();
 });
 
+ /*****************************************************
+  2️⃣ API ROUTES (Wizard & Health)
+ *****************************************************/
 
-/*****************************************************
- 2️⃣ API ROUTES (Wizard & Health)
-*****************************************************/
+// This handles the "Save" button from your Wizard
+app.post("/api/save-config", async (req, res) => {
+  const client = await pool.connect();
+
+  try {
+    const {
+      location_id,
+      business_name,
+      crm_webhook_url,
+      maps_api_key,
+      tax_rate,
+      service_lat,
+      service_lng,
+      service_radius,
+      fleet = [],
+      fixed_rates = [],
+      peak_windows = [],
+      events = [],
+      addons = []
+    } = req.body;
+
+    await client.query("BEGIN");
+
+    // 1. UPSERT PROFILE
+    await client.query(
+      `
+      INSERT INTO profiles (
+        location_id,
+        business_name,
+        crm_webhook_url,
+        maps_api_key,
+        tax_rate,
+        service_lat,
+        service_lng,
+        service_radius,
+        fleet,
+        fixed_rates,
+        peak_windows,
+        events,
+        addons
+      )
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+      ON CONFLICT (location_id)
+      DO UPDATE SET
+        business_name = EXCLUDED.business_name,
+        crm_webhook_url = EXCLUDED.crm_webhook_url,
+        maps_api_key = EXCLUDED.maps_api_key,
+        tax_rate = EXCLUDED.tax_rate,
+        service_lat = EXCLUDED.service_lat,
+        service_lng = EXCLUDED.service_lng,
+        service_radius = EXCLUDED.service_radius,
+        fleet = EXCLUDED.fleet,
+        fixed_rates = EXCLUDED.fixed_rates,
+        peak_windows = EXCLUDED.peak_windows,
+        events = EXCLUDED.events,
+        addons = EXCLUDED.addons
+      `,
+      [
+        location_id,
+        business_name,
+        crm_webhook_url,
+        maps_api_key,
+        tax_rate,
+        service_lat,
+        service_lng,
+        service_radius,
+        JSON.stringify(fleet),
+        JSON.stringify(fixed_rates),
+        JSON.stringify(peak_windows),
+        JSON.stringify(events),
+        JSON.stringify(addons)
+      ]
+    );
+
+    // 2. OPTIONAL: CLEAR + SAVE RELATIONAL FLEET TABLE
+    await client.query(
+      `DELETE FROM fleet_slots WHERE location_id = $1`,
+      [location_id]
+    );
+
+    for (const v of fleet) {
+      await client.query(
+        `
+        INSERT INTO fleet_slots (
+          location_id,
+          vehicle_slot_id,
+          name,
+          base_rate,
+          per_mile_rate,
+          calendar_id
+        )
+        VALUES ($1,$2,$3,$4,$5,$6)
+        `,
+        [
+          location_id,
+          v.vehicle_slot_id,
+          v.vehicle_type,
+          parseFloat(v.base_rate) || 0,
+          parseFloat(v.mile_rate) || 0,
+          v.calendar_id || null
+        ]
+      );
+    }
+
+    await client.query("COMMIT");
+
+    return res.json({
+      success: true,
+      message: "✅ Profile fully saved and aligned"
+    });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("❌ SAVE ERROR:", err);
+
+    return res.status(500).json({
+      success: false,
+      error: err.message
+    });
+  } finally {
+    client.release();
+  }
+});
 
 // This fixes the "Cannot GET /api/health" error
 app.get('/api/health', (req, res) => {
@@ -92,61 +205,7 @@ app.get('/api/health', (req, res) => {
     });
 });
 
-// This handles the "Save" button from your Vue Wizard
-app.post("/api/save-config", async (req, res) => {
-    const client = await pool.connect();
-    try {
-        const data = req.body; 
-        const { id, businessName, taxRate, mapsApiKey, fleet } = data; // Destructure from payload
 
-        await client.query('BEGIN');
-
-      // --- 1. UPDATE PROFILE OWNER DETAILS (Including Service Area) ---
-const updateProfileQuery = `
-  INSERT INTO profiles (location_id, business_name, tax_rate, maps_api_key, service_lat, service_lng)
-  VALUES ($1, $2, $3, $4, $5, $6)
-  ON CONFLICT (location_id) DO UPDATE SET 
-    business_name = EXCLUDED.business_name,
-    tax_rate = EXCLUDED.tax_rate,
-    maps_api_key = EXCLUDED.maps_api_key,
-    service_lat = EXCLUDED.service_lat,
-    service_lng = EXCLUDED.service_lng
-  RETURNING *;
-`;
-
-// Make sure these names match exactly what you're sending from the Wizard
-const profileValues = [id, businessName, taxRate, mapsApiKey, service_lat, service_lng];
-
-await client.query(updateProfileQuery, profileValues);
-
-        // --- 2. CLEAR AND RE-SYNC FLEET ---
-        await client.query(`DELETE FROM fleet_settings WHERE location_id = $1`, [id]);
-        
-        for (const v of fleet) {
-            await client.query(
-                `INSERT INTO fleet_settings (location_id, vehicle_slot_id, base_rate_cents, mile_rate_cents, calendar_id)
-                 VALUES ($1, $2, $3, $4, $5)`,
-                [
-                    id, 
-                    v.vehicle_type, 
-                    Math.round(v.base_rate * 100), 
-                    Math.round(v.mile_rate * 100), 
-                    v.calendar_id
-                ]
-            );
-        }
-
-        await client.query('COMMIT');
-        res.json({ success: true, message: "Profile and Fleet updated successfully" });
-
-    } catch (err) {
-        await client.query('ROLLBACK');
-        console.error("❌ Setup Wizard Error:", err);
-        res.status(500).json({ error: "Failed to save settings" });
-    } finally {
-        client.release();
-    }
-});
 /*****************************************************
  2️⃣ GLOBAL OAUTH2 CLIENT FOR GOOGLE
 *****************************************************/
@@ -295,47 +354,7 @@ async function checkFixedRate(location_id, pickupAddr, dropoffAddr) {
 /*****************************************************
  4️⃣ SAVE SETTINGS ROUTE
 *****************************************************/
-app.post('/api/save-settings', async (req, res) => {
-    const { location_id, mapsApiKey, taxRate, businessName } = req.body;
 
-    try {
-        // 1. Validate the Maps Key before saving
-        const isValid = await validateMapsKey(mapsApiKey);
-        if (!isValid) {
-            return res.status(400).json({ 
-                success: false, 
-                error: "Invalid Google Maps API Key. Please check your console." 
-            });
-        }
-
-        // 2. Update the user record in the database
-        // We use COALESCE so we don't overwrite the business name with NULL if it's missing
-        const query = `
-            UPDATE users 
-            SET maps_api_key = $1, 
-                tax_rate = $2, 
-                business_name = COALESCE($3, business_name)
-            WHERE id = $4
-            RETURNING id;
-        `;
-
-        const result = await pool.query(query, [mapsApiKey, taxRate, businessName, location_id]);
-
-        if (result.rows.length === 0) {
-            // If the user doesn't exist yet, create them
-            await pool.query(
-                "INSERT INTO users (id, maps_api_key, tax_rate, business_name) VALUES ($1, $2, $3, $4)",
-                [location_id, mapsApiKey, taxRate, businessName]
-            );
-        }
-
-        res.json({ success: true, message: "Settings saved and API key validated!" });
-
-    } catch (error) {
-        console.error("❌ Save Settings Error:", error);
-        res.status(500).json({ success: false, error: "Internal Server Error" });
-    }
-});
 
 app.post("/api/sync-ghl", async (req, res) => {
     const GHL_WEBHOOK_URL = "https://services.leadconnectorhq.com/hooks/VXE0UY17p7wnxdZ3sOLc/webhook-trigger/a7699638-aca6-4480-a0ce-25df857c9b33";
@@ -352,18 +371,6 @@ app.post("/api/sync-ghl", async (req, res) => {
     } catch (err) {
         res.status(500).json({ error: "Failed to forward to GHL" });
     }
-});
-
-app.post('/api/save-config', (req, res) => {
-    // We pull crm_webhook_url out of the request body
-    const { id, crm_webhook_url } = req.body;
-    
-    console.log(`Saving for ${id}: URL is ${crm_webhook_url}`);
-
-    // If you're using a database, you'd save it here
-    // configurations[id] = { webhook: crm_webhook_url };
-
-    res.json({ success: true });
 });
 
 app.get('/api/test', (req, res) => {
@@ -585,15 +592,17 @@ async function triggerCrmWebhook(location_id, booking_id) {
   try {
     client = await pool.connect();
 
-    // 1. Get the Booking (Source of Truth)
     const bookingRes = await client.query(
       "SELECT * FROM bookings WHERE id = $1",
       [booking_id]
     );
-    if (bookingRes.rows.length === 0) return console.log("⚠️ Booking not found.");
+    if (bookingRes.rows.length === 0) {
+      console.log("⚠️ Booking not found.");
+      return;
+    }
+
     const b = bookingRes.rows[0];
 
-    // 2. Get the Profile Owner's Webhook & Tax Rate
     const profileRes = await client.query(
       "SELECT crm_webhook_url, tax_rate, business_name FROM profiles WHERE location_id = $1",
       [location_id]
@@ -601,109 +610,69 @@ async function triggerCrmWebhook(location_id, booking_id) {
     const p = profileRes.rows[0];
 
     if (!p?.crm_webhook_url) {
-      return console.log(`⚠️ No CRM Webhook found for location: ${location_id}`);
+      console.log(`⚠️ No CRM Webhook found for location: ${location_id}`);
+      return;
     }
 
-    // 3. Financial Calculations
     const basePrice = Number(b.total_price || 0);
     const taxRate = Number(p.tax_rate || 0);
     const totalWithTax = (basePrice * (1 + taxRate)).toFixed(2);
-    const balanceDue = (totalWithTax - Number(b.deposit_amount || 0)).toFixed(2);
+    const balanceDue = (Number(totalWithTax) - Number(b.deposit_amount || 0)).toFixed(2);
 
-    // 4. Build the Categorized Payload
-   const payload = {
-    webhook_type: "BOOKING_SYNC",
-    locationId: location_id,
-    calendarId: String(b.calendar_id), // Guaranteed to be the UID string
-    businessName: p.business_name,
-    customer: {
+    const payload = {
+      webhook_type: "BOOKING_SYNC",
+      location_id,
+      calendarId: String(b.calendar_id),
+      businessName: p.business_name,
+      customer: {
         firstName: b.first_name,
         lastName: b.last_name,
         email: b.customer_email,
         phone: b.customer_phone
-    },
-    trip: {
+      },
+      trip: {
         bookingId: b.id,
-        status: b.status || 'pending',
+        status: b.status || "pending",
         pickup: b.pickup_address,
         dropoff: b.dropoff_address,
-        // COORDINATES:
         pickupLat: b.pickup_lat,
         pickupLng: b.pickup_lng,
         dropoffLat: b.dropoff_lat,
         dropoffLng: b.dropoff_lng,
         startTime: b.start_time,
         endTime: b.end_time
-    },
-    vehicle_Type: {
-        standardsedan: b.vehicle_type === 'Standard Sedan',
-        luxurysedan: b.vehicle_type === 'Luxury Sedan',
-        standardsuv: b.vehicle_type === 'Standard SUV',
-        luxurysuv: b.vehicle_type === 'Luxury SUV',
-        standardxlsuv: b.vehicle_type === 'Standard XL SUV',
-        luxuryxlsuv: b.vehicle_type === 'Luxury XL SUV'
-    },
-    financials: {
+      },
+      vehicle_Type: {
+        standardsedan: b.vehicle_type === "Standard Sedan",
+        luxurysedan: b.vehicle_type === "Luxury Sedan",
+        standardsuv: b.vehicle_type === "Standard SUV",
+        luxurysuv: b.vehicle_type === "Luxury SUV",
+        standardxlsuv: b.vehicle_type === "Standard XL SUV",
+        luxuryxlsuv: b.vehicle_type === "Luxury XL SUV"
+      },
+      financials: {
         subtotal: basePrice,
-        taxRate: taxRate,
-        totalWithTax: totalWithTax,
+        taxRate,
+        totalWithTax,
         depositPaid: b.deposit_amount,
         balanceRemaining: balanceDue
-    }
-};
-  
-// --- GOOGLE PLACES AUTOCOMPLETE ---
-window.initAutocomplete = function() {
-    const input = document.getElementById('map-search');
-    if (!input) return;
+      }
+    };
 
-    const autocomplete = new google.maps.places.Autocomplete(input);
-    
-    // Bind the search bar to the map
-    autocomplete.addListener('place_changed', function() {
-        const place = autocomplete.getPlace();
-        
-        if (!place.geometry) {
-            console.log("No details available for input: '" + place.name + "'");
-            return;
-        }
-
-        const lat = place.geometry.location.lat();
-        const lng = place.geometry.location.lng();
-
-        // 1. Update the Hidden Inputs (Crucial for the Sync Button!)
-        document.getElementById('svc_lat').value = lat;
-        document.getElementById('svc_lng').value = lng;
-
-        // 2. Center the Map and Marker
-        if (map) {
-            map.setCenter({ lat, lng });
-            map.setZoom(11);
-            marker.setPosition({ lat, lng });
-            serviceCircle.setCenter({ lat, lng });
-        }
-        
-        console.log(`📍 Map moved to: ${lat}, ${lng}`);
-    });
-};
-
-// Call this inside your existing window.onload or startMyWizard
-
-    // 5. Send to GHL
     const resp = await fetch(p.crm_webhook_url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload)
     });
 
     console.log(`✅ Webhook sent to GHL. Status: ${resp.status}`);
-
   } catch (err) {
     console.error("❌ Webhook Trigger Error:", err);
   } finally {
     if (client) client.release();
   }
 }
+
 
 /*****************************************************
  7️⃣  CRM_One_Source STAFF SYNC (FLEET GENERATION)
@@ -755,8 +724,6 @@ app.post('/api/sync-fleet', async (req, res) => {
 }
 });
 
-
-
 // --- GET PROFILE SETTINGS ---
 app.get("/api/get-profile/:location_id", async (req, res) => {
   const { location_id } = req.params;
@@ -769,18 +736,65 @@ app.get("/api/get-profile/:location_id", async (req, res) => {
     if (profileRes.rows.length === 0) return res.status(404).json({ error: "Profile not found" });
 
     const profile = profileRes.rows[0];
-    const safeParse = (data) => (!data ? [] : (typeof data === 'string' ? JSON.parse(data) : data));
+    const safeParse = (data) => {
+  try {
+    if (!data) return [];
+    return typeof data === "string" ? JSON.parse(data) : data;
+  } catch (e) {
+    console.warn("JSON parse failed:", data);
+    return [];
+  }
+};
 
-    res.json({
-      location_id: profile.location_id,
-      plan_name: profile.plan_name || "Starter",
-      maps_api_key: profile.maps_api_key,
-      crm_webhook_url: profile.crm_webhook_url,
-      tax_rate: profile.tax_rate,
-      fleet: safeParse(profile.fleet),
-      events: safeParse(profile.events),
-      peak_windows: safeParse(profile.peak_windows),
-      fixed_rates: ratesRes.rows
+res.json({
+  location_id: profile.location_id,
+  plan_name: profile.plan_name || "Starter",
+
+  business_name: profile.business_name,
+  logo_url: profile.logo_url,
+  maps_api_key: profile.maps_api_key,
+  crm_webhook_url: profile.crm_webhook_url,
+
+  financials: {
+    tax_rate: parseFloat(profile.tax_rate) || 0,
+    default_deposit_percent: parseFloat(profile.deposit_percent) || 0,
+    default_deposit_flat_cents: parseInt(profile.deposit_flat_cents) || 0
+  },
+
+  quote_financials: {
+    total_price: 0,
+    deposit_amount: 0,
+    balance_due: 0
+  },
+
+  vehicle_types: [
+    { label: "Standard Sedan", category: "sedan" },
+    { label: "Luxury Sedan", category: "sedan" },
+    { label: "Standard SUV", category: "suv" },
+    { label: "Luxury SUV", category: "suv" },
+    { label: "Standard XL SUV", category: "xl" },
+    { label: "Luxury XL SUV", category: "xl" }
+  ],
+
+  fleet: (Array.isArray(safeParse(profile.fleet)) ? safeParse(profile.fleet) : []).map(v => ({
+    vehicle_slot_id: v.vehicle_slot_id,
+    vehicle_type: v.vehicle_type,
+    vehicle_category: v.vehicle_category || null,
+    base_rate: parseFloat(v.base_rate) || 0,
+    mile_rate: parseFloat(v.mile_rate) || 0,
+    deposit_percent: parseFloat(v.deposit_percent) || 0,
+    deposit_flat_cents: parseInt(v.deposit_flat_cents) || 0,
+    calendar_id: v.calendar_id || null
+  })),
+
+  events: safeParse(profile.events),
+  peak_windows: safeParse(profile.peak_windows),
+  fixed_rates: ratesRes.rows,
+  addons: safeParse(profile.addons),
+
+  service_lat: profile.service_lat,
+  service_lng: profile.service_lng,
+  service_radius: profile.service_radius
 });
   } catch (err) {
     console.error("❌ Profile Route Error:", err.message);
@@ -792,13 +806,13 @@ app.get("/api/get-profile/:location_id", async (req, res) => {
 
 /* ---------------- Hybrid Pricing & Geofence ---------------- */
 app.post("/api/pricing/quote", async (req, res) => {
-  const { locationId, pickup, dropoff, departureISO, pickupLat, pickupLng } = req.body;
+  const { location_id, pickup, dropoff, departureISO, pickupLat, pickupLng } = req.body;
 
   try {
     // A. Geofence Check: Ensure pickup is within the service radius
     const profileRes = await pool.query(
         "SELECT service_lat, service_lng, service_radius_miles FROM profiles WHERE location_id = $1", 
-        [locationId]
+        [location_id]
     );
     if (profileRes.rows.length === 0) return res.status(404).json({ error: "Location Profile not found" });
     
@@ -821,7 +835,7 @@ app.post("/api/pricing/quote", async (req, res) => {
 
     const eventCheck = await pool.query(
       "SELECT base_rate_cents, mile_rate_cents FROM events WHERE location_id = $1 AND event_date = $2",
-      [locationId, departureISO.split('T')[0]]
+      [location_id, departureISO.split('T')[0]]
     );
 
     if (eventCheck.rows.length > 0) {
@@ -883,24 +897,7 @@ app.get("/api/db-check", async (req, res) => {
   }
 }); // ✅ closes db-check
 
-/* =========================================================
-   ⚠️ FIX: REMOVE DUPLICATE APP/EXPRESS RE-DECLARATIONS BELOW
-   - You already have: const app = express(); app.use(...)
-   - You already have: pool (Postgres)
-   - This block was causing redeclare + duplicate route conflicts
-   ========================================================= */
 
-// ❌ REMOVE THESE (they break your server file):
-// const express = require('express');
-// const axios = require('axios');
-// const app = express();
-// app.use(express.json());
-
-// 1. ENDPOINT FOR THE WIDGET: Fetch specific configuration (by location_id)
-// ✅ Keep ONE version of /api/get-profile. 
-// 1. ENDPOINT FOR THE WIDGET: Fetch specific configuration
-// 1. GET SETTINGS FOR WIDGET
-// Fixed: Added the colon (:) before location_id
 app.get("/api/get-profile-widget/:location_id", async (req, res) => {
   try {
     const { location_id } = req.params;
@@ -934,73 +931,147 @@ app.get("/api/get-profile-widget/:location_id", async (req, res) => {
   }
 });
 
-// 2. ENDPOINT FOR BOOKING
 app.post("/api/create-booking", async (req, res) => {
   try {
     const {
-      location_id, vehicle_slot_id, first_name, last_name,
-      email, phone, pickup_address, dropoff_address, pickup_lat, pickup_lng, 
-      dropoff_lat, dropoff_lng, start_time, total_price,
-      deposit_percent = 0, deposit_amount = 0 // Default to 0 if missing
+      location_id,
+      vehicle_slot_id,
+      first_name,
+      last_name,
+      email,
+      phone,
+      pickup_address,
+      dropoff_address,
+      pickup_lat,
+      pickup_lng,
+      dropoff_lat,
+      dropoff_lng,
+      start_time,
+      total_price,
+      deposit_percent = 0,
+      deposit_amount = 0
     } = req.body;
 
-    // 1. CALCULATE END TIME (60 mins after start)
-    // Ensure this math is in create-booking:
-const end_time = new Date(new Date(start_time).getTime() + (60 + 45) * 60000).toISOString();
+    if (!location_id || !vehicle_slot_id || !first_name || !last_name || !start_time) {
+      return res.status(400).json({
+        success: false,
+        error: "Missing required booking fields."
+      });
+    }
 
-    // 2. DATABASE LOOKUPS (Get Webhook and Calendar ID first)
+    const vehicle_types = [
+      { label: "Standard Sedan", category: "sedan" },
+      { label: "Luxury Sedan", category: "sedan" },
+      { label: "Standard SUV", category: "suv" },
+      { label: "Luxury SUV", category: "suv" },
+      { label: "Standard XL SUV", category: "xl" },
+      { label: "Luxury XL SUV", category: "xl" }
+    ];
+
+    const end_time = new Date(
+      new Date(start_time).getTime() + (60 + 45) * 60000
+    ).toISOString();
+
     const profileLookup = await pool.query(
-      "SELECT crm_webhook_url FROM profiles WHERE location_id = $1", 
+      `SELECT crm_webhook_url
+       FROM profiles
+       WHERE location_id = $1`,
       [location_id]
     );
-    
+
     const fleetLookup = await pool.query(
-      "SELECT calendar_id FROM fleet_settings WHERE vehicle_slot_id = $1 AND location_id = $2",
+      `SELECT
+         calendar_id,
+         name AS vehicle_type,
+         category AS vehicle_category
+       FROM fleet_settings
+       WHERE vehicle_slot_id = $1 AND location_id = $2
+       LIMIT 1`,
       [vehicle_slot_id, location_id]
     );
 
-    const webhookUrl = profileLookup.rows[0]?.crm_webhook_url;
-    const calendar_id = fleetLookup.rows[0]?.calendar_id;
+    const webhookUrl = profileLookup.rows[0]?.crm_webhook_url || null;
+    const calendar_id = fleetLookup.rows[0]?.calendar_id || null;
+    const vehicle_type = fleetLookup.rows[0]?.vehicle_type || null;
+    const vehicle_category = fleetLookup.rows[0]?.vehicle_category || null;
 
-    // 3. SAVE TO LOCAL DATABASE
-    // Calculate the balance before the database query
-const balance_due = (Number(total_price) - Number(deposit_amount)).toFixed(2);
+    const numericTotalPrice = Number(total_price) || 0;
+    const numericDepositPercent = Number(deposit_percent) || 0;
+    const numericDepositAmount = Number(deposit_amount) || 0;
+    const balance_due = Number(
+      (numericTotalPrice - numericDepositAmount).toFixed(2)
+    );
 
-await pool.query(
-  `INSERT INTO bookings (
-    location_id, vehicle_slot_id, first_name, last_name, customer_email, 
-    customer_phone, pickup_address, dropoff_address, pickup_lat, 
-    pickup_lng, dropoff_lat, dropoff_lng, start_time, total_price,
-    calendar_id, deposit_amount, deposit_percent, balance_due
-  ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
-  [
-    location_id, vehicle_slot_id, first_name, last_name, email, 
-    phone, pickup_address, dropoff_address, pickup_lat, pickup_lng, 
-    dropoff_lat, dropoff_lng, start_time, total_price,
-    calendar_id, deposit_amount, deposit_percent, balance_due // <--- ADDED HERE
-  ]
-);
+    const result = await pool.query(
+      `INSERT INTO bookings (
+        location_id,
+        vehicle_slot_id,
+        first_name,
+        last_name,
+        customer_email,
+        customer_phone,
+        pickup_address,
+        dropoff_address,
+        pickup_lat,
+        pickup_lng,
+        dropoff_lat,
+        dropoff_lng,
+        start_time,
+        end_time,
+        total_price,
+        calendar_id,
+        deposit_amount,
+        deposit_percent,
+        balance_due
+      ) VALUES (
+        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19
+      )
+      RETURNING id`,
+      [
+        location_id,
+        vehicle_slot_id,
+        first_name,
+        last_name,
+        email,
+        phone,
+        pickup_address,
+        dropoff_address,
+        pickup_lat,
+        pickup_lng,
+        dropoff_lat,
+        dropoff_lng,
+        start_time,
+        end_time,
+        numericTotalPrice,
+        calendar_id,
+        numericDepositAmount,
+        numericDepositPercent,
+        balance_due
+      ]
+    );
 
-    // 4. TRIGGER THE WEBHOOK (Categorized for better organization)
-if (webhookUrl && webhookUrl.startsWith('http')) {
+    const booking_id = result.rows[0]?.id || null;
+
+    if (webhookUrl && webhookUrl.startsWith("http")) {
   fetch(webhookUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      // Core IDs
       location_id,
-      calendar_id: String(calendar_id), // Ensures the alphanumeric ID is treated as a string
-      vehicle_Id: vehicle_slot_id,
-
-      // Category 1: Customer Details
+      booking_id,
+      calendar_id: calendar_id ? String(calendar_id) : null,
+      vehicle: {
+        vehicle_slot_id,
+        vehicle_type,
+        vehicle_category
+      },
+      vehicle_types,
       customer: {
         firstName: first_name,
         lastName: last_name,
-        email: email,
-        phone: phone
+        email,
+        phone
       },
-
-      // Category 2: Trip Details
       trip: {
         pickup: pickup_address,
         dropoff: dropoff_address,
@@ -1011,28 +1082,61 @@ if (webhookUrl && webhookUrl.startsWith('http')) {
         startTime: start_time,
         endTime: end_time
       },
-
-      // Category 3: Financials
       financials: {
-        totalPrice: total_price,
-        depositPercent: deposit_percent,
-        depositAmount: deposit_amount,
-        balanceRemaining: (Number(total_price) - Number(deposit_amount)).toFixed(2)
+        totalPrice: numericTotalPrice,
+        depositPercent: numericDepositPercent,
+        depositAmount: numericDepositAmount,
+        balanceRemaining: balance_due
       }
     })
-  }).catch(e => console.error("Webhook Failed:", e));
+  }).catch((e) => {
+    console.error("Webhook Failed:", e);
+  });
 }
-
-    // 5. RESPOND TO THE WIDGET
-    res.status(200).json({ 
-      success: true, 
+    return res.status(200).json({
+      success: true,
       message: "Booking saved and webhook triggered",
-      booking_id: result?.rows?.[0]?.id 
-    });
-
+      booking: {
+        id: booking_id,
+        location_id,
+        status: "confirmed",
+        vehicle: {
+          vehicle_slot_id,
+          vehicle_type,
+          vehicle_category,
+          calendar_id
+        },
+        customer: {
+          first_name,
+          last_name,
+          email,
+          phone
+        },
+        trip: {
+          pickup_address,
+          dropoff_address,
+          pickup_lat,
+          pickup_lng,
+          dropoff_lat,
+          dropoff_lng,
+          start_time,
+          end_time
+        }
+      },
+      financials: {
+        total_price: numericTotalPrice,
+        deposit_percent: numericDepositPercent,
+        deposit_amount: numericDepositAmount,
+        balance_due
+      },
+      meta: {
+        created_at: new Date().toISOString(),
+        source: "booking_widget"
+      }
+    }); 
   } catch (err) {
     console.error("❌ Error in create-booking:", err);
-    res.status(500).json({ error: "Failed to create booking" });
+    return res.status(500).json({ success: false, error: "Failed to create booking" });
   }
 });
 
@@ -1040,17 +1144,14 @@ app.get("/setup-wizard", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "setup-wizard.html"));
 });
 
-// This tells the server what to do when you visit /api/health
-app.get('/api/health', (req, res) => {
-    res.json({
-        status: "SaaS Master Engine Online",
-        timestamp: new Date().toISOString(),
-        webhook_default: CRM_WEBHOOK_URL
-    });
+app.get("/api/health", (req, res) => {
+  res.json({
+    status: "SaaS Master Engine Online",
+    timestamp: new Date().toISOString()
+  });
 });
 
 // --- DATABASE LISTENER (Runs 24/7) ---
-const { Client } = pkg;
 
 const startListener = async () => {
   try {
@@ -1083,7 +1184,7 @@ const startListener = async () => {
 
         // Derive location_id from booking row
         const bookingRes = await pool.query(
-          "SELECT id, location_id, location_id FROM bookings WHERE id = $1",
+          "SELECT id, location_id FROM bookings WHERE id = $1",
           [booking_id]
         );
 
@@ -1092,10 +1193,7 @@ const startListener = async () => {
           return;
         }
 
-        const location_id =
-          bookingRes.rows[0].location_id ||
-          bookingRes.rows[0].location_id ||
-          "default";
+        const location_id = bookingRes.rows[0].location_id || "default";
 
         await triggerCrmWebhook(location_id, booking_id);
       } catch (err) {
@@ -1105,7 +1203,6 @@ const startListener = async () => {
 
     listenerClient.on("error", (err) => {
       console.error("❌ Listener Error:", err);
-      // If the listener errors, try restarting after a short delay
       setTimeout(startListener, 5000);
     });
 
@@ -1128,9 +1225,11 @@ const startListener = async () => {
     setTimeout(startListener, 5000);
   }
 };
+
 // --- START EVERYTHING ---
 const PORT = process.env.PORT || 8080;
+
 app.listen(PORT, () => {
-    console.log(`🚀 Server running on port ${PORT}`);
-    startListener(); // Starts the ear as soon as the mouth is open
+  console.log(`🚀 Server running on port ${PORT}`);
+  startListener();
 });

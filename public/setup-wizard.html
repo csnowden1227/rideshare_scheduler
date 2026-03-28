@@ -153,7 +153,7 @@
 
             <div class="card">
                 <div class="flex justify-between items-center mb-6">
-                    <h2 class="section-header !mb-0 !border-0">SECTION: SPECIAL EVENTS</h2>
+                    <h2 class="section-header !mb-0 !border-0">SECTION: EVENTS</h2>
                     <button type="button" onclick="addEventRow()" class="text-xs font-bold bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition">+ Add Event</button>
                 </div>
                 <table class="w-full text-left">
@@ -224,6 +224,8 @@ function showNotification(message, isSuccess = true) {
     }, 4000);
 }
 
+
+
 function previewLogo(input) {
     const file = input?.files?.[0];
     const preview = document.getElementById('logo-preview');
@@ -240,13 +242,41 @@ function previewLogo(input) {
 
 // --- MAP LOGIC ---
 
-function initServiceMap(lat = 34.0522, lng = -118.2437, radiusMiles = 90) {
-    const center = { lat, lng };
-    map = new google.maps.Map(document.getElementById("map"), {
-        zoom: 8,
-        center: center,
-        styles: [{ featureType: "poi", elementType: "labels", stylers: [{ visibility: "off" }] }]
+function initAutocomplete() {
+    const input = document.getElementById('map-search');
+    if (!input || !google?.maps?.places) return;
+
+    const autocomplete = new google.maps.places.Autocomplete(input, {
+        componentRestrictions: { country: ['us'] },
+        fields: ['geometry', 'name', 'formatted_address']
     });
+
+    autocomplete.addListener('place_changed', () => {
+        const place = autocomplete.getPlace();
+
+        if (!place.geometry || !place.geometry.location) {
+            console.log(`No details available for input: '${place.name || input.value}'`);
+            return;
+        }
+
+        const lat = place.geometry.location.lat();
+        const lng = place.geometry.location.lng();
+
+        document.getElementById('svc_lat').value = lat.toFixed(6);
+        document.getElementById('svc_lng').value = lng.toFixed(6);
+
+        if (map) {
+            const pos = { lat, lng };
+            map.setCenter(pos);
+            map.setZoom(11);
+
+            if (marker) marker.setPosition(pos);
+            if (circle) circle.setCenter(pos);
+        }
+
+        console.log(`📍 Map moved to: ${lat}, ${lng}`);
+    });
+}
 
     marker = new google.maps.Marker({ position: center, map: map, draggable: true });
     
@@ -288,7 +318,6 @@ function initServiceMap(lat = 34.0522, lng = -118.2437, radiusMiles = 90) {
     });
 
     updateFields();
-}
 
 function updateCircleFromInput() {
     const r = parseFloat(document.getElementById('svc_radius').value) || 90;
