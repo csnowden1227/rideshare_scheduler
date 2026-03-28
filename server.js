@@ -436,43 +436,31 @@ async function saveConfigHandler(req, res) {
         service_radius
       ]
     );
+// 1. CHECK IF TABLE EXISTS & CLEAR OLD DATA
+if (await tableExists('fixed_rates')) {
+    // Clear existing rates for this location once to avoid duplicates
+    await client.query(`DELETE FROM fixed_rates WHERE location_id = $1`, [location_id]);
 
-    if (await tableExists('fixed_rates')) {
-      const cols = await getTableColumns('fixed_rates');
-      await client.query(`DELETE FROM fixed_rates WHERE location_id = $1`, [location_id]);
-
-      for (const route of fixed_rates) {
-        const fields = [];
-        const vals = [];
-        const ph = [];
-        const push = (f, v) => {
-          if (!cols.has(f)) return;
-          fields.push(f);
-          vals.push(v);
-          ph.push(`$${vals.length}`);
-        };
-
-        push('location_id', location_id);
-        push('location_name', route.location_name || null);
-        push('pickup_keyword', route.pickup_keyword || route.location_name || null);
-        push('dropoff_keyword', route.dropoff_keyword || route.location_name || null);
-        push('lat', route.lat ?? null);
-        push('lng', route.lng ?? null);
-        push('radius', route.radius ?? null);
-        push('fixed_price', toNumber(route.fixed_price));
-        push('is_active', true);
-
-        if (fields.length) {
-          for (const rate of fixed_rates) {
-    await client.query(
-        `INSERT INTO fixed_rates (location_id, location_name, lat, lng, radius, fixed_price)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
-        [location_id, rate.location_name, rate.lat, rate.lng, rate.radius, rate.fixed_price]
-    );
-}
-}
-      }
+    // 2. SAVE NEW FIXED RATES
+    if (fixed_rates && Array.isArray(fixed_rates) && fixed_rates.length > 0) {
+        for (const route of fixed_rates) {
+            await client.query(
+                `INSERT INTO fixed_rates (location_id, location_name, lat, lng, radius, fixed_price)
+                 VALUES ($1, $2, $3, $4, $5, $6)`,
+                [
+                    location_id, 
+                    route.location_name || null, 
+                    route.lat ?? null, 
+                    route.lng ?? null, 
+                    route.radius ?? null, 
+                    parseFloat(route.fixed_price) || 0
+                ]
+            );
+        }
+        console.log(`✅ Synced ${fixed_rates.length} fixed rate zones for ${location_id}`);
     }
+}
+
 
     await syncFleetSettings(location_id, fleet);
 
