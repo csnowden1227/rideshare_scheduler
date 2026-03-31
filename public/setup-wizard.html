@@ -242,6 +242,26 @@ function previewLogo(input) {
 
 // --- MAP LOGIC ---
 
+function refreshServiceAreaOverlay() {
+    if (!map || !circle || !marker || !google?.maps) return;
+
+    circle.setMap(map);
+    marker.setMap(map);
+
+    const center = circle.getCenter();
+    if (center) {
+        marker.setPosition(center);
+        map.setCenter(center);
+    }
+
+    google.maps.event.trigger(map, 'resize');
+
+    const bounds = circle.getBounds();
+    if (bounds) {
+        map.fitBounds(bounds);
+    }
+}
+
 function initServiceMap(lat = 34.0522, lng = -118.2437, radiusMiles = 90) {
     if (!google?.maps) return;
 
@@ -264,12 +284,15 @@ function initServiceMap(lat = 34.0522, lng = -118.2437, radiusMiles = 90) {
         map,
         center,
         radius: (Number(radiusMiles) || 90) * 1609.34,
-        fillColor: '#2563eb',
-        fillOpacity: 0.2,
-        strokeColor: '#2563eb',
-        strokeWeight: 2,
+        fillColor: '#10b981',
+        fillOpacity: 0.18,
+        strokeColor: '#059669',
+        strokeOpacity: 0.95,
+        strokeWeight: 3,
+        visible: true,
         editable: true,
-        draggable: true
+        draggable: true,
+        zIndex: 1
     });
 
     const updateFields = () => {
@@ -286,6 +309,8 @@ function initServiceMap(lat = 34.0522, lng = -118.2437, radiusMiles = 90) {
     marker.addListener('drag', () => circle.setCenter(marker.getPosition()));
 
     updateFields();
+    refreshServiceAreaOverlay();
+    setTimeout(refreshServiceAreaOverlay, 150);
     initAutocomplete();
 }
 
@@ -319,6 +344,7 @@ function initAutocomplete() {
 
             if (marker) marker.setPosition(pos);
             if (circle) circle.setCenter(pos);
+            refreshServiceAreaOverlay();
         }
 
         console.log(`📍 Map moved to: ${lat}, ${lng}`);
@@ -367,8 +393,10 @@ function initAutocomplete() {
     updateFields(); */
 
 function updateCircleFromInput() {
+    if (!circle) return;
     const r = parseFloat(document.getElementById('svc_radius').value) || 90;
     circle.setRadius(r * 1609.34);
+    refreshServiceAreaOverlay();
 }
 
 function useCurrentLocation() {
@@ -378,6 +406,7 @@ function useCurrentLocation() {
             map.setCenter(pos);
             circle.setCenter(pos);
             marker.setPosition(pos);
+            refreshServiceAreaOverlay();
         });
     }
 }
