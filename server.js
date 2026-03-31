@@ -215,33 +215,35 @@ async function saveConfigHandler(req, res) {
       ]
     );
 
-    await client.query(
-      `DELETE FROM fleet_slots WHERE location_id = $1`,
-      [location_id]
-    );
-
-    for (const v of fleet) {
+    if (await tableExists("fleet_slots")) {
       await client.query(
-        `
-        INSERT INTO fleet_slots (
-          location_id,
-          vehicle_slot_id,
-          name,
-          base_rate,
-          per_mile_rate,
-          calendar_id
-        )
-        VALUES ($1,$2,$3,$4,$5,$6)
-        `,
-        [
-          location_id,
-          v.vehicle_slot_id,
-          v.vehicle_type,
-          parseFloat(v.base_rate) || 0,
-          parseFloat(v.mile_rate) || 0,
-          v.calendar_id || null
-        ]
+        `DELETE FROM fleet_slots WHERE location_id = $1`,
+        [location_id]
       );
+
+      for (const v of fleet) {
+        await client.query(
+          `
+          INSERT INTO fleet_slots (
+            location_id,
+            vehicle_slot_id,
+            name,
+            base_rate,
+            per_mile_rate,
+            calendar_id
+          )
+          VALUES ($1,$2,$3,$4,$5,$6)
+          `,
+          [
+            location_id,
+            v.vehicle_slot_id,
+            v.vehicle_type,
+            parseFloat(v.base_rate) || 0,
+            parseFloat(v.mile_rate) || 0,
+            v.calendar_id || null
+          ]
+        );
+      }
     }
 
     await syncFixedRates(client, location_id, fixed_rates);
@@ -1358,28 +1360,39 @@ app.post("/api/create-booking", async (req, res) => {
     }
 
     const profileLookup = await pool.query(
-      `SELECT crm_webhook_url, business_name, maps_api_key
+      `SELECT crm_webhook_url, business_name, maps_api_key, fleet
        FROM profiles
        WHERE location_id = $1`,
       [location_id]
     );
     const profile = profileLookup.rows[0] || {};
 
-    const fleetLookup = await pool.query(
-      `SELECT
-         calendar_id,
-         name AS vehicle_type,
-         NULL AS vehicle_category
-       FROM fleet_slots
-       WHERE vehicle_slot_id = $1 AND location_id = $2
-       LIMIT 1`,
-      [vehicle_slot_id, location_id]
-    );
+    let fleetVehicle = null;
+    if (await tableExists("fleet_slots")) {
+      const fleetLookup = await pool.query(
+        `SELECT
+           calendar_id,
+           name AS vehicle_type,
+           NULL AS vehicle_category
+         FROM fleet_slots
+         WHERE vehicle_slot_id = $1 AND location_id = $2
+         LIMIT 1`,
+        [vehicle_slot_id, location_id]
+      );
+      fleetVehicle = fleetLookup.rows[0] || null;
+    }
+
+    if (!fleetVehicle) {
+      const profileFleet = safeParseJson(profile.fleet);
+      fleetVehicle = (Array.isArray(profileFleet) ? profileFleet : []).find(
+        (vehicle) => String(vehicle.vehicle_slot_id || "") === String(vehicle_slot_id)
+      ) || null;
+    }
 
     const webhookUrl = profile.crm_webhook_url || null;
-    const calendar_id = fleetLookup.rows[0]?.calendar_id || null;
-    const vehicle_type = fleetLookup.rows[0]?.vehicle_type || null;
-    const vehicle_category = fleetLookup.rows[0]?.vehicle_category || null;
+    const calendar_id = fleetVehicle?.calendar_id || null;
+    const vehicle_type = fleetVehicle?.vehicle_type || fleetVehicle?.name || null;
+    const vehicle_category = fleetVehicle?.vehicle_category || null;
 
     const routeMetrics = await getRouteMetrics({
       origin: pickup_address,
