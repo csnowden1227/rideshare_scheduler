@@ -67,6 +67,10 @@
                         <input type="text" id="brand_color_accent" class="input-mini coord-input" value="#ecfeff" placeholder="#ecfeff">
                     </div>
                 </div>
+                <div class="mt-6">
+                    <label class="block text-[10px] font-bold mb-2 uppercase text-slate-400">Widget Slogan / Promotion</label>
+                    <input type="text" id="widget_tagline" class="input-mini" value="Luxury airport transfers, executive rides, and premium service tailored to every reservation." placeholder="Seasonal offer, slogan, or customer-facing marketing message">
+                </div>
             </div>
             <div class="card">
                 <h2 class="section-header">SECTION: CREDENTIALS</h2>
@@ -555,6 +559,7 @@ async function loadFromBackend() {
             document.getElementById('brand_color_primary').value = data.brand_color_primary || '#082f49';
             document.getElementById('brand_color_secondary').value = data.brand_color_secondary || '#0f766e';
             document.getElementById('brand_color_accent').value = data.brand_color_accent || '#ecfeff';
+            document.getElementById('widget_tagline').value = data.widget_tagline || 'Luxury airport transfers, executive rides, and premium service tailored to every reservation.';
             document.getElementById('webhook_url').value = data.crm_webhook_url || '';
             document.getElementById('maps_key').value = data.maps_api_key || '';
             document.getElementById('tax_rate').value = data.tax_rate ?? data.financials?.tax_rate ?? '8.25';
@@ -597,6 +602,7 @@ async function saveToBackend() {
         brand_color_primary: document.getElementById('brand_color_primary').value.trim(),
         brand_color_secondary: document.getElementById('brand_color_secondary').value.trim(),
         brand_color_accent: document.getElementById('brand_color_accent').value.trim(),
+        widget_tagline: document.getElementById('widget_tagline').value.trim(),
         crm_webhook_url: webhookUrl,
         maps_api_key: mapsKey,
         tax_rate: parseFloat(taxRate) || 0,

@@ -326,6 +326,7 @@
     const root = getRoot();
     const fleet = Array.isArray(state.config?.fleet) ? state.config.fleet : [];
     const colors = getBrandColors();
+    const tagline = state.config?.widget_tagline || "Luxury airport transfers, executive rides, and premium service tailored to every reservation.";
     const vehicleOptions = fleet.map((vehicle) =>
       `<option value="${escapeHtml(vehicle.vehicle_slot_id)}">${escapeHtml(vehicle.vehicle_type || vehicle.name || vehicle.vehicle_slot_id)}</option>`
     ).join("");
@@ -345,13 +346,8 @@
                 </div>
               </div>
               <p style="margin:0 0 18px;font-size:15px;line-height:1.6;max-width:580px;color:rgba(255,255,255,.88);">
-                Build a polished reservation in one flow: choose the vehicle, map the route, apply event pricing, layer in add-ons, and confirm a cloud-synced booking.
+                ${escapeHtml(tagline)}
               </p>
-              <div style="display:flex;flex-wrap:wrap;gap:10px;">
-                <span style="padding:10px 14px;border-radius:999px;background:rgba(255,255,255,.14);font-size:12px;font-weight:700;">${fleet.length} Fleet Option${fleet.length === 1 ? "" : "s"}</span>
-                <span style="padding:10px 14px;border-radius:999px;background:rgba(255,255,255,.14);font-size:12px;font-weight:700;">${serviceRadius ? `${serviceRadius} Mile Service Area` : "Custom Service Area"}</span>
-                <span style="padding:10px 14px;border-radius:999px;background:rgba(255,255,255,.14);font-size:12px;font-weight:700;">Tax ${getConfigTaxRate().toFixed(2)}%</span>
-              </div>
             </div>
 
             <div style="background:#fff;border-radius:24px;padding:22px;border:1px solid rgba(15,23,42,.08);display:flex;flex-direction:column;gap:14px;">
