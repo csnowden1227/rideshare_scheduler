@@ -235,6 +235,8 @@
 <script>
 const urlParams = new URLSearchParams(window.location.search);
 const location_id = urlParams.get('location_id') || 'VXE0UY17p7wnxdZ3sOLc';
+const requestedPlan = String(urlParams.get('plan') || '').trim().toLowerCase();
+const planOverride = ['starter', 'premium', 'pro'].includes(requestedPlan) ? requestedPlan : '';
 const BACKEND_URL = "https://rideshare-scheduler-axx6.onrender.com";
 let map, circle, marker, autocomplete;
 let routeCircles = []; 
@@ -720,6 +722,7 @@ async function loadFromBackend() {
         console.log("Database says:", data);
         
         if (data && !data.error) {
+            if (planOverride) data.plan_name = planOverride;
             document.getElementById('business_name').value = data.business_name || '';
             document.getElementById('brand_color_primary').value = data.brand_color_primary || '#082f49';
             document.getElementById('brand_color_secondary').value = data.brand_color_secondary || '#0f766e';
@@ -769,6 +772,7 @@ async function saveToBackend() {
     const payload = {
         id: location_id,
         location_id,
+        plan_name: currentPlanName,
         business_name: document.getElementById('business_name').value.trim(),
         brand_color_primary: document.getElementById('brand_color_primary').value.trim(),
         brand_color_secondary: document.getElementById('brand_color_secondary').value.trim(),

@@ -234,6 +234,7 @@ async function saveConfigHandler(req, res) {
       brand_color_secondary,
       brand_color_accent,
       widget_tagline,
+      plan_name,
       crm_webhook_url,
       maps_api_key,
       tax_rate,
@@ -263,6 +264,7 @@ async function saveConfigHandler(req, res) {
     pushProfileField("brand_color_secondary", brand_color_secondary || "#0f766e");
     pushProfileField("brand_color_accent", brand_color_accent || "#ecfeff");
     pushProfileField("widget_tagline", widget_tagline || null);
+    pushProfileField("plan_name", plan_name || "Starter");
     pushProfileField("crm_webhook_url", crm_webhook_url);
     pushProfileField("maps_api_key", maps_api_key);
     pushProfileField("tax_rate", tax_rate);
