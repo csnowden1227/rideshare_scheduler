@@ -87,6 +87,18 @@
     return (state.config?.events || []).find((event) => event.event_name === name) || null;
   }
 
+  function selectedBookingMode() {
+    return document.getElementById("cd_booking_mode")?.value || "standard";
+  }
+
+  function fixedRateByName(name) {
+    if (!name) return null;
+    return (state.config?.fixed_rates || []).find((zone) => {
+      const label = zone.location_name || zone.route_name || "";
+      return label === name;
+    }) || null;
+  }
+
   function matchesPeakWindow(windowConfig, startDate) {
     const dayName = getDayLabel(startDate);
     const day = (windowConfig.day || "Everyday").toLowerCase();
@@ -120,6 +132,22 @@
     });
 
     return multiplier;
+  }
+
+  function getFixedSurcharge(startDate) {
+    const windows = Array.isArray(state.config?.peak_windows) ? state.config.peak_windows : [];
+    let surcharge = 0;
+
+    windows.forEach((windowConfig) => {
+      if (matchesPeakWindow(windowConfig, startDate)) {
+        surcharge = Math.max(
+          surcharge,
+          toNumber(windowConfig.fixed_surcharge ?? windowConfig.flat_surcharge, 0)
+        );
+      }
+    });
+
+    return surcharge;
   }
 
   function resolveFixedRate(route) {
@@ -250,6 +278,42 @@
     `;
   }
 
+  function renderFixedDestinationSelect() {
+    const fixedRates = Array.isArray(state.config?.fixed_rates) ? state.config.fixed_rates : [];
+    if (!fixedRates.length) return "";
+
+    const options = [
+      `<option value="">Select fixed destination</option>`,
+      ...fixedRates.map((zone) => {
+        const label = zone.location_name || zone.route_name || "Fixed destination";
+        return `<option value="${escapeHtml(label)}">${escapeHtml(label)}</option>`;
+      }),
+    ];
+
+    return `
+      <div id="cd_fixed_destination_wrap" style="display:none;">
+        <label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Fixed Destination</label>
+        <select id="cd_fixed_destination" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;">
+          ${options.join("")}
+        </select>
+      </div>
+    `;
+  }
+
+  function updateBookingModeUI() {
+    const mode = selectedBookingMode();
+    const eventWrap = document.getElementById("cd_event_wrap");
+    const fixedWrap = document.getElementById("cd_fixed_destination_wrap");
+    const eventSelect = document.getElementById("cd_special_event");
+    const fixedSelect = document.getElementById("cd_fixed_destination");
+
+    if (eventWrap) eventWrap.style.display = mode === "event" ? "block" : "none";
+    if (fixedWrap) fixedWrap.style.display = mode === "fixed" ? "block" : "none";
+
+    if (mode !== "event" && eventSelect) eventSelect.value = "";
+    if (mode !== "fixed" && fixedSelect) fixedSelect.value = "";
+  }
+
   function render() {
     const root = getRoot();
     const fleet = Array.isArray(state.config?.fleet) ? state.config.fleet : [];
@@ -257,6 +321,7 @@
       `<option value="${escapeHtml(vehicle.vehicle_slot_id)}">${escapeHtml(vehicle.vehicle_type || vehicle.name || vehicle.vehicle_slot_id)}</option>`
     ).join("");
     const eventSelect = renderEventSelect();
+    const fixedDestinationSelect = renderFixedDestinationSelect();
     const serviceRadius = toNumber(state.config?.service_radius, 0);
 
     root.innerHTML = `
@@ -323,13 +388,17 @@
                   <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Passengers</label><input id="cd_passenger_count" type="number" min="1" value="1" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" /></div>
                 </div>
                 <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-top:12px;">
+                  <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Route Option</label><select id="cd_booking_mode" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;"><option value="standard">Standard Booking</option><option value="fixed">Fixed Destinations</option><option value="event">Events</option></select></div>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-top:12px;">
                   <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Pickup Address</label><input id="cd_pickup" placeholder="Street address or airport terminal" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" /></div>
                   <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Dropoff Address</label><input id="cd_dropoff" placeholder="Destination address" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" /></div>
                 </div>
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px;">
                   <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Pickup Date & Time</label><input id="cd_start_time" type="datetime-local" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" /></div>
-                  ${eventSelect || "<div></div>"}
+                  <div id="cd_event_wrap" style="display:none;">${eventSelect || ""}</div>
                 </div>
+                ${fixedDestinationSelect}
               </div>
 
               <div>
@@ -366,12 +435,18 @@
     document.getElementById("cd_btn_quote").onclick = getQuote;
     document.getElementById("cd_btn_book").onclick = submitBooking;
 
-    document.querySelectorAll(".cd-addon-check, #cd_passenger_count, #cd_special_event").forEach((input) => {
+    document.getElementById("cd_booking_mode")?.addEventListener("change", () => {
+      updateBookingModeUI();
+      if (state.quote) getQuote();
+    });
+
+    document.querySelectorAll(".cd-addon-check, #cd_passenger_count, #cd_special_event, #cd_fixed_destination").forEach((input) => {
       input?.addEventListener("change", () => {
         if (state.quote) getQuote();
       });
     });
 
+    updateBookingModeUI();
     initAutocomplete();
   }
 
@@ -409,8 +484,10 @@
       pickup_address: document.getElementById("cd_pickup")?.value.trim(),
       dropoff_address: document.getElementById("cd_dropoff")?.value.trim(),
       start_time: document.getElementById("cd_start_time")?.value,
+      booking_mode: selectedBookingMode(),
       passenger_count: toNumber(document.getElementById("cd_passenger_count")?.value, 1),
       selected_event_name: document.getElementById("cd_special_event")?.value || null,
+      selected_fixed_destination: document.getElementById("cd_fixed_destination")?.value || null,
       selected_addons: selectedAddons(),
       carry_on_count: toNumber(document.getElementById("cd_carry_on_count")?.value, 0),
       checked_bag_count: toNumber(document.getElementById("cd_checked_bag_count")?.value, 0),
@@ -505,12 +582,31 @@
     const startDate = new Date(payload.start_time);
     if (Number.isNaN(startDate.getTime())) throw new Error("Choose a valid pickup date and time.");
 
-    const eventConfig = eventByName(payload.selected_event_name);
-    const fixedRate = resolveFixedRate(route);
+    const eventConfig = payload.booking_mode === "event" ? eventByName(payload.selected_event_name) : null;
+    const selectedFixedRate = payload.booking_mode === "fixed" ? fixedRateByName(payload.selected_fixed_destination) : null;
+    const matchedFixedRate = resolveFixedRate(route);
+    const fixedRate = payload.booking_mode === "fixed" ? selectedFixedRate : null;
     const peakMultiplier = getPeakMultiplier(startDate);
+    const fixedSurcharge = getFixedSurcharge(startDate);
     const passengerCount = Math.max(1, payload.passenger_count || 1);
     const addons = selectedAddonDetails();
     const addonTotal = computeAddonTotal(addons, passengerCount);
+
+    if (payload.booking_mode === "event" && !eventConfig) {
+      throw new Error("Select an event option to continue.");
+    }
+
+    if (payload.booking_mode === "fixed") {
+      if (!selectedFixedRate) {
+        throw new Error("Select a fixed destination to continue.");
+      }
+
+      const selectedFixedName = selectedFixedRate.location_name || selectedFixedRate.route_name || "";
+      const matchedFixedName = matchedFixedRate?.location_name || matchedFixedRate?.route_name || "";
+      if (!matchedFixedRate || selectedFixedName !== matchedFixedName) {
+        throw new Error(`This trip must touch the ${selectedFixedName} fixed destination geofence.`);
+      }
+    }
 
     let baseRate = toNumber(vehicle.base_rate, 0);
     let mileRate = toNumber(vehicle.mile_rate, 0);
@@ -527,6 +623,11 @@
     if (fixedRate) {
       rideSubtotal = toNumber(fixedRate.fixed_price, rideSubtotal);
       pricingLabel = `${fixedRate.location_name || "Fixed zone"} flat rate`;
+    }
+
+    if (fixedRate && fixedSurcharge > 0) {
+      rideSubtotal += fixedSurcharge;
+      pricingLabel = `${pricingLabel} + $${fixedSurcharge.toFixed(2)} time-based surcharge`;
     } else if (peakMultiplier > 1) {
       rideSubtotal *= peakMultiplier;
       pricingLabel = `${pricingLabel} with peak multiplier ${peakMultiplier.toFixed(2)}x`;
@@ -548,6 +649,8 @@
       pricing_label: pricingLabel,
       fixed_rate_name: fixedRate?.location_name || null,
       peak_multiplier: peakMultiplier,
+      fixed_surcharge: fixedRate ? fixedSurcharge : 0,
+      booking_mode: payload.booking_mode,
     };
 
     return state.quote;
@@ -566,6 +669,9 @@
 
     const notes = [];
     if (state.quote.fixed_rate_name) notes.push(`Fixed-rate zone applied: ${state.quote.fixed_rate_name}.`);
+    if (state.quote.fixed_surcharge > 0) {
+      notes.push(`Time-based fixed-route surcharge applied: ${money(state.quote.fixed_surcharge)}.`);
+    }
     if (state.quote.peak_multiplier > 1 && !state.quote.fixed_rate_name) {
       notes.push(`Peak pricing applied at ${state.quote.peak_multiplier.toFixed(2)}x.`);
     }
