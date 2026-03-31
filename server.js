@@ -7,6 +7,7 @@ dotenv.config();
 import express from 'express';
 import cors from 'cors';
 import pkg from 'pg';
+import Stripe from 'stripe';
 import { Client as GoogleMapsClient } from "@googlemaps/google-maps-services-js";
 import { google } from 'googleapis';
 import path from 'path';
@@ -16,6 +17,9 @@ import * as turf from '@turf/turf';
 const { Pool, Client } = pkg;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
+const stripe = process.env.STRIPE_SECRET_KEY
+  ? new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: "2025-02-24.acacia" })
+  : null;
 
 // 1. Define Environment Variables
 const CRM_WEBHOOK_URL =
@@ -82,7 +86,6 @@ app.post("/api/save-config", async (req, res) => {
     const {
       location_id,
       business_name,
-      logo_url,
       crm_webhook_url,
       maps_api_key,
       tax_rate,
@@ -104,7 +107,6 @@ app.post("/api/save-config", async (req, res) => {
       INSERT INTO profiles (
         location_id,
         business_name,
-        logo_url,
         crm_webhook_url,
         maps_api_key,
         tax_rate,
@@ -117,11 +119,10 @@ app.post("/api/save-config", async (req, res) => {
         events,
         addons
       )
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
       ON CONFLICT (location_id)
       DO UPDATE SET
         business_name = EXCLUDED.business_name,
-        logo_url = EXCLUDED.logo_url,
         crm_webhook_url = EXCLUDED.crm_webhook_url,
         maps_api_key = EXCLUDED.maps_api_key,
         tax_rate = EXCLUDED.tax_rate,
@@ -137,7 +138,6 @@ app.post("/api/save-config", async (req, res) => {
       [
         location_id,
         business_name,
-        logo_url || null,
         crm_webhook_url,
         maps_api_key,
         tax_rate,
@@ -226,6 +226,8 @@ const oauth2Client = new google.auth.OAuth2(
 
 // Travel time cache to save money on API calls
 const travelTimeCache = new Map();
+const DEFAULT_TRIP_MINUTES = 60;
+const BOOKING_BUFFER_MINUTES = 20;
 
 /* 🔐 Get Maps API Key from Database */
 async function getMapsKey(location_id) {
@@ -290,24 +292,77 @@ async function getTravelTime(origin, destination, mapsApiKey) {
 
   const url = `https://maps.googleapis.com/maps/api/distancematrix/json?origins=${encodeURIComponent(origin)}&destinations=${encodeURIComponent(destination)}&departure_time=now&key=${mapsApiKey}`;
 
-  return new Promise((resolve) => {
-    https.get(url, (res) => {
-      let data = "";
-      res.on("data", (chunk) => (data += chunk));
-      res.on("end", () => {
-        try {
-          const json = JSON.parse(data);
-          if (json.rows?.[0]?.elements?.[0]?.status === "OK") {
-            const minutes = Math.ceil(json.rows[0].elements[0].duration.value / 60 / 5) * 5;
-            travelTimeCache.set(cacheKey, minutes);
-            resolve(minutes);
-          } else resolve(15);
-        } catch {
-          resolve(15);
-        }
-      });
-    }).on("error", () => resolve(15));
-  });
+  try {
+    const response = await fetch(url);
+    const json = await response.json();
+    if (json.rows?.[0]?.elements?.[0]?.status === "OK") {
+      const minutes = Math.ceil(json.rows[0].elements[0].duration.value / 60 / 5) * 5;
+      travelTimeCache.set(cacheKey, minutes);
+      return minutes;
+    }
+    return 15;
+  } catch {
+    return 15;
+  }
+}
+
+async function getRouteMetrics({
+  origin,
+  destination,
+  originLat,
+  originLng,
+  destinationLat,
+  destinationLng,
+  mapsApiKey,
+}) {
+  const fallback = () => {
+    const hasCoords = [originLat, originLng, destinationLat, destinationLng].every((value) => Number.isFinite(Number(value)));
+    if (hasCoords) {
+      const miles = turf.distance(
+        turf.point([Number(originLng), Number(originLat)]),
+        turf.point([Number(destinationLng), Number(destinationLat)]),
+        { units: "miles" }
+      );
+      const estimatedMinutes = Math.max(
+        DEFAULT_TRIP_MINUTES,
+        Math.ceil(((miles / 30) * 60) / 5) * 5
+      );
+      return {
+        distanceMiles: Number(miles.toFixed(2)),
+        durationMinutes: estimatedMinutes,
+        source: "coordinate_fallback",
+      };
+    }
+
+    return {
+      distanceMiles: 0,
+      durationMinutes: DEFAULT_TRIP_MINUTES,
+      source: "default_fallback",
+    };
+  };
+
+  if (!mapsApiKey || !origin || !destination) {
+    return fallback();
+  }
+
+  try {
+    const url = `https://maps.googleapis.com/maps/api/distancematrix/json?origins=${encodeURIComponent(origin)}&destinations=${encodeURIComponent(destination)}&departure_time=now&key=${mapsApiKey}`;
+    const response = await fetch(url);
+    const json = await response.json();
+    const element = json.rows?.[0]?.elements?.[0];
+
+    if (element?.status === "OK") {
+      return {
+        distanceMiles: Number((element.distance.value / 1609.34).toFixed(2)),
+        durationMinutes: Math.ceil((element.duration.value / 60) / 5) * 5,
+        source: "google_distance_matrix",
+      };
+    }
+  } catch (err) {
+    console.warn("Route metric lookup failed, using fallback:", err.message);
+  }
+
+  return fallback();
 }
 
 /* 📈 Peak Multiplier Logic (Rush Hour: 6:30-10 AM & 3:30-7 PM) */
@@ -390,7 +445,6 @@ app.post('/api/update-profile-full', async (req, res) => {
     const {
         location_id,
         business_name,
-        logo_url,
         crm_webhook_url, 
         maps_api_key,
         tax_rate,
@@ -413,12 +467,11 @@ app.post('/api/update-profile-full', async (req, res) => {
         // 1. UPSERT THE MAIN PROFILE
         await client.query(
             `INSERT INTO profiles (
-                location_id, business_name, logo_url, crm_webhook_url, maps_api_key, tax_rate, service_lat, service_lng, service_radius, fleet, fixed_rates, events, peak_windows, addons
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+                location_id, business_name, crm_webhook_url, maps_api_key, tax_rate, service_lat, service_lng, service_radius, fleet, fixed_rates, events, peak_windows, addons
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
             ON CONFLICT (location_id) 
             DO UPDATE SET 
                 business_name = EXCLUDED.business_name,
-                logo_url = EXCLUDED.logo_url,
                 crm_webhook_url = EXCLUDED.crm_webhook_url,
                 maps_api_key = EXCLUDED.maps_api_key,
                 tax_rate = EXCLUDED.tax_rate,
@@ -433,7 +486,6 @@ app.post('/api/update-profile-full', async (req, res) => {
             [
                 location_id,
                 business_name || null,
-                logo_url || null,
                 crm_webhook_url,
                 maps_api_key,
                 tax_rate || 0,
@@ -453,9 +505,10 @@ await client.query('DELETE FROM fleet_slots WHERE location_id = $1', [location_i
 
 if (fleet && fleet.length > 0) {
     for (const vehicle of fleet) {
-        // Handle spaces in IDs for cleaner URL/lookup strings
-        const vehicle_type_slug = String(vehicle.vehicle_type || 'vehicle').replace(/\s+/g, '-').toLowerCase();
-        const vehicle_slot_id = `${location_id}-${vehicle_type_slug}`;
+        const vehicle_slot_id = String(vehicle.vehicle_slot_id || "").trim();
+        if (!vehicle_slot_id) {
+            throw new Error("Each fleet row must include vehicle_slot_id.");
+        }
 
         await client.query(
             `INSERT INTO fleet_slots (
@@ -464,19 +517,15 @@ if (fleet && fleet.length > 0) {
                 name,               -- $3
                 base_rate,          -- $4
                 per_mile_rate,      -- $5
-                calendar_id,        -- $6
-                deposit_pct,        -- $7
-                deposit_flat_cents  -- $8
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+                calendar_id         -- $6
+            ) VALUES ($1, $2, $3, $4, $5, $6)`,
             [
                 location_id,                                    // $1
                 vehicle_slot_id,                                // $2
                 vehicle.vehicle_type || null,                   // $3
                 parseFloat(vehicle.base_rate) || 0,             // $4
                 parseFloat(vehicle.mile_rate) || 0,             // $5
-                vehicle.calendar_id || null,                    // $6
-                parseFloat(vehicle.deposit_pct) || 0,           // $7
-                parseInt(vehicle.deposit_flat_cents) || 0       // $8
+                vehicle.calendar_id || null                     // $6
             ]
         );
     }
@@ -493,6 +542,86 @@ if (fleet && fleet.length > 0) {
     } finally {
         if (client) client.release();
     }
+});
+
+app.post("/api/create-payment-intent", async (req, res) => {
+  try {
+    if (!stripe) {
+      return res.status(500).json({ error: "Stripe is not configured on the backend." });
+    }
+
+    const {
+      amount,
+      currency = "usd",
+      booking_id = null,
+      location_id = null,
+      customer_email = null,
+      customer_name = null,
+      metadata = {},
+    } = req.body;
+
+    const amountCents = Math.round(Number(amount || 0) * 100);
+    if (!amountCents || amountCents < 50) {
+      return res.status(400).json({ error: "Payment amount must be at least $0.50." });
+    }
+
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount: amountCents,
+      currency,
+      automatic_payment_methods: { enabled: true },
+      receipt_email: customer_email || undefined,
+      description: customer_name
+        ? `Rideshare booking payment for ${customer_name}`
+        : "Rideshare booking payment",
+      metadata: {
+        booking_id: booking_id ? String(booking_id) : "",
+        location_id: location_id ? String(location_id) : "",
+        ...Object.fromEntries(
+          Object.entries(metadata || {}).map(([key, value]) => [key, value == null ? "" : String(value)])
+        ),
+      },
+    });
+
+    return res.json({
+      success: true,
+      payment_intent_id: paymentIntent.id,
+      client_secret: paymentIntent.client_secret,
+      amount: amountCents / 100,
+      currency,
+    });
+  } catch (err) {
+    console.error("Stripe payment intent error:", err);
+    return res.status(500).json({ error: err.message || "Failed to create payment intent." });
+  }
+});
+
+app.post("/api/confirm-booking-payment", async (req, res) => {
+  try {
+    const {
+      booking_id,
+      payment_status = "paid_in_full",
+      total_price = 0,
+      deposit_amount = 0,
+      deposit_percent = 100,
+    } = req.body;
+
+    if (!booking_id) {
+      return res.status(400).json({ error: "booking_id is required." });
+    }
+
+    const confirmation = await updateBookingConfirmation({
+      bookingId: booking_id,
+      paymentStatus: payment_status,
+      totalPrice: total_price,
+      depositAmount: deposit_amount,
+      depositPercent: deposit_percent,
+    });
+
+    return res.json({ success: true, booking: confirmation });
+  } catch (err) {
+    console.error("Confirm booking payment error:", err);
+    return res.status(500).json({ error: err.message || "Failed to confirm booking payment." });
+  }
 });
    /*****************************************************
  5️⃣ AVAILABILITY ENGINE
@@ -597,6 +726,174 @@ async function getCurrentMultiplier(location_id) {
     }
 }
 
+function buildCrmBookingPayload({
+  webhookType = "BOOKING_CONFIRMED",
+  locationId,
+  businessName,
+  booking,
+  customer,
+  vehicle,
+  financials,
+  meta = {},
+}) {
+  const normalizedStatus = String(booking.status || "confirmed").toLowerCase();
+  const isConfirmed = normalizedStatus === "confirmed";
+  const paymentStatus = financials.payment_status || (
+    Number(financials.deposit_amount || 0) > 0
+      ? (Number(financials.balance_due || 0) > 0 ? "paid_deposit" : "paid_in_full")
+      : "unpaid"
+  );
+  const paymentPaid = Object.prototype.hasOwnProperty.call(financials, "payment_paid")
+    ? Boolean(financials.payment_paid)
+    : paymentStatus !== "unpaid";
+  const depositPaid = Object.prototype.hasOwnProperty.call(financials, "deposit_paid")
+    ? Boolean(financials.deposit_paid)
+    : Number(financials.deposit_amount || 0) > 0;
+  const balancePaid = Object.prototype.hasOwnProperty.call(financials, "balance_paid")
+    ? Boolean(financials.balance_paid)
+    : Number(financials.balance_due || 0) <= 0;
+  const paymentRequired = !paymentPaid;
+
+  return {
+    webhook_type: webhookType,
+    location_id: locationId,
+    business_name: businessName || null,
+    source: meta.source || "booking_widget",
+    created_at: meta.created_at || new Date().toISOString(),
+    booking_confirmed: isConfirmed,
+    payment_follow_up_required: paymentRequired,
+    booking: {
+      booking_id: booking.booking_id,
+      status: normalizedStatus,
+      is_confirmed: isConfirmed,
+      pickup_address: booking.pickup_address || null,
+      dropoff_address: booking.dropoff_address || null,
+      pickup_lat: booking.pickup_lat ?? null,
+      pickup_lng: booking.pickup_lng ?? null,
+      dropoff_lat: booking.dropoff_lat ?? null,
+      dropoff_lng: booking.dropoff_lng ?? null,
+      start_time: booking.start_time || null,
+      end_time: booking.end_time || null,
+      passenger_count: Number(booking.passenger_count || 1),
+      carry_on_count: Number(booking.carry_on_count || 0),
+      checked_bag_count: Number(booking.checked_bag_count || 0),
+      additional_items_aboard: booking.additional_items_aboard || null,
+      selected_event_name: booking.selected_event_name || null,
+      selected_addons: Array.isArray(booking.selected_addons) ? booking.selected_addons : [],
+    },
+    customer: {
+      first_name: customer.first_name || null,
+      last_name: customer.last_name || null,
+      email: customer.email || null,
+      phone: customer.phone || null,
+    },
+    vehicle: {
+      vehicle_slot_id: vehicle.vehicle_slot_id || null,
+      vehicle_type: vehicle.vehicle_type || null,
+      vehicle_category: vehicle.vehicle_category || null,
+      calendar_id: vehicle.calendar_id || null,
+    },
+    financials: {
+      quoted_price: Number(financials.quoted_price || 0),
+      addon_total: Number(financials.addon_total || 0),
+      tax_amount: Number(financials.tax_amount || 0),
+      total_price: Number(financials.total_price || 0),
+      deposit_percent: Number(financials.deposit_percent || 0),
+      deposit_amount: Number(financials.deposit_amount || 0),
+      balance_due: Number(financials.balance_due || 0),
+      payment_status: paymentStatus,
+      payment_paid: paymentPaid,
+      deposit_paid: depositPaid,
+      balance_paid: balancePaid,
+      payment_required: paymentRequired,
+      payment_link: financials.payment_link || null,
+    },
+    follow_up: {
+      send_payment_sms: paymentRequired,
+      send_payment_email: paymentRequired,
+      reminder_reason: paymentRequired ? "complete_booking_payment" : null,
+    },
+  };
+}
+
+function getPaymentBooleans({
+  paymentStatus = "unpaid",
+  paymentPaid,
+  depositPaid,
+  balancePaid,
+  depositAmount = 0,
+  balanceDue = 0,
+}) {
+  return {
+    paymentStatus,
+    paymentPaid: typeof paymentPaid === "boolean" ? paymentPaid : paymentStatus !== "unpaid",
+    depositPaid: typeof depositPaid === "boolean" ? depositPaid : Number(depositAmount || 0) > 0,
+    balancePaid: typeof balancePaid === "boolean" ? balancePaid : Number(balanceDue || 0) <= 0,
+  };
+}
+
+function getBookingConfirmationState({
+  bookingConfirmed,
+  paymentStatus = "unpaid",
+  paymentPaid = false,
+}) {
+  if (typeof bookingConfirmed === "boolean") {
+    return bookingConfirmed;
+  }
+
+  if (paymentPaid) {
+    return paymentStatus === "paid_in_full" || paymentStatus === "paid_deposit";
+  }
+
+  return false;
+}
+
+async function updateBookingConfirmation({
+  bookingId,
+  paymentStatus,
+  depositAmount,
+  depositPercent,
+  totalPrice,
+}) {
+  const numericTotalPrice = Number(totalPrice || 0);
+  const numericDepositAmount = Number(depositAmount || 0);
+  const numericDepositPercent = Number(depositPercent || 0);
+  const balanceDue = Number((numericTotalPrice - numericDepositAmount).toFixed(2));
+
+  const result = await pool.query(
+    `UPDATE bookings
+     SET status = $1,
+         total_price = $2,
+         deposit_amount = $3,
+         deposit_percent = $4,
+         balance_due = $5
+     WHERE id = $6
+     RETURNING id, location_id`,
+    [
+      "confirmed",
+      numericTotalPrice,
+      numericDepositAmount,
+      numericDepositPercent,
+      balanceDue,
+      bookingId,
+    ]
+  );
+
+  if (!result.rows.length) {
+    throw new Error("Booking not found for payment confirmation.");
+  }
+
+  await triggerCrmWebhook(result.rows[0].location_id, result.rows[0].id);
+
+  return {
+    booking_id: result.rows[0].id,
+    location_id: result.rows[0].location_id,
+    status: "confirmed",
+    payment_status: paymentStatus,
+    balance_due: balanceDue,
+  };
+}
+
 async function triggerCrmWebhook(location_id, booking_id) {
   let client;
   try {
@@ -624,50 +921,47 @@ async function triggerCrmWebhook(location_id, booking_id) {
       return;
     }
 
-    const basePrice = Number(b.total_price || 0);
-    const taxRate = Number(p.tax_rate || 0);
-    const totalWithTax = (basePrice * (1 + taxRate)).toFixed(2);
-    const balanceDue = (Number(totalWithTax) - Number(b.deposit_amount || 0)).toFixed(2);
+    const totalPrice = Number(b.total_price || 0);
+    const depositAmount = Number(b.deposit_amount || 0);
+    const balanceDue = Number((totalPrice - depositAmount).toFixed(2));
 
-    const payload = {
-      webhook_type: "BOOKING_SYNC",
-      location_id,
-      calendarId: String(b.calendar_id),
+    const payload = buildCrmBookingPayload({
+      webhookType: "webhook_bookings",
+      locationId: location_id,
       businessName: p.business_name,
+      booking: {
+        booking_id: b.id,
+        status: b.status || "confirmed",
+        pickup_address: b.pickup_address,
+        dropoff_address: b.dropoff_address,
+        pickup_lat: b.pickup_lat,
+        pickup_lng: b.pickup_lng,
+        dropoff_lat: b.dropoff_lat,
+        dropoff_lng: b.dropoff_lng,
+        start_time: b.start_time,
+        end_time: b.end_time,
+      },
       customer: {
-        firstName: b.first_name,
-        lastName: b.last_name,
+        first_name: b.first_name,
+        last_name: b.last_name,
         email: b.customer_email,
-        phone: b.customer_phone
+        phone: b.customer_phone,
       },
-      trip: {
-        bookingId: b.id,
-        status: b.status || "pending",
-        pickup: b.pickup_address,
-        dropoff: b.dropoff_address,
-        pickupLat: b.pickup_lat,
-        pickupLng: b.pickup_lng,
-        dropoffLat: b.dropoff_lat,
-        dropoffLng: b.dropoff_lng,
-        startTime: b.start_time,
-        endTime: b.end_time
-      },
-      vehicle_Type: {
-        standardsedan: b.vehicle_type === "Standard Sedan",
-        luxurysedan: b.vehicle_type === "Luxury Sedan",
-        standardsuv: b.vehicle_type === "Standard SUV",
-        luxurysuv: b.vehicle_type === "Luxury SUV",
-        standardxlsuv: b.vehicle_type === "Standard XL SUV",
-        luxuryxlsuv: b.vehicle_type === "Luxury XL SUV"
+      vehicle: {
+        vehicle_slot_id: b.vehicle_slot_id,
+        vehicle_type: b.vehicle_type,
+        calendar_id: b.calendar_id,
       },
       financials: {
-        subtotal: basePrice,
-        taxRate,
-        totalWithTax,
-        depositPaid: b.deposit_amount,
-        balanceRemaining: balanceDue
-      }
-    };
+        total_price: totalPrice,
+        deposit_amount: depositAmount,
+        deposit_percent: Number(b.deposit_percent || 0),
+        balance_due: balanceDue,
+      },
+      meta: {
+        source: "database_listener",
+      },
+    });
 
     const resp = await fetch(p.crm_webhook_url, {
       method: "POST",
@@ -765,7 +1059,6 @@ res.json({
   plan_name: profile.plan_name || "Starter",
 
   business_name: profile.business_name,
-  logo_url: profile.logo_url,
   maps_api_key: profile.maps_api_key,
   crm_webhook_url: profile.crm_webhook_url,
   tax_rate: parseFloat(profile.tax_rate) || 0,
@@ -963,8 +1256,23 @@ app.post("/api/create-booking", async (req, res) => {
       dropoff_lng,
       start_time,
       total_price,
+      quoted_price = 0,
+      addon_total = 0,
+      tax_amount = 0,
+      payment_status = "unpaid",
+      payment_paid = false,
+      deposit_paid = false,
+      balance_paid = false,
+      payment_link = null,
+      booking_confirmed,
       deposit_percent = 0,
-      deposit_amount = 0
+      deposit_amount = 0,
+      passenger_count = 1,
+      carry_on_count = 0,
+      checked_bag_count = 0,
+      additional_items_aboard = null,
+      selected_event_name = null,
+      selected_addons = []
     } = req.body;
 
     if (!location_id || !vehicle_slot_id || !first_name || !last_name || !start_time) {
@@ -974,41 +1282,43 @@ app.post("/api/create-booking", async (req, res) => {
       });
     }
 
-    const vehicle_types = [
-      { label: "Standard Sedan", category: "sedan" },
-      { label: "Luxury Sedan", category: "sedan" },
-      { label: "Standard SUV", category: "suv" },
-      { label: "Luxury SUV", category: "suv" },
-      { label: "Standard XL SUV", category: "xl" },
-      { label: "Luxury XL SUV", category: "xl" }
-    ];
-
-    const end_time = new Date(
-      new Date(start_time).getTime() + (60 + 45) * 60000
-    ).toISOString();
-
     const profileLookup = await pool.query(
-      `SELECT crm_webhook_url
+      `SELECT crm_webhook_url, business_name, maps_api_key
        FROM profiles
        WHERE location_id = $1`,
       [location_id]
     );
+    const profile = profileLookup.rows[0] || {};
 
     const fleetLookup = await pool.query(
       `SELECT
          calendar_id,
          name AS vehicle_type,
-         category AS vehicle_category
-       FROM fleet_settings
+         NULL AS vehicle_category
+       FROM fleet_slots
        WHERE vehicle_slot_id = $1 AND location_id = $2
        LIMIT 1`,
       [vehicle_slot_id, location_id]
     );
 
-    const webhookUrl = profileLookup.rows[0]?.crm_webhook_url || null;
+    const webhookUrl = profile.crm_webhook_url || null;
     const calendar_id = fleetLookup.rows[0]?.calendar_id || null;
     const vehicle_type = fleetLookup.rows[0]?.vehicle_type || null;
     const vehicle_category = fleetLookup.rows[0]?.vehicle_category || null;
+
+    const routeMetrics = await getRouteMetrics({
+      origin: pickup_address,
+      destination: dropoff_address,
+      originLat: pickup_lat,
+      originLng: pickup_lng,
+      destinationLat: dropoff_lat,
+      destinationLng: dropoff_lng,
+      mapsApiKey: profile.maps_api_key || null,
+    });
+    const bookingDurationMinutes = routeMetrics.durationMinutes + BOOKING_BUFFER_MINUTES;
+    const end_time = new Date(
+      new Date(start_time).getTime() + bookingDurationMinutes * 60000
+    ).toISOString();
 
     const numericTotalPrice = Number(total_price) || 0;
     const numericDepositPercent = Number(deposit_percent) || 0;
@@ -1016,6 +1326,20 @@ app.post("/api/create-booking", async (req, res) => {
     const balance_due = Number(
       (numericTotalPrice - numericDepositAmount).toFixed(2)
     );
+    const paymentState = getPaymentBooleans({
+      paymentStatus: payment_status,
+      paymentPaid: Boolean(payment_paid),
+      depositPaid: Boolean(deposit_paid),
+      balancePaid: Boolean(balance_paid),
+      depositAmount: numericDepositAmount,
+      balanceDue: balance_due,
+    });
+    const isBookingConfirmed = getBookingConfirmationState({
+      bookingConfirmed: booking_confirmed,
+      paymentStatus: paymentState.paymentStatus,
+      paymentPaid: paymentState.paymentPaid,
+    });
+    const bookingStatus = isBookingConfirmed ? "confirmed" : "unconfirmed";
 
     const result = await pool.query(
       `INSERT INTO bookings (
@@ -1037,9 +1361,10 @@ app.post("/api/create-booking", async (req, res) => {
         calendar_id,
         deposit_amount,
         deposit_percent,
-        balance_due
+        balance_due,
+        status
       ) VALUES (
-        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19
+        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20
       )
       RETURNING id`,
       [
@@ -1061,60 +1386,82 @@ app.post("/api/create-booking", async (req, res) => {
         calendar_id,
         numericDepositAmount,
         numericDepositPercent,
-        balance_due
+        balance_due,
+        bookingStatus
       ]
     );
 
     const booking_id = result.rows[0]?.id || null;
 
     if (webhookUrl && webhookUrl.startsWith("http")) {
-  fetch(webhookUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      location_id,
-      booking_id,
-      calendar_id: calendar_id ? String(calendar_id) : null,
-      vehicle: {
-        vehicle_slot_id,
-        vehicle_type,
-        vehicle_category
-      },
-      vehicle_types,
-      customer: {
-        firstName: first_name,
-        lastName: last_name,
-        email,
-        phone
-      },
-      trip: {
-        pickup: pickup_address,
-        dropoff: dropoff_address,
-        pickup_lat,
-        pickup_lng,
-        dropoff_lat,
-        dropoff_lng,
-        startTime: start_time,
-        endTime: end_time
-      },
-      financials: {
-        totalPrice: numericTotalPrice,
-        depositPercent: numericDepositPercent,
-        depositAmount: numericDepositAmount,
-        balanceRemaining: balance_due
-      }
-    })
-  }).catch((e) => {
-    console.error("Webhook Failed:", e);
-  });
-}
+      const crmPayload = buildCrmBookingPayload({
+        webhookType: "webhook_bookings",
+        locationId: location_id,
+        businessName: profileLookup.rows[0]?.business_name || null,
+        booking: {
+          booking_id,
+          status: bookingStatus,
+          pickup_address,
+          dropoff_address,
+          pickup_lat,
+          pickup_lng,
+          dropoff_lat,
+          dropoff_lng,
+          start_time,
+          end_time,
+          passenger_count,
+          carry_on_count,
+          checked_bag_count,
+          additional_items_aboard,
+          selected_event_name,
+          selected_addons,
+        },
+        customer: {
+          first_name,
+          last_name,
+          email,
+          phone,
+        },
+        vehicle: {
+          vehicle_slot_id,
+          vehicle_type,
+          vehicle_category,
+          calendar_id: calendar_id ? String(calendar_id) : null,
+        },
+        financials: {
+          quoted_price: Number(quoted_price || 0),
+          addon_total: Number(addon_total || 0),
+          tax_amount: Number(tax_amount || 0),
+          total_price: numericTotalPrice,
+          deposit_percent: numericDepositPercent,
+          deposit_amount: numericDepositAmount,
+          balance_due,
+          payment_status: paymentState.paymentStatus,
+          payment_paid: paymentState.paymentPaid,
+          deposit_paid: paymentState.depositPaid,
+          balance_paid: paymentState.balancePaid,
+          payment_link,
+        },
+        meta: {
+          source: "booking_widget",
+        },
+      });
+
+      fetch(webhookUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(crmPayload)
+      }).catch((e) => {
+        console.error("Webhook Failed:", e);
+      });
+    }
     return res.status(200).json({
       success: true,
       message: "Booking saved and webhook triggered",
       booking: {
         id: booking_id,
         location_id,
-        status: "confirmed",
+        status: bookingStatus,
         vehicle: {
           vehicle_slot_id,
           vehicle_type,
@@ -1146,7 +1493,12 @@ app.post("/api/create-booking", async (req, res) => {
       },
       meta: {
         created_at: new Date().toISOString(),
-        source: "booking_widget"
+        source: "booking_widget",
+        route_distance_miles: routeMetrics.distanceMiles,
+        route_duration_minutes: routeMetrics.durationMinutes,
+        booking_buffer_minutes: BOOKING_BUFFER_MINUTES,
+        booking_duration_minutes: bookingDurationMinutes,
+        timing_source: routeMetrics.source
       }
     }); 
   } catch (err) {

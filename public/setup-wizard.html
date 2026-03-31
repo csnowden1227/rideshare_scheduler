@@ -512,15 +512,6 @@ async function loadFromBackend() {
             document.getElementById('maps_key').value = data.maps_api_key || '';
             document.getElementById('tax_rate').value = data.tax_rate ?? data.financials?.tax_rate ?? '8.25';
 
-            if (data.logo_url) {
-                logoBase64 = data.logo_url;
-                const logoPreview = document.getElementById('logo-preview');
-                if (logoPreview) {
-                    logoPreview.src = data.logo_url;
-                    logoPreview.classList.remove('hidden');
-                }
-            }
-            
             let count = (data.plan_name === 'pro') ? 3 : (data.plan_name === 'premium' ? 2 : 1);
             renderFleet(count, data.fleet || []);
             
@@ -556,7 +547,6 @@ async function saveToBackend() {
         id: location_id,
         location_id,
         business_name: document.getElementById('business_name').value.trim(),
-        logo_url: logoBase64,
         crm_webhook_url: webhookUrl,
         maps_api_key: mapsKey,
         tax_rate: parseFloat(taxRate) || 0,
@@ -603,8 +593,9 @@ async function saveToBackend() {
     };
 
     try {
-        const endpoints = ['/api/update-profile-full', '/api/save-config'];
+        const endpoints = ['/api/save-config', '/api/update-profile-full'];
         let res = null;
+        let lastError = null;
 
         for (const endpoint of endpoints) {
             res = await fetch(`${BACKEND_URL}${endpoint}`, {
@@ -613,15 +604,24 @@ async function saveToBackend() {
                 body: JSON.stringify(payload)
             });
             if (res.ok) break;
+
+            try {
+                const errorBody = await res.json();
+                lastError = errorBody?.detail || errorBody?.error || `${endpoint} returned ${res.status}`;
+            } catch {
+                lastError = `${endpoint} returned ${res.status}`;
+            }
         }
 
         if (res && res.ok) {
             showNotification("Snowden Luxury Profile Locked & Synced!");
         } else {
-            showNotification("Save failed. Verify backend alignment.", false);
+            console.error("Save sync failed:", lastError);
+            showNotification(`Save failed: ${lastError || 'Verify backend alignment.'}`, false);
         }
     } catch (err) {
-        showNotification("Connection Error: Ensure Render is active.", false);
+        console.error("Save sync connection error:", err);
+        showNotification(`Connection Error: ${err?.message || 'Ensure Render is active.'}`, false);
     }
 }
 

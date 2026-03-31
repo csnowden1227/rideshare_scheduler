@@ -1,257 +1,703 @@
+(function () {
   const scriptTag = document.currentScript;
   const params = new URL(scriptTag.src).searchParams;
-  const locationId = params.get('loc');
-  const BACKEND_URL = scriptTag.src.split('/widget.js')[0];
-  const rootId = 'chauffeur-booking-widget';
+  const locationId = params.get("loc");
+  const BACKEND_URL = scriptTag.src.split("/widget.js")[0];
+  const rootId = "chauffeur-booking-widget";
 
-  const state = { config: null, quote: null };
+  const state = {
+    config: null,
+    quote: null,
+    route: null,
+    places: {
+      pickup: null,
+      dropoff: null,
+    },
+  };
 
-  function money(n) { return `$${Number(n || 0).toFixed(2)}`; }
-  function escapeHtml(v) { return String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
-  function getRoot() { return document.getElementById(rootId) || scriptTag.parentElement; }
+  function money(value) {
+    return `$${Number(value || 0).toFixed(2)}`;
+  }
+
+  function escapeHtml(value) {
+    return String(value ?? "").replace(/[&<>"']/g, (char) => ({
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+      "'": "&#39;",
+    }[char]));
+  }
+
+  function getRoot() {
+    return document.getElementById(rootId) || scriptTag.parentElement;
+  }
+
+  function toNumber(value, fallback = 0) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : fallback;
+  }
+
+  function getDayLabel(date) {
+    return ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][date.getDay()];
+  }
+
+  function haversineMiles(lat1, lng1, lat2, lng2) {
+    const toRad = (deg) => (deg * Math.PI) / 180;
+    const earthRadiusMiles = 3958.8;
+    const dLat = toRad(lat2 - lat1);
+    const dLng = toRad(lng2 - lng1);
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+      Math.sin(dLng / 2) * Math.sin(dLng / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return earthRadiusMiles * c;
+  }
+
+  function getConfigTaxRate() {
+    return toNumber(state.config?.tax_rate ?? state.config?.financials?.tax_rate, 0);
+  }
+
+  function getProfileDepositDefaults() {
+    return {
+      percent: toNumber(state.config?.financials?.default_deposit_percent, 0),
+      flatCents: toNumber(state.config?.financials?.default_deposit_flat_cents, 0),
+    };
+  }
+
+  function selectedVehicle() {
+    const slotId = document.getElementById("cd_vehicle_slot_id")?.value;
+    return (state.config?.fleet || []).find((vehicle) => vehicle.vehicle_slot_id === slotId) || null;
+  }
+
+  function selectedAddonDetails() {
+    const selectedIds = new Set(
+      Array.from(document.querySelectorAll(".cd-addon-check:checked")).map((checkbox) => checkbox.getAttribute("data-id"))
+    );
+    return (state.config?.addons || []).filter((addon, index) => selectedIds.has(addon.id || `addon_${index}`));
+  }
+
+  function selectedAddons() {
+    return selectedAddonDetails().map((addon, index) => addon.id || `addon_${index}`);
+  }
+
+  function eventByName(name) {
+    if (!name) return null;
+    return (state.config?.events || []).find((event) => event.event_name === name) || null;
+  }
+
+  function matchesPeakWindow(windowConfig, startDate) {
+    const dayName = getDayLabel(startDate);
+    const day = (windowConfig.day || "Everyday").toLowerCase();
+    const isWeekday = startDate.getDay() >= 1 && startDate.getDay() <= 5;
+    const isWeekend = startDate.getDay() === 0 || startDate.getDay() === 6;
+
+    const dayMatch =
+      day === "everyday" ||
+      (day === "weekdays" && isWeekday) ||
+      (day === "weekends" && isWeekend) ||
+      day === dayName.toLowerCase();
+
+    if (!dayMatch) return false;
+
+    const timeValue = startDate.toTimeString().slice(0, 5);
+    const start = windowConfig.start_time || "00:00";
+    const end = windowConfig.end_time || "23:59";
+
+    if (start <= end) return timeValue >= start && timeValue <= end;
+    return timeValue >= start || timeValue <= end;
+  }
+
+  function getPeakMultiplier(startDate) {
+    const windows = Array.isArray(state.config?.peak_windows) ? state.config.peak_windows : [];
+    let multiplier = 1;
+
+    windows.forEach((windowConfig) => {
+      if (matchesPeakWindow(windowConfig, startDate)) {
+        multiplier = Math.max(multiplier, toNumber(windowConfig.multiplier, 1));
+      }
+    });
+
+    return multiplier;
+  }
+
+  function resolveFixedRate(route) {
+    const fixedRates = Array.isArray(state.config?.fixed_rates) ? state.config.fixed_rates : [];
+    const pickup = route.pickupCoords;
+    const dropoff = route.dropoffCoords;
+
+    return fixedRates.find((zone) => {
+      const lat = toNumber(zone.lat, NaN);
+      const lng = toNumber(zone.lng, NaN);
+      const radius = toNumber(zone.radius, 0);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng) || radius <= 0) return false;
+
+      const pickupDistance = haversineMiles(pickup.lat, pickup.lng, lat, lng);
+      const dropoffDistance = haversineMiles(dropoff.lat, dropoff.lng, lat, lng);
+      return pickupDistance <= radius || dropoffDistance <= radius;
+    }) || null;
+  }
+
+  function isWithinServiceArea(route) {
+    const centerLat = toNumber(state.config?.service_lat, NaN);
+    const centerLng = toNumber(state.config?.service_lng, NaN);
+    const radius = toNumber(state.config?.service_radius, 0);
+
+    if (!Number.isFinite(centerLat) || !Number.isFinite(centerLng) || radius <= 0) return true;
+
+    const pickupDistance = haversineMiles(route.pickupCoords.lat, route.pickupCoords.lng, centerLat, centerLng);
+    return pickupDistance <= radius;
+  }
 
   async function loadConfig() {
     const res = await fetch(`${BACKEND_URL}/api/get-profile/${locationId}`);
-    if (!res.ok) throw new Error('Failed to load booking config');
+    if (!res.ok) throw new Error("Failed to load booking config");
     state.config = await res.json();
-    if (state.config.maps_api_key && !window.google && !document.getElementById('cd-google-maps')) {
-      const s = document.createElement('script');
-      s.id = 'cd-google-maps';
-      s.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(state.config.maps_api_key)}&libraries=places&callback=__cdInitAutocomplete`;
-      s.async = true;
-      window.__cdInitAutocomplete = initAutocomplete;
-      document.head.appendChild(s);
+
+    if (state.config.maps_api_key && !window.google && !document.getElementById("cd-google-maps")) {
+      const script = document.createElement("script");
+      script.id = "cd-google-maps";
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(state.config.maps_api_key)}&libraries=places,geometry`;
+      script.async = true;
+      document.head.appendChild(script);
     }
   }
 
   function initAutocomplete() {
-    const pickup = document.getElementById('cd_pickup');
-    const dropoff = document.getElementById('cd_dropoff');
-    if (window.google?.maps?.places) {
-      if (pickup) new google.maps.places.Autocomplete(pickup, { types: ['address'] });
-      if (dropoff) new google.maps.places.Autocomplete(dropoff, { types: ['address'] });
-    }
+    if (!window.google?.maps?.places) return;
+
+    const pickup = document.getElementById("cd_pickup");
+    const dropoff = document.getElementById("cd_dropoff");
+    if (!pickup || !dropoff) return;
+
+    const pickupAutocomplete = new google.maps.places.Autocomplete(pickup, { types: ["address"] });
+    const dropoffAutocomplete = new google.maps.places.Autocomplete(dropoff, { types: ["address"] });
+
+    pickupAutocomplete.addListener("place_changed", () => {
+      state.places.pickup = pickupAutocomplete.getPlace();
+    });
+
+    dropoffAutocomplete.addListener("place_changed", () => {
+      state.places.dropoff = dropoffAutocomplete.getPlace();
+    });
+  }
+
+  async function waitForGoogleMaps() {
+    if (!state.config?.maps_api_key) return;
+
+    await new Promise((resolve, reject) => {
+      const started = Date.now();
+      const check = setInterval(() => {
+        if (window.google?.maps?.places) {
+          clearInterval(check);
+          resolve();
+        } else if (Date.now() - started > 10000) {
+          clearInterval(check);
+          reject(new Error("Google Maps failed to load"));
+        }
+      }, 100);
+    });
   }
 
   function renderAddonOptions() {
-    // 1. Safety check for the config structure
     const addons = Array.isArray(state.config?.addons) ? state.config.addons : [];
-    
-    if (addons.length === 0) {
-      return `<div style="font-size:13px;color:#64748b;padding:10px;">No additional services available for this route.</div>`;
+
+    if (!addons.length) {
+      return `<div style="font-size:13px;color:#64748b;padding:10px 0;">No add-on services configured yet.</div>`;
     }
 
-    return addons.map((addon, idx) => {
-      // 2. Prioritize the Permanent ID, fallback only if absolutely necessary
-      const id = addon.id || `addon_${idx}`;
-      const desc = escapeHtml(addon.description || `Service ${idx + 1}`);
+    return addons.map((addon, index) => {
+      const id = addon.id || `addon_${index}`;
+      const desc = escapeHtml(addon.description || `Service ${index + 1}`);
       const price = money(addon.price || 0);
-      const typeLabel = addon.type === 'per_passenger' ? 'Per Person' : 'Flat Rate';
-      
-      // 3. Check if this specific ID is already in our state.selected_addons array
-      const isChecked = state.selected_addons && state.selected_addons.includes(id) ? 'checked' : '';
+      const type = addon.type === "per_person" ? "Per person" : "Per booking";
 
       return `
-        <label style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px; padding:12px; border:1px solid ${isChecked ? '#2563eb' : '#e2e8f0'}; border-radius:12px; background:${isChecked ? '#f8fafc' : '#fff'}; cursor:pointer; transition: all 0.2s;">
-          <span style="display:flex; gap:10px; align-items:flex-start;">
-            <input type="checkbox" 
-                   class="cd-addon-check" 
-                   data-id="${escapeHtml(id)}" 
-                   ${isChecked} 
-                   style="margin-top:4px; width:16px; height:16px; accent-color:#2563eb;" 
-            />
+        <label style="display:flex;justify-content:space-between;gap:14px;padding:14px 16px;border:1px solid #dbe4f0;border-radius:16px;background:#fff;cursor:pointer;">
+          <span style="display:flex;gap:10px;">
+            <input class="cd-addon-check" type="checkbox" data-id="${escapeHtml(id)}" style="margin-top:3px;width:16px;height:16px;accent-color:#0f766e;" />
             <span>
-              <span style="display:block; font-weight:600; color:#0f172a; font-size:14px;">${desc}</span>
-              <span style="display:block; font-size:11px; color:#64748b; text-transform:uppercase; letter-spacing:0.025em;">${escapeHtml(typeLabel)}</span>
+              <span style="display:block;font-size:14px;font-weight:700;color:#0f172a;">${desc}</span>
+              <span style="display:block;font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.06em;">${escapeHtml(type)}</span>
             </span>
           </span>
-          <strong style="white-space:nowrap; color:#1e293b; font-size:14px;">${price}</strong>
+          <strong style="font-size:14px;color:#0f172a;white-space:nowrap;">${price}</strong>
         </label>
-      `.trim();
-    }).join('<div style="height:8px;"></div>'); // Adds consistent spacing between items
-}
+      `;
+    }).join("");
+  }
 
   function renderEventSelect() {
     const events = Array.isArray(state.config?.events) ? state.config.events : [];
-    if (!events.length) return '';
-    const options = ['<option value="">No special event</option>'].concat(
-      events.map((event) => `<option value="${escapeHtml(event.event_name || '')}">${escapeHtml(event.event_name || 'Special Event')}${event.event_date ? ` — ${escapeHtml(event.event_date)}` : ''}</option>`)
-    );
-    return `<div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Special Event</label><select id="cd_special_event" style="width:100%;padding:12px;border:1px solid #cbd5e1;border-radius:12px;background:#fff;">${options.join('')}</select></div>`;
+    if (!events.length) return "";
+
+    const options = [
+      `<option value="">Standard service</option>`,
+      ...events.map((event) => {
+        const label = `${event.event_name || "Special Event"}${event.event_date ? ` - ${event.event_date}` : ""}`;
+        return `<option value="${escapeHtml(event.event_name || "")}">${escapeHtml(label)}</option>`;
+      }),
+    ];
+
+    return `
+      <div>
+        <label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Event Pricing</label>
+        <select id="cd_special_event" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;">
+          ${options.join("")}
+        </select>
+      </div>
+    `;
   }
 
   function render() {
     const root = getRoot();
     const fleet = Array.isArray(state.config?.fleet) ? state.config.fleet : [];
-    const vehicleOptions = fleet.map((v) => `<option value="${escapeHtml(v.vehicle_slot_id)}">${escapeHtml(v.vehicle_type || v.name || v.vehicle_slot_id)}</option>`).join('');
-    const logoUrl = state.config?.logo_url || '';
+    const vehicleOptions = fleet.map((vehicle) =>
+      `<option value="${escapeHtml(vehicle.vehicle_slot_id)}">${escapeHtml(vehicle.vehicle_type || vehicle.name || vehicle.vehicle_slot_id)}</option>`
+    ).join("");
     const eventSelect = renderEventSelect();
+    const serviceRadius = toNumber(state.config?.service_radius, 0);
 
-    root.innerHTML = `<div style="max-width:820px;margin:0 auto;background:#fff;border:1px solid #e5e7eb;border-radius:20px;overflow:hidden;box-shadow:0 18px 50px rgba(15,23,42,.12);font-family:Inter,Arial,sans-serif;"><div style="padding:24px 26px;background:#0f172a;color:#fff;"><div style="display:flex;align-items:center;gap:14px;">${logoUrl ? `<img src="${escapeHtml(logoUrl)}" alt="Logo" style="width:62px;height:62px;object-fit:cover;border-radius:999px;border:2px solid rgba(255,255,255,.18);" />` : ''}<div><div style="font-size:26px;font-weight:800;letter-spacing:.02em;">${escapeHtml(state.config.business_name || 'Reserve Your Ride')}</div><div style="opacity:.82;margin-top:6px;font-size:13px;">Complete the booking details below and we’ll route the reservation to the correct vehicle slot calendar.</div></div></div></div><div style="padding:24px;display:grid;gap:16px;background:#f8fafc;"><div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;"><div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">First Name</label><input id="cd_first_name" placeholder="First name" style="width:100%;padding:12px;border:1px solid #cbd5e1;border-radius:12px;background:#fff;" /></div><div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Last Name</label><input id="cd_last_name" placeholder="Last name" style="width:100%;padding:12px;border:1px solid #cbd5e1;border-radius:12px;background:#fff;" /></div></div><div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;"><div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Email</label><input id="cd_email" type="email" placeholder="Email" style="width:100%;padding:12px;border:1px solid #cbd5e1;border-radius:12px;background:#fff;" /></div><div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Phone</label><input id="cd_phone" type="tel" placeholder="Phone" style="width:100%;padding:12px;border:1px solid #cbd5e1;border-radius:12px;background:#fff;" /></div></div><div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Vehicle Type</label><select id="cd_vehicle_slot_id" style="width:100%;padding:12px;border:1px solid #cbd5e1;border-radius:12px;background:#fff;"><option value="">Select vehicle</option>${vehicleOptions}</select></div><div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Pickup Address</label><input id="cd_pickup" placeholder="Pickup address" style="width:100%;padding:12px;border:1px solid #cbd5e1;border-radius:12px;background:#fff;" /></div><div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Dropoff Address</label><input id="cd_dropoff" placeholder="Dropoff address" style="width:100%;padding:12px;border:1px solid #cbd5e1;border-radius:12px;background:#fff;" /></div><div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;"><div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Pickup Date & Time</label><input id="cd_start_time" type="datetime-local" style="width:100%;padding:12px;border:1px solid #cbd5e1;border-radius:12px;background:#fff;" /></div>${eventSelect || '<div></div>'}</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;"><div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;"># of Carry-On Bags</label><input id="cd_carry_on_count" type="number" min="0" value="0" style="width:100%;padding:12px;border:1px solid #cbd5e1;border-radius:12px;background:#fff;" /></div><div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;"># of Checked Bags</label><input id="cd_checked_bag_count" type="number" min="0" value="0" style="width:100%;padding:12px;border:1px solid #cbd5e1;border-radius:12px;background:#fff;" /></div></div><div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;"><div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Additional Items Aboard</label><select id="cd_additional_item_select" style="width:100%;padding:12px;border:1px solid #cbd5e1;border-radius:12px;background:#fff;"><option value="">Select item</option><option>Instrument</option><option>Stroller</option><option>Car Seat</option><option>Wheelchair</option><option>Golf Clubs</option><option>Cooler</option><option>Custom</option></select></div><div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Custom Item / Notes</label><input id="cd_additional_item_custom" placeholder="Instrument, stroller, car seat, etc." style="width:100%;padding:12px;border:1px solid #cbd5e1;border-radius:12px;background:#fff;" /></div></div><div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:8px;">Additional Services</label><div style="display:grid;gap:10px;">${renderAddonOptions()}</div></div><div style="display:flex;gap:12px;"><button id="cd_btn_quote" style="flex:1;padding:14px;border:none;border-radius:12px;background:#111827;color:#fff;font-weight:700;cursor:pointer;">Get Quote</button><button id="cd_btn_book" style="flex:1;padding:14px;border:none;border-radius:12px;background:#2563eb;color:#fff;font-weight:700;cursor:pointer;">Confirm Booking</button></div><div id="cd_error" style="display:none;padding:12px 14px;border-radius:12px;background:#fef2f2;color:#991b1b;font-size:14px;"></div><div id="cd_summary" style="display:none;padding:18px;border-radius:16px;background:#fff;border:1px solid #e2e8f0;"><div style="display:flex;justify-content:space-between;margin-bottom:8px;"><span>Ride Price</span><strong id="res_quoted_price">$0.00</strong></div><div style="display:flex;justify-content:space-between;margin-bottom:8px;"><span>Add-On Services</span><strong id="res_addons">$0.00</strong></div><div style="display:flex;justify-content:space-between;margin-bottom:8px;"><span>Tax</span><strong id="res_tax">$0.00</strong></div><div style="display:flex;justify-content:space-between;margin-bottom:8px;"><span>Deposit</span><strong id="res_deposit_amount">$0.00</strong></div><div style="display:flex;justify-content:space-between;font-size:19px;"><span>Total</span><strong id="res_total">$0.00</strong></div></div></div></div>`;
+    root.innerHTML = `
+      <div style="max-width:1080px;margin:0 auto;font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;color:#0f172a;">
+        <div style="background:linear-gradient(135deg,#082f49 0%,#0f766e 52%,#ecfeff 100%);padding:28px;border-radius:28px;box-shadow:0 30px 60px rgba(15,23,42,.18);overflow:hidden;">
+          <div style="display:grid;grid-template-columns:minmax(0,1.5fr) minmax(320px,1fr);gap:22px;align-items:stretch;">
+            <div style="background:rgba(255,255,255,.16);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,.18);border-radius:24px;padding:26px;color:#fff;">
+              <div style="display:flex;align-items:center;gap:16px;margin-bottom:18px;">
+                <div>
+                  <div style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.18em;opacity:.85;">Premium Booking Console</div>
+                  <h2 style="margin:6px 0 0;font-size:32px;line-height:1.1;font-weight:900;">${escapeHtml(state.config?.business_name || "Luxury Ride Reservations")}</h2>
+                </div>
+              </div>
+              <p style="margin:0 0 18px;font-size:15px;line-height:1.6;max-width:580px;color:rgba(255,255,255,.88);">
+                Build a polished reservation in one flow: choose the vehicle, map the route, apply event pricing, layer in add-ons, and confirm a cloud-synced booking.
+              </p>
+              <div style="display:flex;flex-wrap:wrap;gap:10px;">
+                <span style="padding:10px 14px;border-radius:999px;background:rgba(255,255,255,.14);font-size:12px;font-weight:700;">${fleet.length} Fleet Option${fleet.length === 1 ? "" : "s"}</span>
+                <span style="padding:10px 14px;border-radius:999px;background:rgba(255,255,255,.14);font-size:12px;font-weight:700;">${serviceRadius ? `${serviceRadius} Mile Service Area` : "Custom Service Area"}</span>
+                <span style="padding:10px 14px;border-radius:999px;background:rgba(255,255,255,.14);font-size:12px;font-weight:700;">Tax ${getConfigTaxRate().toFixed(2)}%</span>
+              </div>
+            </div>
 
-    document.getElementById('cd_btn_quote').onclick = getQuote;
-    document.getElementById('cd_btn_book').onclick = submitBooking;
+            <div style="background:#fff;border-radius:24px;padding:22px;border:1px solid rgba(15,23,42,.08);display:flex;flex-direction:column;gap:14px;">
+              <div>
+                <div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.14em;color:#0f766e;">Trip Intelligence</div>
+                <div style="font-size:24px;font-weight:900;margin-top:6px;">Live Route Summary</div>
+              </div>
+              <div id="cd_route_status" style="padding:14px 16px;border-radius:18px;background:#f8fafc;border:1px solid #e2e8f0;color:#475569;font-size:14px;line-height:1.5;">
+                Quote the trip to reveal mileage, service-area validation, fixed-rate zones, peak pricing, tax, and deposit details.
+              </div>
+              <div id="cd_summary" style="display:none;padding:18px;border-radius:20px;background:#f8fafc;border:1px solid #dbe4f0;">
+                <div style="display:flex;justify-content:space-between;margin-bottom:10px;"><span>Base + Distance</span><strong id="res_quoted_price">$0.00</strong></div>
+                <div style="display:flex;justify-content:space-between;margin-bottom:10px;"><span>Add-Ons</span><strong id="res_addons">$0.00</strong></div>
+                <div style="display:flex;justify-content:space-between;margin-bottom:10px;"><span>Tax</span><strong id="res_tax">$0.00</strong></div>
+                <div style="display:flex;justify-content:space-between;margin-bottom:10px;"><span>Deposit Due</span><strong id="res_deposit_amount">$0.00</strong></div>
+                <div style="height:1px;background:#cbd5e1;margin:12px 0;"></div>
+                <div style="display:flex;justify-content:space-between;font-size:20px;"><span>Total</span><strong id="res_total">$0.00</strong></div>
+                <div id="cd_meta" style="margin-top:12px;font-size:12px;color:#64748b;"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div style="margin-top:20px;display:grid;grid-template-columns:minmax(0,1.45fr) minmax(320px,1fr);gap:22px;">
+          <div style="background:#fff;border:1px solid #e2e8f0;border-radius:24px;box-shadow:0 24px 50px rgba(15,23,42,.08);padding:24px;">
+            <div style="display:grid;gap:18px;">
+              <div>
+                <div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.14em;color:#0f766e;">Passenger Details</div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px;">
+                  <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">First Name</label><input id="cd_first_name" placeholder="First name" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" /></div>
+                  <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Last Name</label><input id="cd_last_name" placeholder="Last name" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" /></div>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px;">
+                  <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Email</label><input id="cd_email" type="email" placeholder="Email address" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" /></div>
+                  <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Phone</label><input id="cd_phone" type="tel" placeholder="Mobile phone" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" /></div>
+                </div>
+              </div>
+
+              <div>
+                <div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.14em;color:#0f766e;">Trip Setup</div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px;">
+                  <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Vehicle</label><select id="cd_vehicle_slot_id" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;"><option value="">Select vehicle</option>${vehicleOptions}</select></div>
+                  <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Passengers</label><input id="cd_passenger_count" type="number" min="1" value="1" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" /></div>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-top:12px;">
+                  <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Pickup Address</label><input id="cd_pickup" placeholder="Street address or airport terminal" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" /></div>
+                  <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Dropoff Address</label><input id="cd_dropoff" placeholder="Destination address" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" /></div>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px;">
+                  <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Pickup Date & Time</label><input id="cd_start_time" type="datetime-local" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" /></div>
+                  ${eventSelect || "<div></div>"}
+                </div>
+              </div>
+
+              <div>
+                <div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.14em;color:#0f766e;">Luggage & Special Items</div>
+                <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-top:12px;">
+                  <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Carry-On Bags</label><input id="cd_carry_on_count" type="number" min="0" value="0" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" /></div>
+                  <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Checked Bags</label><input id="cd_checked_bag_count" type="number" min="0" value="0" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" /></div>
+                  <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Preset Item</label><select id="cd_additional_item_select" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;"><option value="">None</option><option>Instrument</option><option>Stroller</option><option>Car Seat</option><option>Wheelchair</option><option>Golf Clubs</option><option>Cooler</option><option>Custom</option></select></div>
+                </div>
+                <div style="margin-top:12px;"><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Custom Item / Trip Notes</label><input id="cd_additional_item_custom" placeholder="Anything the chauffeur should prepare for" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" /></div>
+              </div>
+            </div>
+          </div>
+
+          <div style="display:grid;gap:18px;align-content:start;">
+            <div style="background:#fff;border:1px solid #e2e8f0;border-radius:24px;box-shadow:0 24px 50px rgba(15,23,42,.08);padding:22px;">
+              <div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.14em;color:#0f766e;">Optional Enhancements</div>
+              <div style="display:grid;gap:10px;margin-top:14px;">${renderAddonOptions()}</div>
+            </div>
+
+            <div style="background:#fff;border:1px solid #e2e8f0;border-radius:24px;box-shadow:0 24px 50px rgba(15,23,42,.08);padding:22px;">
+              <div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.14em;color:#0f766e;">Actions</div>
+              <div style="display:grid;gap:12px;margin-top:14px;">
+                <button id="cd_btn_quote" style="padding:15px 18px;border:none;border-radius:16px;background:#0f172a;color:#fff;font-size:15px;font-weight:800;cursor:pointer;">Calculate Smart Quote</button>
+                <button id="cd_btn_book" style="padding:15px 18px;border:none;border-radius:16px;background:#0f766e;color:#fff;font-size:15px;font-weight:800;cursor:pointer;">Confirm & Sync Booking</button>
+              </div>
+              <div id="cd_error" style="display:none;margin-top:14px;padding:12px 14px;border-radius:14px;background:#fef2f2;color:#991b1b;font-size:14px;border:1px solid #fecaca;"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    document.getElementById("cd_btn_quote").onclick = getQuote;
+    document.getElementById("cd_btn_book").onclick = submitBooking;
+
+    document.querySelectorAll(".cd-addon-check, #cd_passenger_count, #cd_special_event").forEach((input) => {
+      input?.addEventListener("change", () => {
+        if (state.quote) getQuote();
+      });
+    });
+
     initAutocomplete();
   }
 
   function showError(message) {
-    const el = document.getElementById('cd_error');
+    const el = document.getElementById("cd_error");
+    if (!el) return;
     el.textContent = message;
-    el.style.display = 'block';
-  }
-  function clearError() {
-    const el = document.getElementById('cd_error');
-    el.textContent = '';
-    el.style.display = 'none';
+    el.style.display = "block";
   }
 
-  function selectedAddons() {
-    // Simply grab the IDs of all checkboxes that are currently checked
-    const checked = [];
-    document.querySelectorAll('.cd-addon-check:checked').forEach(checkbox => {
-      checked.push(checkbox.getAttribute('data-id'));
-    });
-    return checked;
+  function clearError() {
+    const el = document.getElementById("cd_error");
+    if (!el) return;
+    el.textContent = "";
+    el.style.display = "none";
+  }
+
+  function setRouteStatus(message, isError = false) {
+    const el = document.getElementById("cd_route_status");
+    if (!el) return;
+    el.textContent = message;
+    el.style.background = isError ? "#fff1f2" : "#f8fafc";
+    el.style.borderColor = isError ? "#fecdd3" : "#e2e8f0";
+    el.style.color = isError ? "#9f1239" : "#475569";
   }
 
   function formPayload() {
     return {
       location_id: locationId,
-      vehicle_slot_id: document.getElementById('cd_vehicle_slot_id').value,
-      first_name: document.getElementById('cd_first_name').value.trim(),
-      last_name: document.getElementById('cd_last_name').value.trim(),
-      email: document.getElementById('cd_email').value.trim(),
-      phone: document.getElementById('cd_phone').value.trim(),
-      pickup_address: document.getElementById('cd_pickup').value.trim(),
-      dropoff_address: document.getElementById('cd_dropoff').value.trim(),
-      start_time: document.getElementById('cd_start_time').value,
-      selected_event_name: document.getElementById('cd_special_event') ? document.getElementById('cd_special_event').value : null,
-      selected_addons: selectedAddons(), // This now correctly returns an array of IDs
-      carry_on_count: Number(document.getElementById('cd_carry_on_count').value || 0),
-      checked_bag_count: Number(document.getElementById('cd_checked_bag_count').value || 0),
-      additional_items_aboard: JSON.stringify({ 
-        preset: document.getElementById('cd_additional_item_select').value || '', 
-        custom: document.getElementById('cd_additional_item_custom').value.trim() 
-      })
+      vehicle_slot_id: document.getElementById("cd_vehicle_slot_id")?.value,
+      first_name: document.getElementById("cd_first_name")?.value.trim(),
+      last_name: document.getElementById("cd_last_name")?.value.trim(),
+      email: document.getElementById("cd_email")?.value.trim(),
+      phone: document.getElementById("cd_phone")?.value.trim(),
+      pickup_address: document.getElementById("cd_pickup")?.value.trim(),
+      dropoff_address: document.getElementById("cd_dropoff")?.value.trim(),
+      start_time: document.getElementById("cd_start_time")?.value,
+      passenger_count: toNumber(document.getElementById("cd_passenger_count")?.value, 1),
+      selected_event_name: document.getElementById("cd_special_event")?.value || null,
+      selected_addons: selectedAddons(),
+      carry_on_count: toNumber(document.getElementById("cd_carry_on_count")?.value, 0),
+      checked_bag_count: toNumber(document.getElementById("cd_checked_bag_count")?.value, 0),
+      additional_items_aboard: JSON.stringify({
+        preset: document.getElementById("cd_additional_item_select")?.value || "",
+        custom: document.getElementById("cd_additional_item_custom")?.value.trim() || "",
+      }),
     };
   }
 
-function renderSuccess(bookingId, payload) {
+  async function geocodeInput(address, placeKey) {
+    const place = state.places[placeKey];
+    const location = place?.geometry?.location;
+
+    if (location && typeof location.lat === "function" && typeof location.lng === "function") {
+      return {
+        lat: location.lat(),
+        lng: location.lng(),
+        formattedAddress: place.formatted_address || address,
+      };
+    }
+
+    if (!window.google?.maps?.Geocoder) {
+      throw new Error("Maps services are still loading. Please wait a moment and try again.");
+    }
+
+    const geocoder = new google.maps.Geocoder();
+    const result = await new Promise((resolve, reject) => {
+      geocoder.geocode({ address }, (results, status) => {
+        if (status === "OK" && results?.[0]) resolve(results[0]);
+        else reject(new Error(`Unable to locate ${placeKey} address.`));
+      });
+    });
+
+    return {
+      lat: result.geometry.location.lat(),
+      lng: result.geometry.location.lng(),
+      formattedAddress: result.formatted_address || address,
+    };
+  }
+
+  function computeAddonTotal(addons, passengerCount) {
+    return addons.reduce((total, addon) => {
+      const price = toNumber(addon.price, 0);
+      return total + (addon.type === "per_person" ? price * passengerCount : price);
+    }, 0);
+  }
+
+  function computeDeposit(total, vehicle) {
+    const defaults = getProfileDepositDefaults();
+    const vehiclePercent = toNumber(vehicle?.deposit_percent, defaults.percent);
+    const vehicleFlat = toNumber(vehicle?.deposit_flat_cents, defaults.flatCents) / 100;
+    const percentDeposit = vehiclePercent > 0 ? total * (vehiclePercent / 100) : 0;
+    const depositAmount = Math.max(percentDeposit, vehicleFlat, 0);
+
+    return {
+      depositPercent: vehiclePercent,
+      depositAmount: Number(Math.min(depositAmount, total).toFixed(2)),
+    };
+  }
+
+  async function buildQuote() {
+    const payload = formPayload();
+    const vehicle = selectedVehicle();
+    if (!vehicle) throw new Error("Select a vehicle first.");
+    if (!payload.pickup_address || !payload.dropoff_address || !payload.start_time) {
+      throw new Error("Enter pickup, dropoff, and pickup date/time first.");
+    }
+
+    const [pickupCoords, dropoffCoords] = await Promise.all([
+      geocodeInput(payload.pickup_address, "pickup"),
+      geocodeInput(payload.dropoff_address, "dropoff"),
+    ]);
+
+    const miles = haversineMiles(
+      pickupCoords.lat,
+      pickupCoords.lng,
+      dropoffCoords.lat,
+      dropoffCoords.lng
+    );
+
+    const route = {
+      pickupCoords,
+      dropoffCoords,
+      miles: Number(miles.toFixed(2)),
+    };
+
+    if (!isWithinServiceArea(route)) {
+      throw new Error(`Pickup is outside the configured ${toNumber(state.config?.service_radius, 0)} mile service area.`);
+    }
+
+    const startDate = new Date(payload.start_time);
+    if (Number.isNaN(startDate.getTime())) throw new Error("Choose a valid pickup date and time.");
+
+    const eventConfig = eventByName(payload.selected_event_name);
+    const fixedRate = resolveFixedRate(route);
+    const peakMultiplier = getPeakMultiplier(startDate);
+    const passengerCount = Math.max(1, payload.passenger_count || 1);
+    const addons = selectedAddonDetails();
+    const addonTotal = computeAddonTotal(addons, passengerCount);
+
+    let baseRate = toNumber(vehicle.base_rate, 0);
+    let mileRate = toNumber(vehicle.mile_rate, 0);
+    let pricingLabel = `${vehicle.vehicle_type || "Selected vehicle"} standard pricing`;
+
+    if (eventConfig) {
+      baseRate = toNumber(eventConfig.base_rate, baseRate);
+      mileRate = toNumber(eventConfig.mile_rate, mileRate);
+      pricingLabel = `${eventConfig.event_name || "Event"} pricing`;
+    }
+
+    let rideSubtotal = baseRate + route.miles * mileRate;
+
+    if (fixedRate) {
+      rideSubtotal = toNumber(fixedRate.fixed_price, rideSubtotal);
+      pricingLabel = `${fixedRate.location_name || "Fixed zone"} flat rate`;
+    } else if (peakMultiplier > 1) {
+      rideSubtotal *= peakMultiplier;
+      pricingLabel = `${pricingLabel} with peak multiplier ${peakMultiplier.toFixed(2)}x`;
+    }
+
+    const taxAmount = (rideSubtotal + addonTotal) * (getConfigTaxRate() / 100);
+    const total = rideSubtotal + addonTotal + taxAmount;
+    const deposit = computeDeposit(total, vehicle);
+
+    state.route = route;
+    state.quote = {
+      quoted_price: Number(rideSubtotal.toFixed(2)),
+      addon_total: Number(addonTotal.toFixed(2)),
+      tax_amount: Number(taxAmount.toFixed(2)),
+      total: Number(total.toFixed(2)),
+      deposit_percent: deposit.depositPercent,
+      deposit_amount: deposit.depositAmount,
+      miles: route.miles,
+      pricing_label: pricingLabel,
+      fixed_rate_name: fixedRate?.location_name || null,
+      peak_multiplier: peakMultiplier,
+    };
+
+    return state.quote;
+  }
+
+  function renderQuoteSummary() {
+    if (!state.quote) return;
+
+    document.getElementById("res_quoted_price").textContent = money(state.quote.quoted_price);
+    document.getElementById("res_addons").textContent = money(state.quote.addon_total);
+    document.getElementById("res_tax").textContent = money(state.quote.tax_amount);
+    document.getElementById("res_deposit_amount").textContent = money(state.quote.deposit_amount);
+    document.getElementById("res_total").textContent = money(state.quote.total);
+    document.getElementById("cd_summary").style.display = "block";
+    document.getElementById("cd_meta").textContent = `${state.quote.miles.toFixed(2)} miles estimated. ${state.quote.pricing_label}.`;
+
+    const notes = [];
+    if (state.quote.fixed_rate_name) notes.push(`Fixed-rate zone applied: ${state.quote.fixed_rate_name}.`);
+    if (state.quote.peak_multiplier > 1 && !state.quote.fixed_rate_name) {
+      notes.push(`Peak pricing applied at ${state.quote.peak_multiplier.toFixed(2)}x.`);
+    }
+    notes.push(`Deposit due today: ${money(state.quote.deposit_amount)}.`);
+    setRouteStatus(notes.join(" "));
+  }
+
+  function renderSuccess(bookingId, payload) {
     const root = getRoot();
-    const businessName = state.config.business_name || 'Our Team';
+    const businessName = state.config?.business_name || "Our Team";
 
     root.innerHTML = `
-      <div style="max-width:820px; margin:0 auto; background:#fff; border:1px solid #e5e7eb; border-radius:20px; overflow:hidden; box-shadow:0 18px 50px rgba(15,23,42,.12); font-family:Inter,Arial,sans-serif; text-align:center; padding:60px 20px;">
-        <div style="width:80px; height:80px; background:#f0fdf4; color:#16a34a; border-radius:50%; display:flex; align-items:center; justify-content:center; margin:0 auto 24px; font-size:40px;">✓</div>
-        
-        <h2 style="font-size:30px; font-weight:800; color:#0f172a; margin-bottom:8px;">Booking Confirmed!</h2>
-        <p style="color:#64748b; font-size:16px; margin-bottom:32px;">Thank you, ${payload.first_name}. Your reservation has been synced with our fleet.</p>
-        
-        <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:16px; padding:24px; max-width:400px; margin:0 auto 32px; text-align:left;">
-          <div style="margin-bottom:12px; font-size:14px; color:#64748b;">Confirmation ID: <strong style="color:#0f172a;">#${bookingId}</strong></div>
-          <div style="margin-bottom:12px; font-size:14px; color:#64748b;">Pickup: <span style="color:#0f172a; display:block; font-weight:500;">${payload.pickup_address}</span></div>
-          <div style="font-size:14px; color:#64748b;">Time: <span style="color:#0f172a; display:block; font-weight:500;">${new Date(payload.start_time).toLocaleString()}</span></div>
+      <div style="max-width:920px;margin:0 auto;background:#fff;border:1px solid #dbe4f0;border-radius:28px;overflow:hidden;box-shadow:0 30px 60px rgba(15,23,42,.12);font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;">
+        <div style="padding:48px;background:linear-gradient(135deg,#082f49 0%,#0f766e 100%);color:#fff;text-align:center;">
+          <div style="width:86px;height:86px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.16);margin:0 auto 18px;font-size:38px;">OK</div>
+          <h2 style="margin:0;font-size:34px;font-weight:900;">Booking Confirmed</h2>
+          <p style="margin:12px auto 0;max-width:580px;color:rgba(255,255,255,.85);font-size:16px;line-height:1.6;">
+            ${escapeHtml(payload.first_name)} your reservation has been synced successfully and routed to ${escapeHtml(businessName)}.
+          </p>
         </div>
-
-        <p style="font-size:13px; color:#94a3b8; margin-bottom:24px;">A confirmation SMS and email from ${businessName} are on their way.</p>
-        
-        <button onclick="window.location.reload()" style="padding:14px 28px; border:none; border-radius:12px; background:#0f172a; color:#fff; font-weight:700; cursor:pointer; transition:all 0.2s;">
-          Book Another Ride
-        </button>
+        <div style="padding:30px;display:grid;gap:16px;background:#f8fafc;">
+          <div style="background:#fff;border:1px solid #dbe4f0;border-radius:22px;padding:22px;">
+            <div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.14em;color:#0f766e;">Reservation Snapshot</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:14px;font-size:14px;color:#475569;">
+              <div><strong style="display:block;color:#0f172a;margin-bottom:4px;">Confirmation ID</strong>#${escapeHtml(bookingId || "Pending")}</div>
+              <div><strong style="display:block;color:#0f172a;margin-bottom:4px;">Pickup Time</strong>${escapeHtml(new Date(payload.start_time).toLocaleString())}</div>
+              <div><strong style="display:block;color:#0f172a;margin-bottom:4px;">Pickup</strong>${escapeHtml(payload.pickup_address)}</div>
+              <div><strong style="display:block;color:#0f172a;margin-bottom:4px;">Dropoff</strong>${escapeHtml(payload.dropoff_address)}</div>
+            </div>
+          </div>
+          <div style="font-size:13px;color:#64748b;text-align:center;">
+            Confirmation messaging and CRM follow-up are now queued from the synced backend workflow.
+          </div>
+        </div>
       </div>
     `;
-    
-    // Scroll to top of widget so they see the success message
-    root.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+    root.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
   async function getQuote() {
     clearError();
-    const payload = formPayload();
-    if (!payload.vehicle_slot_id || !payload.pickup_address || !payload.dropoff_address || !payload.start_time) return showError('Select a vehicle, pickup time, pickup address, and dropoff address first.');
-    const btn = document.getElementById('cd_btn_quote');
-    const original = btn.textContent;
-    btn.textContent = 'Calculating...'; btn.disabled = true;
+    const button = document.getElementById("cd_btn_quote");
+    const original = button.textContent;
+    button.textContent = "Calculating...";
+    button.disabled = true;
+
     try {
-      const res = await fetch(`${BACKEND_URL}/api/calculate-quote`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Unable to calculate quote.');
-      state.quote = data;
-      document.getElementById('res_quoted_price').textContent = money(data.quoted_price);
-      document.getElementById('res_addons').textContent = money(data.addon_total);
-      document.getElementById('res_tax').textContent = money(data.tax_amount);
-      document.getElementById('res_deposit_amount').textContent = money(data.deposit_amount);
-      document.getElementById('res_total').textContent = money(data.total);
-      document.getElementById('cd_summary').style.display = 'block';
+      await buildQuote();
+      renderQuoteSummary();
     } catch (error) {
-      showError(error.message || 'Pricing error.');
-    } finally { btn.textContent = original; btn.disabled = false; }
+      state.quote = null;
+      state.route = null;
+      setRouteStatus(error.message || "Unable to calculate quote.", true);
+      showError(error.message || "Pricing error.");
+    } finally {
+      button.textContent = original;
+      button.disabled = false;
+    }
   }
 
   async function submitBooking() {
     clearError();
     const payload = formPayload();
-    if (!payload.first_name || !payload.last_name || !payload.email || !payload.phone || !payload.start_time) return showError('Please complete first name, last name, email, phone, and pickup date/time.');
-    if (!state.quote) return showError('Please calculate the quote before confirming the booking.');
+
+    if (!payload.first_name || !payload.last_name || !payload.email || !payload.phone || !payload.start_time) {
+      return showError("Please complete first name, last name, email, phone, and pickup date/time.");
+    }
+
+    if (!state.quote || !state.route) {
+      try {
+        await buildQuote();
+        renderQuoteSummary();
+      } catch (error) {
+        return showError(error.message || "Please calculate the quote before confirming the booking.");
+      }
+    }
+
     Object.assign(payload, {
+      pickup_address: state.route.pickupCoords.formattedAddress || payload.pickup_address,
+      dropoff_address: state.route.dropoffCoords.formattedAddress || payload.dropoff_address,
+      pickup_lat: state.route.pickupCoords.lat,
+      pickup_lng: state.route.pickupCoords.lng,
+      dropoff_lat: state.route.dropoffCoords.lat,
+      dropoff_lng: state.route.dropoffCoords.lng,
       quoted_price: Number(state.quote.quoted_price || 0),
+      addon_total: Number(state.quote.addon_total || 0),
+      tax_amount: Number(state.quote.tax_amount || 0),
       total_price: Number(state.quote.total || 0),
       deposit_percent: Number(state.quote.deposit_percent || 0),
-      deposit_amount: Number(state.quote.deposit_amount || 0)
+      deposit_amount: Number(state.quote.deposit_amount || 0),
     });
-    const btn = document.getElementById('cd_btn_book');
-    const original = btn.textContent;
-    btn.textContent = 'Confirming...'; btn.disabled = true;
+
+    const button = document.getElementById("cd_btn_book");
+    const original = button.textContent;
+    button.textContent = "Syncing Booking...";
+    button.disabled = true;
 
     try {
-      const res = await fetch(`${BACKEND_URL}/api/create-booking`, { 
-        method: 'POST', 
-        headers: { 'Content-Type': 'application/json' }, 
-        body: JSON.stringify(payload) 
+      const response = await fetch(`${BACKEND_URL}/api/create-booking`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
       });
-      
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Booking failed.');
 
-      // NEW: Call the success renderer instead of an alert
-      renderSuccess(data.booking_id, payload);
-      
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Booking failed.");
+
+      renderSuccess(data.booking?.id || data.booking_id, payload);
     } catch (error) {
-      showError(error.message || 'Booking failed.');
-      btn.textContent = original; 
-      btn.disabled = false;
+      showError(error.message || "Booking failed.");
+      button.textContent = original;
+      button.disabled = false;
     }
   }
 
-(async function init() {
+  (async function init() {
     try {
-      if (!locationId) throw new Error('Missing location id.');
-      
-      // 1. Fetch the profile (including your Fixed Rates and Maps Key)
+      if (!locationId) throw new Error("Missing location id.");
       await loadConfig();
-
-      // 2. Wait for Google Maps to be ready if it's being injected
-      if (state.config.maps_api_key) {
-          await new Promise((resolve) => {
-              const check = setInterval(() => {
-                  if (window.google && window.google.maps) {
-                      clearInterval(check);
-                      resolve();
-                  }
-              }, 100);
-          });
-      }
-
-      // 3. Now it is safe to draw the UI
+      await waitForGoogleMaps();
       render();
-      
     } catch (error) {
-      console.error("🚀 Widget Init Error:", error);
+      console.error("Widget Init Error:", error);
       const root = getRoot();
       if (root) {
-        root.innerHTML = `<div style="padding:16px;color:#991b1b;background:#fef2f2;border:1px solid #fecaca;border-radius:12px;font-family:sans-serif;">
-            <strong>Maintenance:</strong> Our booking system is currently updating. Please refresh in a moment.
-        </div>`;
+        root.innerHTML = `
+          <div style="padding:18px;color:#991b1b;background:#fef2f2;border:1px solid #fecaca;border-radius:16px;font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;">
+            <strong>Booking widget unavailable:</strong> ${escapeHtml(error.message || "Please try again shortly.")}
+          </div>
+        `;
       }
     }
   })();
+})();
