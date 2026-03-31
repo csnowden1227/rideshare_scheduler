@@ -37,6 +37,74 @@ const pool = new Pool({
 // Initialize the Google Maps Client for the Backend
 const googleMapsClient = new GoogleMapsClient({});
 
+async function tableExists(tableName) {
+  const result = await pool.query(
+    `SELECT EXISTS (
+      SELECT 1
+      FROM information_schema.tables
+      WHERE table_schema = 'public' AND table_name = $1
+    ) AS exists`,
+    [tableName]
+  );
+  return Boolean(result.rows[0]?.exists);
+}
+
+async function getTableColumns(tableName) {
+  const result = await pool.query(
+    `SELECT column_name
+     FROM information_schema.columns
+     WHERE table_schema = 'public' AND table_name = $1`,
+    [tableName]
+  );
+  return new Set(result.rows.map((row) => row.column_name));
+}
+
+function safeParseJson(data, fallback = []) {
+  try {
+    if (!data) return fallback;
+    return typeof data === "string" ? JSON.parse(data) : data;
+  } catch {
+    return fallback;
+  }
+}
+
+async function syncFixedRates(client, location_id, fixed_rates = []) {
+  if (!(await tableExists("fixed_rates"))) return;
+
+  const columns = await getTableColumns("fixed_rates");
+  await client.query("DELETE FROM fixed_rates WHERE location_id = $1", [location_id]);
+
+  for (const route of fixed_rates) {
+    const fields = [];
+    const values = [];
+    const placeholders = [];
+
+    const push = (field, value) => {
+      if (!columns.has(field)) return;
+      fields.push(field);
+      values.push(value);
+      placeholders.push(`$${values.length}`);
+    };
+
+    push("location_id", location_id);
+    push("location_name", route.location_name || null);
+    push("pickup_keyword", route.pickup_keyword || route.location_name || null);
+    push("dropoff_keyword", route.dropoff_keyword || route.location_name || null);
+    push("lat", Number.isFinite(Number(route.lat)) ? Number(route.lat) : null);
+    push("lng", Number.isFinite(Number(route.lng)) ? Number(route.lng) : null);
+    push("radius", Number.isFinite(Number(route.radius)) ? Number(route.radius) : null);
+    push("fixed_price", parseFloat(route.fixed_price) || 0);
+    push("is_active", true);
+
+    if (!fields.length) continue;
+
+    await client.query(
+      `INSERT INTO fixed_rates (${fields.join(", ")}) VALUES (${placeholders.join(", ")})`,
+      values
+    );
+  }
+}
+
 // --- MIDDLEWARE & SECURITY CONFIG ---
 const allowedOrigins = [
   'https://app.leadconnectorhq.com',
@@ -78,8 +146,7 @@ app.use((req, res, next) => {
   2️⃣ API ROUTES (Wizard & Health)
  *****************************************************/
 
-// This handles the "Save" button from your Wizard
-app.post("/api/save-config", async (req, res) => {
+async function saveConfigHandler(req, res) {
   const client = await pool.connect();
 
   try {
@@ -101,7 +168,6 @@ app.post("/api/save-config", async (req, res) => {
 
     await client.query("BEGIN");
 
-    // 1. UPSERT PROFILE
     await client.query(
       `
       INSERT INTO profiles (
@@ -114,12 +180,11 @@ app.post("/api/save-config", async (req, res) => {
         service_lng,
         service_radius,
         fleet,
-        fixed_rates,
         peak_windows,
         events,
         addons
       )
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10::jsonb,$11::jsonb,$12::jsonb)
       ON CONFLICT (location_id)
       DO UPDATE SET
         business_name = EXCLUDED.business_name,
@@ -130,7 +195,6 @@ app.post("/api/save-config", async (req, res) => {
         service_lng = EXCLUDED.service_lng,
         service_radius = EXCLUDED.service_radius,
         fleet = EXCLUDED.fleet,
-        fixed_rates = EXCLUDED.fixed_rates,
         peak_windows = EXCLUDED.peak_windows,
         events = EXCLUDED.events,
         addons = EXCLUDED.addons
@@ -145,14 +209,12 @@ app.post("/api/save-config", async (req, res) => {
         service_lng,
         service_radius,
         JSON.stringify(fleet),
-        JSON.stringify(fixed_rates),
         JSON.stringify(peak_windows),
         JSON.stringify(events),
         JSON.stringify(addons)
       ]
     );
 
-    // 2. OPTIONAL: CLEAR + SAVE RELATIONAL FLEET TABLE
     await client.query(
       `DELETE FROM fleet_slots WHERE location_id = $1`,
       [location_id]
@@ -182,6 +244,8 @@ app.post("/api/save-config", async (req, res) => {
       );
     }
 
+    await syncFixedRates(client, location_id, fixed_rates);
+
     await client.query("COMMIT");
 
     return res.json({
@@ -199,7 +263,10 @@ app.post("/api/save-config", async (req, res) => {
   } finally {
     client.release();
   }
-});
+}
+
+// This handles the "Save" button from your Wizard
+app.post("/api/save-config", saveConfigHandler);
 
 // This fixes the "Cannot GET /api/health" error
 app.get('/api/health', (req, res) => {
@@ -441,7 +508,7 @@ app.get("/test-page", (req, res) => {
   res.send("<h1>Server route works</h1>");
 });
     
-app.post('/api/update-profile-full', async (req, res) => {
+app.post('/api/update-profile-full-legacy', async (req, res) => {
     const {
         location_id,
         business_name,
@@ -543,6 +610,8 @@ if (fleet && fleet.length > 0) {
         if (client) client.release();
     }
 });
+
+app.post('/api/update-profile-full', saveConfigHandler);
 
 app.post("/api/create-payment-intent", async (req, res) => {
   try {
@@ -1039,20 +1108,18 @@ app.get("/api/get-profile/:location_id", async (req, res) => {
     if (profileRes.rows.length === 0) return res.status(404).json({ error: "Profile not found" });
 
     const profile = profileRes.rows[0];
-    const safeParse = (data) => {
-  try {
-    if (!data) return [];
-    return typeof data === "string" ? JSON.parse(data) : data;
-  } catch (e) {
-    console.warn("JSON parse failed:", data);
-    return [];
-  }
-};
+    let parsedFixedRates = safeParseJson(profile.fixed_rates);
+    if (await tableExists("fixed_rates")) {
+      const fixedRatesRes = await client.query(
+        "SELECT * FROM fixed_rates WHERE location_id = $1 AND COALESCE(is_active, true) = true",
+        [location_id]
+      );
+      parsedFixedRates = fixedRatesRes.rows;
+    }
 
-const parsedFixedRates = safeParse(profile.fixed_rates);
-const parsedEvents = safeParse(profile.events);
-const parsedPeakWindows = safeParse(profile.peak_windows);
-const parsedAddons = safeParse(profile.addons);
+const parsedEvents = safeParseJson(profile.events);
+const parsedPeakWindows = safeParseJson(profile.peak_windows);
+const parsedAddons = safeParseJson(profile.addons);
 
 res.json({
   location_id: profile.location_id,
@@ -1084,7 +1151,7 @@ res.json({
     { label: "Luxury XL SUV", category: "xl" }
   ],
 
-  fleet: (Array.isArray(safeParse(profile.fleet)) ? safeParse(profile.fleet) : []).map(v => ({
+  fleet: (Array.isArray(safeParseJson(profile.fleet)) ? safeParseJson(profile.fleet) : []).map(v => ({
     vehicle_slot_id: v.vehicle_slot_id,
     vehicle_type: v.vehicle_type,
     vehicle_category: v.vehicle_category || null,
@@ -1221,16 +1288,24 @@ app.get("/api/get-profile-widget/:location_id", async (req, res) => {
     }
 
     const p = profileRes.rows[0];
+    let fixedRates = safeParseJson(p.fixed_rates);
+    if (await tableExists("fixed_rates")) {
+      const fixedRatesRes = await pool.query(
+        "SELECT * FROM fixed_rates WHERE location_id = $1 AND COALESCE(is_active, true) = true",
+        [location_id]
+      );
+      fixedRates = fixedRatesRes.rows;
+    }
 
     // Map data to return to widget
     // We use the JSONB columns from the profiles table
     return res.json({
       maps_key: p.maps_api_key,
       tax_rate: p.tax_rate,
-      fleet: p.fleet,         // Using the JSONB fleet from profiles
-      fixed_rates: p.fixed_rates,
-      peak_windows: p.peak_windows,
-      events: p.events
+      fleet: safeParseJson(p.fleet),         // Using the JSONB fleet from profiles
+      fixed_rates: fixedRates,
+      peak_windows: safeParseJson(p.peak_windows),
+      events: safeParseJson(p.events)
     });
 
   } catch (err) {
