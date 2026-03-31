@@ -119,6 +119,50 @@ async function syncFixedRates(client, location_id, fixed_rates = []) {
   }
 }
 
+async function syncFleetSettings(client, location_id, fleet = []) {
+  if (!(await tableExists("fleet_settings"))) return;
+
+  const columns = await getTableColumns("fleet_settings");
+  await client.query("DELETE FROM fleet_settings WHERE location_id = $1", [location_id]);
+
+  for (const slot of fleet || []) {
+    const fields = [];
+    const values = [];
+    const placeholders = [];
+
+    const push = (field, value) => {
+      if (!columns.has(field)) return;
+      fields.push(field);
+      values.push(value);
+      placeholders.push(`$${values.length}`);
+    };
+
+    push("id", String(slot.vehicle_slot_id || "").trim());
+    push("location_id", location_id);
+    push("vehicle_slot_id", String(slot.vehicle_slot_id || "").trim());
+    push("base_rate_cents", Math.round((parseFloat(slot.base_rate) || 0) * 100));
+    push("mile_rate_cents", Math.round((parseFloat(slot.mile_rate) || 0) * 100));
+    push("calendar_id", slot.calendar_id || null);
+    push("is_active", true);
+    push("base_rate", parseFloat(slot.base_rate) || 0);
+    push("per_mile_rate", parseFloat(slot.mile_rate) || 0);
+    push("minimum_fare", parseFloat(slot.minimum_fare) || 0);
+    push("deposit_percent", parseFloat(slot.deposit_percent) || 0);
+    push("slot_interval_min", parseInt(slot.slot_interval_min, 10) || 30);
+    push("duration_min", parseInt(slot.duration_min, 10) || 105);
+    push("inbound_buffer_min", parseInt(slot.inbound_buffer_min, 10) || 0);
+    push("outbound_buffer_min", parseInt(slot.outbound_buffer_min, 10) || BOOKING_BUFFER_MINUTES);
+    push("min_notice_min", parseInt(slot.min_notice_min, 10) || 120);
+
+    if (!fields.length) continue;
+
+    await client.query(
+      `INSERT INTO fleet_settings (${fields.join(", ")}) VALUES (${placeholders.join(", ")})`,
+      values
+    );
+  }
+}
+
 // --- MIDDLEWARE & SECURITY CONFIG ---
 const allowedOrigins = [
   'https://app.leadconnectorhq.com',
@@ -254,6 +298,8 @@ async function saveConfigHandler(req, res) {
         );
       }
     }
+
+    await syncFleetSettings(client, location_id, fleet);
 
     await syncFixedRates(client, location_id, fixed_rates);
 
@@ -1404,6 +1450,27 @@ app.post("/api/create-booking", async (req, res) => {
         [vehicle_slot_id, location_id]
       );
       fleetVehicle = fleetLookup.rows[0] || null;
+    }
+
+    if (!fleetVehicle && await tableExists("fleet_settings")) {
+      const fleetSettingsLookup = await pool.query(
+        `SELECT
+           calendar_id,
+           vehicle_slot_id,
+           base_rate,
+           per_mile_rate,
+           NULL AS vehicle_category
+         FROM fleet_settings
+         WHERE vehicle_slot_id = $1 AND location_id = $2
+         LIMIT 1`,
+        [vehicle_slot_id, location_id]
+      );
+      fleetVehicle = fleetSettingsLookup.rows[0]
+        ? {
+            ...fleetSettingsLookup.rows[0],
+            vehicle_type: fleetSettingsLookup.rows[0].vehicle_slot_id
+          }
+        : null;
     }
 
     if (!fleetVehicle) {
