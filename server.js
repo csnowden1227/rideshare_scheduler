@@ -167,16 +167,35 @@ async function syncFleetSettings(client, location_id, fleet = []) {
 const allowedOrigins = [
   'https://app.leadconnectorhq.com',
   'https://app.crmonesource.com',
+  'https://chauffeurdeluxe.crmonesource.com',
   'https://services.leadconnectorhq.com',
   'https://rideshare-scheduler-axx6.onrender.com',
   'http://localhost:5173',
   'http://localhost:8080'
 ];
 
+function isAllowedOrigin(origin) {
+  if (allowedOrigins.includes(origin)) return true;
+
+  try {
+    const { hostname, protocol } = new URL(origin);
+    if (protocol !== 'https:') return false;
+
+    return (
+      hostname.endsWith('.crmonesource.com') ||
+      hostname.endsWith('.leadconnectorhq.com') ||
+      hostname.endsWith('.gohighlevel.com') ||
+      hostname.endsWith('.msgsndr.com')
+    );
+  } catch {
+    return false;
+  }
+}
+
 app.use(cors({
   origin(origin, callback) {
     if (!origin) return callback(null, true);
-    if (!allowedOrigins.includes(origin)) {
+    if (!isAllowedOrigin(origin)) {
       return callback(
         new Error('The CORS policy for this site does not allow access from the specified Origin.'),
         false
