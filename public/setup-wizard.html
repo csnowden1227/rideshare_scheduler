@@ -54,42 +54,6 @@
 
     <div class="grid grid-cols-1 lg:grid-cols-4 gap-8">
         <div class="lg:col-span-3">
-            <div class="card">
-                <h2 class="section-header">SECTION: PLAN FEATURES</h2>
-                <div class="overflow-x-auto">
-                    <table class="w-full text-sm">
-                        <thead>
-                            <tr class="text-left text-slate-400 uppercase text-[10px] tracking-widest">
-                                <th class="py-3 pr-4">Feature</th>
-                                <th class="py-3 pr-4">Starter</th>
-                                <th class="py-3 pr-4">Premium</th>
-                                <th class="py-3">Pro</th>
-                            </tr>
-                        </thead>
-                        <tbody class="text-slate-700">
-                            <tr class="border-t border-slate-100">
-                                <td class="py-3 pr-4 font-semibold">Branding</td>
-                                <td class="py-3 pr-4">No branding</td>
-                                <td class="py-3 pr-4">Logo upload only</td>
-                                <td class="py-3">Full branding</td>
-                            </tr>
-                            <tr class="border-t border-slate-100">
-                                <td class="py-3 pr-4 font-semibold">Included Fleet Rows</td>
-                                <td class="py-3 pr-4">1 fleet option</td>
-                                <td class="py-3 pr-4">1 fleet option</td>
-                                <td class="py-3">3 fleet options</td>
-                            </tr>
-                            <tr class="border-t border-slate-100">
-                                <td class="py-3 pr-4 font-semibold">Extra Fleet Vehicles</td>
-                                <td class="py-3 pr-4">Additional cost</td>
-                                <td class="py-3 pr-4">Additional cost</td>
-                                <td class="py-3">2 additional vehicles included, then additional cost</td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-            
             <div class="card border-2 wizard-border">
                 <h2 class="section-header wizard-accent">SECTION: BUSINESS BRANDING</h2>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
@@ -150,6 +114,44 @@
                 <div class="flex justify-between items-start gap-4 mb-4">
                     <div>
                         <h2 class="section-header !mb-2 !border-0">SECTION: FLEET SLOTS</h2>
+                        <div class="overflow-x-auto mb-4">
+                            <table class="w-full text-sm">
+                                <thead>
+                                    <tr class="text-left text-slate-400 uppercase text-[10px] tracking-widest">
+                                        <th class="py-3 pr-4">Feature</th>
+                                        <th class="py-3 pr-4">Starter</th>
+                                        <th class="py-3 pr-4">Premium</th>
+                                        <th class="py-3">Pro</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="text-slate-700">
+                                    <tr class="border-t border-slate-100">
+                                        <td class="py-3 pr-4 font-semibold">Branding</td>
+                                        <td class="py-3 pr-4">No branding</td>
+                                        <td class="py-3 pr-4">Partial branding</td>
+                                        <td class="py-3">Full branding</td>
+                                    </tr>
+                                    <tr class="border-t border-slate-100">
+                                        <td class="py-3 pr-4 font-semibold">Logo Upload</td>
+                                        <td class="py-3 pr-4">Not included</td>
+                                        <td class="py-3 pr-4">Included</td>
+                                        <td class="py-3">Included</td>
+                                    </tr>
+                                    <tr class="border-t border-slate-100">
+                                        <td class="py-3 pr-4 font-semibold">Included Fleet Rows</td>
+                                        <td class="py-3 pr-4">1 fleet option</td>
+                                        <td class="py-3 pr-4">1 fleet option</td>
+                                        <td class="py-3">3 fleet options</td>
+                                    </tr>
+                                    <tr class="border-t border-slate-100">
+                                        <td class="py-3 pr-4 font-semibold">Additional Fleet Included</td>
+                                        <td class="py-3 pr-4">No</td>
+                                        <td class="py-3 pr-4">No</td>
+                                        <td class="py-3">2 included</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
                         <p id="fleet-plan-note" class="text-xs text-slate-500 font-medium">
                             Starter and Premium can add extra fleet vehicles for $99 each plus a one-time setup fee. Pro includes 2 additional fleet vehicles.
                         </p>
@@ -566,9 +568,11 @@ function setFleetPlanMessage(planName = 'starter') {
 
     if (!note) return;
     if (plan === 'pro') {
-        note.innerText = "Pro includes 2 additional fleet vehicles. Extra fleet pricing and one-time setup fees apply after the included vehicles. 41 or more vehicles requires contacting sales.";
+        note.innerText = "Pro includes full branding, 3 fleet rows, and 2 additional fleet vehicles before add-on pricing starts.";
+    } else if (plan === 'premium') {
+        note.innerText = "Premium includes logo upload, partial branding, and 1 fleet row.";
     } else {
-        note.innerText = "Starter and Premium extra fleet vehicles start at $99 each with volume discounts and a one-time setup fee. 41 or more vehicles requires contacting sales.";
+        note.innerText = "Starter includes no branding and 1 fleet row.";
     }
 }
 
