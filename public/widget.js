@@ -59,6 +59,14 @@
     return toNumber(state.config?.tax_rate ?? state.config?.financials?.tax_rate, 0);
   }
 
+  function getBrandColors() {
+    return {
+      primary: state.config?.brand_color_primary || "#082f49",
+      secondary: state.config?.brand_color_secondary || "#0f766e",
+      accent: state.config?.brand_color_accent || "#ecfeff",
+    };
+  }
+
   function getProfileDepositDefaults() {
     return {
       percent: toNumber(state.config?.financials?.default_deposit_percent, 0),
@@ -317,6 +325,7 @@
   function render() {
     const root = getRoot();
     const fleet = Array.isArray(state.config?.fleet) ? state.config.fleet : [];
+    const colors = getBrandColors();
     const vehicleOptions = fleet.map((vehicle) =>
       `<option value="${escapeHtml(vehicle.vehicle_slot_id)}">${escapeHtml(vehicle.vehicle_type || vehicle.name || vehicle.vehicle_slot_id)}</option>`
     ).join("");
@@ -326,7 +335,7 @@
 
     root.innerHTML = `
       <div style="max-width:1080px;margin:0 auto;font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;color:#0f172a;">
-        <div style="background:linear-gradient(135deg,#082f49 0%,#0f766e 52%,#ecfeff 100%);padding:28px;border-radius:28px;box-shadow:0 30px 60px rgba(15,23,42,.18);overflow:hidden;">
+        <div style="background:linear-gradient(135deg,${escapeHtml(colors.primary)} 0%,${escapeHtml(colors.secondary)} 52%,${escapeHtml(colors.accent)} 100%);padding:28px;border-radius:28px;box-shadow:0 30px 60px rgba(15,23,42,.18);overflow:hidden;">
           <div style="display:grid;grid-template-columns:minmax(0,1.5fr) minmax(320px,1fr);gap:22px;align-items:stretch;">
             <div style="background:rgba(255,255,255,.16);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,.18);border-radius:24px;padding:26px;color:#fff;">
               <div style="display:flex;align-items:center;gap:16px;margin-bottom:18px;">
@@ -347,7 +356,7 @@
 
             <div style="background:#fff;border-radius:24px;padding:22px;border:1px solid rgba(15,23,42,.08);display:flex;flex-direction:column;gap:14px;">
               <div>
-                <div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.14em;color:#0f766e;">Trip Intelligence</div>
+                <div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.14em;color:${escapeHtml(colors.secondary)};">Trip Intelligence</div>
                 <div style="font-size:24px;font-weight:900;margin-top:6px;">Live Route Summary</div>
               </div>
               <div id="cd_route_status" style="padding:14px 16px;border-radius:18px;background:#f8fafc;border:1px solid #e2e8f0;color:#475569;font-size:14px;line-height:1.5;">
@@ -370,7 +379,7 @@
           <div style="background:#fff;border:1px solid #e2e8f0;border-radius:24px;box-shadow:0 24px 50px rgba(15,23,42,.08);padding:24px;">
             <div style="display:grid;gap:18px;">
               <div>
-                <div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.14em;color:#0f766e;">Passenger Details</div>
+                <div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.14em;color:${escapeHtml(colors.secondary)};">Passenger Details</div>
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px;">
                   <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">First Name</label><input id="cd_first_name" placeholder="First name" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" /></div>
                   <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Last Name</label><input id="cd_last_name" placeholder="Last name" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" /></div>
@@ -382,7 +391,7 @@
               </div>
 
               <div>
-                <div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.14em;color:#0f766e;">Trip Setup</div>
+                <div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.14em;color:${escapeHtml(colors.secondary)};">Trip Setup</div>
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px;">
                   <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Vehicle</label><select id="cd_vehicle_slot_id" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;"><option value="">Select vehicle</option>${vehicleOptions}</select></div>
                   <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Passengers</label><input id="cd_passenger_count" type="number" min="1" value="1" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" /></div>
@@ -402,7 +411,7 @@
               </div>
 
               <div>
-                <div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.14em;color:#0f766e;">Luggage & Special Items</div>
+                <div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.14em;color:${escapeHtml(colors.secondary)};">Luggage & Special Items</div>
                 <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-top:12px;">
                   <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Carry-On Bags</label><input id="cd_carry_on_count" type="number" min="0" value="0" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" /></div>
                   <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Checked Bags</label><input id="cd_checked_bag_count" type="number" min="0" value="0" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" /></div>
@@ -415,15 +424,15 @@
 
           <div style="display:grid;gap:18px;align-content:start;">
             <div style="background:#fff;border:1px solid #e2e8f0;border-radius:24px;box-shadow:0 24px 50px rgba(15,23,42,.08);padding:22px;">
-              <div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.14em;color:#0f766e;">Optional Enhancements</div>
+              <div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.14em;color:${escapeHtml(colors.secondary)};">Optional Enhancements</div>
               <div style="display:grid;gap:10px;margin-top:14px;">${renderAddonOptions()}</div>
             </div>
 
             <div style="background:#fff;border:1px solid #e2e8f0;border-radius:24px;box-shadow:0 24px 50px rgba(15,23,42,.08);padding:22px;">
-              <div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.14em;color:#0f766e;">Actions</div>
+              <div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.14em;color:${escapeHtml(colors.secondary)};">Actions</div>
               <div style="display:grid;gap:12px;margin-top:14px;">
-                <button id="cd_btn_quote" style="padding:15px 18px;border:none;border-radius:16px;background:#0f172a;color:#fff;font-size:15px;font-weight:800;cursor:pointer;">Calculate Smart Quote</button>
-                <button id="cd_btn_book" style="padding:15px 18px;border:none;border-radius:16px;background:#0f766e;color:#fff;font-size:15px;font-weight:800;cursor:pointer;">Confirm & Sync Booking</button>
+                <button id="cd_btn_quote" style="padding:15px 18px;border:none;border-radius:16px;background:${escapeHtml(colors.primary)};color:#fff;font-size:15px;font-weight:800;cursor:pointer;">Calculate Smart Quote</button>
+                <button id="cd_btn_book" style="padding:15px 18px;border:none;border-radius:16px;background:${escapeHtml(colors.secondary)};color:#fff;font-size:15px;font-weight:800;cursor:pointer;">Confirm & Sync Booking</button>
               </div>
               <div id="cd_error" style="display:none;margin-top:14px;padding:12px 14px;border-radius:14px;background:#fef2f2;color:#991b1b;font-size:14px;border:1px solid #fecaca;"></div>
             </div>
@@ -682,10 +691,11 @@
   function renderSuccess(bookingId, payload) {
     const root = getRoot();
     const businessName = state.config?.business_name || "Our Team";
+    const colors = getBrandColors();
 
     root.innerHTML = `
       <div style="max-width:920px;margin:0 auto;background:#fff;border:1px solid #dbe4f0;border-radius:28px;overflow:hidden;box-shadow:0 30px 60px rgba(15,23,42,.12);font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;">
-        <div style="padding:48px;background:linear-gradient(135deg,#082f49 0%,#0f766e 100%);color:#fff;text-align:center;">
+        <div style="padding:48px;background:linear-gradient(135deg,${escapeHtml(colors.primary)} 0%,${escapeHtml(colors.secondary)} 100%);color:#fff;text-align:center;">
           <div style="width:86px;height:86px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.16);margin:0 auto 18px;font-size:38px;">OK</div>
           <h2 style="margin:0;font-size:34px;font-weight:900;">Booking Confirmed</h2>
           <p style="margin:12px auto 0;max-width:580px;color:rgba(255,255,255,.85);font-size:16px;line-height:1.6;">
@@ -694,7 +704,7 @@
         </div>
         <div style="padding:30px;display:grid;gap:16px;background:#f8fafc;">
           <div style="background:#fff;border:1px solid #dbe4f0;border-radius:22px;padding:22px;">
-            <div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.14em;color:#0f766e;">Reservation Snapshot</div>
+            <div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.14em;color:${escapeHtml(colors.secondary)};">Reservation Snapshot</div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:14px;font-size:14px;color:#475569;">
               <div><strong style="display:block;color:#0f172a;margin-bottom:4px;">Confirmation ID</strong>#${escapeHtml(bookingId || "Pending")}</div>
               <div><strong style="display:block;color:#0f172a;margin-bottom:4px;">Pickup Time</strong>${escapeHtml(new Date(payload.start_time).toLocaleString())}</div>

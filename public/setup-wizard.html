@@ -53,6 +53,20 @@
                         </div>
                     </div>
                 </div>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
+                    <div>
+                        <label class="block text-[10px] font-bold mb-2 uppercase text-slate-400">Primary Brand Color</label>
+                        <input type="text" id="brand_color_primary" class="input-mini coord-input" value="#082f49" placeholder="#082f49">
+                    </div>
+                    <div>
+                        <label class="block text-[10px] font-bold mb-2 uppercase text-slate-400">Secondary Brand Color</label>
+                        <input type="text" id="brand_color_secondary" class="input-mini coord-input" value="#0f766e" placeholder="#0f766e">
+                    </div>
+                    <div>
+                        <label class="block text-[10px] font-bold mb-2 uppercase text-slate-400">Accent / Light Color</label>
+                        <input type="text" id="brand_color_accent" class="input-mini coord-input" value="#ecfeff" placeholder="#ecfeff">
+                    </div>
+                </div>
             </div>
             <div class="card">
                 <h2 class="section-header">SECTION: CREDENTIALS</h2>
@@ -538,6 +552,9 @@ async function loadFromBackend() {
         
         if (data && !data.error) {
             document.getElementById('business_name').value = data.business_name || '';
+            document.getElementById('brand_color_primary').value = data.brand_color_primary || '#082f49';
+            document.getElementById('brand_color_secondary').value = data.brand_color_secondary || '#0f766e';
+            document.getElementById('brand_color_accent').value = data.brand_color_accent || '#ecfeff';
             document.getElementById('webhook_url').value = data.crm_webhook_url || '';
             document.getElementById('maps_key').value = data.maps_api_key || '';
             document.getElementById('tax_rate').value = data.tax_rate ?? data.financials?.tax_rate ?? '8.25';
@@ -577,6 +594,9 @@ async function saveToBackend() {
         id: location_id,
         location_id,
         business_name: document.getElementById('business_name').value.trim(),
+        brand_color_primary: document.getElementById('brand_color_primary').value.trim(),
+        brand_color_secondary: document.getElementById('brand_color_secondary').value.trim(),
+        brand_color_accent: document.getElementById('brand_color_accent').value.trim(),
         crm_webhook_url: webhookUrl,
         maps_api_key: mapsKey,
         tax_rate: parseFloat(taxRate) || 0,

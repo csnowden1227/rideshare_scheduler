@@ -230,6 +230,9 @@ async function saveConfigHandler(req, res) {
     const {
       location_id,
       business_name,
+      brand_color_primary,
+      brand_color_secondary,
+      brand_color_accent,
       crm_webhook_url,
       maps_api_key,
       tax_rate,
@@ -255,6 +258,9 @@ async function saveConfigHandler(req, res) {
 
     pushProfileField(profileIdColumn, location_id);
     pushProfileField("business_name", business_name);
+    pushProfileField("brand_color_primary", brand_color_primary || "#082f49");
+    pushProfileField("brand_color_secondary", brand_color_secondary || "#0f766e");
+    pushProfileField("brand_color_accent", brand_color_accent || "#ecfeff");
     pushProfileField("crm_webhook_url", crm_webhook_url);
     pushProfileField("maps_api_key", maps_api_key);
     pushProfileField("tax_rate", tax_rate);
@@ -1210,6 +1216,9 @@ res.json({
   plan_name: profile.plan_name || "Starter",
 
   business_name: profile.business_name,
+  brand_color_primary: profile.brand_color_primary || "#082f49",
+  brand_color_secondary: profile.brand_color_secondary || "#0f766e",
+  brand_color_accent: profile.brand_color_accent || "#ecfeff",
   maps_api_key: profile.maps_api_key,
   crm_webhook_url: profile.crm_webhook_url,
   tax_rate: parseFloat(profile.tax_rate) || 0,
@@ -1391,6 +1400,10 @@ app.get("/api/get-profile-widget/:location_id", async (req, res) => {
     // Map data to return to widget
     // We use the JSONB columns from the profiles table
     return res.json({
+      business_name: p.business_name || "",
+      brand_color_primary: p.brand_color_primary || "#082f49",
+      brand_color_secondary: p.brand_color_secondary || "#0f766e",
+      brand_color_accent: p.brand_color_accent || "#ecfeff",
       maps_key: p.maps_api_key,
       tax_rate: p.tax_rate,
       fleet: safeParseJson(p.fleet),         // Using the JSONB fleet from profiles
