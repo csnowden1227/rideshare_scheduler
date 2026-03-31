@@ -53,6 +53,9 @@
                         </div>
                     </div>
                 </div>
+                <p id="branding-plan-note" class="text-xs text-slate-500 font-medium mt-6">
+                    Starter and Premium use the CRM_One_Source light-branded widget. Custom branding is a $49 one-time add-on. Pro includes full branding privileges.
+                </p>
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
                     <div>
                         <label class="block text-[10px] font-bold mb-2 uppercase text-slate-400">Primary Brand Color</label>
@@ -514,6 +517,34 @@ function setFleetPlanMessage(planName = 'starter') {
     }
 }
 
+function setBrandingPlanMessage(planName = 'starter') {
+    const note = document.getElementById('branding-plan-note');
+    const isPro = String(planName || 'starter').toLowerCase() === 'pro';
+    const brandingInputs = [
+        document.getElementById('brand_color_primary'),
+        document.getElementById('brand_color_secondary'),
+        document.getElementById('brand_color_accent'),
+    ];
+
+    if (note) {
+        note.innerText = isPro
+            ? "Pro includes full branding privileges with custom brand colors and no CRM_One_Source footer."
+            : "Starter and Premium use the CRM_One_Source light-branded widget. Custom branding is a $49 one-time add-on. Pro includes full branding privileges.";
+    }
+
+    brandingInputs.forEach((input) => {
+        if (!input) return;
+        input.disabled = !isPro;
+        input.classList.toggle('opacity-60', !isPro);
+        input.classList.toggle('cursor-not-allowed', !isPro);
+        if (!isPro) {
+            input.title = "Custom branding is included with Pro and available as a $49 one-time add-on for Starter and Premium.";
+        } else {
+            input.removeAttribute('title');
+        }
+    });
+}
+
 function slugifyVehicleType(vehicleType = '') {
     return String(vehicleType || 'vehicle')
         .toLowerCase()
@@ -699,6 +730,7 @@ async function loadFromBackend() {
             document.getElementById('tax_rate').value = data.tax_rate ?? data.financials?.tax_rate ?? '8.25';
 
             setFleetPlanMessage(data.plan_name || 'starter');
+            setBrandingPlanMessage(data.plan_name || 'starter');
             const fleetCount = Math.max((data.fleet || []).length, 1);
             renderFleet(fleetCount, data.fleet || []);
             
@@ -710,12 +742,14 @@ async function loadFromBackend() {
             initServiceMap(data.service_lat || 34.0522, data.service_lng || -118.2437, data.service_radius || 90);
         } else {
             setFleetPlanMessage('starter');
+            setBrandingPlanMessage('starter');
             renderFleet(1, []);
             initServiceMap();
         }
     } catch (e) {
         console.error(e);
         setFleetPlanMessage('starter');
+        setBrandingPlanMessage('starter');
         renderFleet(1, []);
         initServiceMap();
     }

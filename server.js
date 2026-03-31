@@ -1402,11 +1402,12 @@ app.get("/api/get-profile-widget/:location_id", async (req, res) => {
 
     // Map data to return to widget
     // We use the JSONB columns from the profiles table
-    return res.json({
-      business_name: p.business_name || "",
-      brand_color_primary: p.brand_color_primary || "#082f49",
-      brand_color_secondary: p.brand_color_secondary || "#0f766e",
-      brand_color_accent: p.brand_color_accent || "#ecfeff",
+      return res.json({
+        plan_name: p.plan_name || "Starter",
+        business_name: p.business_name || "",
+        brand_color_primary: p.brand_color_primary || "#082f49",
+        brand_color_secondary: p.brand_color_secondary || "#0f766e",
+        brand_color_accent: p.brand_color_accent || "#ecfeff",
       widget_tagline: p.widget_tagline || "",
       maps_key: p.maps_api_key,
       tax_rate: p.tax_rate,

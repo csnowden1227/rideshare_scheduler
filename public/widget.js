@@ -60,11 +60,34 @@
   }
 
   function getBrandColors() {
+    const plan = String(state.config?.plan_name || "starter").toLowerCase();
+    if (plan === "pro") {
+      return {
+        primary: state.config?.brand_color_primary || "#082f49",
+        secondary: state.config?.brand_color_secondary || "#0f766e",
+        accent: state.config?.brand_color_accent || "#ecfeff",
+        heroText: "#ffffff",
+        heroMuted: "rgba(255,255,255,.88)",
+        heroPanel: "rgba(255,255,255,.16)",
+        heroBorder: "rgba(255,255,255,.18)",
+        heroBackground: null,
+      };
+    }
+
     return {
-      primary: state.config?.brand_color_primary || "#082f49",
-      secondary: state.config?.brand_color_secondary || "#0f766e",
-      accent: state.config?.brand_color_accent || "#ecfeff",
+      primary: "#0f172a",
+      secondary: "#0f766e",
+      accent: "#e5e7eb",
+      heroText: "#0f172a",
+      heroMuted: "#475569",
+      heroPanel: "#f3f4f6",
+      heroBorder: "#d1d5db",
+      heroBackground: "#e5e7eb",
     };
+  }
+
+  function isProPlan() {
+    return String(state.config?.plan_name || "starter").toLowerCase() === "pro";
   }
 
   function getProfileDepositDefaults() {
@@ -326,6 +349,7 @@
     const root = getRoot();
     const fleet = Array.isArray(state.config?.fleet) ? state.config.fleet : [];
     const colors = getBrandColors();
+    const proPlan = isProPlan();
     const tagline = state.config?.widget_tagline || "Luxury airport transfers, executive rides, and premium service tailored to every reservation.";
     const vehicleOptions = fleet.map((vehicle) =>
       `<option value="${escapeHtml(vehicle.vehicle_slot_id)}">${escapeHtml(vehicle.vehicle_type || vehicle.name || vehicle.vehicle_slot_id)}</option>`
@@ -336,16 +360,16 @@
 
     root.innerHTML = `
       <div style="max-width:1080px;margin:0 auto;font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;color:#0f172a;">
-        <div style="background:linear-gradient(135deg,${escapeHtml(colors.primary)} 0%,${escapeHtml(colors.secondary)} 52%,${escapeHtml(colors.accent)} 100%);padding:28px;border-radius:28px;box-shadow:0 30px 60px rgba(15,23,42,.18);overflow:hidden;">
+        <div style="background:${proPlan ? `linear-gradient(135deg,${escapeHtml(colors.primary)} 0%,${escapeHtml(colors.secondary)} 52%,${escapeHtml(colors.accent)} 100%)` : escapeHtml(colors.heroBackground)};padding:28px;border-radius:28px;box-shadow:0 30px 60px rgba(15,23,42,.18);overflow:hidden;">
           <div style="display:grid;grid-template-columns:minmax(0,1.5fr) minmax(320px,1fr);gap:22px;align-items:stretch;">
-            <div style="background:rgba(255,255,255,.16);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,.18);border-radius:24px;padding:26px;color:#fff;">
+            <div style="background:${escapeHtml(colors.heroPanel)};${proPlan ? "backdrop-filter:blur(8px);" : ""}border:1px solid ${escapeHtml(colors.heroBorder)};border-radius:24px;padding:26px;color:${escapeHtml(colors.heroText)};">
               <div style="display:flex;align-items:center;gap:16px;margin-bottom:18px;">
                 <div>
                   <div style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.18em;opacity:.85;">Premium Booking Console</div>
                   <h2 style="margin:6px 0 0;font-size:32px;line-height:1.1;font-weight:900;">${escapeHtml(state.config?.business_name || "Luxury Ride Reservations")}</h2>
                 </div>
               </div>
-              <p style="margin:0 0 18px;font-size:15px;line-height:1.6;max-width:580px;color:rgba(255,255,255,.88);">
+              <p style="margin:0 0 18px;font-size:15px;line-height:1.6;max-width:580px;color:${escapeHtml(colors.heroMuted)};">
                 ${escapeHtml(tagline)}
               </p>
             </div>
@@ -369,6 +393,7 @@
               </div>
             </div>
           </div>
+          ${proPlan ? "" : `<div style="margin-top:18px;text-align:center;font-size:12px;color:#475569;font-weight:700;">Powered by CRM ONE SOURCE - Your all-in-one digital solution for any business.</div>`}
         </div>
 
         <div style="margin-top:20px;display:grid;grid-template-columns:minmax(0,1.45fr) minmax(320px,1fr);gap:22px;">
@@ -688,13 +713,14 @@
     const root = getRoot();
     const businessName = state.config?.business_name || "Our Team";
     const colors = getBrandColors();
+    const proPlan = isProPlan();
 
     root.innerHTML = `
       <div style="max-width:920px;margin:0 auto;background:#fff;border:1px solid #dbe4f0;border-radius:28px;overflow:hidden;box-shadow:0 30px 60px rgba(15,23,42,.12);font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;">
-        <div style="padding:48px;background:linear-gradient(135deg,${escapeHtml(colors.primary)} 0%,${escapeHtml(colors.secondary)} 100%);color:#fff;text-align:center;">
-          <div style="width:86px;height:86px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.16);margin:0 auto 18px;font-size:38px;">OK</div>
+        <div style="padding:48px;background:${proPlan ? `linear-gradient(135deg,${escapeHtml(colors.primary)} 0%,${escapeHtml(colors.secondary)} 100%)` : escapeHtml(colors.heroBackground)};color:${escapeHtml(colors.heroText)};text-align:center;">
+          <div style="width:86px;height:86px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:${proPlan ? "rgba(255,255,255,.16)" : "#ffffff"};margin:0 auto 18px;font-size:38px;border:1px solid ${escapeHtml(colors.heroBorder)};">OK</div>
           <h2 style="margin:0;font-size:34px;font-weight:900;">Booking Confirmed</h2>
-          <p style="margin:12px auto 0;max-width:580px;color:rgba(255,255,255,.85);font-size:16px;line-height:1.6;">
+          <p style="margin:12px auto 0;max-width:580px;color:${escapeHtml(colors.heroMuted)};font-size:16px;line-height:1.6;">
             ${escapeHtml(payload.first_name)} your reservation has been synced successfully and routed to ${escapeHtml(businessName)}.
           </p>
         </div>
@@ -711,6 +737,7 @@
           <div style="font-size:13px;color:#64748b;text-align:center;">
             Confirmation messaging and CRM follow-up are now queued from the synced backend workflow.
           </div>
+          ${proPlan ? "" : `<div style="font-size:12px;color:#475569;text-align:center;font-weight:700;">Powered by CRM ONE SOURCE - Your all-in-one digital solution for any business.</div>`}
         </div>
       </div>
     `;
