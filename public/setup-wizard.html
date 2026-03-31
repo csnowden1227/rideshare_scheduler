@@ -7,6 +7,14 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://maps.googleapis.com/maps/api/js?libraries=places"></script>
     <style>
+        :root {
+            --wizard-teal: #0f766e;
+            --wizard-teal-dark: #115e59;
+            --wizard-purple: #7c3aed;
+            --wizard-purple-dark: #6d28d9;
+            --wizard-soft: #eef2ff;
+            --wizard-soft-teal: #ecfeff;
+        }
         .input-mini { width: 100%; padding: 0.6rem; border: 1px solid #e2e8f0; border-radius: 0.5rem; font-size: 0.85rem; transition: all 0.2s; }
         .input-mini:focus { border-color: #2563eb; ring: 2px; ring-color: #dbeafe; outline: none; }
         .card { background: white; padding: 2rem; border-radius: 1.5rem; border: 1px solid #f1f5f9; margin-bottom: 2rem; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.05); }
@@ -16,6 +24,15 @@
         #map { height: 400px; width: 100%; border-radius: 1rem; }
         .disabled-btn { opacity: 0.5; cursor: not-allowed; filter: grayscale(1); }
         #logo-preview { max-height: 60px; object-fit: contain; border-radius: 8px; }
+        .wizard-btn-primary { background: linear-gradient(135deg, var(--wizard-teal) 0%, var(--wizard-purple) 100%); color: #fff; transition: all 0.2s; }
+        .wizard-btn-primary:hover { filter: brightness(0.96); }
+        .wizard-btn-accent { background: var(--wizard-soft); color: var(--wizard-purple-dark); border: 1px solid #ddd6fe; transition: all 0.2s; }
+        .wizard-btn-accent:hover { background: #ede9fe; }
+        .wizard-btn-muted { background: #f3f4f6; color: var(--wizard-teal-dark); border: 1px solid #d1d5db; transition: all 0.2s; }
+        .wizard-btn-muted:hover { background: #e5e7eb; }
+        .wizard-accent { color: var(--wizard-purple); }
+        .wizard-soft-pill { color: var(--wizard-teal); background: var(--wizard-soft-teal); }
+        .wizard-border { border-color: #c4b5fd; }
         
         /* Toast Notification Animation */
         @keyframes slideIn {
@@ -29,8 +46,8 @@
 <div class="max-w-7xl mx-auto">
     <header class="mb-10 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-            <h1 class="text-4xl font-black italic uppercase tracking-tighter text-slate-800">Fleet <span class="text-blue-600">Sync</span></h1>
-            <p class="text-slate-500 font-medium">Location ID: <span id="display-loc-id" class="font-mono text-blue-600 bg-blue-50 px-2 py-0.5 rounded">---</span></p>
+            <h1 class="text-4xl font-black italic uppercase tracking-tighter text-slate-800">Fleet <span class="wizard-accent">Sync</span></h1>
+            <p class="text-slate-500 font-medium">Location ID: <span id="display-loc-id" class="font-mono wizard-soft-pill px-2 py-0.5 rounded">---</span></p>
         </div>
         <div id="plan-badge" class="bg-black text-white text-xs px-4 py-2 rounded-full font-bold uppercase tracking-widest shadow-lg">Starter Plan</div>
     </header>
@@ -38,8 +55,8 @@
     <div class="grid grid-cols-1 lg:grid-cols-4 gap-8">
         <div class="lg:col-span-3">
             
-            <div class="card border-2 border-blue-100">
-                <h2 class="section-header text-blue-600">SECTION: BUSINESS BRANDING</h2>
+            <div class="card border-2 wizard-border">
+                <h2 class="section-header wizard-accent">SECTION: BUSINESS BRANDING</h2>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
                     <div>
                         <label class="block text-[10px] font-bold mb-2 uppercase text-slate-400">Business Name</label>
@@ -48,7 +65,7 @@
                     <div>
                         <label class="block text-[10px] font-bold mb-2 uppercase text-slate-400">Business Logo</label>
                         <div class="flex items-center gap-4">
-                            <input type="file" id="logo_upload" accept="image/*" class="text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100" onchange="previewLogo(this)">
+                            <input type="file" id="logo_upload" accept="image/*" class="text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-cyan-50 file:text-teal-700 hover:file:bg-purple-50" onchange="previewLogo(this)">
                             <img id="logo-preview" src="" class="hidden border bg-white p-1">
                         </div>
                     </div>
@@ -104,7 +121,7 @@
                             Fleet pricing updates as vehicles are added.
                         </div>
                     </div>
-                    <button type="button" onclick="addFleetRow()" class="text-xs font-bold bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition whitespace-nowrap">+ Add Fleet Vehicle</button>
+                    <button type="button" onclick="addFleetRow()" class="wizard-btn-accent text-xs font-bold px-4 py-2 rounded-lg whitespace-nowrap">+ Add Fleet Vehicle</button>
                 </div>
                 <table class="w-full">
                     <thead>
@@ -125,7 +142,7 @@
                 <h2 class="section-header">SECTION: SERVICE AREA (GEOFENCE)</h2>
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                     <input type="text" id="map-search" class="input-mini md:col-span-2" placeholder="Search city or zip code...">
-                    <button onclick="useCurrentLocation()" class="bg-slate-100 hover:bg-slate-200 text-[10px] font-bold rounded-lg px-2 uppercase">📍 Use My Location</button>
+                        <button onclick="useCurrentLocation()" class="wizard-btn-accent text-[10px] font-bold rounded-lg px-2 uppercase">📍 Use My Location</button>
                 </div>
                 <div id="map" class="mb-4"></div>
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -172,7 +189,7 @@
             <div class="card">
                 <div class="flex justify-between items-center mb-6">
                     <h2 class="section-header !mb-0 !border-0">SECTION: FIXED RATES &amp; GEOFENCING ROUTES</h2>
-                    <button type="button" onclick="addPeakRow()" class="text-xs font-bold bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition">+ Add Window</button>
+                    <button type="button" onclick="addPeakRow()" class="wizard-btn-accent text-xs font-bold px-4 py-2 rounded-lg">+ Add Window</button>
                 </div>
                 <table class="w-full">
                     <thead>
@@ -187,7 +204,7 @@
             <div class="card">
                 <div class="flex justify-between items-center mb-6">
                     <h2 class="section-header !mb-0 !border-0">SECTION: EVENTS</h2>
-                    <button type="button" onclick="addEventRow()" class="text-xs font-bold bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition">+ Add Event</button>
+                    <button type="button" onclick="addEventRow()" class="wizard-btn-accent text-xs font-bold px-4 py-2 rounded-lg">+ Add Event</button>
                 </div>
                 <table class="w-full text-left">
                     <thead>
@@ -202,7 +219,7 @@
             <div class="card">
                 <div class="flex justify-between items-center mb-6">
                     <h2 class="section-header !mb-0 !border-0">SECTION: ADD-ON SERVICES</h2>
-                    <button type="button" onclick="addAddonRow()" class="text-xs font-bold bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition">+ Add Service</button>
+                    <button type="button" onclick="addAddonRow()" class="wizard-btn-accent text-xs font-bold px-4 py-2 rounded-lg">+ Add Service</button>
                 </div>
                 <table class="w-full text-left">
                     <thead>
@@ -217,13 +234,13 @@
 
         <div class="lg:col-span-1">
             <div class="sticky top-6 space-y-6">
-                <button onclick="saveToBackend()" id="save-btn" class="w-full bg-blue-600 text-white font-black py-5 rounded-2xl shadow-xl uppercase tracking-widest text-sm disabled-btn" disabled>
+                <button onclick="saveToBackend()" id="save-btn" class="w-full wizard-btn-primary font-black py-5 rounded-2xl shadow-xl uppercase tracking-widest text-sm disabled-btn" disabled>
                     Sync to Cloud
                 </button>
                 <div class="bg-slate-900 rounded-[2rem] p-6 text-white">
                     <h3 class="text-xs font-bold uppercase tracking-widest text-slate-400 mb-4">Widget Embed Code</h3>
                     <pre id="embed-box" class="bg-black/50 p-4 rounded-xl text-[10px] text-green-400 font-mono overflow-x-auto border border-slate-700 min-h-[100px] whitespace-pre-wrap break-all mb-4"></pre>
-                    <button onclick="copyEmbed()" class="w-full bg-slate-800 hover:bg-slate-700 text-[10px] font-bold py-2 rounded-lg uppercase tracking-wider">
+                    <button onclick="copyEmbed()" class="w-full wizard-btn-muted text-[10px] font-bold py-2 rounded-lg uppercase tracking-wider">
                         Copy to Clipboard
                     </button>
                 </div>
