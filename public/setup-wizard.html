@@ -54,6 +54,41 @@
 
     <div class="grid grid-cols-1 lg:grid-cols-4 gap-8">
         <div class="lg:col-span-3">
+            <div class="card">
+                <h2 class="section-header">SECTION: PLAN FEATURES</h2>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead>
+                            <tr class="text-left text-slate-400 uppercase text-[10px] tracking-widest">
+                                <th class="py-3 pr-4">Feature</th>
+                                <th class="py-3 pr-4">Starter</th>
+                                <th class="py-3 pr-4">Premium</th>
+                                <th class="py-3">Pro</th>
+                            </tr>
+                        </thead>
+                        <tbody class="text-slate-700">
+                            <tr class="border-t border-slate-100">
+                                <td class="py-3 pr-4 font-semibold">Branding</td>
+                                <td class="py-3 pr-4">No branding</td>
+                                <td class="py-3 pr-4">Logo upload only</td>
+                                <td class="py-3">Full branding</td>
+                            </tr>
+                            <tr class="border-t border-slate-100">
+                                <td class="py-3 pr-4 font-semibold">Included Fleet Rows</td>
+                                <td class="py-3 pr-4">1 fleet option</td>
+                                <td class="py-3 pr-4">1 fleet option</td>
+                                <td class="py-3">3 fleet options</td>
+                            </tr>
+                            <tr class="border-t border-slate-100">
+                                <td class="py-3 pr-4 font-semibold">Extra Fleet Vehicles</td>
+                                <td class="py-3 pr-4">Additional cost</td>
+                                <td class="py-3 pr-4">Additional cost</td>
+                                <td class="py-3">2 additional vehicles included, then additional cost</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
             
             <div class="card border-2 wizard-border">
                 <h2 class="section-header wizard-accent">SECTION: BUSINESS BRANDING</h2>
@@ -64,10 +99,11 @@
                     </div>
                     <div>
                         <label class="block text-[10px] font-bold mb-2 uppercase text-slate-400">Business Logo</label>
-                        <div class="flex items-center gap-4">
+                        <div id="logo-upload-wrap" class="flex items-center gap-4">
                             <input type="file" id="logo_upload" accept="image/*" class="text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-cyan-50 file:text-teal-700 hover:file:bg-purple-50" onchange="previewLogo(this)">
                             <img id="logo-preview" src="" class="hidden border bg-white p-1">
                         </div>
+                        <p id="logo-plan-note" class="mt-2 text-[11px] text-slate-500">Logo upload is available on Premium and Pro plans.</p>
                     </div>
                 </div>
                 <p id="branding-plan-note" class="text-xs text-slate-500 font-medium mt-6">
@@ -252,7 +288,7 @@
 <script>
 const urlParams = new URLSearchParams(window.location.search);
 const location_id = urlParams.get('location_id') || 'VXE0UY17p7wnxdZ3sOLc';
-const requestedPlan = String(urlParams.get('plan') || '').trim().toLowerCase();
+const requestedPlan = String(urlParams.get('plan') || 'pro').trim().toLowerCase();
 const planOverride = ['starter', 'premium', 'pro'].includes(requestedPlan) ? requestedPlan : '';
 const BACKEND_URL = "https://rideshare-scheduler-axx6.onrender.com";
 let map, circle, marker, autocomplete;
@@ -538,7 +574,12 @@ function setFleetPlanMessage(planName = 'starter') {
 
 function setBrandingPlanMessage(planName = 'starter') {
     const note = document.getElementById('branding-plan-note');
-    const isPro = String(planName || 'starter').toLowerCase() === 'pro';
+    const logoWrap = document.getElementById('logo-upload-wrap');
+    const logoNote = document.getElementById('logo-plan-note');
+    const logoUpload = document.getElementById('logo_upload');
+    const plan = String(planName || 'starter').toLowerCase();
+    const isPro = plan === 'pro';
+    const isPremium = plan === 'premium';
     const brandingInputs = [
         document.getElementById('brand_color_primary'),
         document.getElementById('brand_color_secondary'),
@@ -548,7 +589,9 @@ function setBrandingPlanMessage(planName = 'starter') {
     if (note) {
         note.innerText = isPro
             ? "Pro includes full branding privileges with custom brand colors and no CRM_One_Source footer."
-            : "Starter and Premium use the CRM_One_Source light-branded widget. Custom branding is a $49 one-time add-on. Pro includes full branding privileges.";
+            : isPremium
+                ? "Premium includes logo upload with CRM_One_Source styling. Full custom color branding remains a Pro feature."
+                : "Starter uses the CRM_One_Source light-branded widget with no branding controls. Upgrade for logo upload or full branding.";
     }
 
     brandingInputs.forEach((input) => {
@@ -562,6 +605,20 @@ function setBrandingPlanMessage(planName = 'starter') {
             input.removeAttribute('title');
         }
     });
+
+    if (logoWrap) {
+        logoWrap.classList.toggle('opacity-50', !(isPremium || isPro));
+    }
+    if (logoUpload) {
+        logoUpload.disabled = !(isPremium || isPro);
+    }
+    if (logoNote) {
+        logoNote.innerText = isPro
+            ? "Logo upload is included with Pro."
+            : isPremium
+                ? "Logo upload is included with Premium."
+                : "Logo upload is not available on Starter.";
+    }
 }
 
 function slugifyVehicleType(vehicleType = '') {
@@ -751,7 +808,7 @@ async function loadFromBackend() {
 
             setFleetPlanMessage(data.plan_name || 'starter');
             setBrandingPlanMessage(data.plan_name || 'starter');
-            const fleetCount = Math.max((data.fleet || []).length, 1);
+            const fleetCount = Math.max((data.fleet || []).length, getIncludedFleetCount());
             renderFleet(fleetCount, data.fleet || []);
             
             if (data.fixed_rates) data.fixed_rates.forEach(r => addRouteRow(r));
@@ -761,16 +818,16 @@ async function loadFromBackend() {
 
             initServiceMap(data.service_lat || 34.0522, data.service_lng || -118.2437, data.service_radius || 90);
         } else {
-            setFleetPlanMessage('starter');
-            setBrandingPlanMessage('starter');
-            renderFleet(1, []);
+            setFleetPlanMessage(planOverride || 'starter');
+            setBrandingPlanMessage(planOverride || 'starter');
+            renderFleet(getIncludedFleetCount(), []);
             initServiceMap();
         }
     } catch (e) {
         console.error(e);
-        setFleetPlanMessage('starter');
-        setBrandingPlanMessage('starter');
-        renderFleet(1, []);
+        setFleetPlanMessage(planOverride || 'starter');
+        setBrandingPlanMessage(planOverride || 'starter');
+        renderFleet(getIncludedFleetCount(), []);
         initServiceMap();
     }
 }
