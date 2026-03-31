@@ -68,11 +68,24 @@ function safeParseJson(data, fallback = []) {
   }
 }
 
+async function getProfileIdColumn() {
+  const columns = await getTableColumns("profiles");
+  if (columns.has("location_id")) return "location_id";
+  if (columns.has("id")) return "id";
+  throw new Error("Profiles table is missing both location_id and id columns.");
+}
+
 async function syncFixedRates(client, location_id, fixed_rates = []) {
   if (!(await tableExists("fixed_rates"))) return;
 
   const columns = await getTableColumns("fixed_rates");
-  await client.query("DELETE FROM fixed_rates WHERE location_id = $1", [location_id]);
+  const fixedRatesIdColumn = columns.has("location_id")
+    ? "location_id"
+    : (columns.has("user_id") ? "user_id" : null);
+
+  if (!fixedRatesIdColumn) return;
+
+  await client.query(`DELETE FROM fixed_rates WHERE ${fixedRatesIdColumn} = $1`, [location_id]);
 
   for (const route of fixed_rates) {
     const fields = [];
@@ -86,8 +99,9 @@ async function syncFixedRates(client, location_id, fixed_rates = []) {
       placeholders.push(`$${values.length}`);
     };
 
-    push("location_id", location_id);
+    push(fixedRatesIdColumn, location_id);
     push("location_name", route.location_name || null);
+    push("route_name", route.location_name || null);
     push("pickup_keyword", route.pickup_keyword || route.location_name || null);
     push("dropoff_keyword", route.dropoff_keyword || route.location_name || null);
     push("lat", Number.isFinite(Number(route.lat)) ? Number(route.lat) : null);
@@ -167,52 +181,47 @@ async function saveConfigHandler(req, res) {
     } = req.body;
 
     await client.query("BEGIN");
+    const profileColumns = await getTableColumns("profiles");
+    const profileIdColumn = profileColumns.has("location_id") ? "location_id" : "id";
+
+    const fieldEntries = [];
+    const pushProfileField = (column, value, cast = "") => {
+      if (!profileColumns.has(column)) return;
+      fieldEntries.push({ column, value, cast });
+    };
+
+    pushProfileField(profileIdColumn, location_id);
+    pushProfileField("business_name", business_name);
+    pushProfileField("crm_webhook_url", crm_webhook_url);
+    pushProfileField("maps_api_key", maps_api_key);
+    pushProfileField("tax_rate", tax_rate);
+    pushProfileField("service_lat", service_lat);
+    pushProfileField("service_lng", service_lng);
+    pushProfileField("service_radius", service_radius);
+    pushProfileField("service_radius_miles", service_radius);
+    pushProfileField("fleet", JSON.stringify(fleet), "::jsonb");
+    pushProfileField("peak_windows", JSON.stringify(peak_windows), "::jsonb");
+    pushProfileField("events", JSON.stringify(events), "::jsonb");
+    pushProfileField("special_events", JSON.stringify(events), "::jsonb");
+    pushProfileField("addons", JSON.stringify(addons), "::jsonb");
+
+    const fields = fieldEntries.map((entry) => entry.column);
+    const values = fieldEntries.map((entry) => entry.value);
+    const placeholders = fieldEntries.map((entry, index) => `$${index + 1}${entry.cast || ""}`);
+    const updateAssignments = fields
+      .filter((field) => field !== profileIdColumn)
+      .map((field) => `${field} = EXCLUDED.${field}`);
+
+    const updateClause = updateAssignments.length
+      ? `DO UPDATE SET ${updateAssignments.join(", ")}`
+      : "DO NOTHING";
 
     await client.query(
-      `
-      INSERT INTO profiles (
-        location_id,
-        business_name,
-        crm_webhook_url,
-        maps_api_key,
-        tax_rate,
-        service_lat,
-        service_lng,
-        service_radius,
-        fleet,
-        peak_windows,
-        events,
-        addons
-      )
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10::jsonb,$11::jsonb,$12::jsonb)
-      ON CONFLICT (location_id)
-      DO UPDATE SET
-        business_name = EXCLUDED.business_name,
-        crm_webhook_url = EXCLUDED.crm_webhook_url,
-        maps_api_key = EXCLUDED.maps_api_key,
-        tax_rate = EXCLUDED.tax_rate,
-        service_lat = EXCLUDED.service_lat,
-        service_lng = EXCLUDED.service_lng,
-        service_radius = EXCLUDED.service_radius,
-        fleet = EXCLUDED.fleet,
-        peak_windows = EXCLUDED.peak_windows,
-        events = EXCLUDED.events,
-        addons = EXCLUDED.addons
-      `,
-      [
-        location_id,
-        business_name,
-        crm_webhook_url,
-        maps_api_key,
-        tax_rate,
-        service_lat,
-        service_lng,
-        service_radius,
-        JSON.stringify(fleet),
-        JSON.stringify(peak_windows),
-        JSON.stringify(events),
-        JSON.stringify(addons)
-      ]
+      `INSERT INTO profiles (${fields.join(", ")})
+       VALUES (${placeholders.join(", ")})
+       ON CONFLICT (${profileIdColumn})
+       ${updateClause}`,
+      values
     );
 
     if (await tableExists("fleet_slots")) {
@@ -300,8 +309,9 @@ const BOOKING_BUFFER_MINUTES = 20;
 
 /* 🔐 Get Maps API Key from Database */
 async function getMapsKey(location_id) {
+  const profileIdColumn = await getProfileIdColumn();
   const res = await pool.query(
-    "SELECT maps_api_key FROM profile WHERE id = $1",
+    `SELECT maps_api_key FROM profiles WHERE ${profileIdColumn} = $1`,
     [location_id]
   );
 
@@ -1105,18 +1115,25 @@ app.get("/api/get-profile/:location_id", async (req, res) => {
   let client;
   try {
     client = await pool.connect();
-    const profileRes = await client.query("SELECT * FROM profiles WHERE location_id = $1", [location_id]);
+    const profileIdColumn = await getProfileIdColumn();
+    const profileRes = await client.query(`SELECT * FROM profiles WHERE ${profileIdColumn} = $1`, [location_id]);
 
     if (profileRes.rows.length === 0) return res.status(404).json({ error: "Profile not found" });
 
     const profile = profileRes.rows[0];
     let parsedFixedRates = safeParseJson(profile.fixed_rates);
     if (await tableExists("fixed_rates")) {
+      const fixedRatesColumns = await getTableColumns("fixed_rates");
+      const fixedRatesIdColumn = fixedRatesColumns.has("location_id")
+        ? "location_id"
+        : (fixedRatesColumns.has("user_id") ? "user_id" : null);
+      if (fixedRatesIdColumn) {
       const fixedRatesRes = await client.query(
-        "SELECT * FROM fixed_rates WHERE location_id = $1 AND COALESCE(is_active, true) = true",
+        `SELECT * FROM fixed_rates WHERE ${fixedRatesIdColumn} = $1 AND COALESCE(is_active, true) = true`,
         [location_id]
       );
       parsedFixedRates = fixedRatesRes.rows;
+      }
     }
 
 const parsedEvents = safeParseJson(profile.events);
@@ -1124,7 +1141,7 @@ const parsedPeakWindows = safeParseJson(profile.peak_windows);
 const parsedAddons = safeParseJson(profile.addons);
 
 res.json({
-  location_id: profile.location_id,
+  location_id: profile.location_id || profile.id,
   plan_name: profile.plan_name || "Starter",
 
   business_name: profile.business_name,
@@ -1278,10 +1295,11 @@ app.get("/api/db-check", async (req, res) => {
 app.get("/api/get-profile-widget/:location_id", async (req, res) => {
   try {
     const { location_id } = req.params;
+    const profileIdColumn = await getProfileIdColumn();
 
     // Fetch profile (the source of truth)
     const profileRes = await pool.query(
-      "SELECT * FROM profiles WHERE location_id = $1",
+      `SELECT * FROM profiles WHERE ${profileIdColumn} = $1`,
       [location_id]
     );
 
@@ -1292,11 +1310,17 @@ app.get("/api/get-profile-widget/:location_id", async (req, res) => {
     const p = profileRes.rows[0];
     let fixedRates = safeParseJson(p.fixed_rates);
     if (await tableExists("fixed_rates")) {
+      const fixedRatesColumns = await getTableColumns("fixed_rates");
+      const fixedRatesIdColumn = fixedRatesColumns.has("location_id")
+        ? "location_id"
+        : (fixedRatesColumns.has("user_id") ? "user_id" : null);
+      if (fixedRatesIdColumn) {
       const fixedRatesRes = await pool.query(
-        "SELECT * FROM fixed_rates WHERE location_id = $1 AND COALESCE(is_active, true) = true",
+        `SELECT * FROM fixed_rates WHERE ${fixedRatesIdColumn} = $1 AND COALESCE(is_active, true) = true`,
         [location_id]
       );
       fixedRates = fixedRatesRes.rows;
+      }
     }
 
     // Map data to return to widget
