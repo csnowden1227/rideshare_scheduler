@@ -95,7 +95,7 @@
                     <div>
                         <h2 class="section-header !mb-2 !border-0">SECTION: FLEET SLOTS</h2>
                         <p id="fleet-plan-note" class="text-xs text-slate-500 font-medium">
-                            Starter and Premium can add extra fleet vehicles for $99 each. Pro includes 2 additional fleet vehicles.
+                            Starter and Premium can add extra fleet vehicles for $99 each plus a one-time setup fee. Pro includes 2 additional fleet vehicles.
                         </p>
                         <div id="fleet-pricing-summary" class="mt-3 text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3">
                             Fleet pricing updates as vehicles are added.
@@ -508,9 +508,9 @@ function setFleetPlanMessage(planName = 'starter') {
 
     if (!note) return;
     if (plan === 'pro') {
-        note.innerText = "Pro includes 2 additional fleet vehicles. Tiered pricing applies after the included vehicles. More than 60 vehicles requires contacting sales.";
+        note.innerText = "Pro includes 2 additional fleet vehicles. Extra fleet pricing and one-time setup fees apply after the included vehicles. 41 or more vehicles requires contacting sales.";
     } else {
-        note.innerText = "Starter and Premium extra fleet vehicles start at $99 each with volume discounts. More than 60 vehicles requires contacting sales.";
+        note.innerText = "Starter and Premium extra fleet vehicles start at $99 each with volume discounts and a one-time setup fee. 41 or more vehicles requires contacting sales.";
     }
 }
 
@@ -526,11 +526,17 @@ function getIncludedFleetCount() {
 }
 
 function getFleetDiscountRate(billableVehicles) {
-    if (billableVehicles >= 41 && billableVehicles <= 60) return 0.25;
     if (billableVehicles >= 21) return 0.20;
     if (billableVehicles >= 11) return 0.15;
     if (billableVehicles >= 5) return 0.10;
     return 0;
+}
+
+function getFleetSetupFee(totalVehicles) {
+    if (totalVehicles >= 21 && totalVehicles <= 40) return 999;
+    if (totalVehicles >= 11) return 699;
+    if (totalVehicles >= 5) return 499;
+    return 199;
 }
 
 function updateFleetPricingSummary() {
@@ -539,12 +545,23 @@ function updateFleetPricingSummary() {
     if (!summary) return;
 
     const totalVehicles = rows.length;
+    if (totalVehicles >= 41) {
+        summary.innerHTML = `
+            <div><strong>Total fleet vehicles:</strong> ${totalVehicles}</div>
+            <div><strong>Sales threshold:</strong> 41+ vehicles</div>
+            <div><strong>Next step:</strong> Contact sales for custom onboarding and fleet pricing.</div>
+            <div class="mt-2 text-slate-500">Self-serve fleet setup supports up to 40 vehicles. Larger fleets require a custom quote.</div>
+        `;
+        return;
+    }
+
     const includedVehicles = getIncludedFleetCount();
     const billableVehicles = Math.max(0, totalVehicles - includedVehicles);
     const discountRate = getFleetDiscountRate(billableVehicles);
     const basePrice = 99;
     const perVehiclePrice = basePrice * (1 - discountRate);
     const monthlyTotal = billableVehicles * perVehiclePrice;
+    const setupFee = getFleetSetupFee(totalVehicles);
     const discountLabel = discountRate > 0 ? `${Math.round(discountRate * 100)}% off` : 'No volume discount yet';
     const thresholdHint = billableVehicles < 5
         ? `Add ${5 - billableVehicles} more billable vehicle${5 - billableVehicles === 1 ? '' : 's'} to unlock 10% off.`
@@ -552,16 +569,13 @@ function updateFleetPricingSummary() {
             ? `Current tier: 10% off. Add ${11 - billableVehicles} more to unlock 15% off.`
             : billableVehicles < 21
                 ? `Current tier: 15% off. Add ${21 - billableVehicles} more to unlock 20% off.`
-                : billableVehicles < 41
-                    ? `Current tier: 20% off. Add ${41 - billableVehicles} more to unlock 25% off.`
-                    : totalVehicles <= 60
-                        ? 'Current tier: 25% off. For more than 60 vehicles, contact sales.'
-                        : 'More than 60 vehicles requires contacting sales.';
+                : 'Current tier: 20% off. For fleets of 41 or more vehicles, contact sales.';
 
     summary.innerHTML = `
         <div><strong>Total fleet vehicles:</strong> ${totalVehicles}</div>
         <div><strong>Included with plan:</strong> ${includedVehicles}</div>
         <div><strong>Billable extra vehicles:</strong> ${billableVehicles}</div>
+        <div><strong>One-time setup fee:</strong> $${setupFee.toFixed(2)}</div>
         <div><strong>Discount tier:</strong> ${discountLabel}</div>
         <div><strong>Price per extra vehicle:</strong> $${perVehiclePrice.toFixed(2)}</div>
         <div><strong>Estimated monthly fleet add-on:</strong> $${monthlyTotal.toFixed(2)}</div>
@@ -603,8 +617,8 @@ function renderFleet(count, savedFleet = []) {
 function addFleetRow(data = {}, shouldRenumber = true) {
     const tbody = document.getElementById('fleet-body');
     const existingCount = tbody.querySelectorAll('tr').length;
-    if (existingCount >= 60) {
-        showNotification("For more than 60 fleet vehicles, please contact the sales department.", false);
+    if (existingCount >= 40) {
+        showNotification("For 41 or more fleet vehicles, please contact the sales department.", false);
         return;
     }
 
