@@ -230,6 +230,7 @@ async function saveConfigHandler(req, res) {
     const {
       location_id,
       business_name,
+      business_logo,
       brand_color_primary,
       brand_color_secondary,
       brand_color_accent,
@@ -260,6 +261,7 @@ async function saveConfigHandler(req, res) {
 
     pushProfileField(profileIdColumn, location_id);
     pushProfileField("business_name", business_name);
+    pushProfileField("business_logo", business_logo || null);
     pushProfileField("brand_color_primary", brand_color_primary || "#082f49");
     pushProfileField("brand_color_secondary", brand_color_secondary || "#0f766e");
     pushProfileField("brand_color_accent", brand_color_accent || "#ecfeff");
@@ -1220,6 +1222,7 @@ res.json({
   plan_name: profile.plan_name || "Starter",
 
   business_name: profile.business_name,
+  business_logo: profile.business_logo || "",
   brand_color_primary: profile.brand_color_primary || "#082f49",
   brand_color_secondary: profile.brand_color_secondary || "#0f766e",
   brand_color_accent: profile.brand_color_accent || "#ecfeff",
@@ -1407,6 +1410,7 @@ app.get("/api/get-profile-widget/:location_id", async (req, res) => {
       return res.json({
         plan_name: p.plan_name || "Starter",
         business_name: p.business_name || "",
+        business_logo: p.business_logo || "",
         brand_color_primary: p.brand_color_primary || "#082f49",
         brand_color_secondary: p.brand_color_secondary || "#0f766e",
         brand_color_accent: p.brand_color_accent || "#ecfeff",

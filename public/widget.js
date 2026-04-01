@@ -90,6 +90,10 @@
     return String(state.config?.plan_name || "starter").toLowerCase() === "pro";
   }
 
+  function getBusinessLogo() {
+    return state.config?.business_logo || "";
+  }
+
   function getProfileDepositDefaults() {
     return {
       percent: toNumber(state.config?.financials?.default_deposit_percent, 0),
@@ -323,7 +327,7 @@
 
     return `
       <div id="cd_fixed_destination_wrap" style="display:none;">
-        <label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Fixed Destination</label>
+        <label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Select Destination</label>
         <select id="cd_fixed_destination" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;">
           ${options.join("")}
         </select>
@@ -350,6 +354,7 @@
     const fleet = Array.isArray(state.config?.fleet) ? state.config.fleet : [];
     const colors = getBrandColors();
     const proPlan = isProPlan();
+    const businessLogo = getBusinessLogo();
     const tagline = state.config?.widget_tagline || "Luxury airport transfers, executive rides, and premium service tailored to every reservation.";
     const vehicleOptions = fleet.map((vehicle) =>
       `<option value="${escapeHtml(vehicle.vehicle_slot_id)}">${escapeHtml(vehicle.vehicle_type || vehicle.name || vehicle.vehicle_slot_id)}</option>`
@@ -361,35 +366,17 @@
     root.innerHTML = `
       <div style="max-width:1080px;margin:0 auto;font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;color:#0f172a;">
         <div style="background:${proPlan ? `linear-gradient(135deg,${escapeHtml(colors.primary)} 0%,${escapeHtml(colors.secondary)} 52%,${escapeHtml(colors.accent)} 100%)` : escapeHtml(colors.heroBackground)};padding:28px;border-radius:28px;box-shadow:0 30px 60px rgba(15,23,42,.18);overflow:hidden;">
-          <div style="display:grid;grid-template-columns:minmax(0,1.5fr) minmax(320px,1fr);gap:22px;align-items:stretch;">
-            <div style="background:${escapeHtml(colors.heroPanel)};${proPlan ? "backdrop-filter:blur(8px);" : ""}border:1px solid ${escapeHtml(colors.heroBorder)};border-radius:24px;padding:26px;color:${escapeHtml(colors.heroText)};">
-              <div style="display:flex;align-items:center;gap:16px;margin-bottom:18px;">
-                <div>
-                  <div style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.18em;opacity:.85;">Premium Booking Console</div>
-                  <h2 style="margin:6px 0 0;font-size:32px;line-height:1.1;font-weight:900;">${escapeHtml(state.config?.business_name || "Luxury Ride Reservations")}</h2>
-                </div>
-              </div>
-              <p style="margin:0 0 18px;font-size:15px;line-height:1.6;max-width:580px;color:${escapeHtml(colors.heroMuted)};">
+          <div style="background:${escapeHtml(colors.heroPanel)};${proPlan ? "backdrop-filter:blur(8px);" : ""}border:1px solid ${escapeHtml(colors.heroBorder)};border-radius:24px;padding:26px;color:${escapeHtml(colors.heroText)};">
+            <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:18px;">
+              <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;min-height:150px;">
+                <div style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.18em;opacity:.85;">Premium Booking Console</div>
+                <h2 style="margin:6px 0 0;font-size:32px;line-height:1.1;font-weight:900;">${escapeHtml(state.config?.business_name || "Luxury Ride Reservations")}</h2>
+                <p style="margin:18px 0 0;font-size:15px;line-height:1.6;max-width:580px;color:${escapeHtml(colors.heroMuted)};">
                 ${escapeHtml(tagline)}
-              </p>
-            </div>
-
-            <div style="background:#fff;border-radius:24px;padding:22px;border:1px solid rgba(15,23,42,.08);display:flex;flex-direction:column;gap:14px;">
-              <div>
-                <div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.14em;color:${escapeHtml(colors.secondary)};">Trip Intelligence</div>
-                <div style="font-size:24px;font-weight:900;margin-top:6px;">Live Route Summary</div>
+                </p>
               </div>
-              <div id="cd_route_status" style="padding:14px 16px;border-radius:18px;background:#f8fafc;border:1px solid #e2e8f0;color:#475569;font-size:14px;line-height:1.5;">
-                Quote the trip to reveal mileage, service-area validation, fixed-rate zones, peak pricing, tax, and deposit details.
-              </div>
-              <div id="cd_summary" style="display:none;padding:18px;border-radius:20px;background:#f8fafc;border:1px solid #dbe4f0;">
-                <div style="display:flex;justify-content:space-between;margin-bottom:10px;"><span>Base + Distance</span><strong id="res_quoted_price">$0.00</strong></div>
-                <div style="display:flex;justify-content:space-between;margin-bottom:10px;"><span>Add-Ons</span><strong id="res_addons">$0.00</strong></div>
-                <div style="display:flex;justify-content:space-between;margin-bottom:10px;"><span>Tax</span><strong id="res_tax">$0.00</strong></div>
-                <div style="display:flex;justify-content:space-between;margin-bottom:10px;"><span>Deposit Due</span><strong id="res_deposit_amount">$0.00</strong></div>
-                <div style="height:1px;background:#cbd5e1;margin:12px 0;"></div>
-                <div style="display:flex;justify-content:space-between;font-size:20px;"><span>Total</span><strong id="res_total">$0.00</strong></div>
-                <div id="cd_meta" style="margin-top:12px;font-size:12px;color:#64748b;"></div>
+              <div style="display:flex;justify-content:flex-end;min-width:120px;">
+                ${businessLogo ? `<img src="${escapeHtml(businessLogo)}" alt="Business logo" style="max-width:120px;max-height:88px;object-fit:contain;border-radius:16px;background:rgba(255,255,255,.94);padding:10px;border:1px solid ${escapeHtml(colors.heroBorder)};" />` : ``}
               </div>
             </div>
           </div>
@@ -421,14 +408,16 @@
                   <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Route Option</label><select id="cd_booking_mode" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;"><option value="standard">Standard Booking</option><option value="fixed">Fixed Destinations</option><option value="event">Events</option></select></div>
                 </div>
                 <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-top:12px;">
-                  <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Pickup Address</label><input id="cd_pickup" placeholder="Street address or airport terminal" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" /></div>
-                  <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Dropoff Address</label><input id="cd_dropoff" placeholder="Destination address" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" /></div>
+                  <div id="cd_event_wrap" style="display:none;">${eventSelect || ""}</div>
                 </div>
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px;">
                   <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Pickup Date & Time</label><input id="cd_start_time" type="datetime-local" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" /></div>
-                  <div id="cd_event_wrap" style="display:none;">${eventSelect || ""}</div>
                 </div>
-                ${fixedDestinationSelect}
+                <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-top:12px;">
+                  ${fixedDestinationSelect}
+                  <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Pickup Address</label><input id="cd_pickup" placeholder="Street address or airport terminal" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" /></div>
+                  <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Dropoff Address</label><input id="cd_dropoff" placeholder="Destination address" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" /></div>
+                </div>
               </div>
 
               <div>
@@ -454,6 +443,15 @@
               <div style="display:grid;gap:12px;margin-top:14px;">
                 <button id="cd_btn_quote" style="padding:15px 18px;border:none;border-radius:16px;background:${escapeHtml(colors.primary)};color:#fff;font-size:15px;font-weight:800;cursor:pointer;">Calculate Smart Quote</button>
                 <button id="cd_btn_book" style="padding:15px 18px;border:none;border-radius:16px;background:${escapeHtml(colors.secondary)};color:#fff;font-size:15px;font-weight:800;cursor:pointer;">Confirm & Sync Booking</button>
+              </div>
+              <div id="cd_summary" style="display:none;margin-top:14px;padding:18px;border-radius:20px;background:#f8fafc;border:1px solid #dbe4f0;">
+                <div style="display:flex;justify-content:space-between;margin-bottom:10px;"><span>Base + Distance</span><strong id="res_quoted_price">$0.00</strong></div>
+                <div style="display:flex;justify-content:space-between;margin-bottom:10px;"><span>Add-Ons</span><strong id="res_addons">$0.00</strong></div>
+                <div style="display:flex;justify-content:space-between;margin-bottom:10px;"><span>Tax</span><strong id="res_tax">$0.00</strong></div>
+                <div style="display:flex;justify-content:space-between;margin-bottom:10px;"><span>Deposit Due</span><strong id="res_deposit_amount">$0.00</strong></div>
+                <div style="height:1px;background:#cbd5e1;margin:12px 0;"></div>
+                <div style="display:flex;justify-content:space-between;font-size:20px;"><span>Total</span><strong id="res_total">$0.00</strong></div>
+                <div id="cd_meta" style="margin-top:12px;font-size:12px;color:#64748b;"></div>
               </div>
               <div id="cd_error" style="display:none;margin-top:14px;padding:12px 14px;border-radius:14px;background:#fef2f2;color:#991b1b;font-size:14px;border:1px solid #fecaca;"></div>
             </div>

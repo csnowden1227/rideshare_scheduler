@@ -746,6 +746,14 @@ async function loadFromBackend() {
         if (data && !data.error) {
             if (planOverride) data.plan_name = planOverride;
             document.getElementById('business_name').value = data.business_name || '';
+            logoBase64 = data.business_logo || '';
+            if (logoBase64) {
+                const preview = document.getElementById('logo-preview');
+                if (preview) {
+                    preview.src = logoBase64;
+                    preview.classList.remove('hidden');
+                }
+            }
             document.getElementById('brand_color_primary').value = data.brand_color_primary || '#082f49';
             document.getElementById('brand_color_secondary').value = data.brand_color_secondary || '#0f766e';
             document.getElementById('brand_color_accent').value = data.brand_color_accent || '#ecfeff';
@@ -796,6 +804,7 @@ async function saveToBackend() {
         location_id,
         plan_name: currentPlanName,
         business_name: document.getElementById('business_name').value.trim(),
+        business_logo: logoBase64 || '',
         brand_color_primary: document.getElementById('brand_color_primary').value.trim(),
         brand_color_secondary: document.getElementById('brand_color_secondary').value.trim(),
         brand_color_accent: document.getElementById('brand_color_accent').value.trim(),
