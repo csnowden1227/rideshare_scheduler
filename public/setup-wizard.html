@@ -266,7 +266,7 @@
 
         <div class="lg:col-span-1">
             <div class="sticky top-6 space-y-6">
-                <button onclick="saveToBackend()" id="save-btn" class="w-full wizard-btn-primary font-black py-5 rounded-2xl shadow-xl uppercase tracking-widest text-sm disabled-btn" disabled>
+                <button onclick="saveToBackend()" id="save-btn" class="w-full wizard-btn-primary font-black py-5 rounded-2xl shadow-xl uppercase tracking-widest text-sm">
                     Sync to Cloud
                 </button>
                 <div class="bg-slate-900 rounded-[2rem] p-6 text-white">
@@ -499,8 +499,10 @@ function useCurrentLocation() {
 function confirmLocation() {
     const lockBtn = document.getElementById('lock-btn');
     const syncBtn = document.getElementById('save-btn');
-    syncBtn.disabled = false;
-    syncBtn.classList.remove('disabled-btn');
+    if (syncBtn) {
+        syncBtn.disabled = false;
+        syncBtn.classList.remove('disabled-btn');
+    }
     lockBtn.innerText = "✅ LOCATION LOCKED";
     lockBtn.classList.add('bg-slate-800');
     showNotification("Location validated and locked!");
