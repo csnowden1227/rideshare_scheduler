@@ -296,7 +296,7 @@ const VEHICLE_LIST = ["Standard Sedan", "Luxury Sedan", "Standard SUV", "Luxury 
 // --- UI NOTIFICATION HELPER ---
 function showNotification(message, isSuccess = true) {
     const toast = document.createElement('div');
-    toast.className = `fixed bottom-8 right-8 px-6 py-4 rounded-2xl shadow-2xl text-white font-bold text-sm z-[9999] flex items-center gap-3 animate-[slideIn_0.3s_ease-out] ${isSuccess ? 'bg-green-600' : 'bg-red-600'}`;
+    toast.className = `fixed top-6 left-1/2 -translate-x-1/2 px-6 py-4 rounded-2xl shadow-2xl text-white font-bold text-sm z-[9999] flex items-center gap-3 animate-[slideIn_0.3s_ease-out] ${isSuccess ? 'bg-green-600' : 'bg-red-600'}`;
     toast.innerHTML = `
         <span>${isSuccess ? '✅' : '❌'}</span>
         <span>${message}</span>
