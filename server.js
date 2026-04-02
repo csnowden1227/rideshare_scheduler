@@ -1398,6 +1398,7 @@ async function createBookingRecord(input, { paymentLink = null, triggerWebhook =
 }
 
 app.post("/api/create-checkout-session", async (req, res) => {
+  let bookingId = null;
   try {
     if (!stripe) {
       return res.status(500).json({ error: "Stripe is not configured on the backend." });
@@ -1427,7 +1428,7 @@ app.post("/api/create-checkout-session", async (req, res) => {
       { triggerWebhook: false }
     );
 
-    const bookingId = bookingResult.booking?.id;
+    bookingId = bookingResult.booking?.id;
     const businessName = bookingResult.booking?.customer?.first_name
       ? `${bookingResult.booking.customer.first_name} ${bookingResult.booking.customer.last_name}`.trim()
       : "Customer";
@@ -1479,8 +1480,30 @@ app.post("/api/create-checkout-session", async (req, res) => {
       booking: bookingResult.booking,
     });
   } catch (err) {
-    console.error("Stripe checkout session error:", err);
-    return res.status(500).json({ error: err.message || "Failed to create checkout session." });
+    if (bookingId) {
+      try {
+        await pool.query(
+          `DELETE FROM bookings WHERE id = $1 AND status = $2`,
+          [bookingId, "pending"]
+        );
+      } catch (cleanupErr) {
+        console.error("Stripe checkout cleanup error:", cleanupErr);
+      }
+    }
+
+    const stripeMessage = err?.raw?.message || err?.message || "Failed to create checkout session.";
+    const stripeContext = {
+      type: err?.type || null,
+      code: err?.code || err?.raw?.code || null,
+      decline_code: err?.decline_code || err?.raw?.decline_code || null,
+      request_id: err?.requestId || err?.raw?.requestId || null,
+      statusCode: err?.statusCode || null,
+    };
+    console.error("Stripe checkout session error:", stripeMessage, stripeContext);
+    return res.status(500).json({
+      error: stripeMessage,
+      stripe: stripeContext,
+    });
   }
 });
 
