@@ -365,9 +365,49 @@
 
     root.innerHTML = `
       <div style="max-width:1080px;margin:0 auto;font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;color:#0f172a;">
+        <style>
+          #${rootId}, #${rootId} * { box-sizing: border-box; }
+          @media (max-width: 767px) {
+            #${rootId} #cd_main_grid,
+            #${rootId} #cd_name_grid,
+            #${rootId} #cd_contact_grid,
+            #${rootId} #cd_vehicle_grid,
+            #${rootId} #cd_datetime_grid,
+            #${rootId} #cd_success_grid {
+              grid-template-columns: 1fr !important;
+            }
+            #${rootId} #cd_luggage_grid {
+              grid-template-columns: 1fr 1fr !important;
+            }
+            #${rootId} #cd_hero_panel {
+              padding: 20px !important;
+            }
+            #${rootId} #cd_hero_header {
+              flex-direction: column !important;
+              align-items: center !important;
+            }
+            #${rootId} #cd_logo_wrap {
+              min-width: 0 !important;
+              width: 100% !important;
+              justify-content: center !important;
+            }
+            #${rootId} #cd_logo_wrap img {
+              max-width: 140px !important;
+              max-height: 80px !important;
+            }
+            #${rootId} #cd_actions_col {
+              align-content: stretch !important;
+            }
+          }
+          @media (max-width: 520px) {
+            #${rootId} #cd_luggage_grid {
+              grid-template-columns: 1fr !important;
+            }
+          }
+        </style>
         <div style="background:${proPlan ? `linear-gradient(135deg,${escapeHtml(colors.primary)} 0%,${escapeHtml(colors.secondary)} 52%,${escapeHtml(colors.accent)} 100%)` : escapeHtml(colors.heroBackground)};padding:28px;border-radius:28px;box-shadow:0 30px 60px rgba(15,23,42,.18);overflow:hidden;">
-          <div style="background:${escapeHtml(colors.heroPanel)};${proPlan ? "backdrop-filter:blur(8px);" : ""}border:1px solid ${escapeHtml(colors.heroBorder)};border-radius:24px;padding:26px;color:${escapeHtml(colors.heroText)};">
-            <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:18px;">
+          <div id="cd_hero_panel" style="background:${escapeHtml(colors.heroPanel)};${proPlan ? "backdrop-filter:blur(8px);" : ""}border:1px solid ${escapeHtml(colors.heroBorder)};border-radius:24px;padding:26px;color:${escapeHtml(colors.heroText)};">
+            <div id="cd_hero_header" style="display:flex;align-items:flex-start;justify-content:space-between;gap:18px;">
               <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;min-height:150px;">
                 <div style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.18em;opacity:.85;">Premium Booking Console</div>
                 <h2 style="margin:6px 0 0;font-size:32px;line-height:1.1;font-weight:900;">${escapeHtml(state.config?.business_name || "Luxury Ride Reservations")}</h2>
@@ -375,7 +415,7 @@
                 ${escapeHtml(tagline)}
                 </p>
               </div>
-              <div style="display:flex;justify-content:flex-end;min-width:120px;">
+              <div id="cd_logo_wrap" style="display:flex;justify-content:flex-end;min-width:120px;">
                 ${businessLogo ? `<img src="${escapeHtml(businessLogo)}" alt="Business logo" style="max-width:120px;max-height:88px;object-fit:contain;border-radius:16px;background:rgba(255,255,255,.94);padding:10px;border:1px solid ${escapeHtml(colors.heroBorder)};" />` : ``}
               </div>
             </div>
@@ -383,16 +423,16 @@
           ${proPlan ? "" : `<div style="margin-top:18px;text-align:center;font-size:12px;color:#475569;font-weight:700;">Powered by CRM ONE SOURCE - Your all-in-one digital solution for any business.</div>`}
         </div>
 
-        <div style="margin-top:20px;display:grid;grid-template-columns:minmax(0,1.45fr) minmax(320px,1fr);gap:22px;">
+        <div id="cd_main_grid" style="margin-top:20px;display:grid;grid-template-columns:minmax(0,1.45fr) minmax(320px,1fr);gap:22px;">
           <div style="background:#fff;border:1px solid #e2e8f0;border-radius:24px;box-shadow:0 24px 50px rgba(15,23,42,.08);padding:24px;">
             <div style="display:grid;gap:18px;">
               <div>
                 <div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.14em;color:${escapeHtml(colors.secondary)};">Passenger Details</div>
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px;">
+                <div id="cd_name_grid" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px;">
                   <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">First Name</label><input id="cd_first_name" placeholder="First name" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" /></div>
                   <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Last Name</label><input id="cd_last_name" placeholder="Last name" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" /></div>
                 </div>
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px;">
+                <div id="cd_contact_grid" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px;">
                   <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Email</label><input id="cd_email" type="email" placeholder="Email address" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" /></div>
                   <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Phone</label><input id="cd_phone" type="tel" placeholder="Mobile phone" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" /></div>
                 </div>
@@ -400,7 +440,7 @@
 
               <div>
                 <div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.14em;color:${escapeHtml(colors.secondary)};">Trip Setup</div>
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px;">
+                <div id="cd_vehicle_grid" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px;">
                   <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Vehicle</label><select id="cd_vehicle_slot_id" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;"><option value="">Select vehicle</option>${vehicleOptions}</select></div>
                   <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Passengers</label><input id="cd_passenger_count" type="number" min="1" value="1" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" /></div>
                 </div>
@@ -410,7 +450,7 @@
                 <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-top:12px;">
                   <div id="cd_event_wrap" style="display:none;">${eventSelect || ""}</div>
                 </div>
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px;">
+                <div id="cd_datetime_grid" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px;">
                   <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Pickup Date & Time</label><input id="cd_start_time" type="datetime-local" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" /></div>
                 </div>
                 <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-top:12px;">
@@ -422,7 +462,7 @@
 
               <div>
                 <div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.14em;color:${escapeHtml(colors.secondary)};">Luggage & Special Items</div>
-                <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-top:12px;">
+                <div id="cd_luggage_grid" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-top:12px;">
                   <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Carry-On Bags</label><input id="cd_carry_on_count" type="number" min="0" value="0" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" /></div>
                   <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Checked Bags</label><input id="cd_checked_bag_count" type="number" min="0" value="0" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" /></div>
                   <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Preset Item</label><select id="cd_additional_item_select" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;"><option value="">None</option><option>Instrument</option><option>Stroller</option><option>Car Seat</option><option>Wheelchair</option><option>Golf Clubs</option><option>Cooler</option><option>Custom</option></select></div>
@@ -432,7 +472,7 @@
             </div>
           </div>
 
-          <div style="display:grid;gap:18px;align-content:start;">
+          <div id="cd_actions_col" style="display:grid;gap:18px;align-content:start;">
             <div style="background:#fff;border:1px solid #e2e8f0;border-radius:24px;box-shadow:0 24px 50px rgba(15,23,42,.08);padding:22px;">
               <div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.14em;color:${escapeHtml(colors.secondary)};">Optional Enhancements</div>
               <div style="display:grid;gap:10px;margin-top:14px;">${renderAddonOptions()}</div>
