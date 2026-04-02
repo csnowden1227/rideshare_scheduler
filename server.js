@@ -1444,12 +1444,13 @@ app.get("/api/get-profile-widget/:location_id", async (req, res) => {
         brand_color_accent: p.brand_color_accent || "#ecfeff",
       widget_tagline: p.widget_tagline || "",
       maps_key: p.maps_api_key,
-      tax_rate: p.tax_rate,
-      fleet: safeParseJson(p.fleet),         // Using the JSONB fleet from profiles
-      fixed_rates: fixedRates,
-      peak_windows: safeParseJson(p.peak_windows),
-      events: safeParseJson(p.events)
-    });
+        tax_rate: p.tax_rate,
+        fleet: safeParseJson(p.fleet),         // Using the JSONB fleet from profiles
+        fixed_rates: fixedRates,
+        peak_windows: safeParseJson(p.peak_windows),
+        events: safeParseJson(p.events),
+        addons: safeParseJson(p.addons)
+      });
 
   } catch (err) {
     console.error("Database Error:", err);
