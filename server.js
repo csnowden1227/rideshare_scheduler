@@ -204,11 +204,38 @@ app.use(cors({
     return callback(null, true);
   },
   methods: ['GET', 'POST', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Setup-Wizard-Token']
 }));
+
+function getWizardToken(req) {
+  return (
+    req.query?.token ||
+    req.headers['x-setup-wizard-token'] ||
+    req.headers['X-Setup-Wizard-Token'] ||
+    null
+  );
+}
+
+function requireWizardToken(req, res, next) {
+  const expectedToken = process.env.SETUP_WIZARD_TOKEN;
+  if (!expectedToken) return next();
+
+  const providedToken = getWizardToken(req);
+  if (providedToken && String(providedToken) === String(expectedToken)) {
+    return next();
+  }
+
+  return res.status(403).send("Forbidden");
+}
 
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
+app.get("/setup-wizard.html", requireWizardToken, (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "setup-wizard.html"));
+});
+app.get("/setup-wizard", requireWizardToken, (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "setup-wizard.html"));
+});
 app.use(express.static(path.join(__dirname, "public")));
 
 // --- IFRAME & SECURITY POLICY ---
@@ -355,7 +382,7 @@ async function saveConfigHandler(req, res) {
 }
 
 // This handles the "Save" button from your Wizard
-app.post("/api/save-config", saveConfigHandler);
+app.post("/api/save-config", requireWizardToken, saveConfigHandler);
 
 // This fixes the "Cannot GET /api/health" error
 app.get('/api/health', (req, res) => {
@@ -701,7 +728,7 @@ if (fleet && fleet.length > 0) {
     }
 });
 
-app.post('/api/update-profile-full', saveConfigHandler);
+app.post('/api/update-profile-full', requireWizardToken, saveConfigHandler);
 
 app.post("/api/create-payment-intent", async (req, res) => {
   try {
@@ -1188,7 +1215,7 @@ app.post('/api/sync-fleet', async (req, res) => {
 });
 
 // --- GET PROFILE SETTINGS ---
-app.get("/api/get-profile/:location_id", async (req, res) => {
+app.get("/api/get-profile/:location_id", requireWizardToken, async (req, res) => {
   const { location_id } = req.params;
   let client;
   try {
@@ -1730,9 +1757,6 @@ app.post("/api/create-booking", async (req, res) => {
   }
 });
 
-app.get("/setup-wizard", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "setup-wizard.html"));
-});
 
 app.get("/api/health", (req, res) => {
   res.json({

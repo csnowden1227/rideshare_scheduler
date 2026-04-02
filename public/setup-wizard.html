@@ -303,6 +303,7 @@
 <script>
 const urlParams = new URLSearchParams(window.location.search);
 const location_id = urlParams.get('location_id') || 'VXE0UY17p7wnxdZ3sOLc';
+const wizardToken = urlParams.get('token') || '';
 const requestedPlan = String(urlParams.get('plan') || 'pro').trim().toLowerCase();
 const planOverride = ['starter', 'premium', 'pro'].includes(requestedPlan) ? requestedPlan : '';
 const BACKEND_URL = "https://rideshare-scheduler-axx6.onrender.com";
@@ -756,10 +757,16 @@ function addAddonRow(data = {}) {
 // --- BACKEND OPS ---
 async function loadFromBackend() {
     document.getElementById('display-loc-id').innerText = location_id;
-    document.getElementById('embed-box').innerText = `<div id="chauffeur-booking-widget"></div>\n<script src="${BACKEND_URL}/widget.js?loc=${location_id}"><\/script>`;
+    const wizardSuffix = wizardToken ? `&token=${wizardToken}` : '';
+    document.getElementById('embed-box').innerText = `<div id="chauffeur-booking-widget"></div>\n<script src="${BACKEND_URL}/widget.js?loc=${location_id}${wizardSuffix}"><\/script>`;
     
     try {
-        const res = await fetch(`${BACKEND_URL}/api/get-profile/${location_id}`);
+        const profileUrl = wizardToken
+            ? `${BACKEND_URL}/api/get-profile/${location_id}?token=${encodeURIComponent(wizardToken)}`
+            : `${BACKEND_URL}/api/get-profile/${location_id}`;
+        const res = await fetch(profileUrl, {
+            headers: wizardToken ? { 'X-Setup-Wizard-Token': wizardToken } : {}
+        });
         const data = await res.json();
         
         console.log("Database says:", data);
@@ -884,7 +891,10 @@ async function saveToBackend() {
         for (const endpoint of endpoints) {
             res = await fetch(`${BACKEND_URL}${endpoint}`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...(wizardToken ? { 'X-Setup-Wizard-Token': wizardToken } : {})
+                },
                 body: JSON.stringify(payload)
             });
             if (res.ok) break;
