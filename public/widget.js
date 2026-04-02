@@ -304,8 +304,8 @@
     ];
 
     return `
-      <div>
-        <label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Event Pricing</label>
+      <div id="cd_event_select_inner">
+        <label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Select Event</label>
         <select id="cd_special_event" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;">
           ${options.join("")}
         </select>
@@ -447,13 +447,11 @@
                 <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-top:12px;">
                   <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Route Option</label><select id="cd_booking_mode" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;"><option value="standard">Standard Booking</option><option value="fixed">Fixed Destinations</option><option value="event">Events</option></select></div>
                 </div>
-                <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-top:12px;">
-                  <div id="cd_event_wrap" style="display:none;">${eventSelect || ""}</div>
-                </div>
                 <div id="cd_datetime_grid" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px;">
                   <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Pickup Date & Time</label><input id="cd_start_time" type="datetime-local" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" /></div>
                 </div>
                 <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-top:12px;">
+                  <div id="cd_event_wrap" style="display:none;">${eventSelect || ""}</div>
                   ${fixedDestinationSelect}
                   <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Pickup Address</label><input id="cd_pickup" placeholder="Street address or airport terminal" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" /></div>
                   <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Dropoff Address</label><input id="cd_dropoff" placeholder="Destination address" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" /></div>
