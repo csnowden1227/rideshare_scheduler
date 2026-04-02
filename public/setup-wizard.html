@@ -33,11 +33,22 @@
         .wizard-accent { color: var(--wizard-purple); }
         .wizard-soft-pill { color: var(--wizard-teal); background: var(--wizard-soft-teal); }
         .wizard-border { border-color: #c4b5fd; }
+        .wizard-table-scroll { overflow-x: auto; }
+        .wizard-table-scroll table { min-width: 680px; }
         
         /* Toast Notification Animation */
         @keyframes slideIn {
             from { transform: translateX(100%); opacity: 0; }
             to { transform: translateX(0); opacity: 1; }
+        }
+
+        @media (max-width: 767px) {
+            body { padding: 1rem; }
+            .card { padding: 1.25rem; border-radius: 1.25rem; margin-bottom: 1.25rem; }
+            .section-header { font-size: 0.95rem; margin-bottom: 1rem; }
+            #map { height: 280px; }
+            #logo-upload-wrap { flex-direction: column; align-items: flex-start; }
+            .sticky { position: static !important; top: auto !important; }
         }
     </style>
 </head>
@@ -114,7 +125,7 @@
                 <div class="flex justify-between items-start gap-4 mb-4">
                     <div>
                         <h2 class="section-header !mb-2 !border-0">SECTION: FLEET SLOTS</h2>
-                        <div class="overflow-x-auto mb-4">
+                        <div class="wizard-table-scroll mb-4">
                             <table class="w-full text-sm">
                                 <thead>
                                     <tr class="text-left text-slate-400 uppercase text-[10px] tracking-widest">
@@ -155,6 +166,7 @@
                     </div>
                     <button type="button" onclick="addFleetRow()" class="wizard-btn-accent text-xs font-bold px-4 py-2 rounded-lg whitespace-nowrap">+ Add Fleet Vehicle</button>
                 </div>
+                <div class="wizard-table-scroll">
                 <table class="w-full">
                     <thead>
                         <tr>
@@ -168,6 +180,7 @@
                     </thead>
                     <tbody id="fleet-body"></tbody>
                 </table>
+                </div>
             </div>
 
             <div class="card">
@@ -198,7 +211,7 @@
 
             <div class="card mt-6">
                 <h3 class="section-header italic font-bold text-lg mb-4">Fixed Rate Zones (Specific Locations)</h3>
-                <div class="overflow-x-auto">
+                <div class="wizard-table-scroll">
                     <table class="w-full text-left border-collapse">
                         <thead>
                             <tr class="border-b border-slate-100 text-[10px] uppercase tracking-widest text-gray-400">
@@ -223,6 +236,7 @@
                     <h2 class="section-header !mb-0 !border-0">SECTION: FIXED RATES &amp; GEOFENCING ROUTES</h2>
                     <button type="button" onclick="addPeakRow()" class="wizard-btn-accent text-xs font-bold px-4 py-2 rounded-lg">+ Add Window</button>
                 </div>
+                <div class="wizard-table-scroll">
                 <table class="w-full">
                     <thead>
                             <tr class="text-[10px] uppercase text-gray-400">
@@ -231,6 +245,7 @@
                     </thead>
                     <tbody id="peak-body"></tbody>
                 </table>
+                </div>
             </div>
 
             <div class="card">
@@ -238,6 +253,7 @@
                     <h2 class="section-header !mb-0 !border-0">SECTION: EVENTS</h2>
                     <button type="button" onclick="addEventRow()" class="wizard-btn-accent text-xs font-bold px-4 py-2 rounded-lg">+ Add Event</button>
                 </div>
+                <div class="wizard-table-scroll">
                 <table class="w-full text-left">
                     <thead>
                         <tr class="text-[10px] uppercase text-gray-400">
@@ -246,6 +262,7 @@
                     </thead>
                     <tbody id="event-body"></tbody>
                 </table>
+                </div>
             </div>
 
             <div class="card">
@@ -253,6 +270,7 @@
                     <h2 class="section-header !mb-0 !border-0">SECTION: ADD-ON SERVICES</h2>
                     <button type="button" onclick="addAddonRow()" class="wizard-btn-accent text-xs font-bold px-4 py-2 rounded-lg">+ Add Service</button>
                 </div>
+                <div class="wizard-table-scroll">
                 <table class="w-full text-left">
                     <thead>
                         <tr class="text-[10px] uppercase text-gray-400">
@@ -261,6 +279,7 @@
                     </thead>
                     <tbody id="addon-body"></tbody>
                 </table>
+                </div>
             </div>
         </div>
 
