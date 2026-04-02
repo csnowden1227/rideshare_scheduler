@@ -946,8 +946,9 @@ function buildCrmBookingPayload({
   financials,
   meta = {},
 }) {
-  const normalizedStatus = String(booking.status || "confirmed").toLowerCase();
-  const isConfirmed = normalizedStatus === "confirmed";
+  const rawStatus = String(booking.status || "confirmed").toLowerCase();
+  const normalizedStatus = rawStatus === "pending" ? "unconfirmed" : rawStatus;
+  const isConfirmed = rawStatus === "confirmed";
   const paymentStatus = financials.payment_status || (
     Number(financials.deposit_amount || 0) > 0
       ? (Number(financials.balance_due || 0) > 0 ? "paid_deposit" : "paid_in_full")
@@ -1231,7 +1232,7 @@ async function createBookingRecord(input, { paymentLink = null, triggerWebhook =
     paymentStatus: paymentState.paymentStatus,
     paymentPaid: paymentState.paymentPaid,
   });
-  const bookingStatus = isBookingConfirmed ? "confirmed" : "unconfirmed";
+  const bookingStatus = isBookingConfirmed ? "confirmed" : "pending";
 
   const result = await pool.query(
     `INSERT INTO bookings (
