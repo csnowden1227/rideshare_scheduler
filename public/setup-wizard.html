@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Chauffeur Deluxe | Setup Wizard</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://maps.googleapis.com/maps/api/js?libraries=places"></script>
     <style>
         :root {
             --wizard-teal: #0f766e;
@@ -193,11 +192,11 @@
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div>
                         <label class="text-[10px] font-bold text-slate-400">LATITUDE</label>
-                        <input type="text" id="svc_lat" class="input-mini coord-input" readonly>
+                        <input type="text" id="svc_lat" class="input-mini coord-input" onchange="updateMapFromCoordinates()">
                     </div>
                     <div>
                         <label class="text-[10px] font-bold text-slate-400">LONGITUDE</label>
-                        <input type="text" id="svc_lng" class="input-mini coord-input" readonly>
+                        <input type="text" id="svc_lng" class="input-mini coord-input" onchange="updateMapFromCoordinates()">
                     </div>
                     <div>
                         <label class="text-[10px] font-bold text-slate-400">RADIUS (MILES)</label>
@@ -311,6 +310,7 @@ let map, circle, marker, autocomplete;
 let routeCircles = []; 
 let logoBase64 = '';
 let currentPlanName = 'starter';
+let geocoder = null;
 const VEHICLE_LIST = ["Standard Sedan", "Luxury Sedan", "Standard SUV", "Luxury SUV", "Standard XL SUV", "Luxury XL SUV"];
 
 // --- UI NOTIFICATION HELPER ---
@@ -367,6 +367,33 @@ function refreshServiceAreaOverlay() {
     }
 }
 
+async function ensureGoogleMapsLoaded(mapsKey) {
+    if (window.google?.maps?.places) return;
+    if (!mapsKey) throw new Error("Google Maps API key is required to load the map.");
+
+    const existing = document.getElementById('wizard-google-maps');
+    if (!existing) {
+        const script = document.createElement('script');
+        script.id = 'wizard-google-maps';
+        script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(mapsKey)}&libraries=places`;
+        script.async = true;
+        document.head.appendChild(script);
+    }
+
+    await new Promise((resolve, reject) => {
+        const started = Date.now();
+        const check = setInterval(() => {
+            if (window.google?.maps?.places) {
+                clearInterval(check);
+                resolve();
+            } else if (Date.now() - started > 10000) {
+                clearInterval(check);
+                reject(new Error("Google Maps failed to load."));
+            }
+        }, 120);
+    });
+}
+
 function initServiceMap(lat = 34.0522, lng = -118.2437, radiusMiles = 90) {
     if (!google?.maps) return;
 
@@ -382,6 +409,7 @@ function initServiceMap(lat = 34.0522, lng = -118.2437, radiusMiles = 90) {
         streetViewControl: false,
         fullscreenControl: true
     });
+    geocoder = new google.maps.Geocoder();
 
     marker = new google.maps.Marker({ position: center, map, draggable: true });
 
@@ -454,6 +482,27 @@ function initAutocomplete() {
 
         console.log(`📍 Map moved to: ${lat}, ${lng}`);
     });
+
+    input.addEventListener('keydown', async (event) => {
+        if (event.key !== 'Enter') return;
+        event.preventDefault();
+        const query = input.value.trim();
+        if (!query || !geocoder) return;
+
+        try {
+            const result = await geocoder.geocode({ address: query });
+            const match = result?.results?.[0];
+            if (!match?.geometry?.location) return;
+
+            const lat = match.geometry.location.lat();
+            const lng = match.geometry.location.lng();
+            document.getElementById('svc_lat').value = lat.toFixed(6);
+            document.getElementById('svc_lng').value = lng.toFixed(6);
+            updateMapFromCoordinates();
+        } catch (err) {
+            console.error('Geocode search failed:', err);
+        }
+    });
 }
 
 /*    marker = new google.maps.Marker({ position: center, map: map, draggable: true });
@@ -501,6 +550,23 @@ function updateCircleFromInput() {
     if (!circle) return;
     const r = parseFloat(document.getElementById('svc_radius').value) || 90;
     circle.setRadius(r * 1609.34);
+    refreshServiceAreaOverlay();
+}
+
+function updateMapFromCoordinates() {
+    if (!map || !circle || !marker) return;
+    const lat = parseFloat(document.getElementById('svc_lat').value);
+    const lng = parseFloat(document.getElementById('svc_lng').value);
+    const radius = parseFloat(document.getElementById('svc_radius').value) || 90;
+
+    if (Number.isNaN(lat) || Number.isNaN(lng)) return;
+
+    const pos = { lat, lng };
+    map.setCenter(pos);
+    map.setZoom(11);
+    marker.setPosition(pos);
+    circle.setCenter(pos);
+    circle.setRadius(radius * 1609.34);
     refreshServiceAreaOverlay();
 }
 
@@ -800,11 +866,13 @@ async function loadFromBackend() {
             if (data.events) data.events.forEach(e => addEventRow(e));
             if (data.addons) data.addons.forEach(a => addAddonRow(a));
 
+            await ensureGoogleMapsLoaded(data.maps_api_key || '');
             initServiceMap(data.service_lat || 34.0522, data.service_lng || -118.2437, data.service_radius || 90);
         } else {
             setFleetPlanMessage(planOverride || 'starter');
             setBrandingPlanMessage(planOverride || 'starter');
             renderFleet(getIncludedFleetCount(), []);
+            await ensureGoogleMapsLoaded(document.getElementById('maps_key').value || '');
             initServiceMap();
         }
     } catch (e) {
@@ -812,7 +880,12 @@ async function loadFromBackend() {
         setFleetPlanMessage(planOverride || 'starter');
         setBrandingPlanMessage(planOverride || 'starter');
         renderFleet(getIncludedFleetCount(), []);
-        initServiceMap();
+        try {
+            await ensureGoogleMapsLoaded(document.getElementById('maps_key').value || '');
+            initServiceMap();
+        } catch (mapErr) {
+            console.error(mapErr);
+        }
     }
 }
 
