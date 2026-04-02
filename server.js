@@ -781,6 +781,30 @@ app.post("/api/create-payment-intent", async (req, res) => {
   }
 });
 
+function appendQueryParams(urlString, params = {}) {
+  const url = new URL(urlString);
+  Object.entries(params).forEach(([key, value]) => {
+    if (value == null || value === "") return;
+    url.searchParams.set(key, String(value));
+  });
+  return url.toString();
+}
+
+function sanitizeReturnUrl(rawUrl, req) {
+  try {
+    if (!rawUrl) {
+      return `${req.protocol}://${req.get("host")}/`;
+    }
+    const url = new URL(rawUrl);
+    if (!["http:", "https:"].includes(url.protocol)) {
+      throw new Error("Unsupported return URL protocol.");
+    }
+    return url.toString();
+  } catch {
+    return `${req.protocol}://${req.get("host")}/`;
+  }
+}
+
 app.post("/api/confirm-booking-payment", async (req, res) => {
   try {
     const {
@@ -1079,6 +1103,440 @@ async function updateBookingConfirmation({
     balance_due: balanceDue,
   };
 }
+
+async function createBookingRecord(input, { paymentLink = null, triggerWebhook = true } = {}) {
+  const {
+    location_id,
+    vehicle_slot_id,
+    first_name,
+    last_name,
+    email,
+    phone,
+    pickup_address,
+    dropoff_address,
+    pickup_lat,
+    pickup_lng,
+    dropoff_lat,
+    dropoff_lng,
+    start_time,
+    total_price,
+    quoted_price = 0,
+    addon_total = 0,
+    tax_amount = 0,
+    payment_status = "unpaid",
+    payment_paid = false,
+    deposit_paid = false,
+    balance_paid = false,
+    booking_confirmed,
+    deposit_percent = 0,
+    deposit_amount = 0,
+    passenger_count = 1,
+    carry_on_count = 0,
+    checked_bag_count = 0,
+    additional_items_aboard = null,
+    selected_event_name = null,
+    selected_addons = []
+  } = input;
+
+  if (!location_id || !vehicle_slot_id || !first_name || !last_name || !start_time) {
+    throw new Error("Missing required booking fields.");
+  }
+
+  const profileLookup = await pool.query(
+    `SELECT crm_webhook_url, business_name, maps_api_key, fleet
+     FROM profiles
+     WHERE location_id = $1`,
+    [location_id]
+  );
+  const profile = profileLookup.rows[0] || {};
+
+  let fleetVehicle = null;
+  if (await tableExists("fleet_slots")) {
+    const fleetLookup = await pool.query(
+      `SELECT
+         calendar_id,
+         name AS vehicle_type,
+         NULL AS vehicle_category
+       FROM fleet_slots
+       WHERE vehicle_slot_id = $1 AND location_id = $2
+       LIMIT 1`,
+      [vehicle_slot_id, location_id]
+    );
+    fleetVehicle = fleetLookup.rows[0] || null;
+  }
+
+  if (!fleetVehicle && await tableExists("fleet_settings")) {
+    const fleetSettingsLookup = await pool.query(
+      `SELECT
+         calendar_id,
+         vehicle_slot_id,
+         base_rate,
+         per_mile_rate,
+         NULL AS vehicle_category
+       FROM fleet_settings
+       WHERE vehicle_slot_id = $1 AND location_id = $2
+       LIMIT 1`,
+      [vehicle_slot_id, location_id]
+    );
+    fleetVehicle = fleetSettingsLookup.rows[0]
+      ? {
+          ...fleetSettingsLookup.rows[0],
+          vehicle_type: fleetSettingsLookup.rows[0].vehicle_slot_id
+        }
+      : null;
+  }
+
+  if (!fleetVehicle) {
+    const profileFleet = safeParseJson(profile.fleet);
+    fleetVehicle = (Array.isArray(profileFleet) ? profileFleet : []).find(
+      (vehicle) => String(vehicle.vehicle_slot_id || "") === String(vehicle_slot_id)
+    ) || null;
+  }
+
+  const webhookUrl = profile.crm_webhook_url || null;
+  const calendar_id = fleetVehicle?.calendar_id || null;
+  const vehicle_type = fleetVehicle?.vehicle_type || fleetVehicle?.name || null;
+  const vehicle_category = fleetVehicle?.vehicle_category || null;
+
+  const routeMetrics = await getRouteMetrics({
+    origin: pickup_address,
+    destination: dropoff_address,
+    originLat: pickup_lat,
+    originLng: pickup_lng,
+    destinationLat: dropoff_lat,
+    destinationLng: dropoff_lng,
+    mapsApiKey: profile.maps_api_key || null,
+  });
+  const bookingDurationMinutes = routeMetrics.durationMinutes + BOOKING_BUFFER_MINUTES;
+  const end_time = new Date(
+    new Date(start_time).getTime() + bookingDurationMinutes * 60000
+  ).toISOString();
+
+  const numericTotalPrice = Number(total_price) || 0;
+  const numericDepositPercent = Number(deposit_percent) || 0;
+  const numericDepositAmount = Number(deposit_amount) || 0;
+  const balance_due = Number(
+    (numericTotalPrice - numericDepositAmount).toFixed(2)
+  );
+  const paymentState = getPaymentBooleans({
+    paymentStatus: payment_status,
+    paymentPaid: Boolean(payment_paid),
+    depositPaid: Boolean(deposit_paid),
+    balancePaid: Boolean(balance_paid),
+    depositAmount: numericDepositAmount,
+    balanceDue: balance_due,
+  });
+  const isBookingConfirmed = getBookingConfirmationState({
+    bookingConfirmed: booking_confirmed,
+    paymentStatus: paymentState.paymentStatus,
+    paymentPaid: paymentState.paymentPaid,
+  });
+  const bookingStatus = isBookingConfirmed ? "confirmed" : "unconfirmed";
+
+  const result = await pool.query(
+    `INSERT INTO bookings (
+      location_id,
+      vehicle_slot_id,
+      first_name,
+      last_name,
+      customer_email,
+      customer_phone,
+      pickup_address,
+      dropoff_address,
+      pickup_lat,
+      pickup_lng,
+      dropoff_lat,
+      dropoff_lng,
+      start_time,
+      end_time,
+      total_price,
+      calendar_id,
+      deposit_amount,
+      deposit_percent,
+      balance_due,
+      status
+    ) VALUES (
+      $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20
+    )
+    RETURNING id`,
+    [
+      location_id,
+      vehicle_slot_id,
+      first_name,
+      last_name,
+      email,
+      phone,
+      pickup_address,
+      dropoff_address,
+      pickup_lat,
+      pickup_lng,
+      dropoff_lat,
+      dropoff_lng,
+      start_time,
+      end_time,
+      numericTotalPrice,
+      calendar_id,
+      numericDepositAmount,
+      numericDepositPercent,
+      balance_due,
+      bookingStatus
+    ]
+  );
+
+  const booking_id = result.rows[0]?.id || null;
+
+  if (triggerWebhook && webhookUrl && webhookUrl.startsWith("http")) {
+    const crmPayload = buildCrmBookingPayload({
+      webhookType: "webhook_bookings",
+      locationId: location_id,
+      businessName: profileLookup.rows[0]?.business_name || null,
+      booking: {
+        booking_id,
+        status: bookingStatus,
+        pickup_address,
+        dropoff_address,
+        pickup_lat,
+        pickup_lng,
+        dropoff_lat,
+        dropoff_lng,
+        start_time,
+        end_time,
+        passenger_count,
+        carry_on_count,
+        checked_bag_count,
+        additional_items_aboard,
+        selected_event_name,
+        selected_addons,
+      },
+      customer: {
+        first_name,
+        last_name,
+        email,
+        phone,
+      },
+      vehicle: {
+        vehicle_slot_id,
+        vehicle_type,
+        vehicle_category,
+        calendar_id: calendar_id ? String(calendar_id) : null,
+      },
+      financials: {
+        quoted_price: Number(quoted_price || 0),
+        addon_total: Number(addon_total || 0),
+        tax_amount: Number(tax_amount || 0),
+        total_price: numericTotalPrice,
+        deposit_percent: numericDepositPercent,
+        deposit_amount: numericDepositAmount,
+        balance_due,
+        payment_status: paymentState.paymentStatus,
+        payment_paid: paymentState.paymentPaid,
+        deposit_paid: paymentState.depositPaid,
+        balance_paid: paymentState.balancePaid,
+        payment_link: paymentLink,
+      },
+      meta: {
+        source: "booking_widget",
+      },
+    });
+
+    fetch(webhookUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(crmPayload)
+    }).catch((e) => {
+      console.error("Webhook Failed:", e);
+    });
+  }
+
+  return {
+    success: true,
+    message: "Booking saved and webhook triggered",
+    booking: {
+      id: booking_id,
+      location_id,
+      status: bookingStatus,
+      vehicle: {
+        vehicle_slot_id,
+        vehicle_type,
+        vehicle_category,
+        calendar_id
+      },
+      customer: {
+        first_name,
+        last_name,
+        email,
+        phone
+      },
+      trip: {
+        pickup_address,
+        dropoff_address,
+        pickup_lat,
+        pickup_lng,
+        dropoff_lat,
+        dropoff_lng,
+        start_time,
+        end_time
+      }
+    },
+    financials: {
+      total_price: numericTotalPrice,
+      deposit_percent: numericDepositPercent,
+      deposit_amount: numericDepositAmount,
+      balance_due
+    },
+    meta: {
+      created_at: new Date().toISOString(),
+      source: "booking_widget",
+      route_distance_miles: routeMetrics.distanceMiles,
+      route_duration_minutes: routeMetrics.durationMinutes,
+      booking_buffer_minutes: BOOKING_BUFFER_MINUTES,
+      booking_duration_minutes: bookingDurationMinutes,
+      timing_source: routeMetrics.source
+    }
+  };
+}
+
+app.post("/api/create-checkout-session", async (req, res) => {
+  try {
+    if (!stripe) {
+      return res.status(500).json({ error: "Stripe is not configured on the backend." });
+    }
+
+    const returnUrl = sanitizeReturnUrl(req.body.return_url, req);
+    const totalPrice = Number(req.body.total_price || 0);
+    const depositAmount = Number(req.body.deposit_amount || 0);
+    const depositPercent = Number(req.body.deposit_percent || 0);
+    const shouldChargeDeposit = depositAmount > 0 && depositAmount < totalPrice;
+    const amountToCharge = shouldChargeDeposit ? depositAmount : totalPrice;
+    const paymentStatus = shouldChargeDeposit ? "paid_deposit" : "paid_in_full";
+
+    if (!amountToCharge || amountToCharge < 0.5) {
+      return res.status(400).json({ error: "Charge amount must be at least $0.50." });
+    }
+
+    const bookingResult = await createBookingRecord(
+      {
+        ...req.body,
+        booking_confirmed: false,
+        payment_status: "unpaid",
+        payment_paid: false,
+        deposit_paid: false,
+        balance_paid: false,
+      },
+      { triggerWebhook: false }
+    );
+
+    const bookingId = bookingResult.booking?.id;
+    const businessName = bookingResult.booking?.customer?.first_name
+      ? `${bookingResult.booking.customer.first_name} ${bookingResult.booking.customer.last_name}`.trim()
+      : "Customer";
+    const vehicleType = bookingResult.booking?.vehicle?.vehicle_type || "Private ride";
+    const successUrl = appendQueryParams(returnUrl, {
+      checkout: "success",
+      session_id: "{CHECKOUT_SESSION_ID}",
+      booking_id: bookingId,
+    });
+    const cancelUrl = appendQueryParams(returnUrl, {
+      checkout: "cancel",
+      booking_id: bookingId,
+    });
+
+    const session = await stripe.checkout.sessions.create({
+      mode: "payment",
+      success_url: successUrl,
+      cancel_url: cancelUrl,
+      customer_email: req.body.email || undefined,
+      metadata: {
+        booking_id: String(bookingId),
+        location_id: String(req.body.location_id || ""),
+        total_price: String(totalPrice.toFixed(2)),
+        deposit_amount: String((shouldChargeDeposit ? depositAmount : totalPrice).toFixed(2)),
+        deposit_percent: String(shouldChargeDeposit ? depositPercent : 100),
+        payment_status: paymentStatus,
+      },
+      line_items: [
+        {
+          quantity: 1,
+          price_data: {
+            currency: "usd",
+            unit_amount: Math.round(amountToCharge * 100),
+            product_data: {
+              name: shouldChargeDeposit ? "Reservation deposit" : "Reservation payment",
+              description: `${vehicleType} booking for ${businessName}`,
+            },
+          },
+        },
+      ],
+    });
+
+    return res.json({
+      success: true,
+      checkout_url: session.url,
+      booking_id: bookingId,
+      payment_status: paymentStatus,
+      amount_due_now: Number(amountToCharge.toFixed(2)),
+      booking: bookingResult.booking,
+    });
+  } catch (err) {
+    console.error("Stripe checkout session error:", err);
+    return res.status(500).json({ error: err.message || "Failed to create checkout session." });
+  }
+});
+
+app.get("/api/checkout-session-status", async (req, res) => {
+  try {
+    if (!stripe) {
+      return res.status(500).json({ error: "Stripe is not configured on the backend." });
+    }
+
+    const sessionId = String(req.query.session_id || "").trim();
+    if (!sessionId) {
+      return res.status(400).json({ error: "session_id is required." });
+    }
+
+    const session = await stripe.checkout.sessions.retrieve(sessionId);
+    const bookingId = session.metadata?.booking_id;
+    const paymentStatus = session.metadata?.payment_status || "paid_in_full";
+    const totalPrice = Number(session.metadata?.total_price || 0);
+    const depositAmount = Number(session.metadata?.deposit_amount || 0);
+    const depositPercent = Number(session.metadata?.deposit_percent || 100);
+
+    if (session.payment_status === "paid" && bookingId) {
+      const confirmation = await updateBookingConfirmation({
+        bookingId,
+        paymentStatus,
+        totalPrice,
+        depositAmount,
+        depositPercent,
+      });
+
+      const bookingLookup = await pool.query(
+        `SELECT id, first_name, pickup_address, dropoff_address, start_time
+         FROM bookings
+         WHERE id = $1
+         LIMIT 1`,
+        [bookingId]
+      );
+
+      return res.json({
+        success: true,
+        paid: true,
+        booking: confirmation,
+        reservation: bookingLookup.rows[0] || null,
+      });
+    }
+
+    return res.json({
+      success: true,
+      paid: false,
+      booking_id: bookingId || null,
+      payment_status: session.payment_status || "unpaid",
+    });
+  } catch (err) {
+    console.error("Checkout session status error:", err);
+    return res.status(500).json({ error: err.message || "Failed to verify checkout session." });
+  }
+});
 
 async function triggerCrmWebhook(location_id, booking_id) {
   let client;
@@ -1460,301 +1918,14 @@ app.get("/api/get-profile-widget/:location_id", async (req, res) => {
 
 app.post("/api/create-booking", async (req, res) => {
   try {
-    const {
-      location_id,
-      vehicle_slot_id,
-      first_name,
-      last_name,
-      email,
-      phone,
-      pickup_address,
-      dropoff_address,
-      pickup_lat,
-      pickup_lng,
-      dropoff_lat,
-      dropoff_lng,
-      start_time,
-      total_price,
-      quoted_price = 0,
-      addon_total = 0,
-      tax_amount = 0,
-      payment_status = "unpaid",
-      payment_paid = false,
-      deposit_paid = false,
-      balance_paid = false,
-      payment_link = null,
-      booking_confirmed,
-      deposit_percent = 0,
-      deposit_amount = 0,
-      passenger_count = 1,
-      carry_on_count = 0,
-      checked_bag_count = 0,
-      additional_items_aboard = null,
-      selected_event_name = null,
-      selected_addons = []
-    } = req.body;
-
-    if (!location_id || !vehicle_slot_id || !first_name || !last_name || !start_time) {
-      return res.status(400).json({
-        success: false,
-        error: "Missing required booking fields."
-      });
-    }
-
-    const profileLookup = await pool.query(
-      `SELECT crm_webhook_url, business_name, maps_api_key, fleet
-       FROM profiles
-       WHERE location_id = $1`,
-      [location_id]
-    );
-    const profile = profileLookup.rows[0] || {};
-
-    let fleetVehicle = null;
-    if (await tableExists("fleet_slots")) {
-      const fleetLookup = await pool.query(
-        `SELECT
-           calendar_id,
-           name AS vehicle_type,
-           NULL AS vehicle_category
-         FROM fleet_slots
-         WHERE vehicle_slot_id = $1 AND location_id = $2
-         LIMIT 1`,
-        [vehicle_slot_id, location_id]
-      );
-      fleetVehicle = fleetLookup.rows[0] || null;
-    }
-
-    if (!fleetVehicle && await tableExists("fleet_settings")) {
-      const fleetSettingsLookup = await pool.query(
-        `SELECT
-           calendar_id,
-           vehicle_slot_id,
-           base_rate,
-           per_mile_rate,
-           NULL AS vehicle_category
-         FROM fleet_settings
-         WHERE vehicle_slot_id = $1 AND location_id = $2
-         LIMIT 1`,
-        [vehicle_slot_id, location_id]
-      );
-      fleetVehicle = fleetSettingsLookup.rows[0]
-        ? {
-            ...fleetSettingsLookup.rows[0],
-            vehicle_type: fleetSettingsLookup.rows[0].vehicle_slot_id
-          }
-        : null;
-    }
-
-    if (!fleetVehicle) {
-      const profileFleet = safeParseJson(profile.fleet);
-      fleetVehicle = (Array.isArray(profileFleet) ? profileFleet : []).find(
-        (vehicle) => String(vehicle.vehicle_slot_id || "") === String(vehicle_slot_id)
-      ) || null;
-    }
-
-    const webhookUrl = profile.crm_webhook_url || null;
-    const calendar_id = fleetVehicle?.calendar_id || null;
-    const vehicle_type = fleetVehicle?.vehicle_type || fleetVehicle?.name || null;
-    const vehicle_category = fleetVehicle?.vehicle_category || null;
-
-    const routeMetrics = await getRouteMetrics({
-      origin: pickup_address,
-      destination: dropoff_address,
-      originLat: pickup_lat,
-      originLng: pickup_lng,
-      destinationLat: dropoff_lat,
-      destinationLng: dropoff_lng,
-      mapsApiKey: profile.maps_api_key || null,
+    const bookingResult = await createBookingRecord(req.body, {
+      paymentLink: req.body.payment_link || null,
+      triggerWebhook: true,
     });
-    const bookingDurationMinutes = routeMetrics.durationMinutes + BOOKING_BUFFER_MINUTES;
-    const end_time = new Date(
-      new Date(start_time).getTime() + bookingDurationMinutes * 60000
-    ).toISOString();
-
-    const numericTotalPrice = Number(total_price) || 0;
-    const numericDepositPercent = Number(deposit_percent) || 0;
-    const numericDepositAmount = Number(deposit_amount) || 0;
-    const balance_due = Number(
-      (numericTotalPrice - numericDepositAmount).toFixed(2)
-    );
-    const paymentState = getPaymentBooleans({
-      paymentStatus: payment_status,
-      paymentPaid: Boolean(payment_paid),
-      depositPaid: Boolean(deposit_paid),
-      balancePaid: Boolean(balance_paid),
-      depositAmount: numericDepositAmount,
-      balanceDue: balance_due,
-    });
-    const isBookingConfirmed = getBookingConfirmationState({
-      bookingConfirmed: booking_confirmed,
-      paymentStatus: paymentState.paymentStatus,
-      paymentPaid: paymentState.paymentPaid,
-    });
-    const bookingStatus = isBookingConfirmed ? "confirmed" : "unconfirmed";
-
-    const result = await pool.query(
-      `INSERT INTO bookings (
-        location_id,
-        vehicle_slot_id,
-        first_name,
-        last_name,
-        customer_email,
-        customer_phone,
-        pickup_address,
-        dropoff_address,
-        pickup_lat,
-        pickup_lng,
-        dropoff_lat,
-        dropoff_lng,
-        start_time,
-        end_time,
-        total_price,
-        calendar_id,
-        deposit_amount,
-        deposit_percent,
-        balance_due,
-        status
-      ) VALUES (
-        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20
-      )
-      RETURNING id`,
-      [
-        location_id,
-        vehicle_slot_id,
-        first_name,
-        last_name,
-        email,
-        phone,
-        pickup_address,
-        dropoff_address,
-        pickup_lat,
-        pickup_lng,
-        dropoff_lat,
-        dropoff_lng,
-        start_time,
-        end_time,
-        numericTotalPrice,
-        calendar_id,
-        numericDepositAmount,
-        numericDepositPercent,
-        balance_due,
-        bookingStatus
-      ]
-    );
-
-    const booking_id = result.rows[0]?.id || null;
-
-    if (webhookUrl && webhookUrl.startsWith("http")) {
-      const crmPayload = buildCrmBookingPayload({
-        webhookType: "webhook_bookings",
-        locationId: location_id,
-        businessName: profileLookup.rows[0]?.business_name || null,
-        booking: {
-          booking_id,
-          status: bookingStatus,
-          pickup_address,
-          dropoff_address,
-          pickup_lat,
-          pickup_lng,
-          dropoff_lat,
-          dropoff_lng,
-          start_time,
-          end_time,
-          passenger_count,
-          carry_on_count,
-          checked_bag_count,
-          additional_items_aboard,
-          selected_event_name,
-          selected_addons,
-        },
-        customer: {
-          first_name,
-          last_name,
-          email,
-          phone,
-        },
-        vehicle: {
-          vehicle_slot_id,
-          vehicle_type,
-          vehicle_category,
-          calendar_id: calendar_id ? String(calendar_id) : null,
-        },
-        financials: {
-          quoted_price: Number(quoted_price || 0),
-          addon_total: Number(addon_total || 0),
-          tax_amount: Number(tax_amount || 0),
-          total_price: numericTotalPrice,
-          deposit_percent: numericDepositPercent,
-          deposit_amount: numericDepositAmount,
-          balance_due,
-          payment_status: paymentState.paymentStatus,
-          payment_paid: paymentState.paymentPaid,
-          deposit_paid: paymentState.depositPaid,
-          balance_paid: paymentState.balancePaid,
-          payment_link,
-        },
-        meta: {
-          source: "booking_widget",
-        },
-      });
-
-      fetch(webhookUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(crmPayload)
-      }).catch((e) => {
-        console.error("Webhook Failed:", e);
-      });
-    }
-    return res.status(200).json({
-      success: true,
-      message: "Booking saved and webhook triggered",
-      booking: {
-        id: booking_id,
-        location_id,
-        status: bookingStatus,
-        vehicle: {
-          vehicle_slot_id,
-          vehicle_type,
-          vehicle_category,
-          calendar_id
-        },
-        customer: {
-          first_name,
-          last_name,
-          email,
-          phone
-        },
-        trip: {
-          pickup_address,
-          dropoff_address,
-          pickup_lat,
-          pickup_lng,
-          dropoff_lat,
-          dropoff_lng,
-          start_time,
-          end_time
-        }
-      },
-      financials: {
-        total_price: numericTotalPrice,
-        deposit_percent: numericDepositPercent,
-        deposit_amount: numericDepositAmount,
-        balance_due
-      },
-      meta: {
-        created_at: new Date().toISOString(),
-        source: "booking_widget",
-        route_distance_miles: routeMetrics.distanceMiles,
-        route_duration_minutes: routeMetrics.durationMinutes,
-        booking_buffer_minutes: BOOKING_BUFFER_MINUTES,
-        booking_duration_minutes: bookingDurationMinutes,
-        timing_source: routeMetrics.source
-      }
-    }); 
+    return res.status(200).json(bookingResult);
   } catch (err) {
     console.error("❌ Error in create-booking:", err);
-    return res.status(500).json({ success: false, error: "Failed to create booking" });
+    return res.status(500).json({ success: false, error: err.message || "Failed to create booking" });
   }
 });
 

@@ -15,6 +15,17 @@
     },
   };
 
+  function currentPageUrl() {
+    try {
+      const url = new URL(window.location.href);
+      ["checkout", "session_id", "booking_id"].forEach((key) => url.searchParams.delete(key));
+      url.hash = "";
+      return url.toString();
+    } catch {
+      return window.location.href;
+    }
+  }
+
   function money(value) {
     return `$${Number(value || 0).toFixed(2)}`;
   }
@@ -745,6 +756,16 @@
     }
     notes.push(`Deposit due today: ${money(state.quote.deposit_amount)}.`);
     setRouteStatus(notes.join(" "));
+
+    const payNow = Number(state.quote.deposit_amount || 0) > 0 && Number(state.quote.deposit_amount || 0) < Number(state.quote.total || 0)
+      ? Number(state.quote.deposit_amount || 0)
+      : Number(state.quote.total || 0);
+    const button = document.getElementById("cd_btn_book");
+    if (button) {
+      button.textContent = payNow < Number(state.quote.total || 0)
+        ? `Pay Deposit & Confirm Booking (${money(payNow)})`
+        : `Pay & Confirm Booking (${money(payNow)})`;
+    }
   }
 
   function renderSuccess(bookingId, payload) {
@@ -834,29 +855,76 @@
       total_price: Number(state.quote.total || 0),
       deposit_percent: Number(state.quote.deposit_percent || 0),
       deposit_amount: Number(state.quote.deposit_amount || 0),
+      return_url: currentPageUrl(),
     });
 
     const button = document.getElementById("cd_btn_book");
     const original = button.textContent;
-    button.textContent = "Syncing Booking...";
+    button.textContent = "Redirecting to secure checkout...";
     button.disabled = true;
 
     try {
-      const response = await fetch(`${BACKEND_URL}/api/create-booking`, {
+      const response = await fetch(`${BACKEND_URL}/api/create-checkout-session`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
 
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "Booking failed.");
+      if (!response.ok) throw new Error(data.error || "Checkout setup failed.");
+      if (!data.checkout_url) throw new Error("Checkout link was not returned.");
 
-      renderSuccess(data.booking?.id || data.booking_id, payload);
+      window.location.href = data.checkout_url;
     } catch (error) {
-      showError(error.message || "Booking failed.");
+      showError(error.message || "Checkout failed.");
       button.textContent = original;
       button.disabled = false;
     }
+  }
+
+  async function handleCheckoutReturn() {
+    const url = new URL(window.location.href);
+    const checkoutState = url.searchParams.get("checkout");
+    const sessionId = url.searchParams.get("session_id");
+    const bookingId = url.searchParams.get("booking_id");
+
+    if (!checkoutState) return false;
+
+    if (checkoutState === "cancel") {
+      render();
+      showError("Checkout was canceled. Your reservation has not been confirmed yet.");
+      window.history.replaceState({}, document.title, currentPageUrl());
+      return true;
+    }
+
+    if (checkoutState === "success" && sessionId) {
+      const root = getRoot();
+      if (root) {
+        root.innerHTML = `
+          <div style="max-width:920px;margin:0 auto;padding:28px;background:#fff;border:1px solid #dbe4f0;border-radius:28px;box-shadow:0 24px 50px rgba(15,23,42,.08);font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;">
+            <div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.14em;color:#64748b;">Secure Checkout</div>
+            <h2 style="margin:10px 0 0;font-size:28px;color:#0f172a;">Finalizing your reservation...</h2>
+            <p style="margin:12px 0 0;color:#475569;">We're verifying your payment and syncing your confirmed booking now.</p>
+          </div>
+        `;
+      }
+
+      const response = await fetch(`${BACKEND_URL}/api/checkout-session-status?session_id=${encodeURIComponent(sessionId)}`);
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Unable to verify the checkout session.");
+      if (!data.paid) throw new Error("Payment has not been completed yet.");
+
+      renderSuccess(data.booking?.booking_id || bookingId, {
+        first_name: data.reservation?.first_name || "Your",
+        pickup_address: data.reservation?.pickup_address || "Payment received",
+        dropoff_address: data.reservation?.dropoff_address || "Reservation confirmed",
+        start_time: data.reservation?.start_time || new Date().toISOString(),
+      });
+      window.history.replaceState({}, document.title, currentPageUrl());
+      return true;
+    }
+
+    return false;
   }
 
   (async function init() {
@@ -864,7 +932,16 @@
       if (!locationId) throw new Error("Missing location id.");
       await loadConfig();
       await waitForGoogleMaps();
-      render();
+      try {
+        const handledCheckout = await handleCheckoutReturn();
+        if (!handledCheckout) {
+          render();
+        }
+      } catch (checkoutError) {
+        console.error("Checkout Return Error:", checkoutError);
+        render();
+        showError(checkoutError.message || "We couldn't verify the checkout result. Please contact support if your card was charged.");
+      }
     } catch (error) {
       console.error("Widget Init Error:", error);
       const root = getRoot();
