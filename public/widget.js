@@ -214,7 +214,7 @@
   }
 
   async function loadConfig() {
-    const res = await fetch(`${BACKEND_URL}/api/get-profile/${locationId}`);
+    const res = await fetch(`${BACKEND_URL}/api/get-profile-widget/${locationId}`);
     if (!res.ok) throw new Error("Failed to load booking config");
     state.config = await res.json();
 
