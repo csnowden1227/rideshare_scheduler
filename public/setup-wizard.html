@@ -207,6 +207,26 @@
             </div>
 
             <div class="card">
+                <div class="flex justify-between items-center mb-6">
+                    <div>
+                        <h2 class="section-header !mb-2 !border-0">SECTION: STANDARD MULTIPLIER</h2>
+                        <p class="text-xs text-slate-500">Only applies to standard pickup and dropoff bookings. It does not apply to fixed rates, geofencing routes, or events.</p>
+                    </div>
+                    <button type="button" onclick="addStandardMultiplierRow()" class="wizard-btn-accent text-xs font-bold px-4 py-2 rounded-lg">+ Add Window</button>
+                </div>
+                <div class="wizard-table-scroll">
+                <table class="w-full">
+                    <thead>
+                        <tr class="text-[10px] uppercase text-gray-400">
+                            <th>Day</th><th>Start</th><th>End</th><th>Multiplier</th><th></th>
+                        </tr>
+                    </thead>
+                    <tbody id="standard-multiplier-body"></tbody>
+                </table>
+                </div>
+            </div>
+
+            <div class="card">
                 <h2 class="section-header">SECTION: SERVICE AREA (GEOFENCE)</h2>
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                     <input type="text" id="map-search" class="input-mini md:col-span-2" placeholder="Search city or zip code...">
@@ -256,17 +276,20 @@
 
             <div class="card">
                 <div class="flex justify-between items-center mb-6">
-                    <h2 class="section-header !mb-0 !border-0">SECTION: FIXED RATES &amp; GEOFENCING ROUTES</h2>
-                    <button type="button" onclick="addPeakRow()" class="wizard-btn-accent text-xs font-bold px-4 py-2 rounded-lg">+ Add Window</button>
+                    <div>
+                        <h2 class="section-header !mb-2 !border-0">SECTION: FIXED RATE ADD-ON</h2>
+                        <p class="text-xs text-slate-500">Add a flat amount by time window for fixed-rate and geofencing routes only.</p>
+                    </div>
+                    <button type="button" onclick="addFixedAddonRow()" class="wizard-btn-accent text-xs font-bold px-4 py-2 rounded-lg">+ Add Window</button>
                 </div>
                 <div class="wizard-table-scroll">
                 <table class="w-full">
                     <thead>
                             <tr class="text-[10px] uppercase text-gray-400">
-                                <th>Day</th><th>Start</th><th>End</th><th>Multiplier</th><th>Fixed Add-On ($)</th><th></th>
+                                <th>Day</th><th>Start</th><th>End</th><th>Fixed Add-On ($)</th><th></th>
                             </tr>
                     </thead>
-                    <tbody id="peak-body"></tbody>
+                    <tbody id="fixed-addon-body"></tbody>
                 </table>
                 </div>
             </div>
@@ -822,18 +845,32 @@ function addFleetRow(data = {}, shouldRenumber = true) {
     if (shouldRenumber) renumberFleetRows();
 }
 
-function addPeakRow(data = {}) {
+function addStandardMultiplierRow(data = {}) {
     const tr = document.createElement('tr');
-    tr.className = "peak-row border-b border-slate-50";
+    tr.className = "standard-multiplier-row border-b border-slate-50";
     tr.innerHTML = `
         <td class="py-3"><select class="p-day input-mini"><option>Everyday</option><option>Weekdays</option><option>Weekends</option></select></td>
         <td class="py-3"><input type="time" class="p-start input-mini" value="${data.start_time || '17:00'}"></td>
         <td class="py-3"><input type="time" class="p-end input-mini" value="${data.end_time || '19:00'}"></td>
         <td class="py-3"><input type="number" step="0.1" class="p-mult input-mini" value="${data.multiplier || 1.5}"></td>
+        <td><button onclick="this.closest('tr').remove()" class="text-red-400">&times;</button></td>
+    `;
+    tr.querySelector('.p-day').value = data.day || 'Everyday';
+    document.getElementById('standard-multiplier-body').appendChild(tr);
+}
+
+function addFixedAddonRow(data = {}) {
+    const tr = document.createElement('tr');
+    tr.className = "fixed-addon-row border-b border-slate-50";
+    tr.innerHTML = `
+        <td class="py-3"><select class="p-day input-mini"><option>Everyday</option><option>Weekdays</option><option>Weekends</option></select></td>
+        <td class="py-3"><input type="time" class="p-start input-mini" value="${data.start_time || '17:00'}"></td>
+        <td class="py-3"><input type="time" class="p-end input-mini" value="${data.end_time || '19:00'}"></td>
         <td class="py-3"><input type="number" step="0.01" class="p-fixed-addon input-mini" value="${data.fixed_surcharge || data.flat_surcharge || 0}"></td>
         <td><button onclick="this.closest('tr').remove()" class="text-red-400">&times;</button></td>
     `;
-    document.getElementById('peak-body').appendChild(tr);
+    tr.querySelector('.p-day').value = data.day || 'Everyday';
+    document.getElementById('fixed-addon-body').appendChild(tr);
 }
 
 function addEventRow(data = {}) {
@@ -910,7 +947,16 @@ async function loadFromBackend() {
             renderFleet(fleetCount, data.fleet || []);
             
             if (data.fixed_rates) data.fixed_rates.forEach(r => addRouteRow(r));
-            if (data.peak_windows) data.peak_windows.forEach(p => addPeakRow(p));
+            if (data.peak_windows) {
+                data.peak_windows.forEach(p => {
+                    if (parseFloat(p.multiplier) && parseFloat(p.multiplier) !== 1) {
+                        addStandardMultiplierRow(p);
+                    }
+                    if (parseFloat(p.fixed_surcharge ?? p.flat_surcharge)) {
+                        addFixedAddonRow(p);
+                    }
+                });
+            }
             if (data.events) data.events.forEach(e => addEventRow(e));
             if (data.addons) data.addons.forEach(a => addAddonRow(a));
 
@@ -995,13 +1041,22 @@ async function saveToBackend() {
             calendar_id: tr.querySelector('.v-cal').value
         })),
 
-        peak_windows: Array.from(document.querySelectorAll('.peak-row')).map(r => ({
-            day: r.querySelector('.p-day').value,
-            start_time: r.querySelector('.p-start').value,
-            end_time: r.querySelector('.p-end').value,
-            multiplier: parseFloat(r.querySelector('.p-mult').value),
-            fixed_surcharge: parseFloat(r.querySelector('.p-fixed-addon').value) || 0
-        })),
+        peak_windows: [
+            ...Array.from(document.querySelectorAll('.standard-multiplier-row')).map(r => ({
+                day: r.querySelector('.p-day').value,
+                start_time: r.querySelector('.p-start').value,
+                end_time: r.querySelector('.p-end').value,
+                multiplier: parseFloat(r.querySelector('.p-mult').value) || 1,
+                fixed_surcharge: 0
+            })),
+            ...Array.from(document.querySelectorAll('.fixed-addon-row')).map(r => ({
+                day: r.querySelector('.p-day').value,
+                start_time: r.querySelector('.p-start').value,
+                end_time: r.querySelector('.p-end').value,
+                multiplier: 1,
+                fixed_surcharge: parseFloat(r.querySelector('.p-fixed-addon').value) || 0
+            }))
+        ],
 
         fixed_rates: Array.from(document.querySelectorAll('.route-row')).map(r => ({
             location_name: r.querySelector('.r-name').value,
