@@ -19,9 +19,22 @@ import * as turf from '@turf/turf';
 const { Pool, Client } = pkg;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
-const normalizedStripeSecretKey = String(process.env.STRIPE_SECRET_KEY || "").trim().replace(/^['"]|['"]$/g, "");
-const stripe = normalizedStripeSecretKey
-  ? new Stripe(normalizedStripeSecretKey, { apiVersion: "2025-02-24.acacia" })
+function normalizeStripeSecretKey(value) {
+  return String(value || "").trim().replace(/^['"]|['"]$/g, "");
+}
+
+function normalizePaymentProvider(value) {
+  const normalized = String(value || "stripe").trim().toLowerCase();
+  if (normalized === "square") return "square";
+  if (normalized === "crm_invoice_only" || normalized === "invoice" || normalized === "invoice_only") {
+    return "crm_invoice_only";
+  }
+  return "stripe";
+}
+
+const envStripeSecretKey = normalizeStripeSecretKey(process.env.STRIPE_SECRET_KEY || "");
+const stripe = envStripeSecretKey
+  ? new Stripe(envStripeSecretKey, { apiVersion: "2025-02-24.acacia" })
   : null;
 
 // 1. Define Environment Variables
@@ -76,6 +89,44 @@ async function getProfileIdColumn() {
   if (columns.has("location_id")) return "location_id";
   if (columns.has("id")) return "id";
   throw new Error("Profiles table is missing both location_id and id columns.");
+}
+
+async function getStripeSecretKeyForLocation(locationId) {
+  const paymentProfile = await getPaymentProfileForLocation(locationId);
+  return paymentProfile.stripeSecretKey || envStripeSecretKey;
+}
+
+async function getPaymentProfileForLocation(locationId) {
+  const fallback = {
+    provider: "stripe",
+    stripeSecretKey: envStripeSecretKey,
+    squareApplicationId: "",
+    squareAccessToken: "",
+    squareLocationId: "",
+  };
+
+  if (!locationId) return fallback;
+
+  try {
+    const profileIdColumn = await getProfileIdColumn();
+    const result = await pool.query(
+      `SELECT payment_provider, stripe_secret_key, square_application_id, square_access_token, square_location_id
+       FROM profiles
+       WHERE ${profileIdColumn} = $1
+       LIMIT 1`,
+      [locationId]
+    );
+    const row = result.rows[0] || {};
+    return {
+      provider: normalizePaymentProvider(row.payment_provider),
+      stripeSecretKey: normalizeStripeSecretKey(row.stripe_secret_key || "") || envStripeSecretKey,
+      squareApplicationId: String(row.square_application_id || "").trim(),
+      squareAccessToken: String(row.square_access_token || "").trim(),
+      squareLocationId: String(row.square_location_id || "").trim(),
+    };
+  } catch {
+    return fallback;
+  }
 }
 
 async function syncFixedRates(client, location_id, fixed_rates = []) {
@@ -269,6 +320,11 @@ async function saveConfigHandler(req, res) {
       plan_name,
       crm_webhook_url,
       maps_api_key,
+      payment_provider,
+      stripe_secret_key,
+      square_application_id,
+      square_access_token,
+      square_location_id,
       tax_rate,
       service_lat,
       service_lng,
@@ -300,6 +356,11 @@ async function saveConfigHandler(req, res) {
     pushProfileField("plan_name", plan_name || "Starter");
     pushProfileField("crm_webhook_url", crm_webhook_url);
     pushProfileField("maps_api_key", maps_api_key);
+    pushProfileField("payment_provider", normalizePaymentProvider(payment_provider));
+    pushProfileField("stripe_secret_key", stripe_secret_key || null);
+    pushProfileField("square_application_id", square_application_id || null);
+    pushProfileField("square_access_token", square_access_token || null);
+    pushProfileField("square_location_id", square_location_id || null);
     pushProfileField("tax_rate", tax_rate);
     pushProfileField("service_lat", service_lat);
     pushProfileField("service_lng", service_lng);
@@ -817,8 +878,9 @@ function getPublicAppUrl(req = null) {
   return "https://rideshare-scheduler-axx6.onrender.com";
 }
 
-async function stripeFormRequest(pathname, params = {}, method = "POST") {
-  if (!normalizedStripeSecretKey) {
+async function stripeFormRequest(pathname, params = {}, method = "POST", apiKey = envStripeSecretKey) {
+  const normalizedKey = normalizeStripeSecretKey(apiKey);
+  if (!normalizedKey) {
     throw new Error("Stripe is not configured on the backend.");
   }
 
@@ -831,7 +893,7 @@ async function stripeFormRequest(pathname, params = {}, method = "POST") {
   const response = await fetch(`https://api.stripe.com${pathname}`, {
     method,
     headers: {
-      Authorization: `Bearer ${normalizedStripeSecretKey}`,
+      Authorization: `Bearer ${normalizedKey}`,
       "Content-Type": "application/x-www-form-urlencoded",
     },
     body: method === "GET" ? undefined : body.toString(),
@@ -858,6 +920,7 @@ async function stripeFormRequest(pathname, params = {}, method = "POST") {
 }
 
 async function createStripeCheckoutSessionForAmount({
+  apiKey = envStripeSecretKey,
   amount,
   customerEmail = null,
   bookingId,
@@ -891,7 +954,7 @@ async function createStripeCheckoutSessionForAmount({
     "line_items[0][price_data][unit_amount]": Math.round(Number(amount || 0) * 100),
     "line_items[0][price_data][product_data][name]": title,
     "line_items[0][price_data][product_data][description]": description,
-  });
+  }, "POST", apiKey);
 }
 
 app.post("/api/confirm-booking-payment", async (req, res) => {
@@ -1058,6 +1121,7 @@ function buildCrmBookingPayload({
       ? new Date(new Date(booking.start_time).getTime() - (48 * 60 * 60 * 1000)).toISOString()
       : null
   );
+  const paymentProvider = normalizePaymentProvider(financials.payment_provider || meta.payment_provider || "stripe");
 
   return {
     webhook_type: webhookType,
@@ -1116,6 +1180,7 @@ function buildCrmBookingPayload({
       payment_choice: financials.payment_choice || null,
       amount_due_now: Number(financials.amount_due_now || financials.deposit_amount || financials.total_price || 0),
       balance_due_deadline: balanceDueDeadline,
+      payment_provider: paymentProvider,
     },
     follow_up: {
       send_payment_sms: paymentRequired,
@@ -1127,6 +1192,7 @@ function buildCrmBookingPayload({
         ? `Your remaining balance of $${Number(financials.balance_due || 0).toFixed(2)} must be paid at least 48 hours before pickup to keep this reservation active.`
         : null,
       balance_payment_link: financials.balance_payment_link || null,
+      payment_provider: paymentProvider,
       cancellation_policy: {
         refund_24_to_48_hours: "50_percent",
         refund_under_24_hours: "no_refund",
@@ -1224,7 +1290,8 @@ async function createBalancePaymentLink(bookingRow) {
   const depositAmount = Number(bookingRow.deposit_amount || 0);
   const balanceDue = Number((totalPrice - depositAmount).toFixed(2));
 
-  if (!stripe || balanceDue <= 0 || !bookingRow?.id) {
+  const paymentProfile = await getPaymentProfileForLocation(bookingRow?.location_id);
+  if (paymentProfile.provider !== "stripe" || !paymentProfile.stripeSecretKey || balanceDue <= 0 || !bookingRow?.id) {
     return null;
   }
 
@@ -1246,6 +1313,7 @@ async function createBalancePaymentLink(bookingRow) {
     : null;
 
   const session = await createStripeCheckoutSessionForAmount({
+    apiKey: paymentProfile.stripeSecretKey,
     amount: balanceDue,
     customerEmail: bookingRow.customer_email || null,
     bookingId: bookingRow.id,
@@ -1288,6 +1356,7 @@ async function createBookingRecord(input, { paymentLink = null, triggerWebhook =
     payment_paid = false,
     deposit_paid = false,
     balance_paid = false,
+    payment_provider = null,
     booking_confirmed,
     deposit_percent = 0,
     deposit_amount = 0,
@@ -1304,12 +1373,13 @@ async function createBookingRecord(input, { paymentLink = null, triggerWebhook =
   }
 
   const profileLookup = await pool.query(
-    `SELECT crm_webhook_url, business_name, maps_api_key, fleet
+    `SELECT crm_webhook_url, business_name, maps_api_key, fleet, payment_provider
      FROM profiles
      WHERE location_id = $1`,
     [location_id]
   );
   const profile = profileLookup.rows[0] || {};
+  const resolvedPaymentProvider = normalizePaymentProvider(payment_provider || profile.payment_provider);
 
   let fleetVehicle = null;
   if (await tableExists("fleet_slots")) {
@@ -1494,9 +1564,11 @@ async function createBookingRecord(input, { paymentLink = null, triggerWebhook =
         deposit_paid: paymentState.depositPaid,
         balance_paid: paymentState.balancePaid,
         payment_link: paymentLink,
+        payment_provider: resolvedPaymentProvider,
       },
       meta: {
         source: "booking_widget",
+        payment_provider: resolvedPaymentProvider,
       },
     });
 
@@ -1544,7 +1616,8 @@ async function createBookingRecord(input, { paymentLink = null, triggerWebhook =
       total_price: numericTotalPrice,
       deposit_percent: numericDepositPercent,
       deposit_amount: numericDepositAmount,
-      balance_due
+      balance_due,
+      payment_provider: resolvedPaymentProvider,
     },
     meta: {
       created_at: new Date().toISOString(),
@@ -1561,9 +1634,8 @@ async function createBookingRecord(input, { paymentLink = null, triggerWebhook =
 app.post("/api/create-checkout-session", async (req, res) => {
   let bookingId = null;
   try {
-    if (!stripe) {
-      return res.status(500).json({ error: "Stripe is not configured on the backend." });
-    }
+    const paymentProfile = await getPaymentProfileForLocation(req.body.location_id);
+    const paymentProvider = paymentProfile.provider;
 
     const returnUrl = sanitizeReturnUrl(req.body.return_url, req);
     const totalPrice = Number(req.body.total_price || 0);
@@ -1584,6 +1656,44 @@ app.post("/api/create-checkout-session", async (req, res) => {
       return res.status(400).json({ error: "Charge amount must be at least $0.50." });
     }
 
+    if (paymentProvider !== "stripe") {
+      const bookingResult = await createBookingRecord(
+        {
+          ...req.body,
+          booking_confirmed: false,
+          payment_status: "unpaid",
+          payment_paid: false,
+          deposit_paid: false,
+          balance_paid: false,
+          deposit_amount: minimumDepositAmount,
+          payment_provider: paymentProvider,
+        },
+        { triggerWebhook: true, paymentLink: null }
+      );
+
+      bookingId = bookingResult.booking?.id;
+      return res.json({
+        success: true,
+        requires_manual_payment: true,
+        booking_id: bookingId,
+        payment_provider: paymentProvider,
+        payment_status: "unpaid",
+        amount_due_now: Number(amountToCharge.toFixed(2)),
+        payment_choice: payInFull ? "full" : "deposit",
+        deposit_eligible: depositEligible,
+        balance_due: Number((totalPrice - confirmedDepositAmount).toFixed(2)),
+        balance_due_deadline: balanceDueDeadline,
+        message: paymentProvider === "square"
+          ? "Square is selected for this account. Your reservation request has been saved and a payment request will be sent to complete the booking."
+          : "Your reservation request has been saved and a payment request will be sent to complete the booking.",
+        booking: bookingResult.booking,
+      });
+    }
+
+    if (!paymentProfile.stripeSecretKey) {
+      return res.status(500).json({ error: "Stripe is not configured on the backend." });
+    }
+
     const bookingResult = await createBookingRecord(
       {
         ...req.body,
@@ -1593,6 +1703,7 @@ app.post("/api/create-checkout-session", async (req, res) => {
         deposit_paid: false,
         balance_paid: false,
         deposit_amount: minimumDepositAmount,
+        payment_provider: paymentProvider,
       },
       { triggerWebhook: false }
     );
@@ -1619,6 +1730,7 @@ app.post("/api/create-checkout-session", async (req, res) => {
     const checkoutActionLabel = payInFull ? "Payment" : "Deposit";
 
     const session = await createStripeCheckoutSessionForAmount({
+      apiKey: paymentProfile.stripeSecretKey,
       amount: amountToCharge,
       customerEmail: req.body.email || null,
       bookingId,
@@ -1645,6 +1757,7 @@ app.post("/api/create-checkout-session", async (req, res) => {
       deposit_eligible: depositEligible,
       balance_due: Number((totalPrice - confirmedDepositAmount).toFixed(2)),
       balance_due_deadline: balanceDueDeadline,
+      payment_provider: paymentProvider,
       booking: bookingResult.booking,
     });
   } catch (err) {
@@ -1677,16 +1790,17 @@ app.post("/api/create-checkout-session", async (req, res) => {
 
 app.get("/api/checkout-session-status", async (req, res) => {
   try {
-    if (!stripe) {
+    const sessionId = String(req.query.session_id || "").trim();
+    const locationId = String(req.query.location_id || "").trim() || null;
+    const stripeSecretKey = await getStripeSecretKeyForLocation(locationId);
+    if (!stripeSecretKey) {
       return res.status(500).json({ error: "Stripe is not configured on the backend." });
     }
-
-    const sessionId = String(req.query.session_id || "").trim();
     if (!sessionId) {
       return res.status(400).json({ error: "session_id is required." });
     }
 
-    const session = await stripeFormRequest(`/v1/checkout/sessions/${encodeURIComponent(sessionId)}`, {}, "GET");
+    const session = await stripeFormRequest(`/v1/checkout/sessions/${encodeURIComponent(sessionId)}`, {}, "GET", stripeSecretKey);
     const bookingId = session.metadata?.booking_id;
     const paymentStatus = session.metadata?.payment_status || "paid_in_full";
     const totalPrice = Number(session.metadata?.total_price || 0);
@@ -1807,9 +1921,9 @@ app.get("/api/stripe-health", async (req, res) => {
 
 app.get("/api/stripe-health-raw", async (req, res) => {
   const response = {
-    stripe_configured: Boolean(normalizedStripeSecretKey),
-    env_key_prefix: normalizedStripeSecretKey ? normalizedStripeSecretKey.slice(0, 7) : null,
-    env_key_length: normalizedStripeSecretKey ? normalizedStripeSecretKey.length : 0,
+    stripe_configured: Boolean(envStripeSecretKey),
+    env_key_prefix: envStripeSecretKey ? envStripeSecretKey.slice(0, 7) : null,
+    env_key_length: envStripeSecretKey ? envStripeSecretKey.length : 0,
     proxy_env: {
       HTTPS_PROXY: process.env.HTTPS_PROXY || null,
       HTTP_PROXY: process.env.HTTP_PROXY || null,
@@ -1818,7 +1932,7 @@ app.get("/api/stripe-health-raw", async (req, res) => {
     raw_balance_call: null,
   };
 
-  if (!normalizedStripeSecretKey) {
+  if (!envStripeSecretKey) {
     return res.status(500).json({
       ...response,
       raw_balance_call: { ok: false, error: "Stripe secret key is not configured." },
@@ -1834,7 +1948,7 @@ app.get("/api/stripe-health-raw", async (req, res) => {
         path: "/v1/balance",
         timeout: 15000,
         headers: {
-          Authorization: `Bearer ${normalizedStripeSecretKey}`,
+          Authorization: `Bearer ${envStripeSecretKey}`,
           "User-Agent": "rideshare-scheduler-stripe-health",
         },
       },
@@ -2056,6 +2170,11 @@ res.json({
   brand_color_accent: profile.brand_color_accent || "#ecfeff",
   widget_tagline: profile.widget_tagline || "",
   maps_api_key: profile.maps_api_key,
+  payment_provider: normalizePaymentProvider(profile.payment_provider),
+  stripe_secret_key: profile.stripe_secret_key || "",
+  square_application_id: profile.square_application_id || "",
+  square_access_token: profile.square_access_token || "",
+  square_location_id: profile.square_location_id || "",
   crm_webhook_url: profile.crm_webhook_url,
   tax_rate: parseFloat(profile.tax_rate) || 0,
 
@@ -2245,6 +2364,7 @@ app.get("/api/get-profile-widget/:location_id", async (req, res) => {
         widget_tagline: p.widget_tagline || "",
         maps_api_key: p.maps_api_key,
         maps_key: p.maps_api_key,
+        payment_provider: normalizePaymentProvider(p.payment_provider),
         tax_rate: p.tax_rate,
         fleet: safeParseJson(p.fleet),         // Using the JSONB fleet from profiles
         fixed_rates: fixedRates,

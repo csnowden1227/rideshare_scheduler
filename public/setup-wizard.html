@@ -110,10 +110,34 @@
                         <input type="password" id="maps_key" class="input-mini" placeholder="AIzaSy...">
                     </div>
                     <div>
+                        <label class="block text-[10px] font-bold mb-2 uppercase text-slate-400">Payment Provider</label>
+                        <select id="payment_provider" class="input-mini">
+                            <option value="stripe">Stripe</option>
+                            <option value="square">Square</option>
+                            <option value="crm_invoice_only">CRM Invoice Only</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-[10px] font-bold mb-2 uppercase text-slate-400">Stripe Secret Key</label>
+                        <input type="password" id="stripe_secret_key" class="input-mini" placeholder="sk_live_...">
+                    </div>
+                    <div id="square_app_wrap">
+                        <label class="block text-[10px] font-bold mb-2 uppercase text-slate-400">Square Application ID</label>
+                        <input type="password" id="square_application_id" class="input-mini" placeholder="sq0idp-...">
+                    </div>
+                    <div id="square_token_wrap">
+                        <label class="block text-[10px] font-bold mb-2 uppercase text-slate-400">Square Access Token</label>
+                        <input type="password" id="square_access_token" class="input-mini" placeholder="EAAA...">
+                    </div>
+                    <div id="square_location_wrap">
+                        <label class="block text-[10px] font-bold mb-2 uppercase text-slate-400">Square Location ID</label>
+                        <input type="text" id="square_location_id" class="input-mini" placeholder="L1234567890">
+                    </div>
+                    <div>
                         <label class="block text-[10px] font-bold mb-2 uppercase text-slate-400">CRM Webhook URL</label>
                         <input type="text" id="webhook_url" class="input-mini" placeholder="https://services.leadconnectorhq.com/...">
                     </div>
-                    <div>
+                    <div class="md:col-span-3 lg:col-span-1">
                         <label class="block text-[10px] font-bold mb-2 uppercase text-slate-400">Tax Rate (%)</label>
                         <input type="number" step="0.01" id="tax_rate" class="input-mini" value="8.25">
                     </div>
@@ -697,6 +721,24 @@ function setBrandingPlanMessage(planName = 'starter') {
     }
 }
 
+function updatePaymentProviderUI() {
+    const provider = document.getElementById('payment_provider')?.value || 'stripe';
+    const stripeInput = document.getElementById('stripe_secret_key');
+    const squareAppWrap = document.getElementById('square_app_wrap');
+    const squareTokenWrap = document.getElementById('square_token_wrap');
+    const squareLocationWrap = document.getElementById('square_location_wrap');
+
+    if (stripeInput) {
+        stripeInput.disabled = provider !== 'stripe';
+        stripeInput.classList.toggle('opacity-60', provider !== 'stripe');
+    }
+
+    [squareAppWrap, squareTokenWrap, squareLocationWrap].forEach((wrap) => {
+        if (!wrap) return;
+        wrap.style.display = provider === 'square' ? '' : 'none';
+    });
+}
+
 function slugifyVehicleType(vehicleType = '') {
     return String(vehicleType || 'vehicle')
         .toLowerCase()
@@ -854,7 +896,13 @@ async function loadFromBackend() {
             document.getElementById('widget_tagline').value = data.widget_tagline || 'Luxury airport transfers, executive rides, and premium service tailored to every reservation.';
             document.getElementById('webhook_url').value = data.crm_webhook_url || '';
             document.getElementById('maps_key').value = data.maps_api_key || '';
+            document.getElementById('payment_provider').value = data.payment_provider || 'stripe';
+            document.getElementById('stripe_secret_key').value = data.stripe_secret_key || '';
+            document.getElementById('square_application_id').value = data.square_application_id || '';
+            document.getElementById('square_access_token').value = data.square_access_token || '';
+            document.getElementById('square_location_id').value = data.square_location_id || '';
             document.getElementById('tax_rate').value = data.tax_rate ?? data.financials?.tax_rate ?? '8.25';
+            updatePaymentProviderUI();
 
             setFleetPlanMessage(data.plan_name || 'starter');
             setBrandingPlanMessage(data.plan_name || 'starter');
@@ -872,6 +920,7 @@ async function loadFromBackend() {
             setFleetPlanMessage(planOverride || 'starter');
             setBrandingPlanMessage(planOverride || 'starter');
             renderFleet(getIncludedFleetCount(), []);
+            updatePaymentProviderUI();
             await ensureGoogleMapsLoaded(document.getElementById('maps_key').value || '');
             initServiceMap();
         }
@@ -880,6 +929,7 @@ async function loadFromBackend() {
         setFleetPlanMessage(planOverride || 'starter');
         setBrandingPlanMessage(planOverride || 'starter');
         renderFleet(getIncludedFleetCount(), []);
+        updatePaymentProviderUI();
         try {
             await ensureGoogleMapsLoaded(document.getElementById('maps_key').value || '');
             initServiceMap();
@@ -891,12 +941,27 @@ async function loadFromBackend() {
 
 async function saveToBackend() {
     const mapsKey = document.getElementById('maps_key').value;
+    const paymentProvider = document.getElementById('payment_provider').value;
+    const stripeSecretKey = document.getElementById('stripe_secret_key').value;
+    const squareApplicationId = document.getElementById('square_application_id').value;
+    const squareAccessToken = document.getElementById('square_access_token').value;
+    const squareLocationId = document.getElementById('square_location_id').value;
     const webhookUrl = document.getElementById('webhook_url').value;
     const taxRate = document.getElementById('tax_rate').value;
     const fleetRows = document.querySelectorAll('#fleet-body tr');
 
     if (!mapsKey || !webhookUrl || !taxRate || fleetRows.length === 0) {
         showNotification("Credentials, Tax, and Fleet Slot are REQUIRED.", false);
+        return;
+    }
+
+    if (paymentProvider === 'stripe' && !stripeSecretKey.trim()) {
+        showNotification("A Stripe secret key is required when Stripe is selected.", false);
+        return;
+    }
+
+    if (paymentProvider === 'square' && (!squareAccessToken.trim() || !squareLocationId.trim())) {
+        showNotification("Square access token and Square location ID are required when Square is selected.", false);
         return;
     }
 
@@ -912,6 +977,11 @@ async function saveToBackend() {
         widget_tagline: document.getElementById('widget_tagline').value.trim(),
         crm_webhook_url: webhookUrl,
         maps_api_key: mapsKey,
+        payment_provider: paymentProvider,
+        stripe_secret_key: stripeSecretKey.trim(),
+        square_application_id: squareApplicationId.trim(),
+        square_access_token: squareAccessToken.trim(),
+        square_location_id: squareLocationId.trim(),
         tax_rate: parseFloat(taxRate) || 0,
         service_lat: parseFloat(document.getElementById('svc_lat').value),
         service_lng: parseFloat(document.getElementById('svc_lng').value),
@@ -996,6 +1066,8 @@ function copyEmbed() {
     navigator.clipboard.writeText(document.getElementById('embed-box').innerText);
     showNotification("Code copied to clipboard!");
 }
+
+document.getElementById('payment_provider')?.addEventListener('change', updatePaymentProviderUI);
 
 window.onload = loadFromBackend;
 </script>

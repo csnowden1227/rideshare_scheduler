@@ -112,16 +112,23 @@
     };
   }
 
+  function getPaymentProvider() {
+    return String(state.config?.payment_provider || "stripe").toLowerCase();
+  }
+
+  function providerSupportsDirectCheckout() {
+    return getPaymentProvider() === "stripe";
+  }
+
   function selectedVehicle() {
     const slotId = document.getElementById("cd_vehicle_slot_id")?.value;
     return (state.config?.fleet || []).find((vehicle) => vehicle.vehicle_slot_id === slotId) || null;
   }
 
   function selectedAddonDetails() {
-    const selectedIds = new Set(
-      Array.from(document.querySelectorAll(".cd-addon-check:checked")).map((checkbox) => checkbox.getAttribute("data-id"))
-    );
-    return (state.config?.addons || []).filter((addon, index) => selectedIds.has(addon.id || `addon_${index}`));
+    const selectedId = document.getElementById("cd_addon_select")?.value || "";
+    if (!selectedId) return [];
+    return (state.config?.addons || []).filter((addon, index) => (addon.id || `addon_${index}`) === selectedId);
   }
 
   function selectedAddons() {
@@ -285,25 +292,23 @@
       return `<div style="font-size:13px;color:#64748b;padding:10px 0;">No add-on services configured yet.</div>`;
     }
 
-    return addons.map((addon, index) => {
+    const options = addons.map((addon, index) => {
       const id = addon.id || `addon_${index}`;
       const desc = escapeHtml(addon.description || `Service ${index + 1}`);
       const price = money(addon.price || 0);
       const type = addon.type === "per_person" ? "Per person" : "Per booking";
-
-      return `
-        <label style="display:flex;justify-content:space-between;gap:14px;padding:14px 16px;border:1px solid #dbe4f0;border-radius:16px;background:#fff;cursor:pointer;">
-          <span style="display:flex;gap:10px;">
-            <input class="cd-addon-check" type="checkbox" data-id="${escapeHtml(id)}" style="margin-top:3px;width:16px;height:16px;accent-color:#0f766e;" />
-            <span>
-              <span style="display:block;font-size:14px;font-weight:700;color:#0f172a;">${desc}</span>
-              <span style="display:block;font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.06em;">${escapeHtml(type)}</span>
-            </span>
-          </span>
-          <strong style="font-size:14px;color:#0f172a;white-space:nowrap;">${price}</strong>
-        </label>
-      `;
+      return `<option value="${escapeHtml(id)}">${desc} - ${price} (${escapeHtml(type)})</option>`;
     }).join("");
+
+    return `
+      <label style="display:block;">
+        <span style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Choose an add-on</span>
+        <select id="cd_addon_select" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;">
+          <option value="">No add-on</option>
+          ${options}
+        </select>
+      </label>
+    `;
   }
 
   function renderEventSelect() {
@@ -377,6 +382,11 @@
     const eventSelect = renderEventSelect();
     const fixedDestinationSelect = renderFixedDestinationSelect();
     const serviceRadius = toNumber(state.config?.service_radius, 0);
+    const addonNames = (Array.isArray(state.config?.addons) ? state.config.addons : [])
+      .map((addon, index) => addon.description || `Service ${index + 1}`)
+      .filter(Boolean)
+      .join(", ");
+    const addonTitle = addonNames ? `Optional Enhancements (${addonNames})` : "Optional Enhancements";
 
     root.innerHTML = `
       <div style="max-width:1080px;margin:0 auto;font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;color:#0f172a;">
@@ -489,7 +499,7 @@
 
           <div id="cd_actions_col" style="display:grid;gap:18px;align-content:start;">
             <div style="background:#fff;border:1px solid #e2e8f0;border-radius:24px;box-shadow:0 24px 50px rgba(15,23,42,.08);padding:22px;">
-              <div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.14em;color:${escapeHtml(colors.secondary)};">Optional Enhancements</div>
+              <div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.14em;color:${escapeHtml(colors.secondary)};">${escapeHtml(addonTitle)}</div>
               <div style="display:grid;gap:10px;margin-top:14px;">${renderAddonOptions()}</div>
             </div>
 
@@ -540,7 +550,7 @@
       if (state.quote) getQuote();
     });
 
-    document.querySelectorAll(".cd-addon-check, #cd_passenger_count, #cd_special_event, #cd_fixed_destination").forEach((input) => {
+    document.querySelectorAll("#cd_addon_select, #cd_passenger_count, #cd_special_event, #cd_fixed_destination").forEach((input) => {
       input?.addEventListener("change", () => {
         if (state.quote) getQuote();
       });
@@ -810,7 +820,18 @@
     const depositRadio = document.querySelector('input[name="cd_payment_choice"][value="deposit"]');
     const fullRadio = document.querySelector('input[name="cd_payment_choice"][value="full"]');
     if (paymentOptions && paymentNotice && depositRadio && fullRadio) {
-      if (state.quote.deposit_eligible) {
+      if (!providerSupportsDirectCheckout()) {
+        paymentOptions.style.display = "block";
+        depositRadio.disabled = true;
+        fullRadio.disabled = true;
+        if (state.quote.deposit_eligible) {
+          depositRadio.checked = true;
+          paymentNotice.textContent = `This account is set to ${getPaymentProvider() === "square" ? "Square" : "invoice-only"} follow-up. We will save the booking request and send a payment request for the minimum deposit of ${money(state.quote.amount_due_now)} to secure the reservation.`;
+        } else {
+          fullRadio.checked = true;
+          paymentNotice.textContent = `This ride is within 48 hours and requires full payment. We will save the booking request and send a payment request for ${money(state.quote.amount_due_now)}.`;
+        }
+      } else if (state.quote.deposit_eligible) {
         paymentOptions.style.display = "block";
         depositRadio.disabled = false;
         fullRadio.disabled = false;
@@ -848,9 +869,15 @@
     const payNow = Number(state.quote.amount_due_now || state.quote.total || 0);
     const button = document.getElementById("cd_btn_book");
     if (button) {
-      button.textContent = payNow < Number(state.quote.total || 0)
-        ? `Pay Deposit & Confirm Booking (${money(payNow)})`
-        : `Pay & Confirm Booking (${money(payNow)})`;
+      if (providerSupportsDirectCheckout()) {
+        button.textContent = payNow < Number(state.quote.total || 0)
+          ? `Pay Deposit & Confirm Booking (${money(payNow)})`
+          : `Pay & Confirm Booking (${money(payNow)})`;
+      } else {
+        button.textContent = payNow < Number(state.quote.total || 0)
+          ? `Request Deposit Follow-Up (${money(payNow)})`
+          : `Request Booking Follow-Up (${money(payNow)})`;
+      }
     }
   }
 
@@ -881,6 +908,42 @@
           </div>
           <div style="font-size:13px;color:#64748b;text-align:center;">
             Confirmation messaging and CRM follow-up are now queued from the synced backend workflow.
+          </div>
+          ${proPlan ? "" : `<div style="font-size:12px;color:#475569;text-align:center;font-weight:700;">Powered by CRM ONE SOURCE - Your all-in-one digital solution for any business.</div>`}
+        </div>
+      </div>
+    `;
+
+    root.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  function renderPendingPayment(bookingId, payload, message) {
+    const root = getRoot();
+    const businessName = state.config?.business_name || "Our Team";
+    const colors = getBrandColors();
+    const proPlan = isProPlan();
+
+    root.innerHTML = `
+      <div style="max-width:920px;margin:0 auto;background:#fff;border:1px solid #dbe4f0;border-radius:28px;overflow:hidden;box-shadow:0 30px 60px rgba(15,23,42,.12);font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;">
+        <div style="padding:48px;background:${proPlan ? `linear-gradient(135deg,${escapeHtml(colors.primary)} 0%,${escapeHtml(colors.secondary)} 100%)` : escapeHtml(colors.heroBackground)};color:${escapeHtml(colors.heroText)};text-align:center;">
+          <div style="width:86px;height:86px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:${proPlan ? "rgba(255,255,255,.16)" : "#ffffff"};margin:0 auto 18px;font-size:38px;border:1px solid ${escapeHtml(colors.heroBorder)};">!</div>
+          <h2 style="margin:0;font-size:34px;font-weight:900;">Booking Request Saved</h2>
+          <p style="margin:12px auto 0;max-width:620px;color:${escapeHtml(colors.heroMuted)};font-size:16px;line-height:1.6;">
+            ${escapeHtml(message || `${payload.first_name} your reservation request has been saved. ${businessName} will send your payment request shortly.`)}
+          </p>
+        </div>
+        <div style="padding:30px;display:grid;gap:16px;background:#f8fafc;">
+          <div style="background:#fff;border:1px solid #dbe4f0;border-radius:22px;padding:22px;">
+            <div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.14em;color:${escapeHtml(colors.secondary)};">Reservation Snapshot</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:14px;font-size:14px;color:#475569;">
+              <div><strong style="display:block;color:#0f172a;margin-bottom:4px;">Request ID</strong>#${escapeHtml(bookingId || "Pending")}</div>
+              <div><strong style="display:block;color:#0f172a;margin-bottom:4px;">Pickup Time</strong>${escapeHtml(new Date(payload.start_time).toLocaleString())}</div>
+              <div><strong style="display:block;color:#0f172a;margin-bottom:4px;">Pickup</strong>${escapeHtml(payload.pickup_address)}</div>
+              <div><strong style="display:block;color:#0f172a;margin-bottom:4px;">Dropoff</strong>${escapeHtml(payload.dropoff_address)}</div>
+            </div>
+          </div>
+          <div style="font-size:13px;color:#64748b;text-align:center;">
+            Payment follow-up and CRM messaging are now queued from the synced backend workflow.
           </div>
           ${proPlan ? "" : `<div style="font-size:12px;color:#475569;text-align:center;font-weight:700;">Powered by CRM ONE SOURCE - Your all-in-one digital solution for any business.</div>`}
         </div>
@@ -948,7 +1011,9 @@
 
     const button = document.getElementById("cd_btn_book");
     const original = button.textContent;
-    button.textContent = "Redirecting to secure checkout...";
+    button.textContent = providerSupportsDirectCheckout()
+      ? "Redirecting to secure checkout..."
+      : "Saving booking request...";
     button.disabled = true;
 
     try {
@@ -960,6 +1025,10 @@
 
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Checkout setup failed.");
+      if (data.requires_manual_payment) {
+        renderPendingPayment(data.booking_id, payload, data.message);
+        return;
+      }
       if (!data.checkout_url) throw new Error("Checkout link was not returned.");
 
       window.location.href = data.checkout_url;
@@ -997,7 +1066,7 @@
         `;
       }
 
-      const response = await fetch(`${BACKEND_URL}/api/checkout-session-status?session_id=${encodeURIComponent(sessionId)}`);
+      const response = await fetch(`${BACKEND_URL}/api/checkout-session-status?session_id=${encodeURIComponent(sessionId)}&location_id=${encodeURIComponent(locationId)}`);
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Unable to verify the checkout session.");
       if (!data.paid) throw new Error("Payment has not been completed yet.");
