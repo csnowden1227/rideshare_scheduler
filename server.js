@@ -1924,8 +1924,9 @@ app.get("/api/get-profile-widget/:location_id", async (req, res) => {
         brand_color_primary: p.brand_color_primary || "#082f49",
         brand_color_secondary: p.brand_color_secondary || "#0f766e",
         brand_color_accent: p.brand_color_accent || "#ecfeff",
-      widget_tagline: p.widget_tagline || "",
-      maps_key: p.maps_api_key,
+        widget_tagline: p.widget_tagline || "",
+        maps_api_key: p.maps_api_key,
+        maps_key: p.maps_api_key,
         tax_rate: p.tax_rate,
         fleet: safeParseJson(p.fleet),         // Using the JSONB fleet from profiles
         fixed_rates: fixedRates,
