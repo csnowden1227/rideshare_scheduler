@@ -1395,6 +1395,7 @@ async function createBookingRecord(input, { paymentLink = null, triggerWebhook =
   return {
     success: true,
     message: "Booking saved and webhook triggered",
+    business_name: profile.business_name || null,
     booking: {
       id: booking_id,
       location_id,
@@ -1475,6 +1476,7 @@ app.post("/api/create-checkout-session", async (req, res) => {
     const businessName = bookingResult.booking?.customer?.first_name
       ? `${bookingResult.booking.customer.first_name} ${bookingResult.booking.customer.last_name}`.trim()
       : "Customer";
+    const companyName = bookingResult.business_name || "Chauffeur";
     const vehicleType = bookingResult.booking?.vehicle?.vehicle_type || "Private ride";
     const successUrl = appendQueryParams(returnUrl, {
       checkout: "success",
@@ -1485,6 +1487,10 @@ app.post("/api/create-checkout-session", async (req, res) => {
       checkout: "cancel",
       booking_id: bookingId,
     });
+
+    const checkoutTitle = shouldChargeDeposit
+      ? `Rideshare Chauffeur Reservation ${companyName} Deposit`
+      : `Rideshare Chauffeur Reservation ${companyName} Payment`;
 
     const session = await stripeFormRequest("/v1/checkout/sessions", {
       mode: "payment",
@@ -1500,7 +1506,7 @@ app.post("/api/create-checkout-session", async (req, res) => {
       "line_items[0][quantity]": 1,
       "line_items[0][price_data][currency]": "usd",
       "line_items[0][price_data][unit_amount]": Math.round(amountToCharge * 100),
-      "line_items[0][price_data][product_data][name]": shouldChargeDeposit ? "Reservation deposit" : "Reservation payment",
+      "line_items[0][price_data][product_data][name]": checkoutTitle,
       "line_items[0][price_data][product_data][description]": `${vehicleType} booking for ${businessName}`,
     });
 
