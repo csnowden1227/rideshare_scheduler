@@ -128,6 +128,10 @@
     return selectedAddonDetails().map((addon, index) => addon.id || `addon_${index}`);
   }
 
+  function selectedPaymentChoice() {
+    return document.querySelector('input[name="cd_payment_choice"]:checked')?.value || "deposit";
+  }
+
   function eventByName(name) {
     if (!name) return null;
     return (state.config?.events || []).find((event) => event.event_name === name) || null;
@@ -491,6 +495,21 @@
 
             <div style="background:#fff;border:1px solid #e2e8f0;border-radius:24px;box-shadow:0 24px 50px rgba(15,23,42,.08);padding:22px;">
               <div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.14em;color:${escapeHtml(colors.secondary)};">Actions</div>
+              <div id="cd_payment_options" style="display:none;margin-top:14px;padding:16px;border-radius:18px;background:#f8fafc;border:1px solid #dbe4f0;">
+                <div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.14em;color:${escapeHtml(colors.secondary)};">Payment Choice</div>
+                <div style="margin-top:10px;font-size:13px;color:#475569;">To secure this reservation, a minimum deposit must be paid now. You may also choose to pay in full.</div>
+                <div style="display:grid;gap:10px;margin-top:12px;">
+                  <label style="display:flex;gap:10px;align-items:flex-start;padding:12px;border:1px solid #dbe4f0;border-radius:14px;background:#fff;">
+                    <input type="radio" name="cd_payment_choice" value="deposit" checked />
+                    <span><strong>Pay minimum deposit now</strong><br><span style="font-size:12px;color:#64748b;">Reserve the slot now and receive an invoice for the balance 48 hours before pickup.</span></span>
+                  </label>
+                  <label style="display:flex;gap:10px;align-items:flex-start;padding:12px;border:1px solid #dbe4f0;border-radius:14px;background:#fff;">
+                    <input type="radio" name="cd_payment_choice" value="full" />
+                    <span><strong>Pay in full now</strong><br><span style="font-size:12px;color:#64748b;">Complete the entire reservation payment now.</span></span>
+                  </label>
+                </div>
+                <div id="cd_payment_notice" style="margin-top:12px;font-size:12px;color:#475569;"></div>
+              </div>
               <div style="display:grid;gap:12px;margin-top:14px;">
                 <button id="cd_btn_quote" style="padding:15px 18px;border:none;border-radius:16px;background:${escapeHtml(colors.primary)};color:#fff;font-size:15px;font-weight:800;cursor:pointer;">Calculate Smart Quote</button>
                 <button id="cd_btn_book" style="padding:15px 18px;border:none;border-radius:16px;background:${escapeHtml(colors.secondary)};color:#fff;font-size:15px;font-weight:800;cursor:pointer;">Confirm & Sync Booking</button>
@@ -499,7 +518,9 @@
                 <div style="display:flex;justify-content:space-between;margin-bottom:10px;"><span>Base + Distance</span><strong id="res_quoted_price">$0.00</strong></div>
                 <div style="display:flex;justify-content:space-between;margin-bottom:10px;"><span>Add-Ons</span><strong id="res_addons">$0.00</strong></div>
                 <div style="display:flex;justify-content:space-between;margin-bottom:10px;"><span>Tax</span><strong id="res_tax">$0.00</strong></div>
-                <div style="display:flex;justify-content:space-between;margin-bottom:10px;"><span>Deposit Due</span><strong id="res_deposit_amount">$0.00</strong></div>
+                <div style="display:flex;justify-content:space-between;margin-bottom:10px;"><span>Minimum Deposit</span><strong id="res_deposit_amount">$0.00</strong></div>
+                <div style="display:flex;justify-content:space-between;margin-bottom:10px;"><span>Due Now</span><strong id="res_due_now">$0.00</strong></div>
+                <div style="display:flex;justify-content:space-between;margin-bottom:10px;"><span>Remaining Balance</span><strong id="res_balance_due">$0.00</strong></div>
                 <div style="height:1px;background:#cbd5e1;margin:12px 0;"></div>
                 <div style="display:flex;justify-content:space-between;font-size:20px;"><span>Total</span><strong id="res_total">$0.00</strong></div>
                 <div id="cd_meta" style="margin-top:12px;font-size:12px;color:#64748b;"></div>
@@ -520,6 +541,11 @@
     });
 
     document.querySelectorAll(".cd-addon-check, #cd_passenger_count, #cd_special_event, #cd_fixed_destination").forEach((input) => {
+      input?.addEventListener("change", () => {
+        if (state.quote) getQuote();
+      });
+    });
+    document.querySelectorAll('input[name="cd_payment_choice"]').forEach((input) => {
       input?.addEventListener("change", () => {
         if (state.quote) getQuote();
       });
@@ -564,6 +590,7 @@
       dropoff_address: document.getElementById("cd_dropoff")?.value.trim(),
       start_time: document.getElementById("cd_start_time")?.value,
       booking_mode: selectedBookingMode(),
+      payment_choice: selectedPaymentChoice(),
       passenger_count: toNumber(document.getElementById("cd_passenger_count")?.value, 1),
       selected_event_name: document.getElementById("cd_special_event")?.value || null,
       selected_fixed_destination: document.getElementById("cd_fixed_destination")?.value || null,
@@ -625,6 +652,18 @@
     return {
       depositPercent: vehiclePercent,
       depositAmount: Number(Math.min(depositAmount, total).toFixed(2)),
+    };
+  }
+
+  function computePaymentPolicy(startDate, total, depositAmount) {
+    const hoursUntilRide = (startDate.getTime() - Date.now()) / (1000 * 60 * 60);
+    const depositEligible = hoursUntilRide >= 48 && depositAmount > 0 && depositAmount < total;
+    const balanceDueDeadline = new Date(startDate.getTime() - (48 * 60 * 60 * 1000));
+    return {
+      hoursUntilRide,
+      depositEligible,
+      minimumDueNow: depositEligible ? depositAmount : total,
+      balanceDueDeadline: Number.isNaN(balanceDueDeadline.getTime()) ? null : balanceDueDeadline.toISOString(),
     };
   }
 
@@ -715,6 +754,12 @@
     const taxAmount = (rideSubtotal + addonTotal) * (getConfigTaxRate() / 100);
     const total = rideSubtotal + addonTotal + taxAmount;
     const deposit = computeDeposit(total, vehicle);
+    const paymentPolicy = computePaymentPolicy(startDate, Number(total.toFixed(2)), deposit.depositAmount);
+    const paymentChoice = paymentPolicy.depositEligible && payload.payment_choice === "full" ? "full" : (paymentPolicy.depositEligible ? payload.payment_choice : "full");
+    const amountDueNow = paymentChoice === "full"
+      ? Number(total.toFixed(2))
+      : Number(paymentPolicy.minimumDueNow.toFixed(2));
+    const balanceDue = Number((Number(total.toFixed(2)) - amountDueNow).toFixed(2));
 
     state.route = route;
     state.quote = {
@@ -724,6 +769,12 @@
       total: Number(total.toFixed(2)),
       deposit_percent: deposit.depositPercent,
       deposit_amount: deposit.depositAmount,
+      deposit_eligible: paymentPolicy.depositEligible,
+      payment_choice: paymentChoice,
+      amount_due_now: amountDueNow,
+      balance_due: balanceDue,
+      balance_due_deadline: paymentPolicy.balanceDueDeadline,
+      hours_until_ride: paymentPolicy.hoursUntilRide,
       miles: route.miles,
       pricing_label: pricingLabel,
       fixed_rate_name: fixedRate?.location_name || null,
@@ -742,9 +793,42 @@
     document.getElementById("res_addons").textContent = money(state.quote.addon_total);
     document.getElementById("res_tax").textContent = money(state.quote.tax_amount);
     document.getElementById("res_deposit_amount").textContent = money(state.quote.deposit_amount);
+    document.getElementById("res_due_now").textContent = money(state.quote.amount_due_now || state.quote.total);
+    document.getElementById("res_balance_due").textContent = money(state.quote.balance_due || 0);
     document.getElementById("res_total").textContent = money(state.quote.total);
     document.getElementById("cd_summary").style.display = "block";
-    document.getElementById("cd_meta").textContent = `${state.quote.miles.toFixed(2)} miles estimated. ${state.quote.pricing_label}.`;
+    const metaParts = [`${state.quote.miles.toFixed(2)} miles estimated.`, `${state.quote.pricing_label}.`];
+    if (state.quote.balance_due > 0 && state.quote.balance_due_deadline) {
+      metaParts.push(`Balance invoice due by ${new Date(state.quote.balance_due_deadline).toLocaleString()}.`);
+    } else {
+      metaParts.push(`Paid in full at checkout.`);
+    }
+    document.getElementById("cd_meta").textContent = metaParts.join(" ");
+
+    const paymentOptions = document.getElementById("cd_payment_options");
+    const paymentNotice = document.getElementById("cd_payment_notice");
+    const depositRadio = document.querySelector('input[name="cd_payment_choice"][value="deposit"]');
+    const fullRadio = document.querySelector('input[name="cd_payment_choice"][value="full"]');
+    if (paymentOptions && paymentNotice && depositRadio && fullRadio) {
+      if (state.quote.deposit_eligible) {
+        paymentOptions.style.display = "block";
+        depositRadio.disabled = false;
+        fullRadio.disabled = false;
+        if (state.quote.payment_choice === "full") {
+          fullRadio.checked = true;
+        } else {
+          depositRadio.checked = true;
+        }
+        paymentNotice.textContent = `Deposit bookings must have the remaining balance paid 48 hours before pickup to keep the reservation active. Cancellations 24-48 hours before pickup receive a 50% refund. Cancellations under 24 hours are non-refundable.`;
+      } else {
+        paymentOptions.style.display = "block";
+        fullRadio.checked = true;
+        depositRadio.checked = false;
+        depositRadio.disabled = true;
+        fullRadio.disabled = true;
+        paymentNotice.textContent = `This ride is within 48 hours, so full payment is required to confirm the reservation.`;
+      }
+    }
 
     const notes = [];
     if (state.quote.fixed_rate_name) notes.push(`Fixed-rate zone applied: ${state.quote.fixed_rate_name}.`);
@@ -754,12 +838,14 @@
     if (state.quote.peak_multiplier > 1 && !state.quote.fixed_rate_name) {
       notes.push(`Peak pricing applied at ${state.quote.peak_multiplier.toFixed(2)}x.`);
     }
-    notes.push(`Deposit due today: ${money(state.quote.deposit_amount)}.`);
+    notes.push(
+      state.quote.balance_due > 0
+        ? `Minimum deposit due today: ${money(state.quote.amount_due_now)}. Remaining balance will be invoiced 48 hours before pickup.`
+        : `Full payment due today: ${money(state.quote.amount_due_now)}.`
+    );
     setRouteStatus(notes.join(" "));
 
-    const payNow = Number(state.quote.deposit_amount || 0) > 0 && Number(state.quote.deposit_amount || 0) < Number(state.quote.total || 0)
-      ? Number(state.quote.deposit_amount || 0)
-      : Number(state.quote.total || 0);
+    const payNow = Number(state.quote.amount_due_now || state.quote.total || 0);
     const button = document.getElementById("cd_btn_book");
     if (button) {
       button.textContent = payNow < Number(state.quote.total || 0)
@@ -855,6 +941,8 @@
       total_price: Number(state.quote.total || 0),
       deposit_percent: Number(state.quote.deposit_percent || 0),
       deposit_amount: Number(state.quote.deposit_amount || 0),
+      amount_due_now: Number(state.quote.amount_due_now || state.quote.total || 0),
+      balance_due_deadline: state.quote.balance_due_deadline || null,
       return_url: currentPageUrl(),
     });
 

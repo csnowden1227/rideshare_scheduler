@@ -1007,6 +1007,11 @@ function buildCrmBookingPayload({
     ? Boolean(financials.balance_paid)
     : Number(financials.balance_due || 0) <= 0;
   const paymentRequired = !paymentPaid;
+  const balanceDueDeadline = financials.balance_due_deadline || (
+    booking.start_time && Number(financials.balance_due || 0) > 0
+      ? new Date(new Date(booking.start_time).getTime() - (48 * 60 * 60 * 1000)).toISOString()
+      : null
+  );
 
   return {
     webhook_type: webhookType,
@@ -1061,13 +1066,31 @@ function buildCrmBookingPayload({
       balance_paid: balancePaid,
       payment_required: paymentRequired,
       payment_link: financials.payment_link || null,
+      payment_choice: financials.payment_choice || null,
+      amount_due_now: Number(financials.amount_due_now || financials.deposit_amount || financials.total_price || 0),
+      balance_due_deadline: balanceDueDeadline,
     },
     follow_up: {
       send_payment_sms: paymentRequired,
       send_payment_email: paymentRequired,
       reminder_reason: paymentRequired ? "complete_booking_payment" : null,
+      send_balance_invoice: Number(financials.balance_due || 0) > 0,
+      balance_invoice_due_at: balanceDueDeadline,
+      balance_invoice_message: Number(financials.balance_due || 0) > 0
+        ? `Your remaining balance of $${Number(financials.balance_due || 0).toFixed(2)} must be paid at least 48 hours before pickup to keep this reservation active.`
+        : null,
+      cancellation_policy: {
+        refund_24_to_48_hours: "50_percent",
+        refund_under_24_hours: "no_refund",
+      },
     },
   };
+}
+
+function getHoursUntilRide(startTime) {
+  const rideDate = new Date(startTime);
+  if (Number.isNaN(rideDate.getTime())) return 0;
+  return (rideDate.getTime() - Date.now()) / (1000 * 60 * 60);
 }
 
 function getPaymentBooleans({
@@ -1450,11 +1473,18 @@ app.post("/api/create-checkout-session", async (req, res) => {
 
     const returnUrl = sanitizeReturnUrl(req.body.return_url, req);
     const totalPrice = Number(req.body.total_price || 0);
-    const depositAmount = Number(req.body.deposit_amount || 0);
+    const minimumDepositAmount = Number(req.body.deposit_amount || 0);
     const depositPercent = Number(req.body.deposit_percent || 0);
-    const shouldChargeDeposit = depositAmount > 0 && depositAmount < totalPrice;
-    const amountToCharge = shouldChargeDeposit ? depositAmount : totalPrice;
-    const paymentStatus = shouldChargeDeposit ? "paid_deposit" : "paid_in_full";
+    const hoursUntilRide = getHoursUntilRide(req.body.start_time);
+    const depositEligible = hoursUntilRide >= 48 && minimumDepositAmount > 0 && minimumDepositAmount < totalPrice;
+    const requestedChoice = String(req.body.payment_choice || "deposit").toLowerCase();
+    const payInFull = !depositEligible || requestedChoice === "full";
+    const amountToCharge = payInFull ? totalPrice : minimumDepositAmount;
+    const confirmedDepositAmount = payInFull ? totalPrice : minimumDepositAmount;
+    const paymentStatus = payInFull ? "paid_in_full" : "paid_deposit";
+    const balanceDueDeadline = req.body.start_time
+      ? new Date(new Date(req.body.start_time).getTime() - (48 * 60 * 60 * 1000)).toISOString()
+      : null;
 
     if (!amountToCharge || amountToCharge < 0.5) {
       return res.status(400).json({ error: "Charge amount must be at least $0.50." });
@@ -1468,6 +1498,7 @@ app.post("/api/create-checkout-session", async (req, res) => {
         payment_paid: false,
         deposit_paid: false,
         balance_paid: false,
+        deposit_amount: minimumDepositAmount,
       },
       { triggerWebhook: false }
     );
@@ -1488,9 +1519,10 @@ app.post("/api/create-checkout-session", async (req, res) => {
       booking_id: bookingId,
     });
 
-    const checkoutTitle = shouldChargeDeposit
-      ? `Rideshare Chauffeur Reservation ${companyName} Deposit`
-      : `Rideshare Chauffeur Reservation ${companyName} Payment`;
+    const checkoutTitle = payInFull
+      ? `Rideshare Chauffeur Reservation ${companyName} Payment`
+      : `Rideshare Chauffeur Reservation ${companyName} Deposit`;
+    const checkoutActionLabel = payInFull ? "Payment" : "Deposit";
 
     const session = await stripeFormRequest("/v1/checkout/sessions", {
       mode: "payment",
@@ -1500,14 +1532,16 @@ app.post("/api/create-checkout-session", async (req, res) => {
       "metadata[booking_id]": String(bookingId),
       "metadata[location_id]": String(req.body.location_id || ""),
       "metadata[total_price]": String(totalPrice.toFixed(2)),
-      "metadata[deposit_amount]": String((shouldChargeDeposit ? depositAmount : totalPrice).toFixed(2)),
-      "metadata[deposit_percent]": String(shouldChargeDeposit ? depositPercent : 100),
+      "metadata[deposit_amount]": String(confirmedDepositAmount.toFixed(2)),
+      "metadata[deposit_percent]": String(payInFull ? 100 : depositPercent),
       "metadata[payment_status]": paymentStatus,
+      "metadata[payment_choice]": payInFull ? "full" : "deposit",
+      "metadata[balance_due_deadline]": balanceDueDeadline || "",
       "line_items[0][quantity]": 1,
       "line_items[0][price_data][currency]": "usd",
       "line_items[0][price_data][unit_amount]": Math.round(amountToCharge * 100),
       "line_items[0][price_data][product_data][name]": checkoutTitle,
-      "line_items[0][price_data][product_data][description]": `${vehicleType} booking for ${businessName}`,
+      "line_items[0][price_data][product_data][description]": `${vehicleType} ${checkoutActionLabel.toLowerCase()} for ${businessName}`,
     });
 
     return res.json({
@@ -1516,6 +1550,10 @@ app.post("/api/create-checkout-session", async (req, res) => {
       booking_id: bookingId,
       payment_status: paymentStatus,
       amount_due_now: Number(amountToCharge.toFixed(2)),
+      payment_choice: payInFull ? "full" : "deposit",
+      deposit_eligible: depositEligible,
+      balance_due: Number((totalPrice - confirmedDepositAmount).toFixed(2)),
+      balance_due_deadline: balanceDueDeadline,
       booking: bookingResult.booking,
     });
   } catch (err) {
