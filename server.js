@@ -19,8 +19,9 @@ import * as turf from '@turf/turf';
 const { Pool, Client } = pkg;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
-const stripe = process.env.STRIPE_SECRET_KEY
-  ? new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: "2025-02-24.acacia" })
+const normalizedStripeSecretKey = String(process.env.STRIPE_SECRET_KEY || "").trim().replace(/^['"]|['"]$/g, "");
+const stripe = normalizedStripeSecretKey
+  ? new Stripe(normalizedStripeSecretKey, { apiVersion: "2025-02-24.acacia" })
   : null;
 
 // 1. Define Environment Variables
@@ -1637,6 +1638,70 @@ app.get("/api/stripe-health", async (req, res) => {
 
   const allGood = Boolean(result.stripe_configured && result.dns?.ok && result.tls?.ok && result.balance?.ok);
   return res.status(allGood ? 200 : 503).json(result);
+});
+
+app.get("/api/stripe-health-raw", async (req, res) => {
+  const response = {
+    stripe_configured: Boolean(normalizedStripeSecretKey),
+    env_key_prefix: normalizedStripeSecretKey ? normalizedStripeSecretKey.slice(0, 7) : null,
+    env_key_length: normalizedStripeSecretKey ? normalizedStripeSecretKey.length : 0,
+    proxy_env: {
+      HTTPS_PROXY: process.env.HTTPS_PROXY || null,
+      HTTP_PROXY: process.env.HTTP_PROXY || null,
+      ALL_PROXY: process.env.ALL_PROXY || null,
+    },
+    raw_balance_call: null,
+  };
+
+  if (!normalizedStripeSecretKey) {
+    return res.status(500).json({
+      ...response,
+      raw_balance_call: { ok: false, error: "Stripe secret key is not configured." },
+    });
+  }
+
+  response.raw_balance_call = await new Promise((resolve) => {
+    const request = https.request(
+      {
+        host: "api.stripe.com",
+        port: 443,
+        method: "GET",
+        path: "/v1/balance",
+        timeout: 15000,
+        headers: {
+          Authorization: `Bearer ${normalizedStripeSecretKey}`,
+          "User-Agent": "rideshare-scheduler-stripe-health",
+        },
+      },
+      (stripeRes) => {
+        let body = "";
+        stripeRes.on("data", (chunk) => {
+          body += chunk.toString("utf8");
+        });
+        stripeRes.on("end", () => {
+          resolve({
+            ok: stripeRes.statusCode && stripeRes.statusCode < 500,
+            statusCode: stripeRes.statusCode || null,
+            body: body.slice(0, 1000),
+          });
+        });
+      }
+    );
+
+    request.on("timeout", () => {
+      request.destroy(new Error("Raw Stripe request timed out."));
+    });
+    request.on("error", (err) => {
+      resolve({
+        ok: false,
+        error: err?.message || "Raw Stripe request failed.",
+        code: err?.code || null,
+      });
+    });
+    request.end();
+  });
+
+  return res.status(response.raw_balance_call?.ok ? 200 : 503).json(response);
 });
 
 async function triggerCrmWebhook(location_id, booking_id) {
