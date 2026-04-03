@@ -8,6 +8,8 @@ import express from 'express';
 import cors from 'cors';
 import pkg from 'pg';
 import Stripe from 'stripe';
+import dns from 'dns/promises';
+import https from 'https';
 import { Client as GoogleMapsClient } from "@googlemaps/google-maps-services-js";
 import { google } from 'googleapis';
 import path from 'path';
@@ -1560,6 +1562,81 @@ app.get("/api/checkout-session-status", async (req, res) => {
     console.error("Checkout session status error:", err);
     return res.status(500).json({ error: err.message || "Failed to verify checkout session." });
   }
+});
+
+app.get("/api/stripe-health", async (req, res) => {
+  const result = {
+    stripe_configured: Boolean(stripe),
+    dns: null,
+    tls: null,
+    balance: null,
+  };
+
+  try {
+    const lookup = await dns.lookup("api.stripe.com");
+    result.dns = { ok: true, address: lookup.address, family: lookup.family };
+  } catch (err) {
+    result.dns = {
+      ok: false,
+      error: err?.message || "DNS lookup failed.",
+      code: err?.code || null,
+    };
+  }
+
+  result.tls = await new Promise((resolve) => {
+    const req = https.request(
+      {
+        host: "api.stripe.com",
+        port: 443,
+        method: "HEAD",
+        path: "/",
+        timeout: 10000,
+      },
+      (response) => {
+        resolve({
+          ok: true,
+          statusCode: response.statusCode || null,
+          headers: {
+            server: response.headers.server || null,
+          },
+        });
+      }
+    );
+
+    req.on("timeout", () => {
+      req.destroy(new Error("TLS request timed out."));
+    });
+    req.on("error", (err) => {
+      resolve({
+        ok: false,
+        error: err?.message || "TLS request failed.",
+        code: err?.code || null,
+      });
+    });
+    req.end();
+  });
+
+  if (stripe) {
+    try {
+      const balance = await stripe.balance.retrieve();
+      result.balance = {
+        ok: true,
+        available: Array.isArray(balance.available) ? balance.available.length : 0,
+        livemode: Boolean(balance.livemode),
+      };
+    } catch (err) {
+      result.balance = {
+        ok: false,
+        error: err?.raw?.message || err?.message || "Stripe API request failed.",
+        type: err?.type || null,
+        code: err?.code || err?.raw?.code || null,
+        statusCode: err?.statusCode || null,
+      };
+    }
+  }
+
+  const allGood = Boolean(result.stripe_configured && result.dns?.ok && result.tls?.ok && result.balance?.ok);
+  return res.status(allGood ? 200 : 503).json(result);
 });
 
 async function triggerCrmWebhook(location_id, booking_id) {
