@@ -662,7 +662,10 @@ function addRouteRow(data = {}) {
 }
 
 function updateRouteMap() {
-    routeCircles.forEach(c => c.setMap(null));
+    routeCircles.forEach((overlay) => {
+        if (overlay?.circle) overlay.circle.setMap(null);
+        if (overlay?.marker) overlay.marker.setMap(null);
+    });
     routeCircles = [];
 
     document.querySelectorAll('.route-row').forEach(row => {
@@ -671,6 +674,21 @@ function updateRouteMap() {
         const rad = parseFloat(row.querySelector('.r-rad').value) || 1;
 
         if (!isNaN(lat) && !isNaN(lng)) {
+            const marker = new google.maps.Marker({
+                map: map,
+                position: { lat, lng },
+                draggable: true,
+                icon: {
+                    path: google.maps.SymbolPath.CIRCLE,
+                    scale: 6,
+                    fillColor: "#059669",
+                    fillOpacity: 1,
+                    strokeColor: "#ffffff",
+                    strokeWeight: 2
+                },
+                zIndex: 3
+            });
+
             const c = new google.maps.Circle({
                 map: map,
                 center: { lat, lng },
@@ -678,9 +696,29 @@ function updateRouteMap() {
                 fillColor: "#10b981",
                 fillOpacity: 0.2,
                 strokeColor: "#059669",
-                strokeWeight: 1
+                strokeOpacity: 0.95,
+                strokeWeight: 2,
+                editable: true,
+                draggable: true,
+                zIndex: 2
             });
-            routeCircles.push(c);
+
+            const syncRouteFields = () => {
+                const center = c.getCenter();
+                const radiusMiles = c.getRadius() / 1609.34;
+                row.querySelector('.r-lat').value = center.lat().toFixed(6);
+                row.querySelector('.r-lng').value = center.lng().toFixed(6);
+                row.querySelector('.r-rad').value = radiusMiles.toFixed(2);
+                marker.setPosition(center);
+            };
+
+            c.addListener('center_changed', syncRouteFields);
+            c.addListener('radius_changed', syncRouteFields);
+            marker.addListener('drag', () => {
+                c.setCenter(marker.getPosition());
+            });
+
+            routeCircles.push({ circle: c, marker });
         }
     });
 }
