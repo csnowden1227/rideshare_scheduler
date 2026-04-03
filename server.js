@@ -808,6 +808,46 @@ function sanitizeReturnUrl(rawUrl, req) {
   }
 }
 
+async function stripeFormRequest(pathname, params = {}, method = "POST") {
+  if (!normalizedStripeSecretKey) {
+    throw new Error("Stripe is not configured on the backend.");
+  }
+
+  const body = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value == null) return;
+    body.append(key, String(value));
+  });
+
+  const response = await fetch(`https://api.stripe.com${pathname}`, {
+    method,
+    headers: {
+      Authorization: `Bearer ${normalizedStripeSecretKey}`,
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: method === "GET" ? undefined : body.toString(),
+  });
+
+  const text = await response.text();
+  let json = null;
+  try {
+    json = text ? JSON.parse(text) : null;
+  } catch {
+    json = { raw: text };
+  }
+
+  if (!response.ok) {
+    const err = new Error(json?.error?.message || `Stripe request failed with ${response.status}.`);
+    err.type = json?.error?.type || null;
+    err.code = json?.error?.code || null;
+    err.statusCode = response.status;
+    err.raw = json?.error || json;
+    throw err;
+  }
+
+  return json;
+}
+
 app.post("/api/confirm-booking-payment", async (req, res) => {
   try {
     const {
@@ -1446,32 +1486,22 @@ app.post("/api/create-checkout-session", async (req, res) => {
       booking_id: bookingId,
     });
 
-    const session = await stripe.checkout.sessions.create({
+    const session = await stripeFormRequest("/v1/checkout/sessions", {
       mode: "payment",
       success_url: successUrl,
       cancel_url: cancelUrl,
       customer_email: req.body.email || undefined,
-      metadata: {
-        booking_id: String(bookingId),
-        location_id: String(req.body.location_id || ""),
-        total_price: String(totalPrice.toFixed(2)),
-        deposit_amount: String((shouldChargeDeposit ? depositAmount : totalPrice).toFixed(2)),
-        deposit_percent: String(shouldChargeDeposit ? depositPercent : 100),
-        payment_status: paymentStatus,
-      },
-      line_items: [
-        {
-          quantity: 1,
-          price_data: {
-            currency: "usd",
-            unit_amount: Math.round(amountToCharge * 100),
-            product_data: {
-              name: shouldChargeDeposit ? "Reservation deposit" : "Reservation payment",
-              description: `${vehicleType} booking for ${businessName}`,
-            },
-          },
-        },
-      ],
+      "metadata[booking_id]": String(bookingId),
+      "metadata[location_id]": String(req.body.location_id || ""),
+      "metadata[total_price]": String(totalPrice.toFixed(2)),
+      "metadata[deposit_amount]": String((shouldChargeDeposit ? depositAmount : totalPrice).toFixed(2)),
+      "metadata[deposit_percent]": String(shouldChargeDeposit ? depositPercent : 100),
+      "metadata[payment_status]": paymentStatus,
+      "line_items[0][quantity]": 1,
+      "line_items[0][price_data][currency]": "usd",
+      "line_items[0][price_data][unit_amount]": Math.round(amountToCharge * 100),
+      "line_items[0][price_data][product_data][name]": shouldChargeDeposit ? "Reservation deposit" : "Reservation payment",
+      "line_items[0][price_data][product_data][description]": `${vehicleType} booking for ${businessName}`,
     });
 
     return res.json({
@@ -1521,7 +1551,7 @@ app.get("/api/checkout-session-status", async (req, res) => {
       return res.status(400).json({ error: "session_id is required." });
     }
 
-    const session = await stripe.checkout.sessions.retrieve(sessionId);
+    const session = await stripeFormRequest(`/v1/checkout/sessions/${encodeURIComponent(sessionId)}`, {}, "GET");
     const bookingId = session.metadata?.booking_id;
     const paymentStatus = session.metadata?.payment_status || "paid_in_full";
     const totalPrice = Number(session.metadata?.total_price || 0);
