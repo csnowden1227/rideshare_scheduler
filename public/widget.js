@@ -741,9 +741,8 @@
     let pricingLabel = `${vehicle.vehicle_type || "Selected vehicle"} standard pricing`;
 
     if (eventConfig) {
-      baseRate = toNumber(eventConfig.base_rate, baseRate);
       mileRate = toNumber(eventConfig.mile_rate, mileRate);
-      pricingLabel = `${eventConfig.event_name || "Event"} pricing`;
+      pricingLabel = `${eventConfig.event_name || "Event"} pricing using ${vehicle.vehicle_type || "selected vehicle"} base rate`;
     }
 
     let rideSubtotal = baseRate + route.miles * mileRate;
