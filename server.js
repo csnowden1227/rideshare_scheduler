@@ -808,6 +808,15 @@ function sanitizeReturnUrl(rawUrl, req) {
   }
 }
 
+function getPublicAppUrl(req = null) {
+  const configured = String(process.env.PUBLIC_APP_URL || process.env.APP_BASE_URL || "").trim();
+  if (configured) return configured.replace(/\/+$/, "");
+  if (req) {
+    return `${req.protocol}://${req.get("host")}`.replace(/\/+$/, "");
+  }
+  return "https://rideshare-scheduler-axx6.onrender.com";
+}
+
 async function stripeFormRequest(pathname, params = {}, method = "POST") {
   if (!normalizedStripeSecretKey) {
     throw new Error("Stripe is not configured on the backend.");
@@ -846,6 +855,43 @@ async function stripeFormRequest(pathname, params = {}, method = "POST") {
   }
 
   return json;
+}
+
+async function createStripeCheckoutSessionForAmount({
+  amount,
+  customerEmail = null,
+  bookingId,
+  locationId = null,
+  totalPrice,
+  depositAmount,
+  depositPercent,
+  paymentStatus,
+  title,
+  description,
+  successUrl,
+  cancelUrl,
+  paymentChoice = null,
+  balanceDueDeadline = null,
+}) {
+  return stripeFormRequest("/v1/checkout/sessions", {
+    mode: "payment",
+    success_url: successUrl,
+    cancel_url: cancelUrl,
+    customer_email: customerEmail || undefined,
+    "metadata[booking_id]": String(bookingId),
+    "metadata[location_id]": String(locationId || ""),
+    "metadata[total_price]": String(Number(totalPrice || 0).toFixed(2)),
+    "metadata[deposit_amount]": String(Number(depositAmount || 0).toFixed(2)),
+    "metadata[deposit_percent]": String(depositPercent == null ? "" : depositPercent),
+    "metadata[payment_status]": paymentStatus,
+    "metadata[payment_choice]": paymentChoice || "",
+    "metadata[balance_due_deadline]": balanceDueDeadline || "",
+    "line_items[0][quantity]": 1,
+    "line_items[0][price_data][currency]": "usd",
+    "line_items[0][price_data][unit_amount]": Math.round(Number(amount || 0) * 100),
+    "line_items[0][price_data][product_data][name]": title,
+    "line_items[0][price_data][product_data][description]": description,
+  });
 }
 
 app.post("/api/confirm-booking-payment", async (req, res) => {
@@ -1066,6 +1112,7 @@ function buildCrmBookingPayload({
       balance_paid: balancePaid,
       payment_required: paymentRequired,
       payment_link: financials.payment_link || null,
+      balance_payment_link: financials.balance_payment_link || null,
       payment_choice: financials.payment_choice || null,
       amount_due_now: Number(financials.amount_due_now || financials.deposit_amount || financials.total_price || 0),
       balance_due_deadline: balanceDueDeadline,
@@ -1079,6 +1126,7 @@ function buildCrmBookingPayload({
       balance_invoice_message: Number(financials.balance_due || 0) > 0
         ? `Your remaining balance of $${Number(financials.balance_due || 0).toFixed(2)} must be paid at least 48 hours before pickup to keep this reservation active.`
         : null,
+      balance_payment_link: financials.balance_payment_link || null,
       cancellation_policy: {
         refund_24_to_48_hours: "50_percent",
         refund_under_24_hours: "no_refund",
@@ -1169,6 +1217,52 @@ async function updateBookingConfirmation({
     payment_status: paymentStatus,
     balance_due: balanceDue,
   };
+}
+
+async function createBalancePaymentLink(bookingRow) {
+  const totalPrice = Number(bookingRow.total_price || 0);
+  const depositAmount = Number(bookingRow.deposit_amount || 0);
+  const balanceDue = Number((totalPrice - depositAmount).toFixed(2));
+
+  if (!stripe || balanceDue <= 0 || !bookingRow?.id) {
+    return null;
+  }
+
+  const baseUrl = getPublicAppUrl();
+  const successUrl = appendQueryParams(`${baseUrl}/payment-complete.html`, {
+    checkout: "success",
+    session_id: "{CHECKOUT_SESSION_ID}",
+    booking_id: bookingRow.id,
+  });
+  const cancelUrl = appendQueryParams(`${baseUrl}/payment-cancelled.html`, {
+    checkout: "cancel",
+    booking_id: bookingRow.id,
+  });
+  const companyName = bookingRow.business_name || "Chauffeur";
+  const vehicleType = bookingRow.vehicle_type || bookingRow.vehicle_slot_id || "Private ride";
+  const customerName = [bookingRow.first_name, bookingRow.last_name].filter(Boolean).join(" ").trim() || "Customer";
+  const balanceDueDeadline = bookingRow.start_time
+    ? new Date(new Date(bookingRow.start_time).getTime() - (48 * 60 * 60 * 1000)).toISOString()
+    : null;
+
+  const session = await createStripeCheckoutSessionForAmount({
+    amount: balanceDue,
+    customerEmail: bookingRow.customer_email || null,
+    bookingId: bookingRow.id,
+    locationId: bookingRow.location_id || null,
+    totalPrice,
+    depositAmount: totalPrice,
+    depositPercent: 100,
+    paymentStatus: "paid_in_full",
+    paymentChoice: "balance",
+    balanceDueDeadline,
+    title: `Rideshare Chauffeur Reservation ${companyName} Balance`,
+    description: `${vehicleType} balance payment for ${customerName}`,
+    successUrl,
+    cancelUrl,
+  });
+
+  return session?.url || null;
 }
 
 async function createBookingRecord(input, { paymentLink = null, triggerWebhook = true } = {}) {
@@ -1524,24 +1618,21 @@ app.post("/api/create-checkout-session", async (req, res) => {
       : `Rideshare Chauffeur Reservation ${companyName} Deposit`;
     const checkoutActionLabel = payInFull ? "Payment" : "Deposit";
 
-    const session = await stripeFormRequest("/v1/checkout/sessions", {
-      mode: "payment",
-      success_url: successUrl,
-      cancel_url: cancelUrl,
-      customer_email: req.body.email || undefined,
-      "metadata[booking_id]": String(bookingId),
-      "metadata[location_id]": String(req.body.location_id || ""),
-      "metadata[total_price]": String(totalPrice.toFixed(2)),
-      "metadata[deposit_amount]": String(confirmedDepositAmount.toFixed(2)),
-      "metadata[deposit_percent]": String(payInFull ? 100 : depositPercent),
-      "metadata[payment_status]": paymentStatus,
-      "metadata[payment_choice]": payInFull ? "full" : "deposit",
-      "metadata[balance_due_deadline]": balanceDueDeadline || "",
-      "line_items[0][quantity]": 1,
-      "line_items[0][price_data][currency]": "usd",
-      "line_items[0][price_data][unit_amount]": Math.round(amountToCharge * 100),
-      "line_items[0][price_data][product_data][name]": checkoutTitle,
-      "line_items[0][price_data][product_data][description]": `${vehicleType} ${checkoutActionLabel.toLowerCase()} for ${businessName}`,
+    const session = await createStripeCheckoutSessionForAmount({
+      amount: amountToCharge,
+      customerEmail: req.body.email || null,
+      bookingId,
+      locationId: req.body.location_id || null,
+      totalPrice,
+      depositAmount: confirmedDepositAmount,
+      depositPercent: payInFull ? 100 : depositPercent,
+      paymentStatus,
+      paymentChoice: payInFull ? "full" : "deposit",
+      balanceDueDeadline,
+      title: checkoutTitle,
+      description: `${vehicleType} ${checkoutActionLabel.toLowerCase()} for ${businessName}`,
+      successUrl,
+      cancelUrl,
     });
 
     return res.json({
@@ -1809,6 +1900,16 @@ async function triggerCrmWebhook(location_id, booking_id) {
     const depositAmount = Number(b.deposit_amount || 0);
     const balanceDue = Number((totalPrice - depositAmount).toFixed(2));
 
+    let balancePaymentLink = null;
+    try {
+      balancePaymentLink = await createBalancePaymentLink({
+        ...b,
+        business_name: p.business_name,
+      });
+    } catch (balanceLinkError) {
+      console.error("Balance payment link generation error:", balanceLinkError);
+    }
+
     const payload = buildCrmBookingPayload({
       webhookType: "webhook_bookings",
       locationId: location_id,
@@ -1841,6 +1942,7 @@ async function triggerCrmWebhook(location_id, booking_id) {
         deposit_amount: depositAmount,
         deposit_percent: Number(b.deposit_percent || 0),
         balance_due: balanceDue,
+        balance_payment_link: balancePaymentLink,
       },
       meta: {
         source: "database_listener",

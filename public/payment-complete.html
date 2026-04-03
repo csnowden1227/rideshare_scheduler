@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Payment Complete</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+      background: #f8fafc;
+      color: #0f172a;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 24px;
+    }
+    .card {
+      width: min(680px, 100%);
+      background: #ffffff;
+      border: 1px solid #dbe4f0;
+      border-radius: 24px;
+      box-shadow: 0 24px 50px rgba(15, 23, 42, 0.08);
+      padding: 32px;
+    }
+    .eyebrow {
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: .14em;
+      text-transform: uppercase;
+      color: #0f766e;
+    }
+    h1 {
+      margin: 12px 0 0;
+      font-size: 30px;
+    }
+    p {
+      color: #475569;
+      line-height: 1.6;
+    }
+    .error {
+      color: #991b1b;
+      background: #fef2f2;
+      border: 1px solid #fecaca;
+      border-radius: 16px;
+      padding: 14px 16px;
+      margin-top: 18px;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="eyebrow">Secure Checkout</div>
+    <h1 id="title">Finalizing your payment...</h1>
+    <p id="message">We’re confirming your payment and updating your reservation now.</p>
+    <div id="error" class="error" style="display:none;"></div>
+  </div>
+  <script>
+    (async function () {
+      const params = new URLSearchParams(window.location.search);
+      const sessionId = params.get("session_id");
+      const title = document.getElementById("title");
+      const message = document.getElementById("message");
+      const error = document.getElementById("error");
+
+      if (!sessionId) {
+        title.textContent = "Payment completed";
+        message.textContent = "Your payment has been submitted. If you do not receive confirmation shortly, please contact support.";
+        return;
+      }
+
+      try {
+        const response = await fetch(`/api/checkout-session-status?session_id=${encodeURIComponent(sessionId)}`);
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.error || "Unable to verify the payment.");
+        }
+        if (!data.paid) {
+          throw new Error("Your payment is still processing. Please refresh this page in a moment.");
+        }
+
+        title.textContent = "Payment confirmed";
+        message.textContent = data.booking && data.booking.balance_due > 0
+          ? "Your deposit has been recorded and your reservation remains active. Your remaining balance will still be due before pickup."
+          : "Your reservation payment has been confirmed and your booking is now fully paid.";
+      } catch (err) {
+        title.textContent = "We’re still checking your payment";
+        message.textContent = "If your card was charged, your reservation should update shortly.";
+        error.style.display = "block";
+        error.textContent = err.message || "Unable to verify payment.";
+      }
+    })();
+  </script>
+</body>
+</html>
