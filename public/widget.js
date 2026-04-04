@@ -156,6 +156,10 @@
     }) || null;
   }
 
+  function fixedRateLabel(zone) {
+    return zone?.location_name || zone?.route_name || "";
+  }
+
   function matchesPeakWindow(windowConfig, startDate) {
     const dayName = getDayLabel(startDate);
     const day = (windowConfig.day || "Everyday").toLowerCase();
@@ -207,21 +211,29 @@
     return surcharge;
   }
 
-  function resolveFixedRate(route) {
+  function resolveFixedRate(route, selectedName = "", vehicle = null) {
     const fixedRates = Array.isArray(state.config?.fixed_rates) ? state.config.fixed_rates : [];
     const pickup = route.pickupCoords;
     const dropoff = route.dropoffCoords;
-
-    return fixedRates.find((zone) => {
+    const selectedVehicleType = String(vehicle?.vehicle_type || "").trim().toLowerCase();
+    const touchingZones = fixedRates.filter((zone) => {
       const lat = toNumber(zone.lat, NaN);
       const lng = toNumber(zone.lng, NaN);
       const radius = toNumber(zone.radius, 0);
       if (!Number.isFinite(lat) || !Number.isFinite(lng) || radius <= 0) return false;
+      if (selectedName && fixedRateLabel(zone) !== selectedName) return false;
 
       const pickupDistance = haversineMiles(pickup.lat, pickup.lng, lat, lng);
       const dropoffDistance = haversineMiles(dropoff.lat, dropoff.lng, lat, lng);
       return pickupDistance <= radius || dropoffDistance <= radius;
-    }) || null;
+    });
+
+    const exactVehicleMatch = touchingZones.find((zone) =>
+      String(zone.vehicle_type || "").trim().toLowerCase() === selectedVehicleType
+    );
+    if (exactVehicleMatch) return exactVehicleMatch;
+
+    return touchingZones[0] || null;
   }
 
   function isWithinServiceArea(route) {
@@ -337,12 +349,17 @@
     const fixedRates = Array.isArray(state.config?.fixed_rates) ? state.config.fixed_rates : [];
     if (!fixedRates.length) return "";
 
+    const uniqueLabels = Array.from(
+      new Set(
+        fixedRates
+          .map((zone) => zone.location_name || zone.route_name || "")
+          .filter(Boolean)
+      )
+    );
+
     const options = [
       `<option value="">Select fixed destination</option>`,
-      ...fixedRates.map((zone) => {
-        const label = zone.location_name || zone.route_name || "Fixed destination";
-        return `<option value="${escapeHtml(label)}">${escapeHtml(label)}</option>`;
-      }),
+      ...uniqueLabels.map((label) => `<option value="${escapeHtml(label)}">${escapeHtml(label)}</option>`),
     ];
 
     return `
@@ -711,9 +728,9 @@
     if (Number.isNaN(startDate.getTime())) throw new Error("Choose a valid pickup date and time.");
 
     const eventConfig = payload.booking_mode === "event" ? eventByName(payload.selected_event_name) : null;
-    const selectedFixedRate = payload.booking_mode === "fixed" ? fixedRateByName(payload.selected_fixed_destination) : null;
-    const matchedFixedRate = resolveFixedRate(route);
-    const fixedRate = payload.booking_mode === "fixed" ? selectedFixedRate : null;
+    const selectedFixedName = payload.booking_mode === "fixed" ? String(payload.selected_fixed_destination || "").trim() : "";
+    const matchedFixedRate = payload.booking_mode === "fixed" ? resolveFixedRate(route, selectedFixedName, vehicle) : resolveFixedRate(route, "", vehicle);
+    const fixedRate = payload.booking_mode === "fixed" ? matchedFixedRate : null;
     const peakMultiplier = getPeakMultiplier(startDate);
     const fixedSurcharge = getFixedSurcharge(startDate);
     const passengerCount = Math.max(1, payload.passenger_count || 1);
@@ -725,12 +742,11 @@
     }
 
     if (payload.booking_mode === "fixed") {
-      if (!selectedFixedRate) {
+      if (!selectedFixedName) {
         throw new Error("Select a fixed destination to continue.");
       }
 
-      const selectedFixedName = selectedFixedRate.location_name || selectedFixedRate.route_name || "";
-      const matchedFixedName = matchedFixedRate?.location_name || matchedFixedRate?.route_name || "";
+      const matchedFixedName = fixedRateLabel(matchedFixedRate);
       if (!matchedFixedRate || selectedFixedName !== matchedFixedName) {
         throw new Error(`This trip must touch the ${selectedFixedName} fixed destination geofence.`);
       }

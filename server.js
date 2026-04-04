@@ -156,6 +156,7 @@ async function syncFixedRates(client, location_id, fixed_rates = []) {
     push(fixedRatesIdColumn, location_id);
     push("location_name", route.location_name || null);
     push("route_name", route.location_name || null);
+    push("vehicle_type", route.vehicle_type || null);
     push("pickup_keyword", route.pickup_keyword || route.location_name || null);
     push("dropoff_keyword", route.dropoff_keyword || route.location_name || null);
     push("lat", Number.isFinite(Number(route.lat)) ? Number(route.lat) : null);
