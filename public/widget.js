@@ -525,7 +525,7 @@
               <div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.14em;color:${escapeHtml(colors.secondary)};">Actions</div>
               <div id="cd_payment_options" style="display:none;margin-top:14px;padding:16px;border-radius:18px;background:#f8fafc;border:1px solid #dbe4f0;">
                 <div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.14em;color:${escapeHtml(colors.secondary)};">Payment Choice</div>
-                <div style="margin-top:10px;font-size:13px;color:#475569;">For rides booked more than 48 hours in advance, a minimum deposit can secure this reservation. You may also choose to pay in full.</div>
+                <div style="margin-top:10px;font-size:13px;color:#475569;">For rides booked 72 hours or more in advance, a minimum deposit can secure this reservation. You may also choose to pay in full.</div>
                 <div style="display:grid;gap:10px;margin-top:12px;">
                   <label style="display:flex;gap:10px;align-items:flex-start;padding:12px;border:1px solid #dbe4f0;border-radius:14px;background:#fff;">
                     <input type="radio" name="cd_payment_choice" value="deposit" checked />
@@ -545,7 +545,7 @@
               <div style="margin-top:16px;padding:16px;border-radius:18px;background:#fff7ed;border:1px solid #fed7aa;">
                 <div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.14em;color:#9a3412;">Cancellation Terms</div>
                 <div style="margin-top:10px;font-size:13px;line-height:1.6;color:#7c2d12;">
-                  Bookings made more than 48 hours in advance may secure the reservation with a minimum deposit. Remaining balances are due 48 hours before pickup.
+                  Bookings made 72 hours or more in advance may secure the reservation with a minimum deposit. Remaining balances are due 48 hours before pickup.
                   Cancellations made 24 to 48 hours before pickup receive a 50% refund. Cancellations made less than 24 hours before pickup are non-refundable.
                 </div>
                 <label style="display:flex;gap:10px;align-items:flex-start;margin-top:12px;font-size:13px;color:#7c2d12;font-weight:600;cursor:pointer;">
@@ -697,7 +697,7 @@
 
   function computePaymentPolicy(startDate, total, depositAmount) {
     const hoursUntilRide = (startDate.getTime() - Date.now()) / (1000 * 60 * 60);
-    const depositEligible = hoursUntilRide > 48 && depositAmount > 0 && depositAmount < total;
+    const depositEligible = hoursUntilRide >= 72 && depositAmount > 0 && depositAmount < total;
     const balanceDueDeadline = new Date(startDate.getTime() - (48 * 60 * 60 * 1000));
     return {
       hoursUntilRide,
@@ -857,7 +857,7 @@
           paymentNotice.textContent = `This account is set to ${getPaymentProvider() === "square" ? "Square" : "invoice-only"} follow-up. We will save the booking request and send a payment request for the minimum deposit of ${money(state.quote.amount_due_now)} to secure the reservation.`;
         } else {
           fullRadio.checked = true;
-          paymentNotice.textContent = `This ride is 48 hours away or less and requires full payment. We will save the booking request and send a payment request for ${money(state.quote.amount_due_now)}.`;
+          paymentNotice.textContent = `This ride is less than 72 hours away and requires full payment. We will save the booking request and send a payment request for ${money(state.quote.amount_due_now)}.`;
         }
       } else if (state.quote.deposit_eligible) {
         paymentOptions.style.display = "block";
@@ -875,7 +875,7 @@
         depositRadio.checked = false;
         depositRadio.disabled = true;
         fullRadio.disabled = true;
-        paymentNotice.textContent = `This ride is 48 hours away or less, so full payment is required to confirm the reservation.`;
+        paymentNotice.textContent = `This ride is less than 72 hours away, so full payment is required to confirm the reservation.`;
       }
     }
 
