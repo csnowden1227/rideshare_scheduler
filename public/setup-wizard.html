@@ -367,6 +367,15 @@ let routeCircles = [];
 let logoBase64 = '';
 let currentPlanName = 'starter';
 let geocoder = null;
+const ROUTE_GEOFENCE_COLORS = [
+    { fill: "#10b981", stroke: "#059669" },
+    { fill: "#3b82f6", stroke: "#1d4ed8" },
+    { fill: "#f59e0b", stroke: "#d97706" },
+    { fill: "#ef4444", stroke: "#dc2626" },
+    { fill: "#8b5cf6", stroke: "#7c3aed" },
+    { fill: "#ec4899", stroke: "#db2777" },
+    { fill: "#14b8a6", stroke: "#0f766e" },
+];
 const VEHICLE_LIST = ["Standard Sedan", "Luxury Sedan", "Standard SUV", "Luxury SUV", "Standard XL SUV", "Luxury XL SUV"];
 
 // --- UI NOTIFICATION HELPER ---
@@ -677,10 +686,11 @@ function updateRouteMap() {
     });
     routeCircles = [];
 
-    document.querySelectorAll('.route-row').forEach(row => {
+    document.querySelectorAll('.route-row').forEach((row, index) => {
         const lat = parseFloat(row.querySelector('.r-lat').value);
         const lng = parseFloat(row.querySelector('.r-lng').value);
         const rad = parseFloat(row.querySelector('.r-rad').value) || 1;
+        const overlayColors = ROUTE_GEOFENCE_COLORS[index % ROUTE_GEOFENCE_COLORS.length];
 
         if (!isNaN(lat) && !isNaN(lng)) {
             const marker = new google.maps.Marker({
@@ -690,7 +700,7 @@ function updateRouteMap() {
                 icon: {
                     path: google.maps.SymbolPath.CIRCLE,
                     scale: 6,
-                    fillColor: "#059669",
+                    fillColor: overlayColors.stroke,
                     fillOpacity: 1,
                     strokeColor: "#ffffff",
                     strokeWeight: 2
@@ -702,9 +712,9 @@ function updateRouteMap() {
                 map: map,
                 center: { lat, lng },
                 radius: rad * 1609.34,
-                fillColor: "#10b981",
+                fillColor: overlayColors.fill,
                 fillOpacity: 0.2,
-                strokeColor: "#059669",
+                strokeColor: overlayColors.stroke,
                 strokeOpacity: 0.95,
                 strokeWeight: 2,
                 editable: true,
