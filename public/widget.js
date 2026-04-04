@@ -126,9 +126,10 @@
   }
 
   function selectedAddonDetails() {
-    const selectedId = document.getElementById("cd_addon_select")?.value || "";
-    if (!selectedId) return [];
-    return (state.config?.addons || []).filter((addon, index) => (addon.id || `addon_${index}`) === selectedId);
+    const selectedIds = Array.from(document.querySelectorAll('input[name="cd_addons"]:checked'))
+      .map((input) => input.value);
+    if (!selectedIds.length) return [];
+    return (state.config?.addons || []).filter((addon, index) => selectedIds.includes(addon.id || `addon_${index}`));
   }
 
   function selectedAddons() {
@@ -306,17 +307,24 @@
       const desc = escapeHtml(addon.description || `Service ${index + 1}`);
       const price = money(addon.price || 0);
       const type = addon.type === "per_person" ? "Per person" : "Per booking";
-      return `<option value="${escapeHtml(id)}">${desc} - ${price} (${escapeHtml(type)})</option>`;
+      return `
+        <label style="display:flex;align-items:flex-start;gap:10px;padding:10px 0;border-bottom:1px solid #e2e8f0;cursor:pointer;">
+          <input type="checkbox" name="cd_addons" value="${escapeHtml(id)}" style="margin-top:3px;width:16px;height:16px;" />
+          <span style="display:grid;gap:2px;min-width:0;">
+            <span style="font-size:13px;font-weight:700;color:#0f172a;">${desc}</span>
+            <span style="font-size:12px;color:#64748b;">${price} (${escapeHtml(type)})</span>
+          </span>
+        </label>
+      `;
     }).join("");
 
     return `
-      <label style="display:block;">
-        <span style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Choose an add-on</span>
-        <select id="cd_addon_select" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;">
-          <option value="">No add-on</option>
+      <div style="display:grid;gap:8px;">
+        <span style="display:block;font-size:12px;font-weight:700;color:#334155;">Select all that apply</span>
+        <div style="border:1px solid #cbd5e1;border-radius:14px;background:#fff;padding:0 14px;max-height:220px;overflow:auto;">
           ${options}
-        </select>
-      </label>
+        </div>
+      </div>
     `;
   }
 
@@ -560,7 +568,7 @@
       if (state.quote) getQuote();
     });
 
-    document.querySelectorAll("#cd_addon_select, #cd_passenger_count, #cd_special_event, #cd_fixed_destination").forEach((input) => {
+    document.querySelectorAll('input[name="cd_addons"], #cd_passenger_count, #cd_special_event, #cd_fixed_destination').forEach((input) => {
       input?.addEventListener("change", () => {
         if (state.quote) getQuote();
       });
