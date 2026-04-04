@@ -186,6 +186,15 @@
                                 </tbody>
                             </table>
                         </div>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                            <div>
+                                <label class="block text-[10px] font-bold mb-2 uppercase text-slate-400">General Booking Buffer (Minutes)</label>
+                                <input type="number" id="general_buffer_min" class="input-mini" min="0" step="5" value="20">
+                            </div>
+                            <div class="text-xs text-slate-500 self-end">
+                                Applies to all bookings before any rush-hour additional buffer is added.
+                            </div>
+                        </div>
                     </div>
                     <button type="button" onclick="addFleetRow()" class="wizard-btn-accent text-xs font-bold px-4 py-2 rounded-lg whitespace-nowrap">+ Add Fleet Vehicle</button>
                 </div>
@@ -218,7 +227,7 @@
                 <table class="w-full">
                     <thead>
                         <tr class="text-[10px] uppercase text-gray-400">
-                            <th>Day</th><th>Start</th><th>End</th><th>Multiplier</th><th></th>
+                            <th>Day</th><th>Start</th><th>End</th><th>Multiplier</th><th>Extra Buffer (Min)</th><th></th>
                         </tr>
                     </thead>
                     <tbody id="standard-multiplier-body"></tbody>
@@ -286,7 +295,7 @@
                 <table class="w-full">
                     <thead>
                             <tr class="text-[10px] uppercase text-gray-400">
-                                <th>Vehicle</th><th>Day</th><th>Start</th><th>End</th><th>Fixed Add-On ($)</th><th></th>
+                                <th>Vehicle</th><th>Day</th><th>Start</th><th>End</th><th>Fixed Add-On ($)</th><th>Extra Buffer (Min)</th><th></th>
                             </tr>
                     </thead>
                     <tbody id="fixed-addon-body"></tbody>
@@ -891,6 +900,7 @@ function addStandardMultiplierRow(data = {}) {
         <td class="py-3"><input type="time" class="p-start input-mini" value="${data.start_time || '17:00'}"></td>
         <td class="py-3"><input type="time" class="p-end input-mini" value="${data.end_time || '19:00'}"></td>
         <td class="py-3"><input type="number" step="0.1" class="p-mult input-mini" value="${data.multiplier || 1.5}"></td>
+        <td class="py-3"><input type="number" step="5" min="0" class="p-buffer input-mini" value="${data.buffer_min || 0}"></td>
         <td><button onclick="this.closest('tr').remove()" class="text-red-400">&times;</button></td>
     `;
     tr.querySelector('.p-day').value = data.day || 'Everyday';
@@ -907,6 +917,7 @@ function addFixedAddonRow(data = {}) {
         <td class="py-3"><input type="time" class="p-start input-mini" value="${data.start_time || '17:00'}"></td>
         <td class="py-3"><input type="time" class="p-end input-mini" value="${data.end_time || '19:00'}"></td>
         <td class="py-3"><input type="number" step="0.01" class="p-fixed-addon input-mini" value="${data.fixed_surcharge || data.flat_surcharge || 0}"></td>
+        <td class="py-3"><input type="number" step="5" min="0" class="p-buffer input-mini" value="${data.buffer_min || 0}"></td>
         <td><button onclick="this.closest('tr').remove()" class="text-red-400">&times;</button></td>
     `;
     tr.querySelector('.p-day').value = data.day || 'Everyday';
@@ -978,6 +989,7 @@ async function loadFromBackend() {
             document.getElementById('square_access_token').value = data.square_access_token || '';
             document.getElementById('square_location_id').value = data.square_location_id || '';
             document.getElementById('tax_rate').value = data.tax_rate ?? data.financials?.tax_rate ?? '8.25';
+            document.getElementById('general_buffer_min').value = data.general_buffer_min ?? data.fleet?.[0]?.outbound_buffer_min ?? 20;
             updatePaymentProviderUI();
 
             setFleetPlanMessage(data.plan_name || 'starter');
@@ -1033,6 +1045,7 @@ async function saveToBackend() {
     const squareLocationId = document.getElementById('square_location_id').value;
     const webhookUrl = document.getElementById('webhook_url').value;
     const taxRate = document.getElementById('tax_rate').value;
+    const generalBufferMin = parseInt(document.getElementById('general_buffer_min').value, 10) || 0;
     const fleetRows = document.querySelectorAll('#fleet-body tr');
 
     if (!mapsKey || !webhookUrl || !taxRate || fleetRows.length === 0) {
@@ -1077,7 +1090,8 @@ async function saveToBackend() {
             vehicle_type: tr.querySelector('.v-type').value,
             base_rate: parseFloat(tr.querySelector('.v-base').value) || 0,
             mile_rate: parseFloat(tr.querySelector('.v-mile').value) || 0,
-            calendar_id: tr.querySelector('.v-cal').value
+            calendar_id: tr.querySelector('.v-cal').value,
+            outbound_buffer_min: generalBufferMin
         })),
 
         peak_windows: [
@@ -1086,6 +1100,7 @@ async function saveToBackend() {
                 start_time: r.querySelector('.p-start').value,
                 end_time: r.querySelector('.p-end').value,
                 multiplier: parseFloat(r.querySelector('.p-mult').value) || 1,
+                buffer_min: parseInt(r.querySelector('.p-buffer').value, 10) || 0,
                 fixed_surcharge: 0
             })),
             ...Array.from(document.querySelectorAll('.fixed-addon-row')).map(r => ({
@@ -1094,6 +1109,7 @@ async function saveToBackend() {
                 start_time: r.querySelector('.p-start').value,
                 end_time: r.querySelector('.p-end').value,
                 multiplier: 1,
+                buffer_min: parseInt(r.querySelector('.p-buffer').value, 10) || 0,
                 fixed_surcharge: parseFloat(r.querySelector('.p-fixed-addon').value) || 0
             }))
         ],

@@ -179,6 +179,57 @@ function findCalendarConflict(events = [], requestedStartTime, requestedEndTime)
   }) || null;
 }
 
+function matchesPeakWindow(windowConfig = {}, startDate) {
+  if (!(startDate instanceof Date) || Number.isNaN(startDate.getTime())) return false;
+  const dayName = startDate.toLocaleDateString("en-US", { weekday: "long" }).toLowerCase();
+  const day = String(windowConfig.day || "Everyday").toLowerCase();
+  const isWeekday = startDate.getDay() >= 1 && startDate.getDay() <= 5;
+  const isWeekend = startDate.getDay() === 0 || startDate.getDay() === 6;
+
+  const dayMatch =
+    day === "everyday" ||
+    (day === "weekdays" && isWeekday) ||
+    (day === "weekends" && isWeekend) ||
+    day === dayName;
+
+  if (!dayMatch) return false;
+
+  const timeValue = startDate.toTimeString().slice(0, 5);
+  const start = windowConfig.start_time || "00:00";
+  const end = windowConfig.end_time || "23:59";
+  if (start <= end) return timeValue >= start && timeValue <= end;
+  return timeValue >= start || timeValue <= end;
+}
+
+function getAdditionalTrafficBufferMinutes({
+  peakWindows = [],
+  bookingMode = "standard",
+  startTime,
+  vehicleType = "",
+}) {
+  const startDate = new Date(startTime);
+  if (Number.isNaN(startDate.getTime())) return 0;
+
+  const selectedVehicleType = String(vehicleType || "").trim().toLowerCase();
+  let extraBuffer = 0;
+
+  for (const windowConfig of Array.isArray(peakWindows) ? peakWindows : []) {
+    if (!matchesPeakWindow(windowConfig, startDate)) continue;
+    const hasFixedSurcharge = Number(windowConfig.fixed_surcharge ?? windowConfig.flat_surcharge ?? 0) > 0;
+    const appliesToFixed = hasFixedSurcharge;
+    const appliesToStandard = !hasFixedSurcharge;
+    const targetMode = appliesToFixed ? "fixed" : "standard";
+    if (bookingMode !== targetMode) continue;
+
+    const windowVehicleType = String(windowConfig.vehicle_type || "").trim().toLowerCase();
+    if (bookingMode === "fixed" && windowVehicleType && windowVehicleType !== selectedVehicleType) continue;
+
+    extraBuffer = Math.max(extraBuffer, parseInt(windowConfig.buffer_min, 10) || 0);
+  }
+
+  return extraBuffer;
+}
+
 async function getPaymentProfileForLocation(locationId) {
   const fallback = {
     provider: "stripe",
@@ -1455,9 +1506,10 @@ async function createBookingRecord(input, { paymentLink = null, triggerWebhook =
     balance_paid = false,
     payment_provider = null,
     booking_confirmed,
-    deposit_percent = 0,
-    deposit_amount = 0,
-    passenger_count = 1,
+      deposit_percent = 0,
+      deposit_amount = 0,
+      booking_mode = "standard",
+      passenger_count = 1,
     carry_on_count = 0,
     checked_bag_count = 0,
     additional_items_aboard = null,
@@ -1470,7 +1522,7 @@ async function createBookingRecord(input, { paymentLink = null, triggerWebhook =
   }
 
   const profileLookup = await pool.query(
-    `SELECT crm_webhook_url, business_name, maps_api_key, fleet, payment_provider
+    `SELECT crm_webhook_url, business_name, maps_api_key, fleet, payment_provider, peak_windows
      FROM profiles
      WHERE location_id = $1`,
     [location_id]
@@ -1481,11 +1533,12 @@ async function createBookingRecord(input, { paymentLink = null, triggerWebhook =
   let fleetVehicle = null;
   if (await tableExists("fleet_slots")) {
     const fleetLookup = await pool.query(
-      `SELECT
-         calendar_id,
-         name AS vehicle_type,
-         NULL AS vehicle_category
-       FROM fleet_slots
+        `SELECT
+           calendar_id,
+           name AS vehicle_type,
+           NULL AS vehicle_category,
+           outbound_buffer_min
+         FROM fleet_slots
        WHERE vehicle_slot_id = $1 AND location_id = $2
        LIMIT 1`,
       [vehicle_slot_id, location_id]
@@ -1495,13 +1548,14 @@ async function createBookingRecord(input, { paymentLink = null, triggerWebhook =
 
   if (!fleetVehicle && await tableExists("fleet_settings")) {
     const fleetSettingsLookup = await pool.query(
-      `SELECT
-         calendar_id,
-         vehicle_slot_id,
-         base_rate,
-         per_mile_rate,
-         NULL AS vehicle_category
-       FROM fleet_settings
+        `SELECT
+           calendar_id,
+           vehicle_slot_id,
+           base_rate,
+           per_mile_rate,
+           NULL AS vehicle_category,
+           outbound_buffer_min
+        FROM fleet_settings
        WHERE vehicle_slot_id = $1 AND location_id = $2
        LIMIT 1`,
       [vehicle_slot_id, location_id]
@@ -1535,7 +1589,14 @@ async function createBookingRecord(input, { paymentLink = null, triggerWebhook =
     destinationLng: dropoff_lng,
     mapsApiKey: profile.maps_api_key || null,
   });
-  const bookingDurationMinutes = routeMetrics.durationMinutes + BOOKING_BUFFER_MINUTES;
+  const generalBufferMinutes = parseInt(fleetVehicle?.outbound_buffer_min, 10) || BOOKING_BUFFER_MINUTES;
+  const additionalTrafficBufferMinutes = getAdditionalTrafficBufferMinutes({
+    peakWindows: safeParseJson(profile.peak_windows),
+    bookingMode: booking_mode || "standard",
+    startTime: start_time,
+    vehicleType: fleetVehicle?.vehicle_type || "",
+  });
+  const bookingDurationMinutes = routeMetrics.durationMinutes + generalBufferMinutes + additionalTrafficBufferMinutes;
   const end_time = new Date(
     new Date(start_time).getTime() + bookingDurationMinutes * 60000
   ).toISOString();
@@ -1720,9 +1781,9 @@ async function createBookingRecord(input, { paymentLink = null, triggerWebhook =
       created_at: new Date().toISOString(),
       source: "booking_widget",
       route_distance_miles: routeMetrics.distanceMiles,
-      route_duration_minutes: routeMetrics.durationMinutes,
-      booking_buffer_minutes: BOOKING_BUFFER_MINUTES,
-      booking_duration_minutes: bookingDurationMinutes,
+        route_duration_minutes: routeMetrics.durationMinutes,
+        booking_buffer_minutes: generalBufferMinutes + additionalTrafficBufferMinutes,
+        booking_duration_minutes: bookingDurationMinutes,
       timing_source: routeMetrics.source
     }
   };
@@ -1760,7 +1821,7 @@ app.post("/api/create-checkout-session", async (req, res) => {
     }
 
     const profileLookup = await pool.query(
-      `SELECT maps_api_key, fleet
+      `SELECT maps_api_key, fleet, peak_windows
        FROM profiles
        WHERE location_id = $1
        LIMIT 1`,
@@ -1771,7 +1832,7 @@ app.post("/api/create-checkout-session", async (req, res) => {
     let fleetVehicle = null;
     if (await tableExists("fleet_slots")) {
       const fleetLookup = await pool.query(
-        `SELECT calendar_id, name AS vehicle_type, NULL AS vehicle_category
+        `SELECT calendar_id, name AS vehicle_type, NULL AS vehicle_category, outbound_buffer_min
          FROM fleet_slots
          WHERE vehicle_slot_id = $1 AND location_id = $2
          LIMIT 1`,
@@ -1782,7 +1843,7 @@ app.post("/api/create-checkout-session", async (req, res) => {
 
     if (!fleetVehicle && await tableExists("fleet_settings")) {
       const fleetSettingsLookup = await pool.query(
-        `SELECT calendar_id, vehicle_slot_id, base_rate, per_mile_rate, NULL AS vehicle_category
+        `SELECT calendar_id, vehicle_slot_id, base_rate, per_mile_rate, NULL AS vehicle_category, outbound_buffer_min
          FROM fleet_settings
          WHERE vehicle_slot_id = $1 AND location_id = $2
          LIMIT 1`,
@@ -1812,7 +1873,14 @@ app.post("/api/create-checkout-session", async (req, res) => {
       destinationLng: req.body.dropoff_lng,
       mapsApiKey: profile.maps_api_key || null,
     });
-    const bookingDurationMinutes = routeMetrics.durationMinutes + BOOKING_BUFFER_MINUTES;
+    const generalBufferMinutes = parseInt(fleetVehicle?.outbound_buffer_min, 10) || BOOKING_BUFFER_MINUTES;
+    const additionalTrafficBufferMinutes = getAdditionalTrafficBufferMinutes({
+      peakWindows: safeParseJson(profile.peak_windows),
+      bookingMode: req.body.booking_mode || "standard",
+      startTime: req.body.start_time,
+      vehicleType: fleetVehicle?.vehicle_type || "",
+    });
+    const bookingDurationMinutes = routeMetrics.durationMinutes + generalBufferMinutes + additionalTrafficBufferMinutes;
     const calculatedEndTime = new Date(
       new Date(req.body.start_time).getTime() + bookingDurationMinutes * 60000
     ).toISOString();
@@ -2395,8 +2463,11 @@ res.json({
     mile_rate: parseFloat(v.mile_rate) || 0,
     deposit_percent: parseFloat(v.deposit_percent) || 0,
     deposit_flat_cents: parseInt(v.deposit_flat_cents) || 0,
-    calendar_id: v.calendar_id || null
+    calendar_id: v.calendar_id || null,
+    outbound_buffer_min: parseInt(v.outbound_buffer_min, 10) || BOOKING_BUFFER_MINUTES
   })),
+
+  general_buffer_min: (Array.isArray(safeParseJson(profile.fleet)) ? safeParseJson(profile.fleet) : [])[0]?.outbound_buffer_min ?? BOOKING_BUFFER_MINUTES,
 
   events: parsedEvents,
   peak_windows: parsedPeakWindows,
@@ -2555,6 +2626,7 @@ app.get("/api/get-profile-widget/:location_id", async (req, res) => {
         payment_provider: normalizePaymentProvider(p.payment_provider),
         tax_rate: p.tax_rate,
         fleet: safeParseJson(p.fleet),         // Using the JSONB fleet from profiles
+        general_buffer_min: (Array.isArray(safeParseJson(p.fleet)) ? safeParseJson(p.fleet) : [])[0]?.outbound_buffer_min ?? BOOKING_BUFFER_MINUTES,
         fixed_rates: fixedRates,
         peak_windows: safeParseJson(p.peak_windows),
         events: safeParseJson(p.events),
