@@ -1122,6 +1122,9 @@ function buildCrmBookingPayload({
       ? new Date(new Date(booking.start_time).getTime() - (48 * 60 * 60 * 1000)).toISOString()
       : null
   );
+  const balanceReminder5DayAt = booking.start_time && Number(financials.balance_due || 0) > 0
+    ? new Date(new Date(booking.start_time).getTime() - (5 * 24 * 60 * 60 * 1000)).toISOString()
+    : null;
   const paymentProvider = normalizePaymentProvider(financials.payment_provider || meta.payment_provider || "stripe");
 
   return {
@@ -1188,7 +1191,17 @@ function buildCrmBookingPayload({
       send_payment_email: paymentRequired,
       reminder_reason: paymentRequired ? "complete_booking_payment" : null,
       send_balance_invoice: Number(financials.balance_due || 0) > 0,
+      send_balance_link_immediately: Number(financials.balance_due || 0) > 0,
+      send_balance_link_5d: Number(financials.balance_due || 0) > 0,
+      send_balance_link_48h: Number(financials.balance_due || 0) > 0,
+      balance_link_5d_at: balanceReminder5DayAt,
       balance_invoice_due_at: balanceDueDeadline,
+      balance_link_immediate_message: Number(financials.balance_due || 0) > 0
+        ? `Your remaining balance of $${Number(financials.balance_due || 0).toFixed(2)} can be paid any time using the link below. Final payment is due at least 48 hours before pickup to keep this reservation active.`
+        : null,
+      balance_link_5d_message: Number(financials.balance_due || 0) > 0
+        ? `Friendly reminder: your remaining balance of $${Number(financials.balance_due || 0).toFixed(2)} is still open. You can pay now using the link below. Final payment is due 48 hours before pickup.`
+        : null,
       balance_invoice_message: Number(financials.balance_due || 0) > 0
         ? `Your remaining balance of $${Number(financials.balance_due || 0).toFixed(2)} must be paid at least 48 hours before pickup to keep this reservation active.`
         : null,
