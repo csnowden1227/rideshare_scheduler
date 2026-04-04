@@ -536,7 +536,7 @@
               </div>
               <div style="display:grid;gap:12px;margin-top:14px;">
                 <button id="cd_btn_quote" style="padding:15px 18px;border:none;border-radius:16px;background:${escapeHtml(colors.primary)};color:#fff;font-size:15px;font-weight:800;cursor:pointer;">Calculate Smart Quote</button>
-                <button id="cd_btn_book" style="padding:15px 18px;border:none;border-radius:16px;background:${escapeHtml(colors.secondary)};color:#fff;font-size:15px;font-weight:800;cursor:pointer;">Confirm & Sync Booking</button>
+                <button id="cd_btn_book" style="padding:15px 18px;border:none;border-radius:16px;background:${escapeHtml(colors.secondary)};color:#fff;font-size:15px;font-weight:800;cursor:pointer;">Confirm & Submit Booking</button>
               </div>
               <div id="cd_payment_options" style="display:none;margin-top:16px;padding:16px;border-radius:18px;background:#f8fafc;border:1px solid #dbe4f0;">
                 <div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.14em;color:${escapeHtml(colors.secondary)};">Payment Choice</div>
