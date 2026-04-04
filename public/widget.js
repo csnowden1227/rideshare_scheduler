@@ -399,11 +399,7 @@
     const eventSelect = renderEventSelect();
     const fixedDestinationSelect = renderFixedDestinationSelect();
     const serviceRadius = toNumber(state.config?.service_radius, 0);
-    const addonNames = (Array.isArray(state.config?.addons) ? state.config.addons : [])
-      .map((addon, index) => addon.description || `Service ${index + 1}`)
-      .filter(Boolean)
-      .join(", ");
-    const addonTitle = addonNames ? `Optional Enhancements (${addonNames})` : "Optional Enhancements";
+    const addonTitle = "Addons (car seat, wheelchair, food & beverage, etc)";
 
     root.innerHTML = `
       <div style="max-width:1080px;margin:0 auto;font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;color:#0f172a;">
