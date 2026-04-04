@@ -523,20 +523,8 @@
 
             <div style="background:#fff;border:1px solid #e2e8f0;border-radius:24px;box-shadow:0 24px 50px rgba(15,23,42,.08);padding:22px;">
               <div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.14em;color:${escapeHtml(colors.secondary)};">Actions</div>
-              <div style="margin-top:16px;padding:16px;border-radius:18px;background:#fff7ed;border:1px solid #fed7aa;">
-                <div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.14em;color:#9a3412;">Cancellation Terms</div>
-                <div style="margin-top:10px;font-size:13px;line-height:1.6;color:#7c2d12;">
-                  Bookings made 72 hours or more in advance may secure the reservation with a minimum deposit. Remaining balances are due 48 hours before pickup.
-                  Cancellations made 24 to 48 hours before pickup receive a 50% refund. Cancellations made less than 24 hours before pickup are non-refundable.
-                </div>
-                <label style="display:flex;gap:10px;align-items:flex-start;margin-top:12px;font-size:13px;color:#7c2d12;font-weight:600;cursor:pointer;">
-                  <input id="cd_accept_terms" type="checkbox" style="margin-top:3px;width:16px;height:16px;" />
-                  <span>I agree to the cancellation and payment terms above.</span>
-                </label>
-              </div>
               <div style="display:grid;gap:12px;margin-top:14px;">
                 <button id="cd_btn_quote" style="padding:15px 18px;border:none;border-radius:16px;background:${escapeHtml(colors.primary)};color:#fff;font-size:15px;font-weight:800;cursor:pointer;">Calculate Smart Quote</button>
-                <button id="cd_btn_book" style="padding:15px 18px;border:none;border-radius:16px;background:${escapeHtml(colors.secondary)};color:#fff;font-size:15px;font-weight:800;cursor:pointer;">Confirm & Submit Booking</button>
               </div>
               <div id="cd_payment_options" style="display:none;margin-top:16px;padding:16px;border-radius:18px;background:#f8fafc;border:1px solid #dbe4f0;">
                 <div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.14em;color:${escapeHtml(colors.secondary)};">Payment Choice</div>
@@ -563,6 +551,20 @@
                 <div style="height:1px;background:#cbd5e1;margin:12px 0;"></div>
                 <div style="display:flex;justify-content:space-between;font-size:20px;"><span>Total</span><strong id="res_total">$0.00</strong></div>
                 <div id="cd_meta" style="margin-top:12px;font-size:12px;color:#64748b;"></div>
+              </div>
+              <div style="margin-top:16px;padding:16px;border-radius:18px;background:#fff7ed;border:1px solid #fed7aa;">
+                <div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.14em;color:#9a3412;">Cancellation Terms</div>
+                <div style="margin-top:10px;font-size:13px;line-height:1.6;color:#7c2d12;">
+                  Bookings made 72 hours or more in advance may secure the reservation with a minimum deposit. Remaining balances are due 48 hours before pickup.
+                  Cancellations made 24 to 48 hours before pickup receive a 50% refund. Cancellations made less than 24 hours before pickup are non-refundable.
+                </div>
+                <label style="display:flex;gap:10px;align-items:flex-start;margin-top:12px;font-size:13px;color:#7c2d12;font-weight:600;cursor:pointer;">
+                  <input id="cd_accept_terms" type="checkbox" style="margin-top:3px;width:16px;height:16px;" />
+                  <span>I agree to the cancellation and payment terms above.</span>
+                </label>
+              </div>
+              <div style="display:grid;gap:12px;margin-top:14px;">
+                <button id="cd_btn_book" style="padding:15px 18px;border:none;border-radius:16px;background:${escapeHtml(colors.secondary)};color:#fff;font-size:15px;font-weight:800;cursor:pointer;">Confirm & Submit Booking</button>
               </div>
               <div id="cd_error" style="display:none;margin-top:14px;padding:12px 14px;border-radius:14px;background:#fef2f2;color:#991b1b;font-size:14px;border:1px solid #fecaca;"></div>
             </div>
