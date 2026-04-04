@@ -122,6 +122,59 @@ function normalizeCalendarEvent(rawEvent = {}) {
   };
 }
 
+function looksLikeCalendarEvent(value = {}) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  return Boolean(
+    value.startTime ||
+    value.start_time ||
+    value.start?.dateTime ||
+    value.start?.time ||
+    value.startDateTime
+  ) && Boolean(
+    value.endTime ||
+    value.end_time ||
+    value.end?.dateTime ||
+    value.end?.time ||
+    value.endDateTime
+  );
+}
+
+function extractCalendarEvents(payload) {
+  if (Array.isArray(payload)) return payload;
+  if (!payload || typeof payload !== "object") return [];
+
+  const directCandidates = [
+    payload.events,
+    payload.calendarEvents,
+    payload.appointments,
+    payload.bookings,
+    payload.data?.events,
+    payload.data?.calendarEvents,
+    payload.data?.appointments,
+    payload.data?.bookings,
+    payload.data,
+  ];
+
+  for (const candidate of directCandidates) {
+    if (Array.isArray(candidate)) return candidate;
+  }
+
+  for (const value of Object.values(payload)) {
+    if (Array.isArray(value) && value.some(looksLikeCalendarEvent)) {
+      return value;
+    }
+    if (value && typeof value === "object") {
+      for (const nested of Object.values(value)) {
+        if (Array.isArray(nested) && nested.some(looksLikeCalendarEvent)) {
+          return nested;
+        }
+      }
+    }
+  }
+
+  return [];
+}
+
 async function getCrmCalendarEvents({
   locationId,
   calendarId,
@@ -153,15 +206,7 @@ async function getCrmCalendarEvents({
   }
 
   const data = await response.json();
-  const rawEvents = Array.isArray(data?.events)
-    ? data.events
-    : Array.isArray(data?.calendarEvents)
-      ? data.calendarEvents
-      : Array.isArray(data?.data?.events)
-        ? data.data.events
-        : Array.isArray(data?.data)
-          ? data.data
-          : [];
+  const rawEvents = extractCalendarEvents(data);
 
   return rawEvents.map(normalizeCalendarEvent);
 }
