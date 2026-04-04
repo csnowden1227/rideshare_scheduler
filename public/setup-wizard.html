@@ -259,7 +259,6 @@
                         <thead>
                             <tr class="border-b border-slate-100 text-[10px] uppercase tracking-widest text-gray-400">
                                 <th class="p-2">Location Name</th>
-                                <th class="p-2">Vehicle</th>
                                 <th class="p-2">Latitude</th>
                                 <th class="p-2">Longitude</th>
                                 <th class="p-2">Radius (Mi)</th>
@@ -287,7 +286,7 @@
                 <table class="w-full">
                     <thead>
                             <tr class="text-[10px] uppercase text-gray-400">
-                                <th>Day</th><th>Start</th><th>End</th><th>Fixed Add-On ($)</th><th></th>
+                                <th>Vehicle</th><th>Day</th><th>Start</th><th>End</th><th>Fixed Add-On ($)</th><th></th>
                             </tr>
                     </thead>
                     <tbody id="fixed-addon-body"></tbody>
@@ -647,11 +646,9 @@ function addRouteRow(data = {}) {
     const tbody = document.getElementById('route-body');
     const tr = document.createElement('tr');
     tr.className = "route-row border-b border-slate-50";
-    const vehicleType = data.vehicle_type || '';
     
     tr.innerHTML = `
         <td class="p-2"><input type="text" class="r-name w-full text-xs p-1 border rounded" value="${data.location_name || ''}" placeholder="e.g. LAX Terminal"></td>
-        <td class="p-2"><select class="r-vehicle w-full text-xs p-1 border rounded">${VEHICLE_LIST.map(v => `<option value="${v}" ${vehicleType === v ? 'selected' : ''}>${v}</option>`).join('')}</select></td>
         <td class="p-2"><input type="number" class="r-lat w-full text-xs p-1 border rounded" step="any" value="${data.lat || ''}" oninput="updateRouteMap()"></td>
         <td class="p-2"><input type="number" class="r-lng w-full text-xs p-1 border rounded" step="any" value="${data.lng || ''}" oninput="updateRouteMap()"></td>
         <td class="p-2"><input type="number" class="r-rad w-full text-xs p-1 border rounded" value="${data.radius || 2}" oninput="updateRouteMap()"></td>
@@ -903,7 +900,9 @@ function addStandardMultiplierRow(data = {}) {
 function addFixedAddonRow(data = {}) {
     const tr = document.createElement('tr');
     tr.className = "fixed-addon-row border-b border-slate-50";
+    const vehicleType = data.vehicle_type || '';
     tr.innerHTML = `
+        <td class="py-3"><select class="p-vehicle input-mini"><option value="">Any Vehicle</option>${VEHICLE_LIST.map(v => `<option value="${v}" ${vehicleType === v ? 'selected' : ''}>${v}</option>`).join('')}</select></td>
         <td class="py-3"><select class="p-day input-mini"><option>Everyday</option><option>Weekdays</option><option>Weekends</option></select></td>
         <td class="py-3"><input type="time" class="p-start input-mini" value="${data.start_time || '17:00'}"></td>
         <td class="py-3"><input type="time" class="p-end input-mini" value="${data.end_time || '19:00'}"></td>
@@ -1090,6 +1089,7 @@ async function saveToBackend() {
                 fixed_surcharge: 0
             })),
             ...Array.from(document.querySelectorAll('.fixed-addon-row')).map(r => ({
+                vehicle_type: r.querySelector('.p-vehicle').value,
                 day: r.querySelector('.p-day').value,
                 start_time: r.querySelector('.p-start').value,
                 end_time: r.querySelector('.p-end').value,
@@ -1100,7 +1100,6 @@ async function saveToBackend() {
 
         fixed_rates: Array.from(document.querySelectorAll('.route-row')).map(r => ({
             location_name: r.querySelector('.r-name').value,
-            vehicle_type: r.querySelector('.r-vehicle').value,
             lat: parseFloat(r.querySelector('.r-lat').value) || 0,
             lng: parseFloat(r.querySelector('.r-lng').value) || 0,
             radius: parseFloat(r.querySelector('.r-rad').value) || 0,

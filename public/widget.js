@@ -195,12 +195,15 @@
     return multiplier;
   }
 
-  function getFixedSurcharge(startDate) {
+  function getFixedSurcharge(startDate, vehicle = null) {
     const windows = Array.isArray(state.config?.peak_windows) ? state.config.peak_windows : [];
     let surcharge = 0;
+    const selectedVehicleType = String(vehicle?.vehicle_type || "").trim().toLowerCase();
 
     windows.forEach((windowConfig) => {
-      if (matchesPeakWindow(windowConfig, startDate)) {
+      const windowVehicleType = String(windowConfig.vehicle_type || "").trim().toLowerCase();
+      const vehicleMatches = !windowVehicleType || windowVehicleType === selectedVehicleType;
+      if (vehicleMatches && matchesPeakWindow(windowConfig, startDate)) {
         surcharge = Math.max(
           surcharge,
           toNumber(windowConfig.fixed_surcharge ?? windowConfig.flat_surcharge, 0)
@@ -215,7 +218,6 @@
     const fixedRates = Array.isArray(state.config?.fixed_rates) ? state.config.fixed_rates : [];
     const pickup = route.pickupCoords;
     const dropoff = route.dropoffCoords;
-    const selectedVehicleType = String(vehicle?.vehicle_type || "").trim().toLowerCase();
     const touchingZones = fixedRates.filter((zone) => {
       const lat = toNumber(zone.lat, NaN);
       const lng = toNumber(zone.lng, NaN);
@@ -227,11 +229,6 @@
       const dropoffDistance = haversineMiles(dropoff.lat, dropoff.lng, lat, lng);
       return pickupDistance <= radius || dropoffDistance <= radius;
     });
-
-    const exactVehicleMatch = touchingZones.find((zone) =>
-      String(zone.vehicle_type || "").trim().toLowerCase() === selectedVehicleType
-    );
-    if (exactVehicleMatch) return exactVehicleMatch;
 
     return touchingZones[0] || null;
   }
@@ -728,7 +725,7 @@
     const matchedFixedRate = payload.booking_mode === "fixed" ? resolveFixedRate(route, selectedFixedName, vehicle) : resolveFixedRate(route, "", vehicle);
     const fixedRate = payload.booking_mode === "fixed" ? matchedFixedRate : null;
     const peakMultiplier = getPeakMultiplier(startDate);
-    const fixedSurcharge = getFixedSurcharge(startDate);
+    const fixedSurcharge = getFixedSurcharge(startDate, vehicle);
     const passengerCount = Math.max(1, payload.passenger_count || 1);
     const addons = selectedAddonDetails();
     const addonTotal = computeAddonTotal(addons, passengerCount);
