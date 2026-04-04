@@ -525,7 +525,7 @@
               <div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.14em;color:${escapeHtml(colors.secondary)};">Actions</div>
               <div id="cd_payment_options" style="display:none;margin-top:14px;padding:16px;border-radius:18px;background:#f8fafc;border:1px solid #dbe4f0;">
                 <div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.14em;color:${escapeHtml(colors.secondary)};">Payment Choice</div>
-                <div style="margin-top:10px;font-size:13px;color:#475569;">To secure this reservation, a minimum deposit must be paid now. You may also choose to pay in full.</div>
+                <div style="margin-top:10px;font-size:13px;color:#475569;">For rides booked 72 or more hours in advance, a minimum deposit can secure this reservation. You may also choose to pay in full.</div>
                 <div style="display:grid;gap:10px;margin-top:12px;">
                   <label style="display:flex;gap:10px;align-items:flex-start;padding:12px;border:1px solid #dbe4f0;border-radius:14px;background:#fff;">
                     <input type="radio" name="cd_payment_choice" value="deposit" checked />
@@ -541,6 +541,17 @@
               <div style="display:grid;gap:12px;margin-top:14px;">
                 <button id="cd_btn_quote" style="padding:15px 18px;border:none;border-radius:16px;background:${escapeHtml(colors.primary)};color:#fff;font-size:15px;font-weight:800;cursor:pointer;">Calculate Smart Quote</button>
                 <button id="cd_btn_book" style="padding:15px 18px;border:none;border-radius:16px;background:${escapeHtml(colors.secondary)};color:#fff;font-size:15px;font-weight:800;cursor:pointer;">Confirm & Sync Booking</button>
+              </div>
+              <div style="margin-top:16px;padding:16px;border-radius:18px;background:#fff7ed;border:1px solid #fed7aa;">
+                <div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.14em;color:#9a3412;">Cancellation Terms</div>
+                <div style="margin-top:10px;font-size:13px;line-height:1.6;color:#7c2d12;">
+                  Bookings made 72 or more hours in advance may secure the reservation with a minimum deposit. Remaining balances are due 48 hours before pickup.
+                  Cancellations made 24 to 48 hours before pickup receive a 50% refund. Cancellations made less than 24 hours before pickup are non-refundable.
+                </div>
+                <label style="display:flex;gap:10px;align-items:flex-start;margin-top:12px;font-size:13px;color:#7c2d12;font-weight:600;cursor:pointer;">
+                  <input id="cd_accept_terms" type="checkbox" style="margin-top:3px;width:16px;height:16px;" />
+                  <span>I agree to the cancellation and payment terms above.</span>
+                </label>
               </div>
               <div id="cd_summary" style="display:none;margin-top:14px;padding:18px;border-radius:20px;background:#f8fafc;border:1px solid #dbe4f0;">
                 <div style="display:flex;justify-content:space-between;margin-bottom:10px;"><span>Base + Distance</span><strong id="res_quoted_price">$0.00</strong></div>
@@ -623,6 +634,7 @@
       selected_event_name: document.getElementById("cd_special_event")?.value || null,
       selected_fixed_destination: document.getElementById("cd_fixed_destination")?.value || null,
       selected_addons: selectedAddons(),
+      accepted_terms: !!document.getElementById("cd_accept_terms")?.checked,
       carry_on_count: toNumber(document.getElementById("cd_carry_on_count")?.value, 0),
       checked_bag_count: toNumber(document.getElementById("cd_checked_bag_count")?.value, 0),
       additional_items_aboard: JSON.stringify({
@@ -685,7 +697,7 @@
 
   function computePaymentPolicy(startDate, total, depositAmount) {
     const hoursUntilRide = (startDate.getTime() - Date.now()) / (1000 * 60 * 60);
-    const depositEligible = hoursUntilRide >= 48 && depositAmount > 0 && depositAmount < total;
+    const depositEligible = hoursUntilRide >= 72 && depositAmount > 0 && depositAmount < total;
     const balanceDueDeadline = new Date(startDate.getTime() - (48 * 60 * 60 * 1000));
     return {
       hoursUntilRide,
@@ -845,7 +857,7 @@
           paymentNotice.textContent = `This account is set to ${getPaymentProvider() === "square" ? "Square" : "invoice-only"} follow-up. We will save the booking request and send a payment request for the minimum deposit of ${money(state.quote.amount_due_now)} to secure the reservation.`;
         } else {
           fullRadio.checked = true;
-          paymentNotice.textContent = `This ride is within 48 hours and requires full payment. We will save the booking request and send a payment request for ${money(state.quote.amount_due_now)}.`;
+          paymentNotice.textContent = `This ride is within 72 hours and requires full payment. We will save the booking request and send a payment request for ${money(state.quote.amount_due_now)}.`;
         }
       } else if (state.quote.deposit_eligible) {
         paymentOptions.style.display = "block";
@@ -863,7 +875,7 @@
         depositRadio.checked = false;
         depositRadio.disabled = true;
         fullRadio.disabled = true;
-        paymentNotice.textContent = `This ride is within 48 hours, so full payment is required to confirm the reservation.`;
+        paymentNotice.textContent = `This ride is within 72 hours, so full payment is required to confirm the reservation.`;
       }
     }
 
@@ -996,6 +1008,10 @@
 
     if (!payload.first_name || !payload.last_name || !payload.email || !payload.phone || !payload.start_time) {
       return showError("Please complete first name, last name, email, phone, and pickup date/time.");
+    }
+
+    if (!payload.accepted_terms) {
+      return showError("Please accept the cancellation and payment terms before continuing.");
     }
 
     if (!state.quote || !state.route) {

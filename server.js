@@ -1643,7 +1643,7 @@ app.post("/api/create-checkout-session", async (req, res) => {
     const minimumDepositAmount = Number(req.body.deposit_amount || 0);
     const depositPercent = Number(req.body.deposit_percent || 0);
     const hoursUntilRide = getHoursUntilRide(req.body.start_time);
-    const depositEligible = hoursUntilRide >= 48 && minimumDepositAmount > 0 && minimumDepositAmount < totalPrice;
+    const depositEligible = hoursUntilRide >= 72 && minimumDepositAmount > 0 && minimumDepositAmount < totalPrice;
     const requestedChoice = String(req.body.payment_choice || "deposit").toLowerCase();
     const payInFull = !depositEligible || requestedChoice === "full";
     const amountToCharge = payInFull ? totalPrice : minimumDepositAmount;
@@ -1655,6 +1655,10 @@ app.post("/api/create-checkout-session", async (req, res) => {
 
     if (!amountToCharge || amountToCharge < 0.5) {
       return res.status(400).json({ error: "Charge amount must be at least $0.50." });
+    }
+
+    if (!req.body.accepted_terms) {
+      return res.status(400).json({ error: "Cancellation and payment terms must be accepted before checkout." });
     }
 
     if (paymentProvider !== "stripe") {
