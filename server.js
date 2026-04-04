@@ -36,6 +36,8 @@ const envStripeSecretKey = normalizeStripeSecretKey(process.env.STRIPE_SECRET_KE
 const stripe = envStripeSecretKey
   ? new Stripe(envStripeSecretKey, { apiVersion: "2025-02-24.acacia" })
   : null;
+const CRM_ONESOURCE_API_KEY = String(process.env.CRMONESOURCE_API_KEY || "").trim();
+const CRM_API_BASE_URL = process.env.CRM_API_BASE_URL || "https://services.leadconnectorhq.com";
 
 // 1. Define Environment Variables
 const CRM_WEBHOOK_URL =
@@ -94,6 +96,87 @@ async function getProfileIdColumn() {
 async function getStripeSecretKeyForLocation(locationId) {
   const paymentProfile = await getPaymentProfileForLocation(locationId);
   return paymentProfile.stripeSecretKey || envStripeSecretKey;
+}
+
+function normalizeCalendarEvent(rawEvent = {}) {
+  const start =
+    rawEvent.startTime ||
+    rawEvent.start_time ||
+    rawEvent.start?.dateTime ||
+    rawEvent.start?.time ||
+    rawEvent.startDateTime ||
+    null;
+  const end =
+    rawEvent.endTime ||
+    rawEvent.end_time ||
+    rawEvent.end?.dateTime ||
+    rawEvent.end?.time ||
+    rawEvent.endDateTime ||
+    null;
+
+  return {
+    id: rawEvent.id || rawEvent._id || null,
+    title: rawEvent.title || rawEvent.name || rawEvent.summary || "Existing booking",
+    start,
+    end,
+  };
+}
+
+async function getCrmCalendarEvents({
+  locationId,
+  calendarId,
+  startTime,
+  endTime,
+}) {
+  if (!CRM_ONESOURCE_API_KEY || !locationId || !calendarId || !startTime || !endTime) {
+    return [];
+  }
+
+  const url = new URL("/calendars/events", CRM_API_BASE_URL);
+  url.searchParams.set("locationId", String(locationId));
+  url.searchParams.set("calendarId", String(calendarId));
+  url.searchParams.set("startTime", String(startTime));
+  url.searchParams.set("endTime", String(endTime));
+
+  const response = await fetch(url, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${CRM_ONESOURCE_API_KEY}`,
+      Version: "2021-07-28",
+      Accept: "application/json",
+    },
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`CRM calendar lookup failed (${response.status}): ${body.slice(0, 200)}`);
+  }
+
+  const data = await response.json();
+  const rawEvents = Array.isArray(data?.events)
+    ? data.events
+    : Array.isArray(data?.calendarEvents)
+      ? data.calendarEvents
+      : Array.isArray(data?.data?.events)
+        ? data.data.events
+        : Array.isArray(data?.data)
+          ? data.data
+          : [];
+
+  return rawEvents.map(normalizeCalendarEvent);
+}
+
+function findCalendarConflict(events = [], requestedStartTime, requestedEndTime) {
+  const requestedStart = new Date(requestedStartTime);
+  const requestedEnd = new Date(requestedEndTime);
+  if (Number.isNaN(requestedStart.getTime()) || Number.isNaN(requestedEnd.getTime())) return null;
+
+  return events.find((event) => {
+    const eventStart = new Date(event.start);
+    const eventEnd = new Date(event.end);
+    if (Number.isNaN(eventStart.getTime()) || Number.isNaN(eventEnd.getTime())) return false;
+    return requestedStart < eventEnd && requestedEnd > eventStart;
+  }) || null;
 }
 
 async function getPaymentProfileForLocation(locationId) {
@@ -1650,6 +1733,8 @@ app.post("/api/create-checkout-session", async (req, res) => {
   try {
     const paymentProfile = await getPaymentProfileForLocation(req.body.location_id);
     const paymentProvider = paymentProfile.provider;
+    const locationId = req.body.location_id;
+    const vehicleSlotId = req.body.vehicle_slot_id;
 
     const returnUrl = sanitizeReturnUrl(req.body.return_url, req);
     const totalPrice = Number(req.body.total_price || 0);
@@ -1672,6 +1757,91 @@ app.post("/api/create-checkout-session", async (req, res) => {
 
     if (!req.body.accepted_terms) {
       return res.status(400).json({ error: "Cancellation and payment terms must be accepted before checkout." });
+    }
+
+    const profileLookup = await pool.query(
+      `SELECT maps_api_key, fleet
+       FROM profiles
+       WHERE location_id = $1
+       LIMIT 1`,
+      [locationId]
+    );
+    const profile = profileLookup.rows[0] || {};
+
+    let fleetVehicle = null;
+    if (await tableExists("fleet_slots")) {
+      const fleetLookup = await pool.query(
+        `SELECT calendar_id, name AS vehicle_type, NULL AS vehicle_category
+         FROM fleet_slots
+         WHERE vehicle_slot_id = $1 AND location_id = $2
+         LIMIT 1`,
+        [vehicleSlotId, locationId]
+      );
+      fleetVehicle = fleetLookup.rows[0] || null;
+    }
+
+    if (!fleetVehicle && await tableExists("fleet_settings")) {
+      const fleetSettingsLookup = await pool.query(
+        `SELECT calendar_id, vehicle_slot_id, base_rate, per_mile_rate, NULL AS vehicle_category
+         FROM fleet_settings
+         WHERE vehicle_slot_id = $1 AND location_id = $2
+         LIMIT 1`,
+        [vehicleSlotId, locationId]
+      );
+      fleetVehicle = fleetSettingsLookup.rows[0]
+        ? {
+            ...fleetSettingsLookup.rows[0],
+            vehicle_type: fleetSettingsLookup.rows[0].vehicle_slot_id,
+          }
+        : null;
+    }
+
+    if (!fleetVehicle) {
+      const profileFleet = safeParseJson(profile.fleet);
+      fleetVehicle = (Array.isArray(profileFleet) ? profileFleet : []).find(
+        (vehicle) => String(vehicle.vehicle_slot_id || "") === String(vehicleSlotId)
+      ) || null;
+    }
+
+    const routeMetrics = await getRouteMetrics({
+      origin: req.body.pickup_address,
+      destination: req.body.dropoff_address,
+      originLat: req.body.pickup_lat,
+      originLng: req.body.pickup_lng,
+      destinationLat: req.body.dropoff_lat,
+      destinationLng: req.body.dropoff_lng,
+      mapsApiKey: profile.maps_api_key || null,
+    });
+    const bookingDurationMinutes = routeMetrics.durationMinutes + BOOKING_BUFFER_MINUTES;
+    const calculatedEndTime = new Date(
+      new Date(req.body.start_time).getTime() + bookingDurationMinutes * 60000
+    ).toISOString();
+
+    if (fleetVehicle?.calendar_id && CRM_ONESOURCE_API_KEY) {
+      const calendarEvents = await getCrmCalendarEvents({
+        locationId,
+        calendarId: fleetVehicle.calendar_id,
+        startTime: req.body.start_time,
+        endTime: calculatedEndTime,
+      });
+      const conflictingEvent = findCalendarConflict(
+        calendarEvents,
+        req.body.start_time,
+        calculatedEndTime
+      );
+
+      if (conflictingEvent) {
+        return res.status(409).json({
+          error: "This vehicle is not available for that time. Please call to check other fleet availability. We can add you to the waitlist.",
+          waitlist_recommended: true,
+          conflict: {
+            title: conflictingEvent.title,
+            start_time: conflictingEvent.start,
+            end_time: conflictingEvent.end,
+            calendar_id: fleetVehicle.calendar_id,
+          },
+        });
+      }
     }
 
     if (paymentProvider !== "stripe") {
