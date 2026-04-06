@@ -688,8 +688,9 @@
     const defaults = getProfileDepositDefaults();
     const vehiclePercent = toNumber(vehicle?.deposit_percent, defaults.percent);
     const vehicleFlat = toNumber(vehicle?.deposit_flat_cents, defaults.flatCents) / 100;
+    const vehicleBaseRate = toNumber(vehicle?.base_rate, 0);
     const percentDeposit = vehiclePercent > 0 ? total * (vehiclePercent / 100) : 0;
-    const depositAmount = Math.max(percentDeposit, vehicleFlat, 0);
+    const depositAmount = Math.max(percentDeposit, vehicleFlat, vehicleBaseRate, 0);
 
     return {
       depositPercent: vehiclePercent,
