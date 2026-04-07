@@ -440,6 +440,13 @@ async function syncConfirmedBookingCalendarEvent(bookingId) {
     [contactId, eventId, cancelUnpaidBalanceAt, booking.id]
   );
 
+  console.log("CRM calendar event created:", {
+    booking_id: booking.id,
+    calendar_id: booking.calendar_id,
+    crm_contact_id: contactId,
+    crm_event_id: eventId,
+  });
+
   return eventId;
 }
 
