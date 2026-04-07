@@ -364,6 +364,7 @@ async function syncConfirmedBookingCalendarEvent(bookingId) {
   if (!CRM_ONESOURCE_API_KEY || !bookingId) return null;
 
   await ensureBookingSyncColumns();
+  const profileIdColumn = await getProfileIdColumn();
 
   const result = await pool.query(
     `SELECT
@@ -385,7 +386,7 @@ async function syncConfirmedBookingCalendarEvent(bookingId) {
       b.balance_due,
       p.business_name
      FROM bookings b
-     LEFT JOIN profiles p ON p.location_id = b.location_id
+     LEFT JOIN profiles p ON p.${profileIdColumn} = b.location_id
      WHERE b.id = $1
      LIMIT 1`,
     [bookingId]
