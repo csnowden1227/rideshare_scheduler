@@ -52,6 +52,8 @@ const pool = new Pool({
   ssl: { rejectUnauthorized: false }
 });
 
+let bookingSyncColumnsReady = null;
+
 // Initialize the Google Maps Client for the Backend
 const googleMapsClient = new GoogleMapsClient({});
 
@@ -84,6 +86,20 @@ function safeParseJson(data, fallback = []) {
   } catch {
     return fallback;
   }
+}
+
+async function ensureBookingSyncColumns() {
+  if (!bookingSyncColumnsReady) {
+    bookingSyncColumnsReady = (async () => {
+      await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS crm_contact_id TEXT`);
+      await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS crm_event_id TEXT`);
+      await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS cancel_unpaid_balance_at TIMESTAMPTZ`);
+    })().catch((err) => {
+      bookingSyncColumnsReady = null;
+      throw err;
+    });
+  }
+  return bookingSyncColumnsReady;
 }
 
 async function getProfileIdColumn() {
@@ -222,6 +238,208 @@ function findCalendarConflict(events = [], requestedStartTime, requestedEndTime)
     if (Number.isNaN(eventStart.getTime()) || Number.isNaN(eventEnd.getTime())) return false;
     return requestedStart < eventEnd && requestedEnd > eventStart;
   }) || null;
+}
+
+function endOfUtcDay(isoValue) {
+  const value = new Date(isoValue);
+  if (Number.isNaN(value.getTime())) return null;
+  return new Date(Date.UTC(
+    value.getUTCFullYear(),
+    value.getUTCMonth(),
+    value.getUTCDate(),
+    23, 59, 59, 999
+  )).toISOString();
+}
+
+function extractCrmContactId(payload = {}) {
+  return (
+    payload?.contact?.id ||
+    payload?.contact?.contactId ||
+    payload?.contactId ||
+    payload?.id ||
+    payload?._id ||
+    payload?.data?.contact?.id ||
+    payload?.data?.id ||
+    null
+  );
+}
+
+function extractCrmAppointmentId(payload = {}) {
+  return (
+    payload?.event?.id ||
+    payload?.eventId ||
+    payload?.appointment?.id ||
+    payload?.appointmentId ||
+    payload?.id ||
+    payload?._id ||
+    payload?.data?.event?.id ||
+    payload?.data?.id ||
+    null
+  );
+}
+
+async function upsertCrmContact({
+  locationId,
+  firstName,
+  lastName,
+  email,
+  phone,
+}) {
+  if (!CRM_ONESOURCE_API_KEY || !locationId) return null;
+  if (!email && !phone && !firstName && !lastName) return null;
+
+  const response = await fetch(new URL("/contacts/upsert", CRM_API_BASE_URL), {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${CRM_ONESOURCE_API_KEY}`,
+      Version: "2021-07-28",
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      locationId: String(locationId),
+      firstName: firstName || "",
+      lastName: lastName || "",
+      name: [firstName, lastName].filter(Boolean).join(" ").trim() || undefined,
+      email: email || undefined,
+      phone: phone || undefined,
+      source: "rideshare-scheduler",
+    }),
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`CRM contact upsert failed (${response.status}): ${body.slice(0, 200)}`);
+  }
+
+  const data = await response.json();
+  return extractCrmContactId(data);
+}
+
+async function createCrmAppointment({
+  locationId,
+  calendarId,
+  contactId,
+  startTime,
+  endTime,
+  title,
+  notes,
+  timeZone = "UTC",
+}) {
+  if (!CRM_ONESOURCE_API_KEY || !locationId || !calendarId || !contactId || !startTime) {
+    return null;
+  }
+
+  const response = await fetch(new URL("/calendars/events/appointments", CRM_API_BASE_URL), {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${CRM_ONESOURCE_API_KEY}`,
+      Version: "2021-07-28",
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      locationId: String(locationId),
+      calendarId: String(calendarId),
+      contactId: String(contactId),
+      startTime,
+      endTime,
+      title,
+      notes,
+      timeZone,
+      appointmentStatus: "confirmed",
+    }),
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`CRM appointment creation failed (${response.status}): ${body.slice(0, 200)}`);
+  }
+
+  const data = await response.json();
+  return extractCrmAppointmentId(data);
+}
+
+async function syncConfirmedBookingCalendarEvent(bookingId) {
+  if (!CRM_ONESOURCE_API_KEY || !bookingId) return null;
+
+  await ensureBookingSyncColumns();
+
+  const result = await pool.query(
+    `SELECT
+      b.id,
+      b.location_id,
+      b.status,
+      b.first_name,
+      b.last_name,
+      b.customer_email,
+      b.customer_phone,
+      b.pickup_address,
+      b.dropoff_address,
+      b.start_time,
+      b.end_time,
+      b.vehicle_slot_id,
+      b.calendar_id,
+      b.crm_contact_id,
+      b.crm_event_id,
+      b.balance_due,
+      p.business_name
+     FROM bookings b
+     LEFT JOIN profiles p ON p.location_id = b.location_id
+     WHERE b.id = $1
+     LIMIT 1`,
+    [bookingId]
+  );
+
+  const booking = result.rows[0];
+  if (!booking) return null;
+  if (String(booking.status || "").toLowerCase() !== "confirmed") return null;
+  if (!booking.calendar_id || !booking.start_time || !booking.end_time) return null;
+  if (booking.crm_event_id) return booking.crm_event_id;
+
+  const contactId = booking.crm_contact_id || await upsertCrmContact({
+    locationId: booking.location_id,
+    firstName: booking.first_name,
+    lastName: booking.last_name,
+    email: booking.customer_email,
+    phone: booking.customer_phone,
+  });
+
+  if (!contactId) {
+    throw new Error("Unable to resolve CRM contact for calendar event creation.");
+  }
+
+  const title = `${booking.business_name || "Rideshare Chauffeur"} Reservation #${booking.id}`;
+  const notes = [
+    `Booking ID: ${booking.id}`,
+    booking.vehicle_slot_id ? `Vehicle Slot: ${booking.vehicle_slot_id}` : null,
+    booking.pickup_address ? `Pickup: ${booking.pickup_address}` : null,
+    booking.dropoff_address ? `Dropoff: ${booking.dropoff_address}` : null,
+    Number(booking.balance_due || 0) > 0 ? `Remaining balance due: $${Number(booking.balance_due || 0).toFixed(2)}` : `Paid in full`,
+  ].filter(Boolean).join("\n");
+
+  const eventId = await createCrmAppointment({
+    locationId: booking.location_id,
+    calendarId: booking.calendar_id,
+    contactId,
+    startTime: booking.start_time,
+    endTime: booking.end_time,
+    title,
+    notes,
+  });
+
+  const cancelUnpaidBalanceAt = Number(booking.balance_due || 0) > 0 ? endOfUtcDay(booking.start_time ? new Date(new Date(booking.start_time).getTime() - (48 * 60 * 60 * 1000)).toISOString() : null) : null;
+
+  await pool.query(
+    `UPDATE bookings
+     SET crm_contact_id = $1,
+         crm_event_id = $2,
+         cancel_unpaid_balance_at = $3
+     WHERE id = $4`,
+    [contactId, eventId, cancelUnpaidBalanceAt, booking.id]
+  );
+
+  return eventId;
 }
 
 function matchesPeakWindow(windowConfig = {}, startDate) {
@@ -1301,6 +1519,9 @@ function buildCrmBookingPayload({
       ? new Date(new Date(booking.start_time).getTime() - (48 * 60 * 60 * 1000)).toISOString()
       : null
   );
+  const cancelUnpaidBalanceAt = balanceDueDeadline && Number(financials.balance_due || 0) > 0
+    ? endOfUtcDay(balanceDueDeadline)
+    : null;
   const balanceReminder5DayAt = booking.start_time && Number(financials.balance_due || 0) > 0
     ? new Date(new Date(booking.start_time).getTime() - (5 * 24 * 60 * 60 * 1000)).toISOString()
     : null;
@@ -1390,6 +1611,11 @@ function buildCrmBookingPayload({
         refund_24_to_48_hours: "50_percent",
         refund_under_24_hours: "no_refund",
       },
+      cancel_unpaid_balance_same_day: Number(financials.balance_due || 0) > 0,
+      cancel_unpaid_balance_at: cancelUnpaidBalanceAt,
+      cancel_unpaid_balance_message: Number(financials.balance_due || 0) > 0
+        ? `If the remaining balance is not paid by the end of the 48-hour reminder day, this reservation will be cancelled.`
+        : null,
     },
   };
 }
@@ -1465,6 +1691,12 @@ async function updateBookingConfirmation({
 
   if (!result.rows.length) {
     throw new Error("Booking not found for payment confirmation.");
+  }
+
+  try {
+    await syncConfirmedBookingCalendarEvent(result.rows[0].id);
+  } catch (calendarErr) {
+    console.error("CRM calendar sync error after confirmation:", calendarErr);
   }
 
   await triggerCrmWebhook(result.rows[0].location_id, result.rows[0].id);
@@ -1718,6 +1950,14 @@ async function createBookingRecord(input, { paymentLink = null, triggerWebhook =
   );
 
   const booking_id = result.rows[0]?.id || null;
+
+  if (isBookingConfirmed && booking_id) {
+    try {
+      await syncConfirmedBookingCalendarEvent(booking_id);
+    } catch (calendarErr) {
+      console.error("CRM calendar sync error during booking creation:", calendarErr);
+    }
+  }
 
   if (triggerWebhook && webhookUrl && webhookUrl.startsWith("http")) {
     const crmPayload = buildCrmBookingPayload({
