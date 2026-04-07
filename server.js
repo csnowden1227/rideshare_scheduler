@@ -1391,6 +1391,43 @@ app.post("/api/confirm-booking-payment", async (req, res) => {
     return res.status(500).json({ error: err.message || "Failed to confirm booking payment." });
   }
 });
+
+app.post("/api/cancel-booking", async (req, res) => {
+  try {
+    const bookingId = Number(req.body.booking_id || req.body.id || 0);
+    const reason = String(req.body.reason || "unpaid_balance").trim();
+
+    if (!Number.isInteger(bookingId) || bookingId <= 0) {
+      return res.status(400).json({ error: "booking_id is required." });
+    }
+
+    const result = await pool.query(
+      `UPDATE bookings
+       SET status = $1
+       WHERE id = $2
+       RETURNING id, location_id, status`,
+      ["cancelled", bookingId]
+    );
+
+    if (!result.rows.length) {
+      return res.status(404).json({ error: "Booking not found for cancellation." });
+    }
+
+    await triggerCrmWebhook(result.rows[0].location_id, result.rows[0].id);
+
+    return res.json({
+      success: true,
+      booking_id: result.rows[0].id,
+      location_id: result.rows[0].location_id,
+      status: result.rows[0].status,
+      reason,
+      message: "Booking cancelled successfully.",
+    });
+  } catch (err) {
+    console.error("Cancel booking error:", err);
+    return res.status(500).json({ error: err.message || "Failed to cancel booking." });
+  }
+});
    /*****************************************************
  5️⃣ AVAILABILITY ENGINE
 *****************************************************/
