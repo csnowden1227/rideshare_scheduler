@@ -1958,12 +1958,23 @@ async function createBookingRecord(input, { paymentLink = null, triggerWebhook =
   );
 
   const booking_id = result.rows[0]?.id || null;
+  let calendarSync = null;
 
   if (isBookingConfirmed && booking_id) {
     try {
-      await syncConfirmedBookingCalendarEvent(booking_id);
+      const crmEventId = await syncConfirmedBookingCalendarEvent(booking_id);
+      calendarSync = {
+        attempted: true,
+        success: Boolean(crmEventId),
+        crm_event_id: crmEventId || null,
+      };
     } catch (calendarErr) {
       console.error("CRM calendar sync error during booking creation:", calendarErr);
+      calendarSync = {
+        attempted: true,
+        success: false,
+        error: calendarErr?.message || "CRM calendar sync failed.",
+      };
     }
   }
 
@@ -2070,6 +2081,7 @@ async function createBookingRecord(input, { paymentLink = null, triggerWebhook =
       balance_due,
       payment_provider: resolvedPaymentProvider,
     },
+    calendar_sync: calendarSync,
     meta: {
       created_at: new Date().toISOString(),
       source: "booking_widget",
