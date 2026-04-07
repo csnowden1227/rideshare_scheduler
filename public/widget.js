@@ -137,7 +137,7 @@
   }
 
   function selectedPaymentChoice() {
-    return document.querySelector('input[name="cd_payment_choice"]:checked')?.value || "deposit";
+    return document.querySelector('input[name="cd_payment_choice"]:checked')?.value || "full";
   }
 
   function eventByName(name) {
@@ -542,11 +542,11 @@
                 <div style="margin-top:10px;font-size:13px;color:#475569;">For rides booked 72 hours or more in advance, a minimum deposit can secure this reservation. You may also choose to pay in full.</div>
                 <div style="display:grid;gap:10px;margin-top:12px;">
                   <label style="display:flex;gap:10px;align-items:flex-start;padding:12px;border:1px solid #dbe4f0;border-radius:14px;background:#fff;">
-                    <input type="radio" name="cd_payment_choice" value="deposit" checked />
+                    <input type="radio" name="cd_payment_choice" value="deposit" />
                     <span><strong>Pay minimum deposit now</strong><br><span style="font-size:12px;color:#64748b;">Reserve the slot now and receive an invoice for the balance 48 hours before pickup.</span></span>
                   </label>
                   <label style="display:flex;gap:10px;align-items:flex-start;padding:12px;border:1px solid #dbe4f0;border-radius:14px;background:#fff;">
-                    <input type="radio" name="cd_payment_choice" value="full" />
+                    <input type="radio" name="cd_payment_choice" value="full" checked />
                     <span><strong>Pay in full now</strong><br><span style="font-size:12px;color:#64748b;">Complete the entire reservation payment now.</span></span>
                   </label>
                 </div>
