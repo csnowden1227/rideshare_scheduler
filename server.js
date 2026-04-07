@@ -1304,6 +1304,68 @@ function getPublicAppUrl(req = null) {
   return "https://rideshare-scheduler-axx6.onrender.com";
 }
 
+const BOOKING_DISPLAY_TIMEZONE = String(process.env.BOOKING_DISPLAY_TIMEZONE || "America/Los_Angeles").trim() || "America/Los_Angeles";
+
+function formatDisplayDateTime(isoValue, timeZone = BOOKING_DISPLAY_TIMEZONE) {
+  const value = new Date(isoValue);
+  if (Number.isNaN(value.getTime())) return null;
+  const parts = new Intl.DateTimeFormat("en-US", {
+    weekday: "short",
+    month: "2-digit",
+    day: "2-digit",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+    timeZone,
+  }).formatToParts(value).reduce((acc, part) => {
+    if (part.type !== "literal") acc[part.type] = part.value;
+    return acc;
+  }, {});
+
+  return `${parts.weekday || ""} ${parts.month || "01"}-${parts.day || "01"}-${parts.year || "1970"} ${parts.hour || "12"}:${parts.minute || "00"}${String(parts.dayPeriod || "").toLowerCase()}`;
+}
+
+function formatUtcCalendarStamp(isoValue) {
+  const value = new Date(isoValue);
+  if (Number.isNaN(value.getTime())) return null;
+  const pad = (num) => String(num).padStart(2, "0");
+  return `${value.getUTCFullYear()}${pad(value.getUTCMonth() + 1)}${pad(value.getUTCDate())}T${pad(value.getUTCHours())}${pad(value.getUTCMinutes())}${pad(value.getUTCSeconds())}Z`;
+}
+
+function escapeIcsText(value) {
+  return String(value || "")
+    .replace(/\\/g, "\\\\")
+    .replace(/\r?\n/g, "\\n")
+    .replace(/,/g, "\\,")
+    .replace(/;/g, "\\;");
+}
+
+function buildCalendarLinks({ bookingId, title, description, location, startTime, endTime }) {
+  if (!bookingId || !startTime || !endTime) {
+    return { ics: null, google: null, yahoo: null, outlook: null };
+  }
+
+  const baseUrl = getPublicAppUrl();
+  const ics = `${baseUrl}/api/bookings/${encodeURIComponent(String(bookingId))}/calendar.ics`;
+  const startUtc = formatUtcCalendarStamp(startTime);
+  const endUtc = formatUtcCalendarStamp(endTime);
+  const encodedTitle = encodeURIComponent(title || "Reservation");
+  const encodedDescription = encodeURIComponent(description || "");
+  const encodedLocation = encodeURIComponent(location || "");
+
+  return {
+    ics,
+    google: startUtc && endUtc
+      ? `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodedTitle}&dates=${startUtc}/${endUtc}&details=${encodedDescription}&location=${encodedLocation}`
+      : null,
+    yahoo: startUtc && endUtc
+      ? `https://calendar.yahoo.com/?v=60&view=d&type=20&title=${encodedTitle}&st=${startUtc}&et=${endUtc}&desc=${encodedDescription}&in_loc=${encodedLocation}`
+      : null,
+    outlook: `https://outlook.live.com/calendar/0/deeplink/compose?path=/calendar/action/compose&rru=addevent&subject=${encodedTitle}&startdt=${encodeURIComponent(new Date(startTime).toISOString())}&enddt=${encodeURIComponent(new Date(endTime).toISOString())}&body=${encodedDescription}&location=${encodedLocation}`,
+  };
+}
+
 async function stripeFormRequest(pathname, params = {}, method = "POST", apiKey = envStripeSecretKey) {
   const normalizedKey = normalizeStripeSecretKey(apiKey);
   if (!normalizedKey) {
@@ -1624,6 +1686,21 @@ function buildCrmBookingPayload({
     ? new Date(new Date(booking.start_time).getTime() - (5 * 24 * 60 * 60 * 1000)).toISOString()
     : null;
   const paymentProvider = normalizePaymentProvider(financials.payment_provider || meta.payment_provider || "stripe");
+  const calendarTitle = `${businessName || "Chauffeur Deluxe"} Reservation #${booking.booking_id}`;
+  const calendarDescription = [
+    customer.first_name || customer.last_name ? `Reservation for ${[customer.first_name, customer.last_name].filter(Boolean).join(" ")}` : null,
+    booking.pickup_address ? `Pickup: ${booking.pickup_address}` : null,
+    booking.dropoff_address ? `Dropoff: ${booking.dropoff_address}` : null,
+    vehicle.vehicle_type ? `Vehicle: ${vehicle.vehicle_type}` : null,
+  ].filter(Boolean).join("\n");
+  const calendarLinks = buildCalendarLinks({
+    bookingId: booking.booking_id,
+    title: calendarTitle,
+    description: calendarDescription,
+    location: booking.dropoff_address || booking.pickup_address || "",
+    startTime: booking.start_time,
+    endTime: booking.end_time,
+  });
 
   return {
     webhook_type: webhookType,
@@ -1644,7 +1721,9 @@ function buildCrmBookingPayload({
       dropoff_lat: booking.dropoff_lat ?? null,
       dropoff_lng: booking.dropoff_lng ?? null,
       start_time: booking.start_time || null,
+      start_time_display: booking.start_time ? formatDisplayDateTime(booking.start_time) : null,
       end_time: booking.end_time || null,
+      end_time_display: booking.end_time ? formatDisplayDateTime(booking.end_time) : null,
       passenger_count: Number(booking.passenger_count || 1),
       carry_on_count: Number(booking.carry_on_count || 0),
       checked_bag_count: Number(booking.checked_bag_count || 0),
@@ -1714,6 +1793,10 @@ function buildCrmBookingPayload({
       cancel_unpaid_balance_message: Number(financials.balance_due || 0) > 0
         ? `If the remaining balance is not paid by the end of the 48-hour reminder day, this reservation will be cancelled.`
         : null,
+      add_to_calendar_ics_link: calendarLinks.ics,
+      add_to_calendar_google_link: calendarLinks.google,
+      add_to_calendar_yahoo_link: calendarLinks.yahoo,
+      add_to_calendar_outlook_link: calendarLinks.outlook,
     },
   };
 }
@@ -3044,6 +3127,76 @@ app.post("/api/create-booking", async (req, res) => {
   } catch (err) {
     console.error("❌ Error in create-booking:", err);
     return res.status(500).json({ success: false, error: err.message || "Failed to create booking" });
+  }
+});
+
+app.get("/api/bookings/:booking_id/calendar.ics", async (req, res) => {
+  try {
+    const bookingId = Number(req.params.booking_id || 0);
+    if (!Number.isInteger(bookingId) || bookingId <= 0) {
+      return res.status(400).send("Invalid booking id.");
+    }
+    const profileIdColumn = await getProfileIdColumn();
+
+    const result = await pool.query(
+      `SELECT
+        b.id,
+        b.first_name,
+        b.last_name,
+        b.pickup_address,
+        b.dropoff_address,
+        b.start_time,
+        b.end_time,
+        b.vehicle_slot_id,
+        p.business_name
+       FROM bookings b
+       LEFT JOIN profiles p ON p.${profileIdColumn} = b.location_id
+       WHERE b.id = $1
+       LIMIT 1`,
+      [bookingId]
+    );
+
+    if (!result.rows.length) {
+      return res.status(404).send("Booking not found.");
+    }
+
+    const booking = result.rows[0];
+    const title = `${booking.business_name || "Chauffeur Deluxe"} Reservation #${booking.id}`;
+    const description = [
+      [booking.first_name, booking.last_name].filter(Boolean).join(" ").trim() ? `Reservation for ${[booking.first_name, booking.last_name].filter(Boolean).join(" ").trim()}` : null,
+      booking.vehicle_slot_id ? `Vehicle Slot: ${booking.vehicle_slot_id}` : null,
+      booking.pickup_address ? `Pickup: ${booking.pickup_address}` : null,
+      booking.dropoff_address ? `Dropoff: ${booking.dropoff_address}` : null,
+    ].filter(Boolean).join("\\n");
+    const location = booking.dropoff_address || booking.pickup_address || "";
+    const dtStart = formatUtcCalendarStamp(booking.start_time);
+    const dtEnd = formatUtcCalendarStamp(booking.end_time);
+    const dtStamp = formatUtcCalendarStamp(new Date().toISOString());
+
+    const ics = [
+      "BEGIN:VCALENDAR",
+      "VERSION:2.0",
+      "PRODID:-//Rideshare Scheduler//Booking Calendar//EN",
+      "CALSCALE:GREGORIAN",
+      "BEGIN:VEVENT",
+      `UID:booking-${booking.id}@rideshare-scheduler`,
+      `DTSTAMP:${dtStamp}`,
+      `DTSTART:${dtStart}`,
+      `DTEND:${dtEnd}`,
+      `SUMMARY:${escapeIcsText(title)}`,
+      `DESCRIPTION:${escapeIcsText(description)}`,
+      `LOCATION:${escapeIcsText(location)}`,
+      "END:VEVENT",
+      "END:VCALENDAR",
+      "",
+    ].join("\r\n");
+
+    res.setHeader("Content-Type", "text/calendar; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename=\"booking-${booking.id}.ics\"`);
+    return res.status(200).send(ics);
+  } catch (err) {
+    console.error("Calendar ICS error:", err);
+    return res.status(500).send("Failed to generate calendar file.");
   }
 });
 
