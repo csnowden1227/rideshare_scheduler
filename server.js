@@ -360,6 +360,26 @@ async function createCrmAppointment({
   return extractCrmAppointmentId(data);
 }
 
+async function deleteCrmEvent(eventId) {
+  if (!CRM_ONESOURCE_API_KEY || !eventId) return false;
+
+  const response = await fetch(new URL(`/calendars/events/${encodeURIComponent(String(eventId))}`, CRM_API_BASE_URL), {
+    method: "DELETE",
+    headers: {
+      Authorization: `Bearer ${CRM_ONESOURCE_API_KEY}`,
+      Version: "2021-07-28",
+      Accept: "application/json",
+    },
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`CRM event delete failed (${response.status}): ${body.slice(0, 200)}`);
+  }
+
+  return true;
+}
+
 async function syncConfirmedBookingCalendarEvent(bookingId) {
   if (!CRM_ONESOURCE_API_KEY || !bookingId) return null;
 
@@ -1401,17 +1421,49 @@ app.post("/api/cancel-booking", async (req, res) => {
       return res.status(400).json({ error: "booking_id is required." });
     }
 
-    const result = await pool.query(
-      `UPDATE bookings
-       SET status = $1
-       WHERE id = $2
-       RETURNING id, location_id, status`,
-      ["cancelled", bookingId]
+    const bookingLookup = await pool.query(
+      `SELECT id, location_id, crm_event_id
+       FROM bookings
+       WHERE id = $1
+       LIMIT 1`,
+      [bookingId]
     );
 
-    if (!result.rows.length) {
+    if (!bookingLookup.rows.length) {
       return res.status(404).json({ error: "Booking not found for cancellation." });
     }
+
+    const existingBooking = bookingLookup.rows[0];
+    let calendarSync = null;
+
+    if (existingBooking.crm_event_id) {
+      try {
+        await deleteCrmEvent(existingBooking.crm_event_id);
+        calendarSync = {
+          attempted: true,
+          success: true,
+          crm_event_id: existingBooking.crm_event_id,
+          action: "deleted",
+        };
+      } catch (calendarErr) {
+        console.error("CRM calendar delete error during cancellation:", calendarErr);
+        calendarSync = {
+          attempted: true,
+          success: false,
+          crm_event_id: existingBooking.crm_event_id,
+          error: calendarErr?.message || "Failed to delete CRM calendar event.",
+        };
+      }
+    }
+
+    const result = await pool.query(
+      `UPDATE bookings
+       SET status = $1,
+           crm_event_id = CASE WHEN $2 THEN NULL ELSE crm_event_id END
+       WHERE id = $3
+       RETURNING id, location_id, status`,
+      ["cancelled", Boolean(calendarSync?.success), bookingId]
+    );
 
     await triggerCrmWebhook(result.rows[0].location_id, result.rows[0].id);
 
@@ -1421,6 +1473,7 @@ app.post("/api/cancel-booking", async (req, res) => {
       location_id: result.rows[0].location_id,
       status: result.rows[0].status,
       reason,
+      calendar_sync: calendarSync,
       message: "Booking cancelled successfully.",
     });
   } catch (err) {
