@@ -761,6 +761,7 @@ async function saveConfigHandler(req, res) {
       events = [],
       addons = []
     } = req.body;
+    const normalizedWebhookUrl = String(crm_webhook_url || "").trim();
 
     await client.query("BEGIN");
     const profileColumns = await getTableColumns("profiles");
@@ -854,8 +855,39 @@ async function saveConfigHandler(req, res) {
 
     await client.query("COMMIT");
 
+    let webhookSync = {
+      attempted: false,
+      success: false,
+      status: null,
+      error: null
+    };
+
+    if (normalizedWebhookUrl && normalizedWebhookUrl.startsWith("http")) {
+      webhookSync = await sendWizardSyncWebhook({
+        webhookUrl: normalizedWebhookUrl,
+        locationId: location_id,
+        businessName: business_name,
+        planName: plan_name,
+        mapsApiKeyPresent: Boolean(String(maps_api_key || "").trim()),
+        paymentProvider: payment_provider,
+        hasStripeKey: Boolean(String(stripe_secret_key || "").trim()),
+        hasSquareAccessToken: Boolean(String(square_access_token || "").trim()),
+        hasSquareLocationId: Boolean(String(square_location_id || "").trim()),
+        taxRate: parseFloat(tax_rate) || 0,
+        serviceLat: service_lat,
+        serviceLng: service_lng,
+        serviceRadius: service_radius,
+        fleet,
+        fixedRates: fixed_rates,
+        peakWindows: peak_windows,
+        events,
+        addons
+      });
+    }
+
     return res.json({
       success: true,
+      webhook_sync: webhookSync,
       message: "✅ Profile fully saved and aligned"
     });
   } catch (err) {
@@ -869,6 +901,145 @@ async function saveConfigHandler(req, res) {
   } finally {
     client.release();
   }
+}
+
+function buildWizardSyncPayload({
+  locationId,
+  businessName,
+  planName,
+  mapsApiKeyPresent,
+  paymentProvider,
+  hasStripeKey,
+  hasSquareAccessToken,
+  hasSquareLocationId,
+  taxRate,
+  serviceLat,
+  serviceLng,
+  serviceRadius,
+  fleet = [],
+  fixedRates = [],
+  peakWindows = [],
+  events = [],
+  addons = []
+}) {
+  return {
+    webhook_type: "webhook_setup_sync",
+    location_id: String(locationId || ""),
+    business_name: businessName || "",
+    source: "setup_wizard_sync",
+    created_at: new Date().toISOString(),
+    setup_sync: true,
+    setup: {
+      status: "synced",
+      plan_name: planName || "Starter",
+      maps_api_key_present: Boolean(mapsApiKeyPresent),
+      payment_provider: normalizePaymentProvider(paymentProvider),
+      stripe_secret_key_present: Boolean(hasStripeKey),
+      square_access_token_present: Boolean(hasSquareAccessToken),
+      square_location_id_present: Boolean(hasSquareLocationId),
+      tax_rate: Number(taxRate || 0),
+      service_area: {
+        lat: serviceLat != null ? Number(serviceLat) : null,
+        lng: serviceLng != null ? Number(serviceLng) : null,
+        radius: serviceRadius != null ? Number(serviceRadius) : null
+      },
+      counts: {
+        fleet_slots: Array.isArray(fleet) ? fleet.length : 0,
+        fixed_rate_zones: Array.isArray(fixedRates) ? fixedRates.length : 0,
+        peak_windows: Array.isArray(peakWindows) ? peakWindows.length : 0,
+        events: Array.isArray(events) ? events.length : 0,
+        addons: Array.isArray(addons) ? addons.length : 0
+      },
+      fleet: Array.isArray(fleet) ? fleet.map((row = {}) => ({
+        vehicle_slot_id: row.vehicle_slot_id || "",
+        vehicle_type: row.vehicle_type || "",
+        calendar_id: row.calendar_id || "",
+        base_rate: Number(row.base_rate || 0),
+        mile_rate: Number(row.mile_rate || 0),
+        outbound_buffer_min: Number(row.outbound_buffer_min || 0)
+      })) : []
+    }
+  };
+}
+
+async function sendWizardSyncWebhook({
+  webhookUrl,
+  locationId,
+  businessName,
+  planName,
+  mapsApiKeyPresent,
+  paymentProvider,
+  hasStripeKey,
+  hasSquareAccessToken,
+  hasSquareLocationId,
+  taxRate,
+  serviceLat,
+  serviceLng,
+  serviceRadius,
+  fleet,
+  fixedRates,
+  peakWindows,
+  events,
+  addons
+}) {
+  const result = {
+    attempted: false,
+    success: false,
+    status: null,
+    error: null
+  };
+
+  const normalizedWebhookUrl = String(webhookUrl || "").trim();
+  if (!normalizedWebhookUrl || !normalizedWebhookUrl.startsWith("http")) {
+    result.error = "No valid webhook URL configured.";
+    return result;
+  }
+
+  try {
+    result.attempted = true;
+    const payload = buildWizardSyncPayload({
+      locationId,
+      businessName,
+      planName,
+      mapsApiKeyPresent,
+      paymentProvider,
+      hasStripeKey,
+      hasSquareAccessToken,
+      hasSquareLocationId,
+      taxRate,
+      serviceLat,
+      serviceLng,
+      serviceRadius,
+      fleet,
+      fixedRates,
+      peakWindows,
+      events,
+      addons
+    });
+
+    const response = await fetch(normalizedWebhookUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+
+    result.status = response.status;
+    result.success = response.ok;
+    if (!response.ok) {
+      result.error = (await response.text()).slice(0, 300);
+    }
+
+    console.log("Wizard sync webhook result:", {
+      location_id: locationId,
+      status: response.status,
+      success: response.ok
+    });
+  } catch (err) {
+    result.error = err?.message || "Wizard sync webhook failed.";
+    console.error("Wizard sync webhook error:", err);
+  }
+
+  return result;
 }
 
 // This handles the "Save" button from your Wizard
