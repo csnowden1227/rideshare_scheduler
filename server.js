@@ -38,6 +38,13 @@ const stripe = envStripeSecretKey
   : null;
 const CRM_ONESOURCE_API_KEY = String(process.env.CRMONESOURCE_API_KEY || "").trim();
 const CRM_API_BASE_URL = process.env.CRM_API_BASE_URL || "https://services.leadconnectorhq.com";
+const CRM_OAUTH_CLIENT_ID = String(process.env.CRM_OAUTH_CLIENT_ID || "").trim();
+const CRM_OAUTH_CLIENT_SECRET = String(process.env.CRM_OAUTH_CLIENT_SECRET || "").trim();
+const CRM_OAUTH_REDIRECT_URI = String(process.env.CRM_OAUTH_REDIRECT_URI || "").trim();
+const CRM_OAUTH_SCOPES = String(
+  process.env.CRM_OAUTH_SCOPES ||
+  "contacts.readonly contacts.write calendars.readonly calendars.write"
+).trim();
 
 // 1. Define Environment Variables
 const CRM_WEBHOOK_URL =
@@ -53,6 +60,7 @@ const pool = new Pool({
 });
 
 let bookingSyncColumnsReady = null;
+let crmLocationTokenColumnsReady = null;
 
 // Initialize the Google Maps Client for the Backend
 const googleMapsClient = new GoogleMapsClient({});
@@ -100,6 +108,144 @@ async function ensureBookingSyncColumns() {
     });
   }
   return bookingSyncColumnsReady;
+}
+
+async function ensureCrmLocationTokenTable() {
+  if (!crmLocationTokenColumnsReady) {
+    crmLocationTokenColumnsReady = (async () => {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS crm_location_tokens (
+          location_id TEXT PRIMARY KEY,
+          access_token TEXT NOT NULL,
+          refresh_token TEXT,
+          expires_at TIMESTAMPTZ,
+          token_type TEXT,
+          scope TEXT,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `);
+    })().catch((err) => {
+      crmLocationTokenColumnsReady = null;
+      throw err;
+    });
+  }
+  return crmLocationTokenColumnsReady;
+}
+
+async function getStoredCrmToken(locationId) {
+  if (!locationId) return null;
+  await ensureCrmLocationTokenTable();
+  const result = await pool.query(
+    `SELECT location_id, access_token, refresh_token, expires_at, token_type, scope
+     FROM crm_location_tokens
+     WHERE location_id = $1
+     LIMIT 1`,
+    [String(locationId)]
+  );
+  return result.rows[0] || null;
+}
+
+async function saveCrmToken(locationId, tokenData = {}) {
+  if (!locationId || !tokenData.access_token) {
+    throw new Error("locationId and access_token are required to save CRM token.");
+  }
+
+  await ensureCrmLocationTokenTable();
+  const expiresAt = tokenData.expires_at
+    ? new Date(tokenData.expires_at)
+    : (tokenData.expires_in
+        ? new Date(Date.now() + (Number(tokenData.expires_in) * 1000))
+        : null);
+
+  await pool.query(
+    `INSERT INTO crm_location_tokens (
+       location_id, access_token, refresh_token, expires_at, token_type, scope, updated_at
+     )
+     VALUES ($1, $2, $3, $4, $5, $6, NOW())
+     ON CONFLICT (location_id) DO UPDATE SET
+       access_token = EXCLUDED.access_token,
+       refresh_token = COALESCE(EXCLUDED.refresh_token, crm_location_tokens.refresh_token),
+       expires_at = EXCLUDED.expires_at,
+       token_type = EXCLUDED.token_type,
+       scope = EXCLUDED.scope,
+       updated_at = NOW()`,
+    [
+      String(locationId),
+      String(tokenData.access_token),
+      tokenData.refresh_token ? String(tokenData.refresh_token) : null,
+      expiresAt && !Number.isNaN(expiresAt.getTime()) ? expiresAt.toISOString() : null,
+      tokenData.token_type ? String(tokenData.token_type) : null,
+      tokenData.scope ? String(tokenData.scope) : null,
+    ]
+  );
+}
+
+async function refreshCrmAccessToken(refreshToken) {
+  if (!CRM_OAUTH_CLIENT_ID || !CRM_OAUTH_CLIENT_SECRET || !CRM_OAUTH_REDIRECT_URI) {
+    throw new Error("CRM OAuth environment variables are not configured.");
+  }
+  if (!refreshToken) {
+    throw new Error("CRM refresh token is required.");
+  }
+
+  const body = new URLSearchParams({
+    client_id: CRM_OAUTH_CLIENT_ID,
+    client_secret: CRM_OAUTH_CLIENT_SECRET,
+    grant_type: "refresh_token",
+    refresh_token: String(refreshToken),
+    redirect_uri: CRM_OAUTH_REDIRECT_URI,
+  });
+
+  const response = await fetch(new URL("/oauth/token", CRM_API_BASE_URL), {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: body.toString(),
+  });
+
+  const text = await response.text();
+  let data;
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    data = { raw: text };
+  }
+
+  if (!response.ok) {
+    throw new Error(`CRM OAuth refresh failed (${response.status}): ${text.slice(0, 300)}`);
+  }
+
+  return data;
+}
+
+async function getCrmAccessTokenForLocation(locationId) {
+  const storedToken = await getStoredCrmToken(locationId);
+  if (storedToken?.access_token) {
+    const expiresAt = storedToken.expires_at ? new Date(storedToken.expires_at) : null;
+    const hasExpired = expiresAt && !Number.isNaN(expiresAt.getTime()) && expiresAt.getTime() <= (Date.now() + 60_000);
+
+    if (!hasExpired) {
+      return storedToken.access_token;
+    }
+
+    if (storedToken.refresh_token) {
+      const refreshed = await refreshCrmAccessToken(storedToken.refresh_token);
+      await saveCrmToken(locationId, {
+        access_token: refreshed.access_token,
+        refresh_token: refreshed.refresh_token || storedToken.refresh_token,
+        expires_in: refreshed.expires_in,
+        expires_at: refreshed.expires_at,
+        token_type: refreshed.token_type,
+        scope: refreshed.scope,
+      });
+      return refreshed.access_token;
+    }
+  }
+
+  return CRM_ONESOURCE_API_KEY || null;
 }
 
 async function getProfileIdColumn() {
@@ -197,9 +343,12 @@ async function getCrmCalendarEvents({
   startTime,
   endTime,
 }) {
-  if (!CRM_ONESOURCE_API_KEY || !locationId || !calendarId || !startTime || !endTime) {
+  if (!locationId || !calendarId || !startTime || !endTime) {
     return [];
   }
+
+  const crmAccessToken = await getCrmAccessTokenForLocation(locationId);
+  if (!crmAccessToken) return [];
 
   const url = new URL("/calendars/events", CRM_API_BASE_URL);
   url.searchParams.set("locationId", String(locationId));
@@ -210,7 +359,7 @@ async function getCrmCalendarEvents({
   const response = await fetch(url, {
     method: "GET",
     headers: {
-      Authorization: `Bearer ${CRM_ONESOURCE_API_KEY}`,
+      Authorization: `Bearer ${crmAccessToken}`,
       Version: "2021-07-28",
       Accept: "application/json",
     },
@@ -285,13 +434,16 @@ async function upsertCrmContact({
   email,
   phone,
 }) {
-  if (!CRM_ONESOURCE_API_KEY || !locationId) return null;
+  if (!locationId) return null;
   if (!email && !phone && !firstName && !lastName) return null;
+
+  const crmAccessToken = await getCrmAccessTokenForLocation(locationId);
+  if (!crmAccessToken) return null;
 
   const response = await fetch(new URL("/contacts/upsert", CRM_API_BASE_URL), {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${CRM_ONESOURCE_API_KEY}`,
+      Authorization: `Bearer ${crmAccessToken}`,
       Version: "2021-07-28",
       Accept: "application/json",
       "Content-Type": "application/json",
@@ -326,14 +478,17 @@ async function createCrmAppointment({
   notes,
   timeZone = "UTC",
 }) {
-  if (!CRM_ONESOURCE_API_KEY || !locationId || !calendarId || !contactId || !startTime) {
+  if (!locationId || !calendarId || !contactId || !startTime) {
     return null;
   }
+
+  const crmAccessToken = await getCrmAccessTokenForLocation(locationId);
+  if (!crmAccessToken) return null;
 
   const response = await fetch(new URL("/calendars/events/appointments", CRM_API_BASE_URL), {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${CRM_ONESOURCE_API_KEY}`,
+      Authorization: `Bearer ${crmAccessToken}`,
       Version: "2021-07-28",
       Accept: "application/json",
       "Content-Type": "application/json",
@@ -360,13 +515,16 @@ async function createCrmAppointment({
   return extractCrmAppointmentId(data);
 }
 
-async function deleteCrmEvent(eventId) {
-  if (!CRM_ONESOURCE_API_KEY || !eventId) return false;
+async function deleteCrmEvent(locationId, eventId) {
+  if (!locationId || !eventId) return false;
+
+  const crmAccessToken = await getCrmAccessTokenForLocation(locationId);
+  if (!crmAccessToken) return false;
 
   const response = await fetch(new URL(`/calendars/events/${encodeURIComponent(String(eventId))}`, CRM_API_BASE_URL), {
     method: "DELETE",
     headers: {
-      Authorization: `Bearer ${CRM_ONESOURCE_API_KEY}`,
+      Authorization: `Bearer ${crmAccessToken}`,
       Version: "2021-07-28",
       Accept: "application/json",
     },
@@ -381,7 +539,7 @@ async function deleteCrmEvent(eventId) {
 }
 
 async function syncConfirmedBookingCalendarEvent(bookingId) {
-  if (!CRM_ONESOURCE_API_KEY || !bookingId) return null;
+  if (!bookingId) return null;
 
   await ensureBookingSyncColumns();
   const profileIdColumn = await getProfileIdColumn();
@@ -1044,6 +1202,130 @@ async function sendWizardSyncWebhook({
 
 // This handles the "Save" button from your Wizard
 app.post("/api/save-config", requireWizardToken, saveConfigHandler);
+app.post('/api/update-profile-full', requireWizardToken, saveConfigHandler);
+
+app.get("/api/crm/token-status/:location_id", requireWizardToken, async (req, res) => {
+  try {
+    const tokenRow = await getStoredCrmToken(req.params.location_id);
+    const expiresAt = tokenRow?.expires_at ? new Date(tokenRow.expires_at) : null;
+    const isExpired = Boolean(expiresAt && !Number.isNaN(expiresAt.getTime()) && expiresAt.getTime() <= Date.now());
+    return res.json({
+      connected: Boolean(tokenRow?.access_token),
+      location_id: req.params.location_id,
+      expires_at: expiresAt && !Number.isNaN(expiresAt.getTime()) ? expiresAt.toISOString() : null,
+      is_expired: isExpired,
+      has_refresh_token: Boolean(tokenRow?.refresh_token),
+      scope: tokenRow?.scope || null,
+      fallback_env_token: Boolean(CRM_ONESOURCE_API_KEY),
+    });
+  } catch (err) {
+    console.error("CRM token status error:", err);
+    return res.status(500).json({ connected: false, error: err.message });
+  }
+});
+
+app.get("/api/crm/oauth/start", requireWizardToken, async (req, res) => {
+  if (!CRM_OAUTH_CLIENT_ID || !CRM_OAUTH_REDIRECT_URI) {
+    return res.status(500).json({ error: "CRM OAuth is not configured on the backend." });
+  }
+
+  const locationId = String(req.query.location_id || "").trim();
+  if (!locationId) {
+    return res.status(400).json({ error: "location_id is required." });
+  }
+
+  const state = Buffer.from(JSON.stringify({
+    location_id: locationId,
+    token: getWizardToken(req) || null,
+    return_to: req.query.return_to || null,
+  }), "utf8").toString("base64url");
+
+  const authUrl = new URL("/oauth/authorize", CRM_API_BASE_URL);
+  authUrl.searchParams.set("response_type", "code");
+  authUrl.searchParams.set("client_id", CRM_OAUTH_CLIENT_ID);
+  authUrl.searchParams.set("redirect_uri", CRM_OAUTH_REDIRECT_URI);
+  authUrl.searchParams.set("scope", CRM_OAUTH_SCOPES);
+  authUrl.searchParams.set("state", state);
+
+  return res.json({
+    location_id: locationId,
+    authorize_url: authUrl.toString(),
+  });
+});
+
+app.get("/api/crm/oauth/callback", async (req, res) => {
+  try {
+    if (!CRM_OAUTH_CLIENT_ID || !CRM_OAUTH_CLIENT_SECRET || !CRM_OAUTH_REDIRECT_URI) {
+      return res.status(500).send("CRM OAuth is not configured on the backend.");
+    }
+
+    const code = String(req.query.code || "").trim();
+    const rawState = String(req.query.state || "").trim();
+    if (!code || !rawState) {
+      return res.status(400).send("Missing OAuth code or state.");
+    }
+
+    let state;
+    try {
+      state = JSON.parse(Buffer.from(rawState, "base64url").toString("utf8"));
+    } catch {
+      return res.status(400).send("Invalid OAuth state.");
+    }
+
+    const locationId = String(state.location_id || "").trim();
+    if (!locationId) {
+      return res.status(400).send("OAuth state is missing location_id.");
+    }
+
+    const body = new URLSearchParams({
+      client_id: CRM_OAUTH_CLIENT_ID,
+      client_secret: CRM_OAUTH_CLIENT_SECRET,
+      grant_type: "authorization_code",
+      code,
+      redirect_uri: CRM_OAUTH_REDIRECT_URI,
+    });
+
+    const tokenResponse = await fetch(new URL("/oauth/token", CRM_API_BASE_URL), {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: body.toString(),
+    });
+
+    const tokenText = await tokenResponse.text();
+    let tokenData;
+    try {
+      tokenData = tokenText ? JSON.parse(tokenText) : {};
+    } catch {
+      tokenData = null;
+    }
+
+    if (!tokenResponse.ok || !tokenData?.access_token) {
+      return res.status(500).send(`CRM OAuth token exchange failed: ${tokenText.slice(0, 300)}`);
+    }
+
+    await saveCrmToken(locationId, tokenData);
+
+    const returnTo = state.return_to
+      ? String(state.return_to)
+      : `/setup-wizard.html?location_id=${encodeURIComponent(locationId)}${state.token ? `&token=${encodeURIComponent(state.token)}` : ""}`;
+
+    return res.send(`
+      <html>
+        <body style="font-family: Arial, sans-serif; padding: 24px;">
+          <h2>CRM Connected</h2>
+          <p>The CRM token for location <strong>${locationId}</strong> has been saved.</p>
+          <p><a href="${returnTo}">Return to setup wizard</a></p>
+        </body>
+      </html>
+    `);
+  } catch (err) {
+    console.error("CRM OAuth callback error:", err);
+    return res.status(500).send(err.message);
+  }
+});
 
 // This fixes the "Cannot GET /api/health" error
 app.get('/api/health', (req, res) => {
@@ -1671,7 +1953,7 @@ app.post("/api/cancel-booking", async (req, res) => {
 
     if (existingBooking.crm_event_id) {
       try {
-        await deleteCrmEvent(existingBooking.crm_event_id);
+        await deleteCrmEvent(existingBooking.location_id, existingBooking.crm_event_id);
         calendarSync = {
           attempted: true,
           success: true,
@@ -2534,7 +2816,7 @@ app.post("/api/create-checkout-session", async (req, res) => {
       new Date(req.body.start_time).getTime() + bookingDurationMinutes * 60000
     ).toISOString();
 
-    if (fleetVehicle?.calendar_id && CRM_ONESOURCE_API_KEY) {
+    if (fleetVehicle?.calendar_id) {
       const calendarEvents = await getCrmCalendarEvents({
         locationId,
         calendarId: fleetVehicle.calendar_id,
