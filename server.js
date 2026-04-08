@@ -61,6 +61,7 @@ const pool = new Pool({
 
 let bookingSyncColumnsReady = null;
 let crmLocationTokenColumnsReady = null;
+let profileCrmApiKeyColumnReady = null;
 
 // Initialize the Google Maps Client for the Backend
 const googleMapsClient = new GoogleMapsClient({});
@@ -133,6 +134,18 @@ async function ensureCrmLocationTokenTable() {
   return crmLocationTokenColumnsReady;
 }
 
+async function ensureProfileCrmApiKeyColumn() {
+  if (!profileCrmApiKeyColumnReady) {
+    profileCrmApiKeyColumnReady = (async () => {
+      await pool.query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS crm_api_key TEXT`);
+    })().catch((err) => {
+      profileCrmApiKeyColumnReady = null;
+      throw err;
+    });
+  }
+  return profileCrmApiKeyColumnReady;
+}
+
 async function getStoredCrmToken(locationId) {
   if (!locationId) return null;
   await ensureCrmLocationTokenTable();
@@ -144,6 +157,17 @@ async function getStoredCrmToken(locationId) {
     [String(locationId)]
   );
   return result.rows[0] || null;
+}
+
+async function getProfileCrmApiKey(locationId) {
+  if (!locationId) return null;
+  await ensureProfileCrmApiKeyColumn();
+  const profileIdColumn = await getProfileIdColumn();
+  const result = await pool.query(
+    `SELECT crm_api_key FROM profiles WHERE ${profileIdColumn} = $1 LIMIT 1`,
+    [String(locationId)]
+  );
+  return String(result.rows[0]?.crm_api_key || "").trim() || null;
 }
 
 async function saveCrmToken(locationId, tokenData = {}) {
@@ -222,6 +246,11 @@ async function refreshCrmAccessToken(refreshToken) {
 }
 
 async function getCrmAccessTokenForLocation(locationId) {
+  const profileToken = await getProfileCrmApiKey(locationId);
+  if (profileToken) {
+    return profileToken;
+  }
+
   const storedToken = await getStoredCrmToken(locationId);
   if (storedToken?.access_token) {
     const expiresAt = storedToken.expires_at ? new Date(storedToken.expires_at) : null;
@@ -904,6 +933,7 @@ async function saveConfigHandler(req, res) {
       plan_name,
       crm_webhook_url,
       maps_api_key,
+      crm_api_key,
       payment_provider,
       stripe_secret_key,
       square_application_id,
@@ -922,6 +952,7 @@ async function saveConfigHandler(req, res) {
     const normalizedWebhookUrl = String(crm_webhook_url || "").trim();
 
     await client.query("BEGIN");
+    await ensureProfileCrmApiKeyColumn();
     const profileColumns = await getTableColumns("profiles");
     const profileIdColumn = profileColumns.has("location_id") ? "location_id" : "id";
 
@@ -941,6 +972,7 @@ async function saveConfigHandler(req, res) {
     pushProfileField("plan_name", plan_name || "Starter");
     pushProfileField("crm_webhook_url", crm_webhook_url);
     pushProfileField("maps_api_key", maps_api_key);
+    pushProfileField("crm_api_key", crm_api_key || null);
     pushProfileField("payment_provider", normalizePaymentProvider(payment_provider));
     pushProfileField("stripe_secret_key", stripe_secret_key || null);
     pushProfileField("square_application_id", square_application_id || null);
@@ -3357,6 +3389,7 @@ res.json({
   brand_color_accent: profile.brand_color_accent || "#ecfeff",
   widget_tagline: profile.widget_tagline || "",
   maps_api_key: profile.maps_api_key,
+  crm_api_key: profile.crm_api_key || "",
   payment_provider: normalizePaymentProvider(profile.payment_provider),
   stripe_secret_key: profile.stripe_secret_key || "",
   square_application_id: profile.square_application_id || "",

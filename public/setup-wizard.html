@@ -137,6 +137,10 @@
                         <label class="block text-[10px] font-bold mb-2 uppercase text-slate-400">CRM Webhook URL</label>
                         <input type="text" id="webhook_url" class="input-mini" placeholder="https://services.leadconnectorhq.com/...">
                     </div>
+                    <div>
+                        <label class="block text-[10px] font-bold mb-2 uppercase text-slate-400">CRM Private Integration Token</label>
+                        <input type="password" id="crm_api_key" class="input-mini" placeholder="pit-...">
+                    </div>
                     <div class="md:col-span-3 lg:col-span-1">
                         <label class="block text-[10px] font-bold mb-2 uppercase text-slate-400">Tax Rate (%)</label>
                         <input type="number" step="0.01" id="tax_rate" class="input-mini" value="8.25">
@@ -1008,6 +1012,7 @@ async function loadFromBackend() {
             document.getElementById('widget_tagline').value = data.widget_tagline || 'Luxury airport transfers, executive rides, and premium service tailored to every reservation.';
             document.getElementById('webhook_url').value = data.crm_webhook_url || '';
             document.getElementById('maps_key').value = data.maps_api_key || '';
+            document.getElementById('crm_api_key').value = data.crm_api_key || '';
             document.getElementById('payment_provider').value = data.payment_provider || 'stripe';
             document.getElementById('stripe_secret_key').value = data.stripe_secret_key || '';
             document.getElementById('square_application_id').value = data.square_application_id || '';
@@ -1069,6 +1074,7 @@ async function saveToBackend() {
     const squareAccessToken = document.getElementById('square_access_token').value;
     const squareLocationId = document.getElementById('square_location_id').value;
     const webhookUrl = document.getElementById('webhook_url').value;
+    const crmApiKey = document.getElementById('crm_api_key').value;
     const taxRate = document.getElementById('tax_rate').value;
     const generalBufferMin = parseInt(document.getElementById('general_buffer_min').value, 10) || 0;
     const fleetRows = document.querySelectorAll('#fleet-body tr');
@@ -1100,6 +1106,7 @@ async function saveToBackend() {
         widget_tagline: document.getElementById('widget_tagline').value.trim(),
         crm_webhook_url: webhookUrl,
         maps_api_key: mapsKey,
+        crm_api_key: crmApiKey.trim(),
         payment_provider: paymentProvider,
         stripe_secret_key: stripeSecretKey.trim(),
         square_application_id: squareApplicationId.trim(),
