@@ -433,15 +433,30 @@ function refreshServiceAreaOverlay() {
 }
 
 async function ensureGoogleMapsLoaded(mapsKey) {
-    if (window.google?.maps?.places) return;
-    if (!mapsKey) throw new Error("Google Maps API key is required to load the map.");
+    const trimmedKey = String(mapsKey || '').trim();
+    if (!trimmedKey) throw new Error("Google Maps API key is required to load the map.");
 
     const existing = document.getElementById('wizard-google-maps');
-    if (!existing) {
+    const existingKey = existing?.dataset?.mapsKey || '';
+    const shouldReloadScript = Boolean(existing && existingKey && existingKey !== trimmedKey);
+
+    if (window.google?.maps?.places && !shouldReloadScript) return;
+
+    if (shouldReloadScript) {
+        existing.remove();
+        window.google = undefined;
+    }
+
+    if (!document.getElementById('wizard-google-maps')) {
         const script = document.createElement('script');
         script.id = 'wizard-google-maps';
-        script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(mapsKey)}&libraries=places`;
+        script.dataset.mapsKey = trimmedKey;
+        script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(trimmedKey)}&libraries=places`;
         script.async = true;
+        script.defer = true;
+        script.onerror = () => {
+            console.error('Google Maps script failed to load for setup wizard.');
+        };
         document.head.appendChild(script);
     }
 
@@ -453,7 +468,7 @@ async function ensureGoogleMapsLoaded(mapsKey) {
                 resolve();
             } else if (Date.now() - started > 10000) {
                 clearInterval(check);
-                reject(new Error("Google Maps failed to load."));
+                reject(new Error("Google Maps failed to load. Verify the API key, enabled APIs, billing, and allowed referrers."));
             }
         }, 120);
     });
