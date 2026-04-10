@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Partner Dispatch Onboarding</title>
+  <style>
+    :root {
+      --ink: #0f172a;
+      --muted: #64748b;
+      --line: #ddd6fe;
+      --accent: #5b21b6;
+      --accent-2: #0f766e;
+      --card: rgba(255, 255, 255, 0.92);
+      --danger: #dc2626;
+      --success: #15803d;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top right, rgba(91, 33, 182, 0.08), transparent 24%),
+        linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
+      min-height: 100vh;
+    }
+    .wrap {
+      max-width: 1160px;
+      margin: 0 auto;
+      padding: 24px 16px 48px;
+    }
+    .hero, .section {
+      border-radius: 24px;
+      padding: 24px;
+      box-shadow: 0 18px 42px rgba(15, 23, 42, 0.06);
+    }
+    .hero {
+      background: linear-gradient(135deg, #111827 0%, #5b21b6 52%, #0f766e 100%);
+      color: #fff;
+    }
+    .hero p, .section p {
+      margin: 0;
+      line-height: 1.8;
+    }
+    .eyebrow {
+      margin: 0 0 10px;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+      opacity: 0.9;
+    }
+    h1 {
+      margin: 0 0 12px;
+      font-size: 40px;
+      line-height: 1.06;
+    }
+    .section {
+      margin-top: 22px;
+      background: var(--card);
+      border: 1px solid var(--line);
+    }
+    .section h2 {
+      margin: 0 0 12px;
+      font-size: 28px;
+      color: var(--accent);
+      line-height: 1.1;
+    }
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+    label {
+      display: block;
+      margin-bottom: 8px;
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+    }
+    input, select {
+      width: 100%;
+      padding: 12px 14px;
+      border-radius: 14px;
+      border: 1px solid #cbd5e1;
+      background: #fff;
+      color: var(--ink);
+      font-size: 14px;
+    }
+    .field {
+      margin-top: 14px;
+    }
+    .fleet-list {
+      display: grid;
+      gap: 12px;
+      margin-top: 14px;
+    }
+    .fleet-row {
+      display: grid;
+      grid-template-columns: 1.2fr 1fr 1fr auto;
+      gap: 12px;
+      align-items: end;
+      padding: 16px;
+      border-radius: 18px;
+      border: 1px solid var(--line);
+      background: #fff;
+    }
+    .btn-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 18px;
+    }
+    button {
+      border: 0;
+      cursor: pointer;
+      border-radius: 14px;
+      padding: 13px 18px;
+      font-size: 14px;
+      font-weight: 700;
+      transition: transform 0.18s ease, filter 0.18s ease;
+    }
+    button:hover {
+      transform: translateY(-1px);
+      filter: brightness(0.98);
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      color: #fff;
+    }
+    .btn-secondary {
+      background: #fff;
+      color: var(--accent);
+      border: 1px solid #c4b5fd;
+    }
+    .status {
+      margin-top: 14px;
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--success);
+    }
+    .status.error {
+      color: var(--danger);
+    }
+    .invite-summary {
+      margin-top: 14px;
+      display: grid;
+      gap: 8px;
+      color: rgba(255, 255, 255, 0.92);
+      font-size: 14px;
+      line-height: 1.7;
+    }
+    .small-note {
+      margin-top: 10px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.7;
+    }
+    @media (max-width: 980px) {
+      .grid-2, .fleet-row {
+        grid-template-columns: 1fr;
+      }
+    }
+    @media (max-width: 720px) {
+      .wrap { padding: 16px 12px 36px; }
+      .hero, .section { padding: 20px 18px; }
+      h1 { font-size: 32px; }
+      .section h2 { font-size: 24px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="hero">
+      <p class="eyebrow">Partner Network Invitation</p>
+      <h1>Join the Dispatch Network</h1>
+      <p>
+        Complete this onboarding form so the farming-out operator can send you overflow rides, see your business in their dispatch network, and store your accepting-partner split agreement.
+      </p>
+      <div id="invite-summary" class="invite-summary"></div>
+      <div id="invite-status" class="status error" style="display:none;"></div>
+    </section>
+
+    <section class="section">
+      <h2>Business and CRM Access</h2>
+      <p>These are the core details used to list your business as an accepting partner and push accepted dispatch rides into your CRM.</p>
+      <form id="onboarding-form">
+        <div class="grid-2">
+          <div class="field">
+            <label for="business_name">Business Name</label>
+            <input id="business_name" required />
+          </div>
+          <div class="field">
+            <label for="partner_location_id">CRM Location ID</label>
+            <input id="partner_location_id" required />
+          </div>
+          <div class="field">
+            <label for="contact_name">Contact Name</label>
+            <input id="contact_name" />
+          </div>
+          <div class="field">
+            <label for="email">Email</label>
+            <input id="email" type="email" />
+          </div>
+          <div class="field">
+            <label for="phone">Phone</label>
+            <input id="phone" />
+          </div>
+          <div class="field">
+            <label for="crm_api_key">CRM API Key</label>
+            <input id="crm_api_key" />
+          </div>
+          <div class="field">
+            <label for="maps_api_key">Maps API Key</label>
+            <input id="maps_api_key" />
+          </div>
+          <div class="field">
+            <label for="payment_provider">Payment Provider</label>
+            <select id="payment_provider">
+              <option value="stripe">Stripe</option>
+              <option value="square">Square</option>
+              <option value="crm_invoice_only">CRM Invoice Only</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="stripe_account_id">Stripe Connect Account ID</label>
+            <input id="stripe_account_id" placeholder="acct_..." />
+          </div>
+          <div class="field">
+            <label for="timezone">Timezone</label>
+            <input id="timezone" placeholder="America/Los_Angeles" />
+          </div>
+        </div>
+
+        <div class="section" style="padding:18px; margin-top:22px;">
+          <h2 style="font-size:24px;">Service Area</h2>
+          <div class="grid-2">
+            <div class="field">
+              <label for="service_lat">Service Latitude</label>
+              <input id="service_lat" type="number" step="any" />
+            </div>
+            <div class="field">
+              <label for="service_lng">Service Longitude</label>
+              <input id="service_lng" type="number" step="any" />
+            </div>
+            <div class="field">
+              <label for="service_radius_miles">Service Radius (Miles)</label>
+              <input id="service_radius_miles" type="number" step="0.1" value="25" />
+            </div>
+            <div class="field">
+              <label for="accepts_dispatch">Ready to Accept Dispatch</label>
+              <select id="accepts_dispatch">
+                <option value="true">Yes</option>
+                <option value="false">Not yet</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div class="section" style="padding:18px; margin-top:22px;">
+          <h2 style="font-size:24px;">Fleet Availability</h2>
+          <p>Add at least one active vehicle/fleet row so the source operator can understand what you can cover.</p>
+          <div id="fleet-list" class="fleet-list"></div>
+          <div class="btn-row">
+            <button id="add-fleet-btn" type="button" class="btn-secondary">Add Fleet Row</button>
+          </div>
+          <div class="small-note">
+            Vehicle type is the main field used for dispatch matching. Calendar ID is optional in this first version.
+          </div>
+        </div>
+
+        <div class="btn-row">
+          <button type="submit" class="btn-primary">Complete Onboarding</button>
+        </div>
+        <div id="submit-status" class="status" style="display:none;"></div>
+      </form>
+    </section>
+  </div>
+
+  <script>
+    const query = new URLSearchParams(window.location.search);
+    const token = (query.get("token") || "").trim();
+
+    const inviteSummaryEl = document.getElementById("invite-summary");
+    const inviteStatusEl = document.getElementById("invite-status");
+    const submitStatusEl = document.getElementById("submit-status");
+    const onboardingForm = document.getElementById("onboarding-form");
+    const fleetListEl = document.getElementById("fleet-list");
+    const addFleetBtn = document.getElementById("add-fleet-btn");
+
+    function showStatus(el, message, isError = false) {
+      el.textContent = message;
+      el.style.display = "block";
+      el.classList.toggle("error", isError);
+    }
+
+    function addFleetRow(data = {}) {
+      const row = document.createElement("div");
+      row.className = "fleet-row";
+      row.innerHTML = `
+        <div>
+          <label>Vehicle Type</label>
+          <input data-role="vehicle_type" value="${data.vehicle_type || ""}" placeholder="Luxury SUV" />
+        </div>
+        <div>
+          <label>Vehicle Category</label>
+          <input data-role="vehicle_category" value="${data.vehicle_category || ""}" placeholder="suv" />
+        </div>
+        <div>
+          <label>Calendar ID</label>
+          <input data-role="calendar_id" value="${data.calendar_id || ""}" placeholder="Optional" />
+        </div>
+        <button type="button" class="btn-secondary" data-role="remove-row">Remove</button>
+      `;
+      row.querySelector('[data-role="remove-row"]').addEventListener("click", () => {
+        row.remove();
+      });
+      fleetListEl.appendChild(row);
+    }
+
+    function collectFleetRows() {
+      return Array.from(fleetListEl.querySelectorAll(".fleet-row")).map((row) => ({
+        vehicle_type: row.querySelector('[data-role="vehicle_type"]').value.trim(),
+        vehicle_category: row.querySelector('[data-role="vehicle_category"]').value.trim(),
+        calendar_id: row.querySelector('[data-role="calendar_id"]').value.trim(),
+        active: true
+      })).filter((row) => row.vehicle_type);
+    }
+
+    async function requestJson(url, options = {}) {
+      const response = await fetch(url, options);
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.error || "Request failed.");
+      }
+      return data;
+    }
+
+    async function loadInvite() {
+      if (!token) {
+        showStatus(inviteStatusEl, "Missing onboarding token.", true);
+        onboardingForm.style.display = "none";
+        return;
+      }
+
+      const data = await requestJson(`/api/partners/onboard/${encodeURIComponent(token)}`);
+      inviteSummaryEl.innerHTML = `
+        <div><strong>Invite Email:</strong> ${data.email || "Unknown"}</div>
+        <div><strong>Source Location:</strong> ${data.owner_location_id || "Unknown"}</div>
+        <div><strong>Invite Status:</strong> ${data.status || "pending"}</div>
+        <div><strong>Expires:</strong> ${data.expires_at ? new Date(data.expires_at).toLocaleString() : "No expiration set"}</div>
+      `;
+      document.getElementById("email").value = data.email || "";
+    }
+
+    addFleetBtn.addEventListener("click", () => addFleetRow());
+
+    onboardingForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (!token) {
+        showStatus(submitStatusEl, "Missing onboarding token.", true);
+        return;
+      }
+
+      const fleet = collectFleetRows();
+      if (!document.getElementById("business_name").value.trim()) {
+        showStatus(submitStatusEl, "Business name is required.", true);
+        return;
+      }
+      if (!document.getElementById("partner_location_id").value.trim()) {
+        showStatus(submitStatusEl, "CRM location ID is required.", true);
+        return;
+      }
+      if (!fleet.length) {
+        showStatus(submitStatusEl, "Add at least one fleet row before continuing.", true);
+        return;
+      }
+
+      try {
+        const payload = {
+          business_name: document.getElementById("business_name").value.trim(),
+          partner_location_id: document.getElementById("partner_location_id").value.trim(),
+          contact_name: document.getElementById("contact_name").value.trim(),
+          email: document.getElementById("email").value.trim(),
+          phone: document.getElementById("phone").value.trim(),
+          crm_api_key: document.getElementById("crm_api_key").value.trim(),
+          maps_api_key: document.getElementById("maps_api_key").value.trim(),
+          payment_provider: document.getElementById("payment_provider").value,
+          stripe_account_id: document.getElementById("stripe_account_id").value.trim(),
+          timezone: document.getElementById("timezone").value.trim(),
+          service_lat: document.getElementById("service_lat").value.trim(),
+          service_lng: document.getElementById("service_lng").value.trim(),
+          service_radius_miles: document.getElementById("service_radius_miles").value.trim(),
+          accepts_dispatch: document.getElementById("accepts_dispatch").value === "true",
+          fleet
+        };
+
+        await requestJson(`/api/partners/onboard/${encodeURIComponent(token)}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+
+        showStatus(submitStatusEl, "Onboarding completed. You can close this page and return to the source operator.");
+        onboardingForm.reset();
+        fleetListEl.innerHTML = "";
+        addFleetRow();
+      } catch (err) {
+        showStatus(submitStatusEl, err.message || "Unable to complete onboarding.", true);
+      }
+    });
+
+    window.addEventListener("load", async () => {
+      addFleetRow();
+      try {
+        await loadInvite();
+      } catch (err) {
+        showStatus(inviteStatusEl, err.message || "Unable to load partner invite.", true);
+        onboardingForm.style.display = "none";
+      }
+    });
+  </script>
+</body>
+</html>

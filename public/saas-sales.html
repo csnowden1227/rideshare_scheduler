@@ -1,0 +1,687 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chauffeur Deluxe Rideshare App | CRM One Source</title>
+  <style>
+    :root {
+      --purple: #5b21b6;
+      --purple-dark: #4c1d95;
+      --teal: #0f766e;
+      --teal-dark: #115e59;
+      --navy: #0f172a;
+      --ink: #111827;
+      --muted: #64748b;
+      --line: #ddd6fe;
+      --soft-purple: #f5f3ff;
+      --soft-teal: #f0fdfa;
+      --soft-blue: #eff6ff;
+      --paper: #ffffff;
+      --shadow: 0 18px 42px rgba(15, 23, 42, 0.08);
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top right, rgba(91, 33, 182, 0.08), transparent 30%),
+        linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
+    }
+    .wrap {
+      max-width: 1320px;
+      margin: 0 auto;
+      padding: 24px 16px 56px;
+    }
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 18px;
+      padding: 10px 4px;
+    }
+    .brand {
+      font-size: 14px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--navy);
+    }
+    .topbar a {
+      color: var(--purple);
+      text-decoration: none;
+      font-weight: 700;
+    }
+    .hero {
+      position: relative;
+      overflow: hidden;
+      background: linear-gradient(135deg, var(--navy) 0%, var(--purple) 48%, var(--teal) 100%);
+      color: #fff;
+      border-radius: 30px;
+      padding: 52px 34px;
+      box-shadow: 0 24px 60px rgba(76, 29, 149, 0.18);
+    }
+    .hero::after {
+      content: "";
+      position: absolute;
+      inset: auto -60px -120px auto;
+      width: 320px;
+      height: 320px;
+      background: radial-gradient(circle, rgba(255,255,255,0.15), transparent 70%);
+      pointer-events: none;
+    }
+    .eyebrow {
+      margin: 0 0 12px 0;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+      opacity: 0.92;
+    }
+    h1 {
+      margin: 0 0 16px 0;
+      font-size: 48px;
+      line-height: 1.02;
+      max-width: 980px;
+    }
+    h2 {
+      margin: 0 0 16px 0;
+      color: var(--purple-dark);
+      font-size: 30px;
+      line-height: 1.1;
+    }
+    h3 {
+      margin: 0 0 10px 0;
+      font-size: 24px;
+      line-height: 1.15;
+    }
+    p {
+      line-height: 1.85;
+    }
+    .hero-copy {
+      margin: 0;
+      max-width: 900px;
+      font-size: 17px;
+    }
+    .hero-login-note {
+      margin-top: 18px;
+      max-width: 900px;
+      padding: 16px 18px;
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.11);
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      font-size: 15px;
+    }
+    .hero-actions,
+    .btn-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 22px;
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      text-decoration: none;
+      padding: 14px 20px;
+      border-radius: 14px;
+      font-weight: 700;
+      border: 0;
+      cursor: pointer;
+      transition: transform 0.18s ease, box-shadow 0.18s ease, filter 0.18s ease;
+    }
+    .btn:hover {
+      transform: translateY(-1px);
+      filter: brightness(0.98);
+    }
+    .btn-primary {
+      background: #fff;
+      color: var(--purple);
+      box-shadow: 0 10px 24px rgba(255, 255, 255, 0.16);
+    }
+    .btn-secondary {
+      background: transparent;
+      color: #fff;
+      border: 1px solid rgba(255, 255, 255, 0.34);
+    }
+    .btn-surface {
+      background: linear-gradient(135deg, var(--purple) 0%, var(--teal) 100%);
+      color: #fff;
+    }
+    .btn-outline {
+      background: #fff;
+      color: var(--purple);
+      border: 1px solid #c4b5fd;
+    }
+    .section {
+      margin-top: 22px;
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      padding: 24px;
+      box-shadow: var(--shadow);
+    }
+    .grid-4 {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 16px;
+    }
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 18px;
+    }
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px;
+    }
+    .card {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      padding: 22px;
+      box-shadow: 0 10px 26px rgba(15, 23, 42, 0.04);
+    }
+    .card-teal {
+      background: var(--soft-teal);
+      border-color: #99f6e4;
+    }
+    .card-purple {
+      background: var(--soft-purple);
+    }
+    .card-blue {
+      background: var(--soft-blue);
+      border-color: #93c5fd;
+    }
+    .pill {
+      display: inline-block;
+      padding: 6px 10px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    .pill-purple {
+      background: var(--soft-purple);
+      color: var(--purple);
+    }
+    .pill-teal {
+      background: #ccfbf1;
+      color: var(--teal);
+    }
+    .price {
+      margin: 12px 0 8px 0;
+      font-size: 40px;
+      line-height: 1;
+      font-weight: 800;
+      color: var(--navy);
+    }
+    .subprice {
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.7;
+    }
+    .features {
+      margin: 16px 0 0 0;
+      padding-left: 18px;
+      color: #475569;
+      line-height: 1.8;
+    }
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 14px;
+    }
+    .chip {
+      padding: 9px 12px;
+      border-radius: 999px;
+      background: #eff6ff;
+      border: 1px solid #93c5fd;
+      color: #1d4ed8;
+      font-size: 13px;
+      font-weight: 700;
+      line-height: 1.2;
+    }
+    .comparison-wrap {
+      overflow-x: auto;
+    }
+    table {
+      width: 100%;
+      min-width: 980px;
+      border-collapse: collapse;
+    }
+    th, td {
+      text-align: left;
+      padding: 14px 16px;
+      border-top: 1px solid #ede9fe;
+      vertical-align: top;
+      line-height: 1.7;
+    }
+    th {
+      background: var(--soft-purple);
+      color: var(--purple-dark);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    .highlight {
+      background: linear-gradient(135deg, #ede9fe 0%, #ecfeff 100%);
+      border-color: #c4b5fd;
+    }
+    .video-shell {
+      min-height: 320px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      border-radius: 22px;
+      background:
+        linear-gradient(135deg, rgba(15,23,42,0.92), rgba(91,33,182,0.86)),
+        linear-gradient(180deg, #1e293b 0%, #0f172a 100%);
+      color: #fff;
+      padding: 26px;
+    }
+    .play-ring {
+      width: 76px;
+      height: 76px;
+      border-radius: 999px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(255,255,255,0.1);
+      border: 1px solid rgba(255,255,255,0.22);
+      margin-bottom: 16px;
+      font-size: 28px;
+    }
+    .steps {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 16px;
+      margin-top: 18px;
+    }
+    .step {
+      border-radius: 18px;
+      padding: 18px;
+      background: #fff;
+      border: 1px solid #e9d5ff;
+    }
+    .step strong {
+      display: block;
+      color: var(--purple);
+      margin-bottom: 8px;
+    }
+    .footer-note {
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.8;
+    }
+
+    @media (max-width: 1100px) {
+      .grid-4,
+      .steps {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+      .grid-3,
+      .grid-2 {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+    @media (max-width: 700px) {
+      .wrap { padding: 18px 12px 38px; }
+      .topbar { align-items: flex-start; flex-direction: column; }
+      .hero { padding: 30px 18px; border-radius: 24px; }
+      .section,
+      .card { padding: 18px; border-radius: 20px; }
+      .grid-4,
+      .grid-3,
+      .grid-2,
+      .steps { grid-template-columns: 1fr; gap: 14px; }
+      h1 { font-size: 32px; }
+      h2 { font-size: 24px; }
+      h3 { font-size: 20px; }
+      .price { font-size: 30px; }
+      th, td { font-size: 13px; line-height: 1.6; }
+      .video-shell { min-height: 240px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="topbar">
+      <div class="brand">CRM One Source</div>
+      <a href="https://app.crmonesource.com/">Log In</a>
+    </div>
+
+    <section class="hero">
+      <p class="eyebrow">Rideshare and Chauffeur SaaS</p>
+      <h1>Sell More Premium Rides With a Booking System Built for Chauffeur and Executive Transportation</h1>
+      <p class="hero-copy">
+        Chauffeur Deluxe Rideshare App gives limousine, airport transfer, black car, and executive ride operators
+        a polished booking experience, CRM workflow automation, vehicle calendar structure, pricing controls,
+        branding options, and growth tools like Network Dispatch Access.
+      </p>
+      <div class="hero-login-note">
+        After purchasing a plan, the next step is to <strong>log in at app.crmonesource.com</strong>, complete your
+        profile, get your <strong>location ID</strong>, and finish setup inside your custom wizard by connecting
+        calendars, API keys, branding, payments, and integrations.
+      </div>
+      <div class="hero-actions">
+        <a class="btn btn-primary" href="#plans">Compare Plans</a>
+        <a class="btn btn-secondary" href="https://app.crmonesource.com/">Log In to CRM_One_Source</a>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>What the App Helps You Do</h2>
+      <div class="grid-4">
+        <div class="card card-purple">
+          <h3 style="color: var(--purple);">Book Faster</h3>
+          <p style="margin: 0;">Quote and confirm premium rides with a cleaner booking flow built for chauffeur-style reservations.</p>
+        </div>
+        <div class="card card-teal">
+          <h3 style="color: var(--teal);">Run Cleaner Operations</h3>
+          <p style="margin: 0;">Organize fleet calendars, automate follow-up, and push reservations into CRM workflows with less manual work.</p>
+        </div>
+        <div class="card card-blue">
+          <h3 style="color: #1d4ed8;">Look More Premium</h3>
+          <p style="margin: 0;">Upgrade from a generic form into a luxury booking experience that better matches your brand and pricing.</p>
+        </div>
+        <div class="card card-purple">
+          <h3 style="color: var(--purple);">Scale Smarter</h3>
+          <p style="margin: 0;">Add branding, add vehicles, or use Network Dispatch Access before hiring faster than your systems can handle.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="grid-2">
+        <div>
+          <h2>See the Platform in Action</h2>
+          <p style="margin: 0;">
+            Add your CRM media video here to show operators what the booking flow, setup wizard, and premium experience
+            look like before they buy.
+          </p>
+          <div class="btn-row">
+            <a class="btn btn-surface" href="https://app.crmonesource.com/">Log In to Continue Setup After Purchase</a>
+          </div>
+        </div>
+        <div class="video-shell">
+          <div>
+            <div class="play-ring">▶</div>
+            <h3 style="margin-bottom: 8px; color: #fff;">Video Placeholder</h3>
+            <p style="margin: 0; opacity: 0.92;">
+              Send the CRM media link and this section can become an embedded video or a styled watch button.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="plans">
+      <h2>Choose the Right Plan for Your Operation</h2>
+      <div class="grid-3">
+        <div class="card">
+          <span class="pill pill-purple">Starter</span>
+          <div class="price">Add Your Price</div>
+          <div class="subprice">1 car included | 1 calendar included | company name only by default</div>
+          <ul class="features">
+            <li>1 car included</li>
+            <li>1 calendar included</li>
+            <li>No branding by default</li>
+            <li>No logo or custom brand colors by default</li>
+            <li>No funnel by default</li>
+            <li>Branding available as a monthly subscription</li>
+            <li>Additional fleet vehicles available as a monthly subscription</li>
+          </ul>
+          <div class="chips">
+            <span class="chip">CRM</span>
+            <span class="chip">Calendar</span>
+            <span class="chip">Form Builder</span>
+            <span class="chip">Launchpad</span>
+            <span class="chip">Workflows</span>
+            <span class="chip">Triggers</span>
+            <span class="chip">All Reporting</span>
+            <span class="chip">Survey Builder</span>
+            <span class="chip">Trigger Links</span>
+            <span class="chip">Social Planner</span>
+            <span class="chip">GMB Messaging</span>
+            <span class="chip">Facebook Messenger</span>
+            <span class="chip">Affiliate Manager</span>
+            <span class="chip">Opportunities</span>
+          </div>
+          <div class="btn-row">
+            <a class="btn btn-surface" href="https://app.crmonesource.com/">Add Starter Checkout Link</a>
+          </div>
+        </div>
+
+        <div class="card card-teal">
+          <span class="pill pill-teal">Premium</span>
+          <div class="price">Add Your Price</div>
+          <div class="subprice">1 car included | branding included | send-only dispatch access</div>
+          <ul class="features">
+            <li>1 car included</li>
+            <li>Branding included</li>
+            <li>Logo upload included</li>
+            <li>Custom brand colors included</li>
+            <li>No funnel by default</li>
+            <li>Can add more fleet vehicles monthly</li>
+            <li>Can send overflow rides into the dispatch network</li>
+          </ul>
+          <div class="chips">
+            <span class="chip">Everything in Starter</span>
+            <span class="chip">2 Way Text & Email</span>
+            <span class="chip">Text To Pay</span>
+            <span class="chip">Invoice</span>
+            <span class="chip">SMS & Email Templates</span>
+            <span class="chip">Blogs</span>
+            <span class="chip">Campaigns</span>
+            <span class="chip">Documents & Contracts</span>
+            <span class="chip">Send Dispatch Access</span>
+          </div>
+          <div class="btn-row">
+            <a class="btn btn-surface" href="https://app.crmonesource.com/">Add Premium Checkout Link</a>
+          </div>
+        </div>
+
+        <div class="card">
+          <span class="pill pill-purple">Pro</span>
+          <div class="price">Add Your Price</div>
+          <div class="subprice">3 cars included | full branding | funnel included | send and receive dispatch access</div>
+          <ul class="features">
+            <li>3 cars included</li>
+            <li>Full branding included</li>
+            <li>Funnel included</li>
+            <li>Can add more fleet vehicles monthly</li>
+            <li>Can send overflow rides to the network</li>
+            <li>Can receive overflow rides from the network</li>
+          </ul>
+          <div class="chips">
+            <span class="chip">Everything in Premium</span>
+            <span class="chip">Community</span>
+            <span class="chip">Send Dispatch Access</span>
+            <span class="chip">Receive Dispatch Access</span>
+          </div>
+          <div class="btn-row">
+            <a class="btn btn-surface" href="https://app.crmonesource.com/">Add Pro Checkout Link</a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>Cost and Access Comparison</h2>
+      <div class="comparison-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Feature</th>
+              <th>Starter</th>
+              <th>Premium</th>
+              <th>Pro</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Base Monthly Price</strong></td>
+              <td>Add Your Price</td>
+              <td>Add Your Price</td>
+              <td>Add Your Price</td>
+            </tr>
+            <tr>
+              <td><strong>Cars Included</strong></td>
+              <td>1</td>
+              <td>1</td>
+              <td>3</td>
+            </tr>
+            <tr>
+              <td><strong>Calendars Included</strong></td>
+              <td>1</td>
+              <td>1 included, more available as add-ons</td>
+              <td>3 included, more available as add-ons</td>
+            </tr>
+            <tr>
+              <td><strong>Branding</strong></td>
+              <td>Not included by default</td>
+              <td>Included</td>
+              <td>Included</td>
+            </tr>
+            <tr>
+              <td><strong>Logo Upload</strong></td>
+              <td>No by default</td>
+              <td>Yes</td>
+              <td>Yes</td>
+            </tr>
+            <tr>
+              <td><strong>Custom Colors</strong></td>
+              <td>No by default</td>
+              <td>Yes</td>
+              <td>Yes</td>
+            </tr>
+            <tr>
+              <td><strong>Digital Marketing Funnel</strong></td>
+              <td>No, add-on available</td>
+              <td>No, add-on available</td>
+              <td>Included</td>
+            </tr>
+            <tr>
+              <td><strong>Network Dispatch Access</strong></td>
+              <td>Not included</td>
+              <td>Send only</td>
+              <td>Send and receive</td>
+            </tr>
+            <tr>
+              <td><strong>Branding Add-On</strong></td>
+              <td>$49.99/month</td>
+              <td>Not needed</td>
+              <td>Not needed</td>
+            </tr>
+            <tr>
+              <td><strong>Additional Fleet Vehicle</strong></td>
+              <td>$109.99/month per additional vehicle</td>
+              <td>$109.99/month per additional vehicle</td>
+              <td>$109.99/month per additional vehicle</td>
+            </tr>
+            <tr>
+              <td><strong>Funnel Add-On</strong></td>
+              <td>$497 one-time</td>
+              <td>$497 one-time</td>
+              <td>Included</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="footer-note" style="margin: 16px 0 0 0;">
+        Replace the base monthly price placeholders and plan checkout links with your final SaaS pricing and Stripe purchase URLs.
+      </p>
+    </section>
+
+    <section class="section highlight">
+      <h2>Network Dispatch Access</h2>
+      <p style="margin: 0; max-width: 920px;">
+        Premium operators can send overflow bookings into the network when their own fleet is full. Pro operators can
+        send and receive, which means they can protect their own bookings and also monetize open availability by receiving partner overflow.
+      </p>
+      <div class="grid-3" style="margin-top: 18px;">
+        <div class="card">
+          <h3 style="color: var(--purple);">Protect Bookings</h3>
+          <p style="margin: 0;">Keep high-value reservations from slipping away just because your own fleet is already booked.</p>
+        </div>
+        <div class="card card-teal">
+          <h3 style="color: var(--teal);">Grow Revenue</h3>
+          <p style="margin: 0;">Receive qualified overflow from partner operators and turn open schedule space into booked trips.</p>
+        </div>
+        <div class="card card-blue">
+          <h3 style="color: #1d4ed8;">Scale Smarter</h3>
+          <p style="margin: 0;">Expand reach and coverage before immediately taking on the cost of another full-time vehicle.</p>
+        </div>
+      </div>
+      <div class="btn-row">
+        <a class="btn btn-surface" href="/network-dispatch.html">Learn More About Dispatch Access</a>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>What Happens After Purchase</h2>
+      <p style="margin: 0; max-width: 920px;">
+        Buying the SaaS is step one. After that, the operator still needs to log in at <strong>app.crmonesource.com</strong>
+        and finish setup so the app can actually run for their business.
+      </p>
+      <div class="steps">
+        <div class="step">
+          <strong>1. Log In</strong>
+          Sign in to app.crmonesource.com using the CRM account tied to the purchase.
+        </div>
+        <div class="step">
+          <strong>2. Open the Wizard</strong>
+          Use the custom menu link inside CRM to open the setup wizard for the account.
+        </div>
+        <div class="step">
+          <strong>3. Complete Profile and Integrations</strong>
+          Connect calendars, API keys, branding, webhook settings, payments, and service area details.
+        </div>
+        <div class="step">
+          <strong>4. Test and Launch</strong>
+          Run test bookings, verify workflows, and confirm the correct vehicle calendars and automation are working.
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>Why Operators Upgrade</h2>
+      <div class="grid-3">
+        <div class="card card-purple">
+          <h3 style="color: var(--purple);">More Premium Presentation</h3>
+          <p style="margin: 0;">Use branding, funnels, and a cleaner booking flow to match the value of executive and luxury transportation.</p>
+        </div>
+        <div class="card card-teal">
+          <h3 style="color: var(--teal);">Cleaner Automation</h3>
+          <p style="margin: 0;">Push bookings directly into CRM workflows, reminders, payment handling, and fleet organization with less manual work.</p>
+        </div>
+        <div class="card card-blue">
+          <h3 style="color: #1d4ed8;">More Capacity Options</h3>
+          <p style="margin: 0;">Add vehicles, add branding, add funnels, or use network dispatch before making larger operational moves.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>Ready to Start?</h2>
+      <p style="margin: 0; max-width: 900px;">
+        Choose the plan that fits your operation now, then log in inside CRM_One_Source to complete setup, activate your location,
+        and launch your booking system with the right branding, fleet configuration, and automation.
+      </p>
+      <div class="btn-row">
+        <a class="btn btn-surface" href="https://app.crmonesource.com/">Log In at app.crmonesource.com</a>
+        <a class="btn btn-outline" href="/addons.html">View Add-Ons</a>
+      </div>
+    </section>
+  </div>
+</body>
+</html>

@@ -250,10 +250,23 @@
     if (!res.ok) throw new Error("Failed to load booking config");
     state.config = await res.json();
 
-    if (state.config.maps_api_key && !window.google && !document.getElementById("cd-google-maps")) {
+    const mapsKey = String(state.config.maps_api_key || "").trim();
+    if (!mapsKey) return;
+
+    const existing = document.getElementById("cd-google-maps");
+    const existingKey = existing?.dataset?.mapsKey || "";
+    const shouldReloadScript = Boolean(existing && existingKey && existingKey !== mapsKey);
+
+    if (shouldReloadScript) {
+      existing.remove();
+      window.google = undefined;
+    }
+
+    if (!window.google && !document.getElementById("cd-google-maps")) {
       const script = document.createElement("script");
       script.id = "cd-google-maps";
-      script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(state.config.maps_api_key)}&libraries=places,geometry`;
+      script.dataset.mapsKey = mapsKey;
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(mapsKey)}&libraries=places,geometry`;
       script.async = true;
       document.head.appendChild(script);
     }

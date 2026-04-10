@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chauffeur Deluxe | Plans and Add-Ons</title>
+  <style>
+    :root {
+      --purple: #5b21b6;
+      --purple-dark: #4c1d95;
+      --teal: #0f766e;
+      --ink: #111827;
+      --muted: #64748b;
+      --line: #ddd6fe;
+      --soft-purple: #f5f3ff;
+      --soft-teal: #f0fdfa;
+      --paper: #ffffff;
+      --bg: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      background: var(--bg);
+      color: var(--ink);
+    }
+    .wrap {
+      max-width: 1360px;
+      margin: 0 auto;
+      padding: 28px 16px 48px;
+    }
+    .hero {
+      background: linear-gradient(135deg, var(--purple) 0%, var(--teal) 100%);
+      color: #fff;
+      border-radius: 26px;
+      padding: 40px 28px;
+      box-shadow: 0 20px 50px rgba(91, 33, 182, 0.14);
+    }
+    .hero p {
+      margin: 0;
+      line-height: 1.8;
+      max-width: 860px;
+    }
+    .eyebrow {
+      margin: 0 0 10px 0;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      opacity: 0.9;
+    }
+    h1 {
+      margin: 0 0 14px 0;
+      font-size: 40px;
+      line-height: 1.05;
+    }
+    h2 {
+      margin: 0 0 16px 0;
+      color: var(--purple-dark);
+      font-size: 28px;
+      line-height: 1.15;
+    }
+    h3 {
+      margin: 14px 0 8px 0;
+      font-size: 24px;
+      line-height: 1.2;
+    }
+    .section {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      padding: 24px;
+      margin-top: 22px;
+      box-shadow: 0 10px 30px rgba(15, 23, 42, 0.05);
+    }
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 18px;
+    }
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px;
+    }
+    .card {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      padding: 22px;
+      box-shadow: 0 10px 30px rgba(15, 23, 42, 0.05);
+    }
+    .card-teal {
+      background: var(--soft-teal);
+      border-color: #99f6e4;
+    }
+    .pill {
+      display: inline-block;
+      padding: 6px 10px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    .pill-purple {
+      background: var(--soft-purple);
+      color: var(--purple);
+    }
+    .pill-teal {
+      background: #ccfbf1;
+      color: var(--teal);
+    }
+    .price {
+      margin: 10px 0 8px 0;
+      font-size: 34px;
+      line-height: 1;
+      font-weight: 800;
+    }
+    .subprice {
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.6;
+    }
+    .features {
+      margin: 14px 0 0 0;
+      padding-left: 18px;
+      color: #475569;
+      line-height: 1.8;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 920px;
+    }
+    th, td {
+      text-align: left;
+      padding: 14px 16px;
+      border-top: 1px solid #ede9fe;
+      vertical-align: top;
+      line-height: 1.7;
+    }
+    th {
+      background: var(--soft-purple);
+      color: var(--purple-dark);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    .scroll {
+      overflow-x: auto;
+    }
+    .option {
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 18px;
+      background: var(--paper);
+    }
+    .summary {
+      margin-top: 18px;
+      border: 1px solid #c4b5fd;
+      background: var(--soft-purple);
+      border-radius: 18px;
+      padding: 20px;
+    }
+    .btn-row {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-top: 18px;
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      text-decoration: none;
+      padding: 14px 18px;
+      border-radius: 14px;
+      font-weight: 700;
+      border: 0;
+      cursor: pointer;
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, var(--purple) 0%, var(--teal) 100%);
+      color: #fff;
+    }
+    .btn-secondary {
+      background: #fff;
+      color: var(--purple);
+      border: 1px solid #c4b5fd;
+    }
+    .muted {
+      color: var(--muted);
+    }
+    .status {
+      margin-top: 14px;
+      color: var(--teal);
+      font-weight: 600;
+      font-size: 14px;
+    }
+    .dispatch-banner {
+      background: linear-gradient(135deg, #ede9fe 0%, #ecfeff 100%);
+      border: 1px solid #c4b5fd;
+    }
+    @media (max-width: 1100px) {
+      .grid-3, .grid-2 {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+    @media (max-width: 700px) {
+      .wrap { padding: 20px 12px 36px; }
+      .hero { padding: 28px 18px; }
+      .grid-3, .grid-2 { grid-template-columns: 1fr; gap: 14px; }
+      .card, .section { padding: 18px; }
+      h1 { font-size: 30px; }
+      h2 { font-size: 24px; }
+      h3 { font-size: 20px; }
+      .price { font-size: 28px; }
+      th, td { font-size: 13px; line-height: 1.6; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="hero">
+      <p class="eyebrow">Chauffeur Deluxe Rideshare App</p>
+      <h1>Plans and Corporate Add-Ons</h1>
+      <p>
+        Compare plan access, see which upgrades are recurring versus one-time,
+        and review the new Network Dispatch Access option for operators who want
+        to protect bookings and expand revenue.
+      </p>
+    </div>
+
+    <div class="grid-3" style="margin-top: 22px;">
+      <div class="card">
+        <span class="pill pill-purple">Starter</span>
+        <div class="price">Add Your Price</div>
+        <div class="subprice">1 car included • 1 calendar included • company name only by default</div>
+        <ul class="features">
+          <li>1 car included</li>
+          <li>1 calendar included</li>
+          <li>No branding by default</li>
+          <li>No logo or color fields by default</li>
+          <li>No funnel included by default</li>
+          <li>Can add branding as a monthly subscription</li>
+          <li>Can add more fleet vehicles as a monthly subscription</li>
+        </ul>
+      </div>
+
+      <div class="card card-teal">
+        <span class="pill pill-teal">Premium</span>
+        <div class="price">Add Your Price</div>
+        <div class="subprice">1 car included • branding included • dispatch send access</div>
+        <ul class="features">
+          <li>1 car included</li>
+          <li>Branding included</li>
+          <li>Logo and brand color controls enabled</li>
+          <li>No funnel included by default</li>
+          <li>Can add more fleet vehicles as a monthly subscription</li>
+          <li>Can buy the digital marketing funnel as a one-time upgrade</li>
+          <li>Can send farm-out offers into the network</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <span class="pill pill-purple">Pro</span>
+        <div class="price">Add Your Price</div>
+        <div class="subprice">3 cars included • full branding • funnel included • dispatch send + receive</div>
+        <ul class="features">
+          <li>3 cars included</li>
+          <li>Full branding included</li>
+          <li>Funnel included</li>
+          <li>Can add more fleet vehicles as a monthly subscription</li>
+          <li>Can send overflow rides to the network</li>
+          <li>Can receive overflow rides from the network</li>
+          <li>Includes Community</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>Feature Comparison</h2>
+      <div class="scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>Feature</th>
+              <th>Starter</th>
+              <th>Premium</th>
+              <th>Pro</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Cars Included</strong></td>
+              <td>1</td>
+              <td>1</td>
+              <td>3</td>
+            </tr>
+            <tr>
+              <td><strong>Calendars Included</strong></td>
+              <td>1</td>
+              <td>1 included, more available as add-ons</td>
+              <td>3 included, more available as add-ons</td>
+            </tr>
+            <tr>
+              <td><strong>Branding</strong></td>
+              <td>Not included by default</td>
+              <td>Included</td>
+              <td>Included</td>
+            </tr>
+            <tr>
+              <td><strong>Logo Upload</strong></td>
+              <td>No by default</td>
+              <td>Yes</td>
+              <td>Yes</td>
+            </tr>
+            <tr>
+              <td><strong>Custom Colors</strong></td>
+              <td>No by default</td>
+              <td>Yes</td>
+              <td>Yes</td>
+            </tr>
+            <tr>
+              <td><strong>Funnel</strong></td>
+              <td>No, one-time add-on available</td>
+              <td>No, one-time add-on available</td>
+              <td>Included</td>
+            </tr>
+            <tr>
+              <td><strong>Network Dispatch Access</strong></td>
+              <td>Not included</td>
+              <td>Send overflow rides</td>
+              <td>Send and receive overflow rides</td>
+            </tr>
+            <tr>
+              <td><strong>Core Blue-Highlighted Features</strong></td>
+              <td>Social Planner, CRM, Form Builder, Workflows, Triggers, Affiliate Manager, GMB Messaging, Facebook Messenger, Launchpad, Calendar, Opportunities, Survey Builder, Trigger Links, All Reporting</td>
+              <td>Everything in Starter, plus 2 Way Text & Email Conversation, Text To Pay, Invoice, SMS & Email Templates, Blogs, Campaigns, Documents & Contracts</td>
+              <td>Everything in Premium, plus Community</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="muted" style="margin: 16px 0 0 0;">
+        Leave the base SaaS pricing here as placeholders for now, then update the plan prices later.
+      </p>
+    </div>
+
+    <div class="section dispatch-banner">
+      <h2>Network Dispatch Access</h2>
+      <p style="margin: 0; line-height: 1.8; max-width: 920px;">
+        Turn missed rides into protected revenue. Premium operators can send overflow bookings into the network
+        when their fleet is full. Pro operators can send and receive, which means they can protect their own
+        schedule and also monetize downtime by accepting overflow from partner operators.
+      </p>
+      <div class="grid-3" style="margin-top: 18px;">
+        <div class="option">
+          <strong style="color: var(--purple);">Send Overflow Rides</strong>
+          <p class="muted" style="margin: 8px 0 0 0; line-height: 1.8;">
+            Avoid losing high-value reservations when your cars are booked.
+          </p>
+        </div>
+        <div class="option">
+          <strong style="color: var(--teal);">Receive Overflow Revenue</strong>
+          <p class="muted" style="margin: 8px 0 0 0; line-height: 1.8;">
+            Pro accounts can turn open availability into new revenue opportunities.
+          </p>
+        </div>
+        <div class="option">
+          <strong style="color: var(--purple);">Grow Without Immediate Fleet Expansion</strong>
+          <p class="muted" style="margin: 8px 0 0 0; line-height: 1.8;">
+            Expand capacity before investing in another full-time vehicle.
+          </p>
+        </div>
+      </div>
+      <div class="btn-row">
+        <a class="btn btn-primary" href="/network-dispatch.html">Learn More</a>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>Choose Your Add-Ons</h2>
+      <p class="muted" style="margin: 0 0 18px 0; line-height: 1.8;">
+        Branding and additional fleet vehicles are recurring add-ons. The funnel is the only one-time upgrade.
+      </p>
+
+      <div class="grid-2">
+        <label class="option">
+          <div>
+            <input type="checkbox" id="addon-branding">
+            <strong>Branding Subscription</strong>
+          </div>
+          <div style="margin-top: 6px; color: var(--purple); font-weight: 700;">$49.99/month</div>
+          <p class="muted" style="margin: 10px 0 0 0; line-height: 1.8;">
+            Unlock logo upload, custom colors, and branded widget styling for accounts that do not already include branding.
+          </p>
+        </label>
+
+        <label class="option">
+          <div>
+            <input type="checkbox" id="addon-funnel">
+            <strong>Digital Marketing Funnel</strong>
+          </div>
+          <div style="margin-top: 6px; color: var(--purple); font-weight: 700;">$497 one-time</div>
+          <p class="muted" style="margin: 10px 0 0 0; line-height: 1.8;">
+            Add a branded conversion-focused funnel page so the booking widget sits inside a stronger sales experience.
+          </p>
+        </label>
+
+        <div class="option">
+          <strong>Additional Fleet Vehicle</strong>
+          <div style="margin-top: 6px; color: var(--purple); font-weight: 700;">$109.99/month per additional vehicle</div>
+          <p class="muted" style="margin: 10px 0 14px 0; line-height: 1.8;">
+            Add more fleet vehicles and calendars as the operation grows.
+          </p>
+          <label for="addon-extra-vehicle-qty" style="display: block; font-size: 12px; font-weight: 700; color: #475569; margin-bottom: 8px;">How many additional vehicles?</label>
+          <select id="addon-extra-vehicle-qty" style="width: 100%; padding: 12px 14px; border: 1px solid #cbd5e1; border-radius: 12px; font-size: 14px;">
+            <option value="0">None</option>
+            <option value="1">1 additional vehicle</option>
+            <option value="2">2 additional vehicles</option>
+            <option value="3">3 additional vehicles</option>
+            <option value="4">4 additional vehicles</option>
+          </select>
+        </div>
+
+        <div class="option" style="background: #f8fafc;">
+          <strong>Checkout Note</strong>
+          <p class="muted" style="margin: 10px 0 0 0; line-height: 1.8;">
+            This page is ready to connect to a combined backend checkout flow later. Right now it calculates the totals and gives you one place to sell the add-ons clearly.
+          </p>
+        </div>
+      </div>
+
+      <div class="summary">
+        <h3 style="margin-top: 0; color: var(--purple-dark);">Order Summary</h3>
+        <div style="display: grid; gap: 8px; color: #475569; line-height: 1.8;">
+          <div>One-time total: <strong id="one-time-total">$0.00</strong></div>
+          <div>Monthly total increase: <strong id="monthly-total">$0.00</strong></div>
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-primary" type="button" onclick="updateSummaryOnly()">Checkout Selected Add-Ons</button>
+        </div>
+        <div class="status" id="addon-status">Select your add-ons to update the totals.</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function currency(amount) {
+      return `$${Number(amount || 0).toFixed(2)}`;
+    }
+
+    function updateSummaryOnly() {
+      const branding = document.getElementById("addon-branding").checked ? 49.99 : 0;
+      const funnel = document.getElementById("addon-funnel").checked ? 497 : 0;
+      const extraVehicles = Number(document.getElementById("addon-extra-vehicle-qty").value || 0);
+      const monthly = branding + (extraVehicles * 109.99);
+      const oneTime = funnel;
+
+      document.getElementById("one-time-total").textContent = currency(oneTime);
+      document.getElementById("monthly-total").textContent = currency(monthly);
+      document.getElementById("addon-status").textContent =
+        "This layout is ready for a combined backend checkout flow when you decide to wire the Stripe session to the selected add-ons.";
+    }
+
+    window.addEventListener("load", updateSummaryOnly);
+    document.getElementById("addon-branding").addEventListener("change", updateSummaryOnly);
+    document.getElementById("addon-funnel").addEventListener("change", updateSummaryOnly);
+    document.getElementById("addon-extra-vehicle-qty").addEventListener("change", updateSummaryOnly);
+  </script>
+</body>
+</html>

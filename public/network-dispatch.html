@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chauffeur Deluxe | Network Dispatch Access</title>
+  <style>
+    :root {
+      --purple: #5b21b6;
+      --purple-dark: #4c1d95;
+      --teal: #0f766e;
+      --teal-dark: #115e59;
+      --ink: #111827;
+      --muted: #64748b;
+      --line: #ddd6fe;
+      --soft-purple: #f5f3ff;
+      --soft-teal: #f0fdfa;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      color: var(--ink);
+      background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
+    }
+    .wrap {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 28px 16px 48px;
+    }
+    .hero {
+      background: linear-gradient(135deg, var(--purple) 0%, var(--teal) 100%);
+      color: #fff;
+      border-radius: 24px;
+      padding: 40px 28px;
+      box-shadow: 0 18px 50px rgba(91, 33, 182, 0.14);
+    }
+    .eyebrow {
+      margin: 0 0 10px 0;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      opacity: 0.9;
+    }
+    h1 {
+      margin: 0 0 14px 0;
+      font-size: 38px;
+      line-height: 1.08;
+    }
+    h2 {
+      margin: 0 0 14px 0;
+      color: var(--purple-dark);
+      font-size: 28px;
+      line-height: 1.15;
+    }
+    h3 {
+      margin: 0 0 10px 0;
+      font-size: 22px;
+      line-height: 1.2;
+    }
+    p {
+      line-height: 1.85;
+    }
+    .section {
+      margin-top: 22px;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      padding: 24px;
+      box-shadow: 0 10px 30px rgba(15, 23, 42, 0.05);
+    }
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 18px;
+    }
+    .grid-4 {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 16px;
+    }
+    .card {
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 18px;
+    }
+    .card-soft-purple {
+      background: var(--soft-purple);
+    }
+    .card-soft-teal {
+      background: var(--soft-teal);
+      border-color: #99f6e4;
+    }
+    .btn-row {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-top: 18px;
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      text-decoration: none;
+      padding: 14px 18px;
+      border-radius: 14px;
+      font-weight: 700;
+      border: 0;
+      cursor: pointer;
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, var(--purple) 0%, var(--teal) 100%);
+      color: #fff;
+    }
+    .btn-secondary {
+      background: #fff;
+      color: var(--purple);
+      border: 1px solid #c4b5fd;
+    }
+    .highlight {
+      background: linear-gradient(135deg, #ede9fe 0%, #ecfeff 100%);
+      border-color: #c4b5fd;
+    }
+    .muted { color: var(--muted); }
+    .notice {
+      background: #fefce8;
+      border-color: #fde68a;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    th, td {
+      text-align: left;
+      padding: 14px 16px;
+      border-top: 1px solid #ede9fe;
+      vertical-align: top;
+      line-height: 1.7;
+    }
+    th {
+      background: var(--soft-purple);
+      color: var(--purple-dark);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    @media (max-width: 1000px) {
+      .grid-3, .grid-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    @media (max-width: 680px) {
+      .wrap { padding: 20px 12px 36px; }
+      .hero { padding: 28px 18px; }
+      .section { padding: 18px; }
+      .grid-3, .grid-4 { grid-template-columns: 1fr; gap: 14px; }
+      h1 { font-size: 30px; }
+      h2 { font-size: 24px; }
+      h3 { font-size: 20px; }
+      th, td { font-size: 13px; line-height: 1.6; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="hero">
+      <p class="eyebrow">Premium and Pro Growth Feature</p>
+      <h1>Network Dispatch Access</h1>
+      <p style="margin: 0; max-width: 860px;">
+        Receive overflow rides from partner operators, send overflow rides when your fleet is full,
+        and expand revenue without adding vehicles immediately.
+      </p>
+    </div>
+
+    <div class="section highlight">
+      <h2>Why It Sells</h2>
+      <div class="grid-3">
+        <div class="card">
+          <h3 style="color: var(--purple);">Protect Lost Revenue</h3>
+          <p class="muted" style="margin: 0;">
+            When your team is full, you can still keep the client relationship alive instead of losing the booking completely.
+          </p>
+        </div>
+        <div class="card card-soft-teal">
+          <h3 style="color: var(--teal);">Create New Revenue</h3>
+          <p class="muted" style="margin: 0;">
+            Pro operators can receive overflow rides from the network and turn idle availability into booked revenue.
+          </p>
+        </div>
+        <div class="card">
+          <h3 style="color: var(--purple);">Grow Before Buying Another Car</h3>
+          <p class="muted" style="margin: 0;">
+            This gives operators a practical growth bridge before committing to another vehicle, driver, or dispatcher.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>Plan Access</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Plan</th>
+            <th>Network Dispatch Access</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Starter</strong></td>
+            <td>Not included</td>
+          </tr>
+          <tr>
+            <td><strong>Premium</strong></td>
+            <td>Send only</td>
+          </tr>
+          <tr>
+            <td><strong>Pro</strong></td>
+            <td>Send and receive</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="section">
+      <h2>How the MVP Works</h2>
+      <div class="grid-4">
+        <div class="card card-soft-purple">
+          <strong style="color: var(--purple);">1. Operator Sends Offer</strong>
+          <p class="muted" style="margin: 8px 0 0 0;">
+            If the fleet is full, the operator sends a dispatch offer into the network.
+          </p>
+        </div>
+        <div class="card card-soft-teal">
+          <strong style="color: var(--teal);">2. Qualified Partner Accepts</strong>
+          <p class="muted" style="margin: 8px 0 0 0;">
+            The first eligible partner to accept wins the ride.
+          </p>
+        </div>
+        <div class="card card-soft-purple">
+          <strong style="color: var(--purple);">3. Assignment Is Locked</strong>
+          <p class="muted" style="margin: 8px 0 0 0;">
+            The system marks the dispatch as assigned and closes it for everyone else.
+          </p>
+        </div>
+        <div class="card card-soft-teal">
+          <strong style="color: var(--teal);">4. Workflow Gets Triggered</strong>
+          <p class="muted" style="margin: 8px 0 0 0;">
+            The accepted dispatch is pushed into the partner operator's workflow/webhook for handling.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>Can It Use the Existing SaaS Workflow?</h2>
+      <p style="margin: 0;">
+        Yes, in most cases it can. The easiest MVP is to send the accepted dispatch into the same inbound
+        workflow structure the partner already uses, as long as the payload includes a dispatch flag and the
+        workflow can branch correctly.
+      </p>
+      <div class="grid-2" style="margin-top: 18px;">
+        <div class="card">
+          <h3 style="color: var(--purple);">Recommended Workflow Flag</h3>
+          <p class="muted" style="margin: 0;">
+            Include a field like <strong>booking_source = network_dispatch</strong> or
+            <strong>dispatch_partner_assigned = true</strong> so the partner workflow knows this is not a direct
+            self-booked customer.
+          </p>
+        </div>
+        <div class="card card-soft-teal">
+          <h3 style="color: var(--teal);">What the Partner Workflow Should Do</h3>
+          <p class="muted" style="margin: 0;">
+            Create or update the contact, create the opportunity, assign the trip internally, and trigger the right
+            partner-side notifications without needing a cross-account calendar write in MVP.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <div class="section notice">
+      <h2 style="color: #92400e;">Customer Transparency</h2>
+      <p style="margin: 0; color: #78350f;">
+        If a ride is assigned through the dispatch network, the customer should be clearly informed that a trusted
+        network partner operator will be providing service on your behalf.
+      </p>
+      <div class="card" style="margin-top: 16px; border-color: #fde68a;">
+        <strong style="color: #92400e;">Suggested customer-facing wording</strong>
+        <p style="margin: 8px 0 0 0; color: #78350f;">
+          Your reservation may be fulfilled by a trusted network partner operator on our behalf. If assigned to a
+          partner, all service standards and trip details will remain managed through our network.
+        </p>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>Recommended Accepted Dispatch Payload</h2>
+      <div class="grid-2">
+        <div class="card">
+          <p style="margin: 0;"><strong>Required fields</strong></p>
+          <ul style="margin: 12px 0 0 0; padding-left: 18px; line-height: 1.8; color: #475569;">
+            <li>dispatch_request_id</li>
+            <li>original_booking_id</li>
+            <li>booking_source = network_dispatch</li>
+            <li>source_operator_name</li>
+            <li>customer_full_name</li>
+            <li>customer_phone</li>
+            <li>customer_email</li>
+          </ul>
+        </div>
+        <div class="card card-soft-teal">
+          <p style="margin: 0;"><strong>Trip details</strong></p>
+          <ul style="margin: 12px 0 0 0; padding-left: 18px; line-height: 1.8; color: #475569;">
+            <li>pickup_address</li>
+            <li>dropoff_address</li>
+            <li>pickup_datetime</li>
+            <li>vehicle_type_requested</li>
+            <li>passenger_count</li>
+            <li>trip_notes</li>
+            <li>agreed partner payout or quoted amount</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <div class="btn-row">
+      <a class="btn btn-secondary" href="/addons.html">Back to Add-Ons</a>
+    </div>
+  </div>
+</body>
+</html>

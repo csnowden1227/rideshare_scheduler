@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dispatch Network Manager</title>
+  <style>
+    :root {
+      --ink: #0f172a;
+      --muted: #64748b;
+      --line: #d8d7ff;
+      --card: rgba(255, 255, 255, 0.9);
+      --lavender: #f6f2ff;
+      --teal: #eafcf7;
+      --accent: #5b21b6;
+      --accent-2: #0f766e;
+      --danger: #dc2626;
+      --success: #15803d;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top left, rgba(91, 33, 182, 0.1), transparent 24%),
+        linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
+      min-height: 100vh;
+    }
+    .wrap {
+      max-width: 1440px;
+      margin: 0 auto;
+      padding: 24px 16px 48px;
+    }
+    .hero {
+      background: linear-gradient(135deg, #111827 0%, #5b21b6 52%, #0f766e 100%);
+      color: #fff;
+      border-radius: 28px;
+      padding: 36px 30px;
+      box-shadow: 0 24px 60px rgba(76, 29, 149, 0.18);
+    }
+    .eyebrow {
+      margin: 0 0 10px;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+      opacity: 0.9;
+    }
+    h1 {
+      margin: 0 0 12px;
+      font-size: 42px;
+      line-height: 1.05;
+    }
+    .hero p {
+      margin: 0;
+      max-width: 980px;
+      line-height: 1.8;
+      font-size: 16px;
+    }
+    .hero-note {
+      margin-top: 18px;
+      padding: 16px 18px;
+      border-radius: 16px;
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      background: rgba(255, 255, 255, 0.08);
+      max-width: 980px;
+      line-height: 1.75;
+      font-size: 14px;
+    }
+    .section {
+      margin-top: 22px;
+      border: 1px solid var(--line);
+      background: var(--card);
+      border-radius: 24px;
+      padding: 24px;
+      box-shadow: 0 18px 42px rgba(15, 23, 42, 0.06);
+      backdrop-filter: blur(8px);
+    }
+    .section h2 {
+      margin: 0 0 12px;
+      color: var(--accent);
+      font-size: 30px;
+      line-height: 1.1;
+    }
+    .section p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.8;
+    }
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 18px;
+      align-items: start;
+    }
+    .panel {
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      padding: 18px;
+      background: #fff;
+    }
+    .panel-teal {
+      background: var(--teal);
+      border-color: #99f6e4;
+    }
+    .panel-purple {
+      background: var(--lavender);
+    }
+    .meta {
+      display: grid;
+      gap: 8px;
+      margin-top: 14px;
+      font-size: 14px;
+      color: var(--muted);
+    }
+    label {
+      display: block;
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+    input, select {
+      width: 100%;
+      padding: 12px 14px;
+      border-radius: 14px;
+      border: 1px solid #cbd5e1;
+      font-size: 14px;
+      color: var(--ink);
+      background: #fff;
+    }
+    .form-grid {
+      display: grid;
+      grid-template-columns: 2fr 1fr auto;
+      gap: 12px;
+      align-items: end;
+      margin-top: 16px;
+    }
+    .btn {
+      border: 0;
+      cursor: pointer;
+      border-radius: 14px;
+      padding: 13px 18px;
+      font-size: 14px;
+      font-weight: 700;
+      transition: transform 0.18s ease, filter 0.18s ease;
+    }
+    .btn:hover {
+      transform: translateY(-1px);
+      filter: brightness(0.98);
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      color: #fff;
+    }
+    .btn-secondary {
+      background: #fff;
+      color: var(--accent);
+      border: 1px solid #c4b5fd;
+    }
+    .status {
+      margin-top: 14px;
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--success);
+    }
+    .status.error {
+      color: var(--danger);
+    }
+    .partner-list,
+    .invite-list {
+      display: grid;
+      gap: 16px;
+      margin-top: 18px;
+    }
+    .partner-card,
+    .invite-card {
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      padding: 18px;
+      background: #fff;
+    }
+    .partner-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      align-items: start;
+    }
+    .partner-head h3,
+    .invite-card h3 {
+      margin: 0 0 6px;
+      font-size: 22px;
+      color: var(--ink);
+    }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 7px 10px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    .pill-green {
+      background: #dcfce7;
+      color: #166534;
+    }
+    .pill-muted {
+      background: #eef2ff;
+      color: #4338ca;
+    }
+    .partner-meta,
+    .invite-meta {
+      display: grid;
+      gap: 6px;
+      margin-top: 12px;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.6;
+    }
+    .split-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr auto;
+      gap: 12px;
+      align-items: end;
+      margin-top: 16px;
+    }
+    .small-note {
+      margin-top: 10px;
+      font-size: 13px;
+      color: var(--muted);
+      line-height: 1.7;
+    }
+    .copy-row {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 14px;
+    }
+    .copy-link {
+      flex: 1 1 480px;
+      word-break: break-all;
+      padding: 12px 14px;
+      border-radius: 14px;
+      border: 1px solid #ddd6fe;
+      background: #f8fafc;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .empty {
+      margin-top: 16px;
+      border: 1px dashed #cbd5e1;
+      border-radius: 18px;
+      padding: 18px;
+      color: var(--muted);
+      background: #f8fafc;
+      line-height: 1.75;
+    }
+    @media (max-width: 980px) {
+      .grid-2,
+      .form-grid,
+      .split-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+    @media (max-width: 720px) {
+      .wrap { padding: 16px 12px 36px; }
+      .hero, .section { padding: 20px 18px; border-radius: 22px; }
+      h1 { font-size: 32px; }
+      .section h2 { font-size: 24px; }
+      .partner-head { flex-direction: column; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="hero">
+      <p class="eyebrow">Dispatch Network Settings</p>
+      <h1>Invite Partners and Set Your Farm-Out Split</h1>
+      <p>
+        Use this page to invite new accepting partners into your dispatch network and set the percentage each partner receives when they fulfill one of your rides. Stripe processing fees are deducted first, billed to the farming-out operator, and the remaining net amount is split using the percentages you save here.
+      </p>
+      <div class="hero-note">
+        The clean MVP rule is already baked in: the accepting partner percentage is the editable value, your percentage is calculated automatically, and the split model stays <strong>net after Stripe fee</strong>.
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>Location Context</h2>
+      <p id="location-summary">Reading your location details from the page URL...</p>
+      <div id="location-error" class="status error" style="display:none;"></div>
+    </section>
+
+    <section class="section">
+      <div class="grid-2">
+        <div class="panel panel-purple">
+          <h2 style="font-size:24px; margin-bottom:8px;">Invite a Partner</h2>
+          <p>Send an onboarding link to another operator so they can connect their business info, CRM API key, service area, and fleet before they start receiving offers.</p>
+          <form id="invite-form">
+            <div class="form-grid">
+              <div>
+                <label for="invite-email">Partner Email</label>
+                <input id="invite-email" type="email" placeholder="dispatch@partnercompany.com" required />
+              </div>
+              <div>
+                <label for="invite-days">Invite Expires In</label>
+                <select id="invite-days">
+                  <option value="7">7 days</option>
+                  <option value="14">14 days</option>
+                  <option value="30">30 days</option>
+                </select>
+              </div>
+              <button type="submit" class="btn btn-primary">Create Invite</button>
+            </div>
+          </form>
+          <div id="invite-status" class="status" style="display:none;"></div>
+          <div id="invite-result" style="display:none; margin-top:14px;">
+            <label>Latest Onboarding Link</label>
+            <div class="copy-row">
+              <div id="invite-link" class="copy-link"></div>
+              <button id="copy-link-btn" type="button" class="btn btn-secondary">Copy Link</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel panel-teal">
+          <h2 style="font-size:24px; margin-bottom:8px;">How the Split Works</h2>
+          <p>The source operator controls the agreement. You set the accepting partner percentage, the app calculates your remaining percentage, and each dispatch offer can inherit that agreement automatically.</p>
+          <div class="meta">
+            <div><strong>Split Model:</strong> Net after Stripe fee</div>
+            <div><strong>Stripe Fee Charged To:</strong> Farming-out operator</div>
+            <div><strong>Editable Field:</strong> Accepting partner percentage</div>
+            <div><strong>Calculated Field:</strong> Your percentage</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>Pending and Sent Invites</h2>
+      <p>This gives you a quick place to resend, copy, or track who still needs to finish onboarding before they can receive offers.</p>
+      <div id="invite-list" class="invite-list"></div>
+      <div id="invite-empty" class="empty" style="display:none;">
+        No invites have been created for this location yet.
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>Partner Split Settings</h2>
+      <p>Each accepting partner can have a different default split agreement. These values are tied to your location and the partner you’re farming rides to.</p>
+      <div id="partner-list" class="partner-list"></div>
+      <div id="partner-empty" class="empty" style="display:none;">
+        No active partners are onboarded yet. Create an invite above, let the partner finish onboarding, and then they will appear here for split setup.
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const query = new URLSearchParams(window.location.search);
+    const ownerLocationId = (query.get("location_id") || query.get("locationId") || "").trim();
+
+    const partnerListEl = document.getElementById("partner-list");
+    const partnerEmptyEl = document.getElementById("partner-empty");
+    const inviteListEl = document.getElementById("invite-list");
+    const inviteEmptyEl = document.getElementById("invite-empty");
+    const inviteForm = document.getElementById("invite-form");
+    const inviteStatusEl = document.getElementById("invite-status");
+    const inviteResultEl = document.getElementById("invite-result");
+    const inviteLinkEl = document.getElementById("invite-link");
+    const copyLinkBtn = document.getElementById("copy-link-btn");
+    const locationSummaryEl = document.getElementById("location-summary");
+    const locationErrorEl = document.getElementById("location-error");
+
+    let partnerRows = [];
+    let agreementRows = [];
+
+    function showStatus(el, message, isError = false) {
+      el.textContent = message;
+      el.style.display = "block";
+      el.classList.toggle("error", isError);
+    }
+
+    function currencyPercent(value) {
+      return `${Number(value || 0).toFixed(Number(value) % 1 === 0 ? 0 : 2)}%`;
+    }
+
+    async function requestJson(url, options = {}) {
+      const response = await fetch(url, options);
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.error || "Request failed.");
+      }
+      return data;
+    }
+
+    function findAgreement(partnerId) {
+      return agreementRows.find((row) => row.partner_id === partnerId) || null;
+    }
+
+    function renderInvites(invites) {
+      inviteListEl.innerHTML = "";
+      inviteEmptyEl.style.display = invites.length ? "none" : "block";
+
+      invites.forEach((invite) => {
+        const card = document.createElement("div");
+        card.className = "invite-card";
+        card.innerHTML = `
+          <h3>${invite.email}</h3>
+          <div class="invite-meta">
+            <div><strong>Status:</strong> ${invite.status}</div>
+            <div><strong>Created:</strong> ${new Date(invite.created_at).toLocaleString()}</div>
+            <div><strong>Expires:</strong> ${invite.expires_at ? new Date(invite.expires_at).toLocaleString() : "No expiration set"}</div>
+          </div>
+          <div class="copy-row">
+            <div class="copy-link">${invite.onboarding_url}</div>
+            <button type="button" class="btn btn-secondary">Copy Link</button>
+          </div>
+        `;
+        const copyBtn = card.querySelector("button");
+        copyBtn.addEventListener("click", async () => {
+          await navigator.clipboard.writeText(invite.onboarding_url);
+          copyBtn.textContent = "Copied";
+          setTimeout(() => { copyBtn.textContent = "Copy Link"; }, 1500);
+        });
+        inviteListEl.appendChild(card);
+      });
+    }
+
+    function renderPartners() {
+      partnerListEl.innerHTML = "";
+      partnerEmptyEl.style.display = partnerRows.length ? "none" : "block";
+
+      partnerRows.forEach((partner) => {
+        const agreement = findAgreement(partner.id);
+        const acceptingPercent = Number(agreement?.accepting_partner_percent || 80);
+        const sourcePercent = Number(agreement?.source_operator_percent || (100 - acceptingPercent));
+        const card = document.createElement("div");
+        card.className = "partner-card";
+        card.innerHTML = `
+          <div class="partner-head">
+            <div>
+              <h3>${partner.business_name}</h3>
+              <div class="partner-meta">
+                <div><strong>Partner Location ID:</strong> ${partner.partner_location_id || "Not saved yet"}</div>
+                <div><strong>Contact:</strong> ${partner.contact_name || "Not provided"}${partner.email ? ` | ${partner.email}` : ""}</div>
+                <div><strong>Phone:</strong> ${partner.phone || "Not provided"}</div>
+                <div><strong>Active Fleet Rows:</strong> ${partner.active_fleet_count || 0}</div>
+              </div>
+            </div>
+            <span class="pill ${partner.status === "active" ? "pill-green" : "pill-muted"}">${partner.status || "pending"}</span>
+          </div>
+          <div class="split-grid">
+            <div>
+              <label>Accepting Partner Percentage</label>
+              <input type="number" min="1" max="99" step="1" value="${acceptingPercent}" data-role="accepting-input" />
+            </div>
+            <div>
+              <label>Your Percentage</label>
+              <input type="text" value="${currencyPercent(sourcePercent)}" data-role="source-output" readonly />
+            </div>
+            <button type="button" class="btn btn-primary" data-role="save-btn">Save Split</button>
+          </div>
+          <div class="small-note">
+            Stored rule: Stripe fees are deducted first from the farming-out operator side, then the remaining net is split.
+          </div>
+          <div class="status" data-role="row-status" style="display:none;"></div>
+        `;
+
+        const acceptingInput = card.querySelector('[data-role="accepting-input"]');
+        const sourceOutput = card.querySelector('[data-role="source-output"]');
+        const saveBtn = card.querySelector('[data-role="save-btn"]');
+        const rowStatus = card.querySelector('[data-role="row-status"]');
+
+        acceptingInput.addEventListener("input", () => {
+          const accepting = Math.min(99, Math.max(1, Number(acceptingInput.value || 80)));
+          sourceOutput.value = currencyPercent(100 - accepting);
+        });
+
+        saveBtn.addEventListener("click", async () => {
+          try {
+            saveBtn.disabled = true;
+            const accepting = Math.min(99, Math.max(1, Number(acceptingInput.value || 80)));
+            const data = await requestJson("/api/partner-split-agreements", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                owner_location_id: ownerLocationId,
+                partner_id: partner.id,
+                accepting_partner_percent: accepting
+              })
+            });
+
+            const nextAgreement = data.agreement || {};
+            agreementRows = agreementRows.filter((row) => row.partner_id !== partner.id).concat(nextAgreement);
+            sourceOutput.value = currencyPercent(nextAgreement.source_operator_percent || (100 - accepting));
+            showStatus(rowStatus, `Saved split: accepting partner ${nextAgreement.accepting_partner_percent}% | your side ${nextAgreement.source_operator_percent}%`);
+          } catch (err) {
+            showStatus(rowStatus, err.message || "Unable to save split agreement.", true);
+          } finally {
+            saveBtn.disabled = false;
+          }
+        });
+
+        partnerListEl.appendChild(card);
+      });
+    }
+
+    async function loadData() {
+      if (!ownerLocationId) {
+        locationSummaryEl.textContent = "This page needs a location_id in the URL so it knows which account is managing the network.";
+        locationErrorEl.style.display = "block";
+        locationErrorEl.textContent = "Open this page from a CRM custom link that includes your location ID.";
+        partnerEmptyEl.style.display = "block";
+        inviteEmptyEl.style.display = "block";
+        return;
+      }
+
+      locationSummaryEl.textContent = `Managing dispatch partners for location ${ownerLocationId}. Use this page as a CRM custom link tied to the source operator account.`;
+
+      const [partnersPayload, agreementsPayload, invitesPayload] = await Promise.all([
+        requestJson(`/api/partners/${encodeURIComponent(ownerLocationId)}`),
+        requestJson(`/api/partner-split-agreements/${encodeURIComponent(ownerLocationId)}`),
+        requestJson(`/api/partners/invites/${encodeURIComponent(ownerLocationId)}`)
+      ]);
+
+      partnerRows = Array.isArray(partnersPayload.partners) ? partnersPayload.partners : [];
+      agreementRows = Array.isArray(agreementsPayload.agreements) ? agreementsPayload.agreements : [];
+
+      renderInvites(Array.isArray(invitesPayload.invites) ? invitesPayload.invites : []);
+      renderPartners();
+    }
+
+    inviteForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (!ownerLocationId) {
+        showStatus(inviteStatusEl, "location_id is missing from the page URL.", true);
+        return;
+      }
+
+      const email = document.getElementById("invite-email").value.trim();
+      const expiresInDays = Number(document.getElementById("invite-days").value || 7);
+      if (!email) {
+        showStatus(inviteStatusEl, "Partner email is required.", true);
+        return;
+      }
+
+      try {
+        const data = await requestJson("/api/partners/invite", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            owner_location_id: ownerLocationId,
+            email,
+            expires_in_days: expiresInDays
+          })
+        });
+
+        inviteForm.reset();
+        showStatus(inviteStatusEl, "Partner invite created successfully.");
+        inviteResultEl.style.display = "block";
+        inviteLinkEl.textContent = data.onboarding_url || "";
+        await loadData();
+      } catch (err) {
+        showStatus(inviteStatusEl, err.message || "Unable to create partner invite.", true);
+      }
+    });
+
+    copyLinkBtn.addEventListener("click", async () => {
+      const value = inviteLinkEl.textContent.trim();
+      if (!value) return;
+      await navigator.clipboard.writeText(value);
+      copyLinkBtn.textContent = "Copied";
+      setTimeout(() => { copyLinkBtn.textContent = "Copy Link"; }, 1500);
+    });
+
+    window.addEventListener("load", async () => {
+      try {
+        await loadData();
+      } catch (err) {
+        locationErrorEl.style.display = "block";
+        locationErrorEl.textContent = err.message || "Unable to load dispatch network settings.";
+      }
+    });
+  </script>
+</body>
+</html>

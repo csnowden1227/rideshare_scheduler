@@ -108,6 +108,12 @@
                     <div>
                         <label class="block text-[10px] font-bold mb-2 uppercase text-slate-400">Google Maps API Key</label>
                         <input type="password" id="maps_key" class="input-mini" placeholder="AIzaSy...">
+                        <p id="maps-key-status" class="text-[11px] text-slate-500 mt-2 leading-relaxed">
+                            Paste a Google Maps API key here, not a Google Map ID. The map should load as soon as the key is valid.
+                        </p>
+                        <button type="button" id="load-map-btn" class="wizard-btn-accent text-[10px] font-bold rounded-lg px-3 py-2 uppercase mt-3">
+                            Load Map
+                        </button>
                     </div>
                     <div>
                         <label class="block text-[10px] font-bold mb-2 uppercase text-slate-400">Payment Provider</label>
@@ -200,7 +206,7 @@
                             </div>
                         </div>
                     </div>
-                    <button type="button" onclick="addFleetRow()" class="wizard-btn-accent text-xs font-bold px-4 py-2 rounded-lg whitespace-nowrap">+ Add Fleet Vehicle</button>
+                    <button type="button" id="add-fleet-btn" onclick="addFleetRow()" class="wizard-btn-accent text-xs font-bold px-4 py-2 rounded-lg whitespace-nowrap">+ Add Fleet Vehicle</button>
                 </div>
                 <div class="wizard-table-scroll">
                 <table class="w-full">
@@ -363,13 +369,23 @@
 const urlParams = new URLSearchParams(window.location.search);
 const location_id = urlParams.get('location_id') || 'VXE0UY17p7wnxdZ3sOLc';
 const wizardToken = urlParams.get('token') || '';
-const requestedPlan = String(urlParams.get('plan') || 'pro').trim().toLowerCase();
+const requestedPlan = String(urlParams.get('plan') || '').trim().toLowerCase();
 const planOverride = ['starter', 'premium', 'pro'].includes(requestedPlan) ? requestedPlan : '';
 const BACKEND_URL = "https://rideshare-scheduler-axx6.onrender.com";
 let map, circle, marker, autocomplete;
 let routeCircles = []; 
 let logoBase64 = '';
 let currentPlanName = 'starter';
+let currentEntitlements = {
+    plan_name: 'starter',
+    included_fleet_count: 1,
+    max_fleet_count: 6,
+    purchased_extra_vehicle_count: 0,
+    allowed_fleet_count: 1,
+    branding_enabled: false,
+    funnel_enabled: false,
+    logo_enabled: false
+};
 let geocoder = null;
 const ROUTE_GEOFENCE_COLORS = [
     { fill: "#10b981", stroke: "#059669" },
@@ -396,6 +412,15 @@ function showNotification(message, isSuccess = true) {
         toast.style.transition = 'opacity 0.5s ease';
         setTimeout(() => toast.remove(), 500);
     }, 4000);
+}
+
+function setMapsKeyStatus(message, isError = false) {
+    const status = document.getElementById('maps-key-status');
+    if (!status) return;
+    status.innerText = message;
+    status.classList.toggle('text-red-600', isError);
+    status.classList.toggle('text-slate-500', !isError);
+    status.classList.toggle('text-emerald-700', !isError && /loaded|ready/i.test(message));
 }
 
 
@@ -438,13 +463,19 @@ function refreshServiceAreaOverlay() {
 
 async function ensureGoogleMapsLoaded(mapsKey) {
     const trimmedKey = String(mapsKey || '').trim();
-    if (!trimmedKey) throw new Error("Google Maps API key is required to load the map.");
+    if (!trimmedKey) {
+        setMapsKeyStatus("Enter a Google Maps API key to load the map.", true);
+        throw new Error("Google Maps API key is required to load the map.");
+    }
 
     const existing = document.getElementById('wizard-google-maps');
     const existingKey = existing?.dataset?.mapsKey || '';
     const shouldReloadScript = Boolean(existing && existingKey && existingKey !== trimmedKey);
 
-    if (window.google?.maps?.places && !shouldReloadScript) return;
+    if (window.google?.maps?.places && !shouldReloadScript) {
+        setMapsKeyStatus("Google Maps loaded. Search city/state or drag the service area to continue.");
+        return;
+    }
 
     if (shouldReloadScript) {
         existing.remove();
@@ -460,18 +491,23 @@ async function ensureGoogleMapsLoaded(mapsKey) {
         script.defer = true;
         script.onerror = () => {
             console.error('Google Maps script failed to load for setup wizard.');
+            setMapsKeyStatus("Google Maps script failed to load. Verify this is an API key and not a Map ID.", true);
         };
         document.head.appendChild(script);
     }
+
+    setMapsKeyStatus("Loading Google Maps with the entered API key...");
 
     await new Promise((resolve, reject) => {
         const started = Date.now();
         const check = setInterval(() => {
             if (window.google?.maps?.places) {
                 clearInterval(check);
+                setMapsKeyStatus("Google Maps loaded. Search city/state or drag the service area to continue.");
                 resolve();
             } else if (Date.now() - started > 10000) {
                 clearInterval(check);
+                setMapsKeyStatus("Google Maps failed to load. Verify the API key, billing, enabled APIs, and allowed referrers.", true);
                 reject(new Error("Google Maps failed to load. Verify the API key, enabled APIs, billing, and allowed referrers."));
             }
         }, 120);
@@ -771,52 +807,56 @@ function setFleetPlanMessage(planName = 'starter') {
     if (badge) badge.innerText = `${planLabel} Plan`;
 }
 
+function getEffectiveFleetLimit() {
+    return Math.max(1, Number(currentEntitlements?.allowed_fleet_count || (currentPlanName === 'pro' ? 3 : 1)));
+}
+
 function setBrandingPlanMessage(planName = 'starter') {
     const note = document.getElementById('branding-plan-note');
     const logoWrap = document.getElementById('logo-upload-wrap');
     const logoNote = document.getElementById('logo-plan-note');
     const logoUpload = document.getElementById('logo_upload');
     const plan = String(planName || 'starter').toLowerCase();
-    const isPro = plan === 'pro';
-    const isPremium = plan === 'premium';
+    const brandingEnabled = Boolean(currentEntitlements?.branding_enabled);
+    const logoEnabled = Boolean(currentEntitlements?.logo_enabled);
+    const funnelEnabled = Boolean(currentEntitlements?.funnel_enabled);
     const brandingInputs = [
         document.getElementById('brand_color_primary'),
         document.getElementById('brand_color_secondary'),
         document.getElementById('brand_color_accent'),
+        document.getElementById('widget_tagline'),
     ];
 
     if (note) {
-        note.innerText = isPro
-            ? "Pro includes full branding privileges with custom brand colors and no CRM_One_Source footer."
-            : isPremium
-                ? "Premium includes logo upload with CRM_One_Source styling. Full custom color branding remains a Pro feature."
-                : "Starter uses the CRM_One_Source light-branded widget with no branding controls. Upgrade for logo upload or full branding.";
+        note.innerText = brandingEnabled
+            ? (funnelEnabled
+                ? "This plan supports branding controls and funnel-ready setup."
+                : "This plan supports branding controls. Funnel access is sold separately unless included in your SaaS plan.")
+            : "Starter uses company name only by default. Full branding can be unlocked with the $49.99 branding add-on.";
     }
 
     brandingInputs.forEach((input) => {
         if (!input) return;
-        input.disabled = !isPro;
-        input.classList.toggle('opacity-60', !isPro);
-        input.classList.toggle('cursor-not-allowed', !isPro);
-        if (!isPro) {
-            input.title = "Custom branding is included with Pro and available as a $49 one-time add-on for Starter and Premium.";
+        input.disabled = !brandingEnabled;
+        input.classList.toggle('opacity-60', !brandingEnabled);
+        input.classList.toggle('cursor-not-allowed', !brandingEnabled);
+        if (!brandingEnabled) {
+            input.title = "Custom branding is locked on Starter unless the $49.99 branding add-on has been purchased.";
         } else {
             input.removeAttribute('title');
         }
     });
 
     if (logoWrap) {
-        logoWrap.classList.toggle('opacity-50', !(isPremium || isPro));
+        logoWrap.classList.toggle('opacity-50', !logoEnabled);
     }
     if (logoUpload) {
-        logoUpload.disabled = !(isPremium || isPro);
+        logoUpload.disabled = !logoEnabled;
     }
     if (logoNote) {
-        logoNote.innerText = isPro
-            ? "Logo upload is included with Pro."
-            : isPremium
-                ? "Logo upload is included with Premium."
-                : "Logo upload is not available on Starter.";
+        logoNote.innerText = logoEnabled
+            ? "Logo upload is enabled on this account."
+            : "Logo upload is locked on this account.";
     }
 }
 
@@ -896,13 +936,15 @@ function renderFleet(count, savedFleet = []) {
         addFleetRow(savedFleet[i] || {}, false);
     }
     renumberFleetRows();
+    updateFleetControls();
 }
 
 function addFleetRow(data = {}, shouldRenumber = true) {
     const tbody = document.getElementById('fleet-body');
     const existingCount = tbody.querySelectorAll('tr').length;
-    if (existingCount >= 40) {
-        showNotification("For 41 or more fleet vehicles, please contact the sales department.", false);
+    const maxAllowed = getEffectiveFleetLimit();
+    if (existingCount >= maxAllowed) {
+        showNotification(`This ${currentPlanName} plan currently allows ${maxAllowed} fleet vehicle${maxAllowed === 1 ? '' : 's'}. Purchase an add-on before adding more.`, false);
         return;
     }
 
@@ -919,6 +961,21 @@ function addFleetRow(data = {}, shouldRenumber = true) {
     tbody.appendChild(tr);
     bindFleetRow(tr);
     if (shouldRenumber) renumberFleetRows();
+    updateFleetControls();
+}
+
+function updateFleetControls() {
+    const addFleetBtn = document.getElementById('add-fleet-btn');
+    const existingCount = document.querySelectorAll('#fleet-body tr').length;
+    const maxAllowed = getEffectiveFleetLimit();
+    if (addFleetBtn) {
+        const atLimit = existingCount >= maxAllowed;
+        addFleetBtn.disabled = atLimit;
+        addFleetBtn.classList.toggle('disabled-btn', atLimit);
+        addFleetBtn.title = atLimit
+            ? `This plan allows ${maxAllowed} fleet vehicle${maxAllowed === 1 ? '' : 's'} right now.`
+            : '';
+    }
 }
 
 function addStandardMultiplierRow(data = {}) {
@@ -997,6 +1054,7 @@ async function loadFromBackend() {
         
         if (data && !data.error) {
             if (planOverride) data.plan_name = planOverride;
+            currentEntitlements = data.entitlements || currentEntitlements;
             document.getElementById('business_name').value = data.business_name || '';
             logoBase64 = data.business_logo || '';
             if (logoBase64) {
@@ -1024,7 +1082,7 @@ async function loadFromBackend() {
 
             setFleetPlanMessage(data.plan_name || 'starter');
             setBrandingPlanMessage(data.plan_name || 'starter');
-            const fleetCount = Math.max((data.fleet || []).length, getIncludedFleetCount());
+            const fleetCount = Math.max((data.fleet || []).length, getEffectiveFleetLimit() > 0 ? Math.min(getEffectiveFleetLimit(), Math.max(1, data.entitlements?.included_fleet_count || 1)) : getIncludedFleetCount());
             renderFleet(fleetCount, data.fleet || []);
             
             if (data.fixed_rates) data.fixed_rates.forEach(r => addRouteRow(r));
@@ -1045,6 +1103,16 @@ async function loadFromBackend() {
             initServiceMap(data.service_lat || 34.0522, data.service_lng || -118.2437, data.service_radius || 90);
         } else {
             setFleetPlanMessage(planOverride || 'starter');
+            currentEntitlements = {
+                ...currentEntitlements,
+                plan_name: planOverride || 'starter',
+                allowed_fleet_count: planOverride === 'pro' ? 3 : 1,
+                included_fleet_count: planOverride === 'pro' ? 3 : 1,
+                max_fleet_count: 6,
+                branding_enabled: planOverride === 'premium' || planOverride === 'pro',
+                logo_enabled: planOverride === 'premium' || planOverride === 'pro',
+                funnel_enabled: planOverride === 'pro'
+            };
             setBrandingPlanMessage(planOverride || 'starter');
             renderFleet(getIncludedFleetCount(), []);
             updatePaymentProviderUI();
@@ -1054,6 +1122,16 @@ async function loadFromBackend() {
     } catch (e) {
         console.error(e);
         setFleetPlanMessage(planOverride || 'starter');
+        currentEntitlements = {
+            ...currentEntitlements,
+            plan_name: planOverride || 'starter',
+            allowed_fleet_count: planOverride === 'pro' ? 3 : 1,
+            included_fleet_count: planOverride === 'pro' ? 3 : 1,
+            max_fleet_count: 6,
+            branding_enabled: planOverride === 'premium' || planOverride === 'pro',
+            logo_enabled: planOverride === 'premium' || planOverride === 'pro',
+            funnel_enabled: planOverride === 'pro'
+        };
         setBrandingPlanMessage(planOverride || 'starter');
         renderFleet(getIncludedFleetCount(), []);
         updatePaymentProviderUI();
@@ -1099,11 +1177,11 @@ async function saveToBackend() {
         location_id,
         plan_name: currentPlanName,
         business_name: document.getElementById('business_name').value.trim(),
-        business_logo: logoBase64 || '',
-        brand_color_primary: document.getElementById('brand_color_primary').value.trim(),
-        brand_color_secondary: document.getElementById('brand_color_secondary').value.trim(),
-        brand_color_accent: document.getElementById('brand_color_accent').value.trim(),
-        widget_tagline: document.getElementById('widget_tagline').value.trim(),
+        business_logo: currentEntitlements.logo_enabled ? (logoBase64 || '') : '',
+        brand_color_primary: currentEntitlements.branding_enabled ? document.getElementById('brand_color_primary').value.trim() : '#082f49',
+        brand_color_secondary: currentEntitlements.branding_enabled ? document.getElementById('brand_color_secondary').value.trim() : '#0f766e',
+        brand_color_accent: currentEntitlements.branding_enabled ? document.getElementById('brand_color_accent').value.trim() : '#ecfeff',
+        widget_tagline: currentEntitlements.branding_enabled ? document.getElementById('widget_tagline').value.trim() : '',
         crm_webhook_url: webhookUrl,
         maps_api_key: mapsKey,
         crm_api_key: crmApiKey.trim(),
@@ -1117,7 +1195,7 @@ async function saveToBackend() {
         service_lng: parseFloat(document.getElementById('svc_lng').value),
         service_radius: parseFloat(document.getElementById('svc_radius').value),
         
-        fleet: Array.from(fleetRows).map(tr => ({
+        fleet: Array.from(fleetRows).slice(0, getEffectiveFleetLimit()).map(tr => ({
             vehicle_slot_id: tr.cells[0].innerText.trim(), 
             vehicle_type: tr.querySelector('.v-type').value,
             base_rate: parseFloat(tr.querySelector('.v-base').value) || 0,
@@ -1209,7 +1287,44 @@ function copyEmbed() {
     showNotification("Code copied to clipboard!");
 }
 
+let mapsKeyReloadTimer = null;
+
+async function tryReloadMapFromEnteredKey() {
+    const mapsKeyInput = document.getElementById('maps_key');
+    const mapsKey = mapsKeyInput?.value?.trim() || '';
+    if (!mapsKey) {
+        setMapsKeyStatus("Enter a Google Maps API key to load the map.", true);
+        return;
+    }
+
+    try {
+        await ensureGoogleMapsLoaded(mapsKey);
+        const lat = parseFloat(document.getElementById('svc_lat').value);
+        const lng = parseFloat(document.getElementById('svc_lng').value);
+        const radius = parseFloat(document.getElementById('svc_radius').value);
+        initServiceMap(
+            Number.isFinite(lat) ? lat : 34.0522,
+            Number.isFinite(lng) ? lng : -118.2437,
+            Number.isFinite(radius) ? radius : 90
+        );
+    } catch (err) {
+        console.error("Maps key reload error:", err);
+        setMapsKeyStatus(err?.message || "Unable to load Google Maps for this key.", true);
+    }
+}
+
+function queueReloadMapFromEnteredKey() {
+    if (mapsKeyReloadTimer) clearTimeout(mapsKeyReloadTimer);
+    mapsKeyReloadTimer = setTimeout(() => {
+        tryReloadMapFromEnteredKey();
+    }, 450);
+}
+
 document.getElementById('payment_provider')?.addEventListener('change', updatePaymentProviderUI);
+document.getElementById('maps_key')?.addEventListener('change', tryReloadMapFromEnteredKey);
+document.getElementById('maps_key')?.addEventListener('blur', tryReloadMapFromEnteredKey);
+document.getElementById('maps_key')?.addEventListener('input', queueReloadMapFromEnteredKey);
+document.getElementById('load-map-btn')?.addEventListener('click', tryReloadMapFromEnteredKey);
 
 window.onload = loadFromBackend;
 </script>
