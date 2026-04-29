@@ -353,6 +353,9 @@
                 <button onclick="saveToBackend()" id="save-btn" class="w-full wizard-btn-primary font-black py-5 rounded-2xl shadow-xl uppercase tracking-widest text-sm disabled-btn" disabled>
                     Sync to Cloud
                 </button>
+                <button onclick="sendSamplePayloadToCrm()" id="sample-payload-btn" class="w-full wizard-btn-muted font-black py-4 rounded-2xl shadow uppercase tracking-widest text-xs">
+                    Send John Doe Sample to CRM
+                </button>
                 <div class="bg-slate-900 rounded-[2rem] p-6 text-white">
                     <h3 class="text-xs font-bold uppercase tracking-widest text-slate-400 mb-4">Widget Embed Code</h3>
                     <pre id="embed-box" class="bg-black/50 p-4 rounded-xl text-[10px] text-green-400 font-mono overflow-x-auto border border-slate-700 min-h-[100px] whitespace-pre-wrap break-all mb-4"></pre>
@@ -1279,6 +1282,135 @@ async function saveToBackend() {
     } catch (err) {
         console.error("Save sync connection error:", err);
         showNotification(`Connection Error: ${err?.message || 'Ensure Render is active.'}`, false);
+    }
+}
+
+function collectWizardPayload() {
+    const mapsKey = document.getElementById('maps_key').value;
+    const paymentProvider = document.getElementById('payment_provider').value;
+    const stripeSecretKey = document.getElementById('stripe_secret_key').value;
+    const squareApplicationId = document.getElementById('square_application_id').value;
+    const squareAccessToken = document.getElementById('square_access_token').value;
+    const squareLocationId = document.getElementById('square_location_id').value;
+    const webhookUrl = document.getElementById('webhook_url').value;
+    const crmApiKey = document.getElementById('crm_api_key').value;
+    const taxRate = document.getElementById('tax_rate').value;
+    const generalBufferMin = parseInt(document.getElementById('general_buffer_min').value, 10) || 0;
+    const fleetRows = document.querySelectorAll('#fleet-body tr');
+
+    if (!mapsKey || !webhookUrl || !taxRate || fleetRows.length === 0) {
+        throw new Error("Credentials, Tax, and Fleet Slot are REQUIRED.");
+    }
+
+    if (paymentProvider === 'stripe' && !stripeSecretKey.trim()) {
+        throw new Error("A Stripe secret key is required when Stripe is selected.");
+    }
+
+    if (paymentProvider === 'square' && (!squareAccessToken.trim() || !squareLocationId.trim())) {
+        throw new Error("Square access token and Square location ID are required when Square is selected.");
+    }
+
+    return {
+        id: location_id,
+        location_id,
+        plan_name: currentPlanName,
+        business_name: document.getElementById('business_name').value.trim(),
+        business_logo: currentEntitlements.logo_enabled ? (logoBase64 || '') : '',
+        brand_color_primary: currentEntitlements.branding_enabled ? document.getElementById('brand_color_primary').value.trim() : '#082f49',
+        brand_color_secondary: currentEntitlements.branding_enabled ? document.getElementById('brand_color_secondary').value.trim() : '#0f766e',
+        brand_color_accent: currentEntitlements.branding_enabled ? document.getElementById('brand_color_accent').value.trim() : '#ecfeff',
+        widget_tagline: currentEntitlements.branding_enabled ? document.getElementById('widget_tagline').value.trim() : '',
+        crm_webhook_url: webhookUrl,
+        maps_api_key: mapsKey,
+        crm_api_key: crmApiKey.trim(),
+        payment_provider: paymentProvider,
+        stripe_secret_key: stripeSecretKey.trim(),
+        square_application_id: squareApplicationId.trim(),
+        square_access_token: squareAccessToken.trim(),
+        square_location_id: squareLocationId.trim(),
+        tax_rate: parseFloat(taxRate) || 0,
+        service_lat: parseFloat(document.getElementById('svc_lat').value),
+        service_lng: parseFloat(document.getElementById('svc_lng').value),
+        service_radius: parseFloat(document.getElementById('svc_radius').value),
+        fleet: Array.from(fleetRows).slice(0, getEffectiveFleetLimit()).map(tr => ({
+            vehicle_slot_id: tr.cells[0].innerText.trim(),
+            vehicle_type: tr.querySelector('.v-type').value,
+            base_rate: parseFloat(tr.querySelector('.v-base').value) || 0,
+            mile_rate: parseFloat(tr.querySelector('.v-mile').value) || 0,
+            calendar_id: tr.querySelector('.v-cal').value,
+            outbound_buffer_min: generalBufferMin
+        })),
+        peak_windows: [
+            ...Array.from(document.querySelectorAll('.standard-multiplier-row')).map(r => ({
+                day: r.querySelector('.p-day').value,
+                start_time: r.querySelector('.p-start').value,
+                end_time: r.querySelector('.p-end').value,
+                multiplier: parseFloat(r.querySelector('.p-mult').value) || 1,
+                buffer_min: parseInt(r.querySelector('.p-buffer').value, 10) || 0,
+                fixed_surcharge: 0
+            })),
+            ...Array.from(document.querySelectorAll('.fixed-addon-row')).map(r => ({
+                vehicle_type: r.querySelector('.p-vehicle').value,
+                day: r.querySelector('.p-day').value,
+                start_time: r.querySelector('.p-start').value,
+                end_time: r.querySelector('.p-end').value,
+                multiplier: 1,
+                buffer_min: parseInt(r.querySelector('.p-buffer').value, 10) || 0,
+                fixed_surcharge: parseFloat(r.querySelector('.p-fixed-addon').value) || 0
+            }))
+        ],
+        fixed_rates: Array.from(document.querySelectorAll('.route-row')).map(r => ({
+            location_name: r.querySelector('.r-name').value,
+            lat: parseFloat(r.querySelector('.r-lat').value) || 0,
+            lng: parseFloat(r.querySelector('.r-lng').value) || 0,
+            radius: parseFloat(r.querySelector('.r-rad').value) || 0,
+            fixed_price: parseFloat(r.querySelector('.r-price').value) || 0
+        })),
+        events: Array.from(document.querySelectorAll('.event-row')).map(e => ({
+            event_name: e.querySelector('.e-name').value,
+            event_date: e.querySelector('.e-date').value,
+            mile_rate: parseFloat(e.querySelector('.e-mile').value),
+            multiplier: parseFloat(e.querySelector('.e-mult').value)
+        })),
+        addons: Array.from(document.querySelectorAll('.addon-row')).map(r => ({
+            description: r.querySelector('.a-desc').value,
+            price: parseFloat(r.querySelector('.a-price').value),
+            type: r.querySelector('.a-type').value
+        }))
+    };
+}
+
+async function sendSamplePayloadToCrm() {
+    const button = document.getElementById('sample-payload-btn');
+    const originalText = button?.innerText || 'Send John Doe Sample to CRM';
+    try {
+        const payload = collectWizardPayload();
+        if (button) {
+            button.disabled = true;
+            button.innerText = 'Sending Sample...';
+        }
+
+        const response = await fetch(`${BACKEND_URL}/api/crm-webhook/sample`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(wizardToken ? { 'X-Setup-Wizard-Token': wizardToken } : {})
+            },
+            body: JSON.stringify(payload)
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || !data.success) {
+            throw new Error(data?.error || `Sample payload failed with status ${response.status}`);
+        }
+        showNotification('John Doe sample payload sent to CRM webhook.');
+    } catch (err) {
+        console.error('Sample payload send failed:', err);
+        showNotification(`Sample payload failed: ${err?.message || 'Verify the webhook URL.'}`, false);
+    } finally {
+        if (button) {
+            button.disabled = false;
+            button.innerText = originalText;
+        }
     }
 }
 

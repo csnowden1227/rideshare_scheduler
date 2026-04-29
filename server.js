@@ -2064,9 +2064,178 @@ async function sendWizardSyncWebhook({
   return result;
 }
 
+function buildWizardSampleBookingPayload({
+  locationId,
+  businessName,
+  paymentProvider,
+  taxRate,
+  serviceLat,
+  serviceLng,
+  serviceRadius,
+  fleet,
+  fixedRates,
+  addons
+}) {
+  const primaryVehicle = Array.isArray(fleet) && fleet.length ? fleet[0] : {};
+  const routeDistanceMiles = Math.max(
+    12,
+    Math.min(24, Number(serviceRadius || 0) > 0 ? Number(serviceRadius || 0) / 2 : 18)
+  );
+  const routeDurationMinutes = 55;
+  const bookingBufferMinutes = Number(primaryVehicle?.outbound_buffer_min || BOOKING_BUFFER_MINUTES || 0);
+  const bookingDurationMinutes = routeDurationMinutes + bookingBufferMinutes;
+  const startTime = new Date(Date.now() + (72 * 60 * 60 * 1000));
+  startTime.setUTCMinutes(0, 0, 0);
+  const endTime = new Date(startTime.getTime() + bookingDurationMinutes * 60000);
+
+  const quotedPrice = Math.max(85, Number(primaryVehicle?.base_rate || 0));
+  const addonNames = Array.isArray(addons)
+    ? addons.map((row = {}) => String(row.description || "").trim()).filter(Boolean)
+    : [];
+  const addonTotal = Array.isArray(addons) && addons.length
+    ? Number(addons.reduce((sum, row = {}) => sum + Number(row.price || 0), 0).toFixed(2))
+    : 0;
+  const subtotal = quotedPrice + addonTotal;
+  const numericTaxRate = Number(taxRate || 0);
+  const taxAmount = Number((subtotal * (numericTaxRate / 100)).toFixed(2));
+  const totalPrice = Number((subtotal + taxAmount).toFixed(2));
+  const depositPercent = totalPrice >= 150 ? 25 : 50;
+  const depositAmount = Number((totalPrice * (depositPercent / 100)).toFixed(2));
+  const balanceDue = Number((totalPrice - depositAmount).toFixed(2));
+  const balanceDueDeadline = new Date(startTime.getTime() - (48 * 60 * 60 * 1000)).toISOString();
+  const fixedDestination = Array.isArray(fixedRates) && fixedRates.length
+    ? String(fixedRates[0]?.location_name || "").trim() || null
+    : null;
+  const pickupLat = Number.isFinite(Number(serviceLat)) ? Number(serviceLat) : null;
+  const pickupLng = Number.isFinite(Number(serviceLng)) ? Number(serviceLng) : null;
+  const dropoffLat = pickupLat != null ? Number((pickupLat + 0.015).toFixed(6)) : null;
+  const dropoffLng = pickupLng != null ? Number((pickupLng + 0.02).toFixed(6)) : null;
+  const sampleBookingId = Number(`9${String(Date.now()).slice(-8)}`);
+
+  return buildCrmBookingPayload({
+    webhookType: "webhook_bookings",
+    locationId,
+    businessName,
+    booking: {
+      booking_id: sampleBookingId,
+      status: "confirmed",
+      booking_mode: fixedDestination ? "fixed" : "standard",
+      pickup_address: "123 Main St, Los Angeles, CA 90012",
+      dropoff_address: fixedDestination || "LAX Terminal 4, Los Angeles, CA 90045",
+      pickup_lat: pickupLat,
+      pickup_lng: pickupLng,
+      dropoff_lat: dropoffLat,
+      dropoff_lng: dropoffLng,
+      start_time: startTime.toISOString(),
+      end_time: endTime.toISOString(),
+      passenger_count: 2,
+      carry_on_count: 1,
+      checked_bag_count: 2,
+      additional_items_aboard: null,
+      selected_event_name: null,
+      selected_fixed_destination: fixedDestination,
+      selected_addons: addonNames
+    },
+    customer: {
+      first_name: "John",
+      last_name: "Doe",
+      email: "john.doe@example.com",
+      phone: "5555551212"
+    },
+    vehicle: {
+      vehicle_slot_id: primaryVehicle?.vehicle_slot_id || `${locationId}_sample_vehicle`,
+      vehicle_type: primaryVehicle?.vehicle_type || "Luxury Sedan",
+      vehicle_category: primaryVehicle?.vehicle_category || null,
+      calendar_id: primaryVehicle?.calendar_id || null
+    },
+    financials: {
+      quoted_price: quotedPrice,
+      addon_total: addonTotal,
+      tax_amount: taxAmount,
+      total_price: totalPrice,
+      deposit_percent: depositPercent,
+      deposit_amount: depositAmount,
+      balance_due: balanceDue,
+      payment_status: "paid_deposit",
+      payment_paid: true,
+      deposit_paid: true,
+      balance_paid: false,
+      payment_link: "https://example.com/pay/sample-booking",
+      balance_payment_link: "https://example.com/pay/sample-balance",
+      payment_choice: "deposit",
+      deposit_eligible: true,
+      amount_due_now: depositAmount,
+      balance_due_deadline: balanceDueDeadline,
+      hours_until_ride: 72,
+      payment_provider: normalizePaymentProvider(paymentProvider || "stripe")
+    },
+    meta: {
+      source: "wizard_sample_payload",
+      payment_provider: normalizePaymentProvider(paymentProvider || "stripe"),
+      pricing_label: fixedDestination ? "Fixed Destination Quote" : "Standard Booking Quote",
+      fixed_rate_name: fixedDestination,
+      peak_multiplier: 1,
+      fixed_surcharge: 0,
+      route_distance_miles: routeDistanceMiles,
+      route_duration_minutes: routeDurationMinutes,
+      booking_buffer_minutes: bookingBufferMinutes,
+      booking_duration_minutes: bookingDurationMinutes,
+      timing_source: "sample_payload",
+      created_at: new Date().toISOString()
+    }
+  });
+}
+
 // This handles the "Save" button from your Wizard
 app.post("/api/save-config", requireWizardToken, saveConfigHandler);
 app.post('/api/update-profile-full', requireWizardToken, saveConfigHandler);
+app.post("/api/crm-webhook/sample", requireWizardToken, async (req, res) => {
+  try {
+    const locationId = String(req.body.location_id || req.body.id || "").trim();
+    const webhookUrl = String(req.body.crm_webhook_url || "").trim();
+    const businessName = String(req.body.business_name || "Chauffeur Deluxe").trim();
+
+    if (!locationId) {
+      return res.status(400).json({ success: false, error: "location_id is required." });
+    }
+    if (!webhookUrl || !webhookUrl.startsWith("http")) {
+      return res.status(400).json({ success: false, error: "A valid CRM webhook URL is required." });
+    }
+
+    const payload = buildWizardSampleBookingPayload({
+      locationId,
+      businessName,
+      paymentProvider: req.body.payment_provider,
+      taxRate: req.body.tax_rate,
+      serviceLat: req.body.service_lat,
+      serviceLng: req.body.service_lng,
+      serviceRadius: req.body.service_radius,
+      fleet: Array.isArray(req.body.fleet) ? req.body.fleet : [],
+      fixedRates: Array.isArray(req.body.fixed_rates) ? req.body.fixed_rates : [],
+      addons: Array.isArray(req.body.addons) ? req.body.addons : []
+    });
+
+    const response = await fetch(webhookUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+
+    const responseText = await response.text();
+    return res.status(response.ok ? 200 : response.status).json({
+      success: response.ok,
+      status: response.status,
+      webhook_url: webhookUrl,
+      payload,
+      response_preview: responseText.slice(0, 300)
+    });
+  } catch (err) {
+    return res.status(500).json({
+      success: false,
+      error: err?.message || "Unable to send sample payload."
+    });
+  }
+});
 
 app.get("/api/crm/token-status/:location_id", requireWizardToken, async (req, res) => {
   try {
