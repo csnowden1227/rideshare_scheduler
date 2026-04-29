@@ -193,7 +193,11 @@
     const apiBase = window.location.origin;
     let driverMap = null;
     let driverMarker = null;
+    let pickupMarker = null;
+    let dropoffMarker = null;
     let latestPosition = null;
+    let pickupPosition = null;
+    let dropoffPosition = null;
     let watchId = null;
     let mapsLoaded = false;
     let googleMapsPromise = null;
@@ -251,12 +255,68 @@
       return googleMapsPromise;
     }
 
+    function toLatLng(lat, lng) {
+      if (!Number.isFinite(Number(lat)) || !Number.isFinite(Number(lng))) {
+        return null;
+      }
+      return { lat: Number(lat), lng: Number(lng) };
+    }
+
+    function fitMapToPoints(map, points) {
+      const validPoints = points.filter(Boolean);
+      if (!map || !validPoints.length) {
+        return;
+      }
+
+      if (validPoints.length === 1) {
+        map.setCenter(validPoints[0]);
+        map.setZoom(13);
+        return;
+      }
+
+      const bounds = new google.maps.LatLngBounds();
+      validPoints.forEach((point) => bounds.extend(point));
+      map.fitBounds(bounds, 80);
+    }
+
+    function updateRouteMarkers() {
+      if (!driverMap) {
+        return;
+      }
+
+      if (pickupPosition) {
+        if (!pickupMarker) {
+          pickupMarker = new google.maps.Marker({
+            position: pickupPosition,
+            map: driverMap,
+            title: "Pickup",
+            label: "P"
+          });
+        } else {
+          pickupMarker.setPosition(pickupPosition);
+        }
+      }
+
+      if (dropoffPosition) {
+        if (!dropoffMarker) {
+          dropoffMarker = new google.maps.Marker({
+            position: dropoffPosition,
+            map: driverMap,
+            title: "Dropoff",
+            label: "D"
+          });
+        } else {
+          dropoffMarker.setPosition(dropoffPosition);
+        }
+      }
+    }
+
     function initOrUpdateMap(position) {
       if (!(window.google && window.google.maps)) {
         return;
       }
 
-      const fallback = position || latestPosition || { lat: 34.0522, lng: -118.2437 };
+      const fallback = position || latestPosition || pickupPosition || dropoffPosition || { lat: 34.0522, lng: -118.2437 };
       if (!driverMap) {
         driverMap = new google.maps.Map(document.getElementById("driver-map"), {
           center: fallback,
@@ -270,13 +330,12 @@
           map: driverMap,
           title: "Driver Location"
         });
-        return;
+      } else if (position && driverMarker) {
+        driverMarker.setPosition(position);
       }
 
-      if (position && driverMarker) {
-        driverMarker.setPosition(position);
-        driverMap.setCenter(position);
-      }
+      updateRouteMarkers();
+      fitMapToPoints(driverMap, [position, latestPosition, pickupPosition, dropoffPosition]);
     }
 
     async function loadSession() {
@@ -294,6 +353,8 @@
         setText("pickup-address", session.pickup_address || "");
         setText("dropoff-address", session.dropoff_address || "");
         setText("last-update", formatWhen(session.last_location_at));
+        pickupPosition = toLatLng(session.pickup_lat, session.pickup_lng);
+        dropoffPosition = toLatLng(session.dropoff_lat, session.dropoff_lng);
 
         if (Number.isFinite(Number(session.current_lat)) && Number.isFinite(Number(session.current_lng))) {
           latestPosition = {
