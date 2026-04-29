@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Driver Tracking</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
+      color: #0f172a;
+    }
+    .wrap {
+      max-width: 1080px;
+      margin: 0 auto;
+      padding: 24px 16px 40px;
+    }
+    .hero {
+      background: linear-gradient(135deg, #0f172a 0%, #5b21b6 48%, #0f766e 100%);
+      color: #fff;
+      border-radius: 24px;
+      padding: 28px 22px;
+      box-shadow: 0 18px 40px rgba(76, 29, 149, 0.18);
+    }
+    .hero h1 {
+      margin: 0 0 10px 0;
+      font-size: 34px;
+      line-height: 1.08;
+    }
+    .hero p {
+      margin: 0;
+      line-height: 1.8;
+    }
+    .card {
+      margin-top: 20px;
+      background: #fff;
+      border: 1px solid #ddd6fe;
+      border-radius: 22px;
+      padding: 22px;
+      box-shadow: 0 10px 26px rgba(15, 23, 42, 0.05);
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1.2fr;
+      gap: 18px;
+      align-items: start;
+    }
+    .info {
+      display: grid;
+      gap: 14px;
+    }
+    .box {
+      border: 1px solid #ddd6fe;
+      border-radius: 18px;
+      padding: 16px;
+      background: #fff;
+    }
+    .box-teal {
+      background: #f0fdfa;
+      border-color: #99f6e4;
+    }
+    .box-purple {
+      background: #f5f3ff;
+    }
+    .label {
+      display: block;
+      font-size: 12px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #64748b;
+      margin-bottom: 6px;
+    }
+    .value {
+      font-size: 15px;
+      line-height: 1.7;
+      color: #111827;
+    }
+    .map {
+      width: 100%;
+      height: 520px;
+      border-radius: 18px;
+      overflow: hidden;
+      border: 1px solid #ddd6fe;
+      background: #e2e8f0;
+    }
+    .actions {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 12px;
+    }
+    .btn {
+      width: 100%;
+      padding: 14px 16px;
+      border-radius: 14px;
+      border: 0;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, #5b21b6 0%, #0f766e 100%);
+      color: #fff;
+    }
+    .btn-secondary {
+      background: #fff;
+      color: #5b21b6;
+      border: 1px solid #c4b5fd;
+    }
+    .status {
+      margin-top: 14px;
+      font-size: 14px;
+      font-weight: 700;
+      color: #0f766e;
+    }
+    @media (max-width: 900px) {
+      .grid {
+        grid-template-columns: 1fr;
+      }
+      .map {
+        height: 380px;
+      }
+    }
+    @media (max-width: 640px) {
+      .actions {
+        grid-template-columns: 1fr;
+      }
+      .hero h1 {
+        font-size: 28px;
+      }
+      .map {
+        height: 320px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="hero">
+      <h1>Driver Tracking</h1>
+      <p>Use this secure page to send live trip location updates during the ride.</p>
+    </div>
+
+    <div class="card">
+      <div class="grid">
+        <div class="info">
+          <div class="box box-purple">
+            <span class="label">Trip Status</span>
+            <div class="value" id="trip-status">Loading...</div>
+          </div>
+
+          <div class="box">
+            <span class="label">Customer</span>
+            <div class="value" id="customer-name">Loading...</div>
+          </div>
+
+          <div class="box">
+            <span class="label">Pickup</span>
+            <div class="value" id="pickup-address">Loading...</div>
+          </div>
+
+          <div class="box">
+            <span class="label">Dropoff</span>
+            <div class="value" id="dropoff-address">Loading...</div>
+          </div>
+
+          <div class="box box-teal">
+            <span class="label">Last GPS Update</span>
+            <div class="value" id="last-update">Waiting for location...</div>
+          </div>
+
+          <div class="actions">
+            <button class="btn btn-primary" data-status="en_route_to_pickup">En Route</button>
+            <button class="btn btn-secondary" data-status="arrived_at_pickup">Arrived</button>
+            <button class="btn btn-primary" data-status="passenger_on_board">Passenger On Board</button>
+            <button class="btn btn-secondary" data-status="completed">Complete Trip</button>
+          </div>
+
+          <div class="status" id="driver-status-message">Loading tracking session...</div>
+        </div>
+
+        <div>
+          <div id="driver-map" class="map"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const query = new URLSearchParams(window.location.search);
+    const token = (query.get("token") || "").trim();
+    const apiBase = window.location.origin;
+    let driverMap = null;
+    let driverMarker = null;
+    let latestPosition = null;
+    let watchId = null;
+    let mapsLoaded = false;
+    let googleMapsPromise = null;
+
+    function setText(id, value) {
+      const el = document.getElementById(id);
+      if (el) el.textContent = value || "";
+    }
+
+    function formatWhen(value) {
+      if (!value) return "No location sent yet";
+      const date = new Date(value);
+      return Number.isNaN(date.getTime()) ? "No location sent yet" : date.toLocaleString();
+    }
+
+    function getSessionData(payload) {
+      return payload?.session || payload?.tracking || {};
+    }
+
+    async function requestJson(url, options = {}) {
+      const response = await fetch(url, options);
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.error || "Request failed.");
+      }
+      return data;
+    }
+
+    function loadGoogleMaps(apiKey) {
+      if (!apiKey) {
+        return Promise.resolve();
+      }
+
+      if (window.google && window.google.maps) {
+        mapsLoaded = true;
+        return Promise.resolve();
+      }
+
+      if (googleMapsPromise) {
+        return googleMapsPromise;
+      }
+
+      googleMapsPromise = new Promise((resolve, reject) => {
+        const script = document.createElement("script");
+        script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}`;
+        script.async = true;
+        script.onload = () => {
+          mapsLoaded = true;
+          resolve();
+        };
+        script.onerror = () => reject(new Error("Unable to load Google Maps."));
+        document.head.appendChild(script);
+      });
+
+      return googleMapsPromise;
+    }
+
+    function initOrUpdateMap(position) {
+      if (!(window.google && window.google.maps)) {
+        return;
+      }
+
+      const fallback = position || latestPosition || { lat: 34.0522, lng: -118.2437 };
+      if (!driverMap) {
+        driverMap = new google.maps.Map(document.getElementById("driver-map"), {
+          center: fallback,
+          zoom: 13,
+          mapTypeControl: false,
+          streetViewControl: false,
+          fullscreenControl: true
+        });
+        driverMarker = new google.maps.Marker({
+          position: fallback,
+          map: driverMap,
+          title: "Driver Location"
+        });
+        return;
+      }
+
+      if (position && driverMarker) {
+        driverMarker.setPosition(position);
+        driverMap.setCenter(position);
+      }
+    }
+
+    async function loadSession() {
+      if (!token) {
+        setText("driver-status-message", "Missing tracking token.");
+        return;
+      }
+
+      try {
+        const data = await requestJson(`${apiBase}/api/tracking/session/driver?token=${encodeURIComponent(token)}`);
+        const session = getSessionData(data);
+
+        setText("trip-status", session.status || "driver_assigned");
+        setText("customer-name", session.customer_name || "Assigned customer");
+        setText("pickup-address", session.pickup_address || "");
+        setText("dropoff-address", session.dropoff_address || "");
+        setText("last-update", formatWhen(session.last_location_at));
+
+        if (Number.isFinite(Number(session.current_lat)) && Number.isFinite(Number(session.current_lng))) {
+          latestPosition = {
+            lat: Number(session.current_lat),
+            lng: Number(session.current_lng)
+          };
+        }
+
+        await loadGoogleMaps(session.maps_api_key || "");
+        initOrUpdateMap(latestPosition);
+        startTracking();
+      } catch (error) {
+        setText("driver-status-message", error.message || "Unable to load tracking session.");
+      }
+    }
+
+    function startTracking() {
+      if (!navigator.geolocation) {
+        setText("driver-status-message", "Geolocation is not supported on this device.");
+        return;
+      }
+
+      if (watchId !== null) {
+        return;
+      }
+
+      setText("driver-status-message", "Live tracking started.");
+      watchId = navigator.geolocation.watchPosition(
+        async (position) => {
+          const payload = {
+            token,
+            lat: position.coords.latitude,
+            lng: position.coords.longitude,
+            heading: position.coords.heading,
+            speed: position.coords.speed,
+            accuracy: position.coords.accuracy
+          };
+
+          latestPosition = { lat: payload.lat, lng: payload.lng };
+          initOrUpdateMap(latestPosition);
+
+          try {
+            await requestJson(`${apiBase}/api/tracking/location`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(payload)
+            });
+            setText("last-update", new Date().toLocaleString());
+            setText("driver-status-message", "Location updated successfully.");
+          } catch (error) {
+            setText("driver-status-message", error.message || "Unable to send driver location.");
+          }
+        },
+        (error) => {
+          setText("driver-status-message", error.message || "Unable to read device location.");
+        },
+        {
+          enableHighAccuracy: true,
+          maximumAge: 5000,
+          timeout: 15000
+        }
+      );
+    }
+
+    async function setStatus(status) {
+      if (!token) {
+        return;
+      }
+
+      try {
+        const data = await requestJson(`${apiBase}/api/tracking/status`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token, status })
+        });
+        setText("trip-status", data.status || status);
+        setText("driver-status-message", `Trip status updated to ${data.status || status}.`);
+      } catch (error) {
+        setText("driver-status-message", error.message || "Unable to update trip status.");
+      }
+    }
+
+    document.querySelectorAll("[data-status]").forEach((button) => {
+      button.addEventListener("click", () => setStatus(button.getAttribute("data-status")));
+    });
+
+    window.addEventListener("load", loadSession);
+  </script>
+</body>
+</html>

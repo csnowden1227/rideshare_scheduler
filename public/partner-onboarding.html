@@ -158,6 +158,28 @@
       font-size: 13px;
       line-height: 1.7;
     }
+    .help-card {
+      margin-top: 18px;
+      padding: 18px;
+      border-radius: 18px;
+      border: 1px solid #fecaca;
+      background: #fef2f2;
+      color: #7f1d1d;
+      line-height: 1.75;
+      display: none;
+    }
+    .help-card h3 {
+      margin: 0 0 10px;
+      font-size: 20px;
+      line-height: 1.15;
+      color: #991b1b;
+    }
+    .help-card p {
+      margin: 0 0 10px;
+    }
+    .help-card p:last-child {
+      margin-bottom: 0;
+    }
     @media (max-width: 980px) {
       .grid-2, .fleet-row {
         grid-template-columns: 1fr;
@@ -181,6 +203,15 @@
       </p>
       <div id="invite-summary" class="invite-summary"></div>
       <div id="invite-status" class="status error" style="display:none;"></div>
+      <div id="invalid-invite-help" class="help-card">
+        <h3>This invite link is invalid or expired.</h3>
+        <p>
+          Partner onboarding is invite-only. Please go back to the operator who invited you and ask them to create a fresh partner onboarding link from their Dispatch Network page.
+        </p>
+        <p>
+          Once you open a valid invite link, this page will show your invite email, source operator details, expiration date, and the full registration form.
+        </p>
+      </div>
     </section>
 
     <section class="section">
@@ -289,6 +320,7 @@
     const onboardingForm = document.getElementById("onboarding-form");
     const fleetListEl = document.getElementById("fleet-list");
     const addFleetBtn = document.getElementById("add-fleet-btn");
+    const invalidInviteHelpEl = document.getElementById("invalid-invite-help");
 
     function showStatus(el, message, isError = false) {
       el.textContent = message;
@@ -340,7 +372,8 @@
 
     async function loadInvite() {
       if (!token) {
-        showStatus(inviteStatusEl, "Missing onboarding token.", true);
+        showStatus(inviteStatusEl, "This partner onboarding link is missing its invite token.", true);
+        invalidInviteHelpEl.style.display = "block";
         onboardingForm.style.display = "none";
         return;
       }
@@ -418,6 +451,7 @@
         await loadInvite();
       } catch (err) {
         showStatus(inviteStatusEl, err.message || "Unable to load partner invite.", true);
+        invalidInviteHelpEl.style.display = "block";
         onboardingForm.style.display = "none";
       }
     });

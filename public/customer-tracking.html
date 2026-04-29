@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Track Your Driver</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
+      color: #0f172a;
+    }
+    .wrap {
+      max-width: 1080px;
+      margin: 0 auto;
+      padding: 24px 16px 40px;
+    }
+    .hero {
+      background: linear-gradient(135deg, #5b21b6 0%, #0f766e 100%);
+      color: #fff;
+      border-radius: 24px;
+      padding: 28px 22px;
+      box-shadow: 0 18px 40px rgba(76, 29, 149, 0.18);
+    }
+    .hero h1 {
+      margin: 0 0 10px 0;
+      font-size: 34px;
+      line-height: 1.08;
+    }
+    .hero p {
+      margin: 0;
+      line-height: 1.8;
+    }
+    .card {
+      margin-top: 20px;
+      background: #fff;
+      border: 1px solid #ddd6fe;
+      border-radius: 22px;
+      padding: 22px;
+      box-shadow: 0 10px 26px rgba(15, 23, 42, 0.05);
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1.2fr;
+      gap: 18px;
+      align-items: start;
+    }
+    .info {
+      display: grid;
+      gap: 14px;
+    }
+    .box {
+      border: 1px solid #ddd6fe;
+      border-radius: 18px;
+      padding: 16px;
+      background: #fff;
+    }
+    .box-teal {
+      background: #f0fdfa;
+      border-color: #99f6e4;
+    }
+    .box-purple {
+      background: #f5f3ff;
+    }
+    .label {
+      display: block;
+      font-size: 12px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #64748b;
+      margin-bottom: 6px;
+    }
+    .value {
+      font-size: 15px;
+      line-height: 1.7;
+      color: #111827;
+    }
+    .map {
+      width: 100%;
+      height: 520px;
+      border-radius: 18px;
+      overflow: hidden;
+      border: 1px solid #ddd6fe;
+      background: #e2e8f0;
+    }
+    .status {
+      margin-top: 14px;
+      font-size: 14px;
+      font-weight: 700;
+      color: #0f766e;
+    }
+    @media (max-width: 900px) {
+      .grid {
+        grid-template-columns: 1fr;
+      }
+      .map {
+        height: 380px;
+      }
+    }
+    @media (max-width: 640px) {
+      .hero h1 {
+        font-size: 28px;
+      }
+      .map {
+        height: 320px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="hero">
+      <h1>Track Your Driver</h1>
+      <p>Use this secure tracking page to view the current location and trip status for your reservation.</p>
+    </div>
+
+    <div class="card">
+      <div class="grid">
+        <div class="info">
+          <div class="box box-purple">
+            <span class="label">Trip Status</span>
+            <div class="value" id="cust-trip-status">Loading...</div>
+          </div>
+
+          <div class="box">
+            <span class="label">Reservation For</span>
+            <div class="value" id="cust-customer-name">Loading...</div>
+          </div>
+
+          <div class="box">
+            <span class="label">Pickup</span>
+            <div class="value" id="cust-pickup-address">Loading...</div>
+          </div>
+
+          <div class="box">
+            <span class="label">Dropoff</span>
+            <div class="value" id="cust-dropoff-address">Loading...</div>
+          </div>
+
+          <div class="box box-teal">
+            <span class="label">Last Driver Update</span>
+            <div class="value" id="cust-last-update">Loading...</div>
+          </div>
+
+          <div class="status" id="cust-status-message">Loading tracking session...</div>
+        </div>
+
+        <div>
+          <div id="customer-map" class="map"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const query = new URLSearchParams(window.location.search);
+    const customerToken = (query.get("token") || "").trim();
+    const apiBase = window.location.origin;
+    let customerMap = null;
+    let customerMarker = null;
+    let customerMapsLoaded = false;
+    let googleMapsPromise = null;
+    let pollTimer = null;
+
+    function setText(id, value) {
+      const el = document.getElementById(id);
+      if (el) el.textContent = value || "";
+    }
+
+    function formatWhen(value) {
+      if (!value) return "Location updating...";
+      const date = new Date(value);
+      return Number.isNaN(date.getTime()) ? "Location updating..." : date.toLocaleString();
+    }
+
+    function getSessionData(payload) {
+      return payload?.session || payload?.tracking || {};
+    }
+
+    async function requestJson(url, options = {}) {
+      const response = await fetch(url, options);
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.error || "Request failed.");
+      }
+      return data;
+    }
+
+    function loadGoogleMaps(apiKey) {
+      if (!apiKey) {
+        return Promise.resolve();
+      }
+
+      if (window.google && window.google.maps) {
+        customerMapsLoaded = true;
+        return Promise.resolve();
+      }
+
+      if (googleMapsPromise) {
+        return googleMapsPromise;
+      }
+
+      googleMapsPromise = new Promise((resolve, reject) => {
+        const script = document.createElement("script");
+        script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}`;
+        script.async = true;
+        script.onload = () => {
+          customerMapsLoaded = true;
+          resolve();
+        };
+        script.onerror = () => reject(new Error("Unable to load Google Maps."));
+        document.head.appendChild(script);
+      });
+
+      return googleMapsPromise;
+    }
+
+    function initOrUpdateMap(position) {
+      if (!(window.google && window.google.maps)) {
+        return;
+      }
+
+      const fallback = position || { lat: 34.0522, lng: -118.2437 };
+      if (!customerMap) {
+        customerMap = new google.maps.Map(document.getElementById("customer-map"), {
+          center: fallback,
+          zoom: 13,
+          mapTypeControl: false,
+          streetViewControl: false,
+          fullscreenControl: true
+        });
+        customerMarker = new google.maps.Marker({
+          position: fallback,
+          map: customerMap,
+          title: "Driver Location"
+        });
+        return;
+      }
+
+      if (position && customerMarker) {
+        customerMarker.setPosition(position);
+        customerMap.setCenter(position);
+      }
+    }
+
+    async function fetchSession() {
+      if (!customerToken) {
+        setText("cust-status-message", "Missing customer tracking token.");
+        return;
+      }
+
+      try {
+        const data = await requestJson(`${apiBase}/api/tracking/session/customer?token=${encodeURIComponent(customerToken)}`);
+        const session = getSessionData(data);
+
+        setText("cust-trip-status", session.status || "driver_assigned");
+        setText("cust-customer-name", session.customer_name || "Reservation");
+        setText("cust-pickup-address", session.pickup_address || "");
+        setText("cust-dropoff-address", session.dropoff_address || "");
+        setText("cust-last-update", formatWhen(session.last_location_at));
+        setText("cust-status-message", "Tracking is active.");
+
+        const position = Number.isFinite(Number(session.current_lat)) && Number.isFinite(Number(session.current_lng))
+          ? { lat: Number(session.current_lat), lng: Number(session.current_lng) }
+          : null;
+
+        await loadGoogleMaps(session.maps_api_key || "");
+        initOrUpdateMap(position);
+      } catch (error) {
+        setText("cust-status-message", error.message || "Unable to load driver tracking.");
+      }
+    }
+
+    async function startPolling() {
+      await fetchSession();
+      if (pollTimer !== null) {
+        return;
+      }
+      pollTimer = window.setInterval(fetchSession, 10000);
+    }
+
+    window.addEventListener("load", startPolling);
+  </script>
+</body>
+</html>

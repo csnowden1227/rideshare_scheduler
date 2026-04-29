@@ -10,7 +10,7 @@ import pkg from 'pg';
 import Stripe from 'stripe';
 import dns from 'dns/promises';
 import https from 'https';
-import { randomUUID } from 'crypto';
+import { randomBytes, randomUUID } from 'crypto';
 import { Client as GoogleMapsClient } from "@googlemaps/google-maps-services-js";
 import { google } from 'googleapis';
 import path from 'path';
@@ -472,6 +472,10 @@ function parseOptionalNumber(value) {
   return Number.isFinite(num) ? num : null;
 }
 
+function createTrackingToken(prefix) {
+  return `${prefix}_${randomBytes(24).toString("hex")}`;
+}
+
 function buildTrackingUrls(req, driverToken, customerToken) {
   const baseUrl = getPublicAppUrl(req);
   return {
@@ -553,6 +557,43 @@ function buildTrackingResponsePayload(session, { includeDriverToken = false } = 
   }
 
   return payload;
+}
+
+function buildTrackingSessionClientShape(session) {
+  const customerName = [session.first_name, session.last_name].filter(Boolean).join(" ").trim();
+  return {
+    id: session.id,
+    tracking_session_id: session.id,
+    booking_id: session.booking_id,
+    location_id: session.location_id,
+    status: session.status,
+    current_lat: session.current_lat,
+    current_lng: session.current_lng,
+    heading: session.heading,
+    speed: session.speed,
+    accuracy: session.accuracy,
+    last_location_at: session.last_location_at,
+    started_at: session.started_at,
+    ended_at: session.ended_at,
+    customer_name: customerName,
+    customer_email: session.customer_email || "",
+    customer_phone: session.customer_phone || "",
+    pickup_address: session.pickup_address || "",
+    dropoff_address: session.dropoff_address || "",
+    pickup_lat: session.pickup_lat,
+    pickup_lng: session.pickup_lng,
+    dropoff_lat: session.dropoff_lat,
+    dropoff_lng: session.dropoff_lng,
+    start_time: session.start_time,
+    end_time: session.end_time,
+    total_price: session.total_price,
+    vehicle_slot_id: session.vehicle_slot_id || "",
+    booking_status: session.booking_status || "",
+    business_name: session.business_name || "Chauffeur Deluxe",
+    maps_api_key: session.maps_api_key || "",
+    customer_tracking_token: session.customer_token,
+    driver_tracking_token: session.driver_token,
+  };
 }
 
 async function ghlDispatchRequest({ method = "GET", path, apiKey, body }) {
@@ -3187,6 +3228,237 @@ app.post("/api/partner-split-agreements", async (req, res) => {
   }
 });
 
+app.post("/api/tracking/session/create", async (req, res) => {
+  try {
+    await ensureTripTrackingTables();
+
+    const bookingId = Number(req.body.booking_id || 0);
+    const explicitLocationId = String(req.body.location_id || "").trim();
+
+    if (!bookingId) {
+      return res.status(400).json({ error: "booking_id is required." });
+    }
+
+    const bookingLookup = await pool.query(
+      `SELECT id, location_id, pickup_address, dropoff_address, start_time, end_time, first_name, last_name, customer_email, customer_phone
+       FROM bookings
+       WHERE id = $1
+       LIMIT 1`,
+      [bookingId]
+    );
+
+    if (!bookingLookup.rows.length) {
+      return res.status(404).json({ error: "Booking not found." });
+    }
+
+    const booking = bookingLookup.rows[0];
+    const locationId = explicitLocationId || String(booking.location_id || "").trim();
+    if (!locationId) {
+      return res.status(400).json({ error: "location_id is required for tracking." });
+    }
+
+    const existing = await pool.query(
+      `SELECT *
+       FROM trip_tracking_sessions
+       WHERE booking_id = $1
+       LIMIT 1`,
+      [bookingId]
+    );
+
+    if (existing.rows.length) {
+      const session = existing.rows[0];
+      return res.json({
+        success: true,
+        tracking_session_id: session.id,
+        driver_token: session.driver_token,
+        customer_token: session.customer_token,
+        ...buildTrackingUrls(req, session.driver_token, session.customer_token),
+      });
+    }
+
+    const id = randomUUID();
+    const driverToken = createTrackingToken("drv");
+    const customerToken = createTrackingToken("cus");
+
+    await pool.query(
+      `INSERT INTO trip_tracking_sessions (
+        id, booking_id, location_id, driver_token, customer_token, status, created_at, updated_at
+      ) VALUES ($1,$2,$3,$4,$5,'driver_assigned',NOW(),NOW())`,
+      [id, bookingId, locationId, driverToken, customerToken]
+    );
+
+    return res.json({
+      success: true,
+      tracking_session_id: id,
+      driver_token: driverToken,
+      customer_token: customerToken,
+      ...buildTrackingUrls(req, driverToken, customerToken),
+    });
+  } catch (err) {
+    console.error("Create tracking session error:", err);
+    return res.status(500).json({ error: err.message || "Failed to create tracking session." });
+  }
+});
+
+app.get("/api/tracking/session/driver", async (req, res) => {
+  try {
+    await ensureTripTrackingTables();
+
+    const token = String(req.query.token || "").trim();
+    if (!token) {
+      return res.status(400).json({ error: "token is required." });
+    }
+
+    const session = await getTrackingSessionByToken({ token, role: "driver" });
+    if (!session) {
+      return res.status(404).json({ error: "Tracking session not found." });
+    }
+
+    return res.json({
+      success: true,
+      session: buildTrackingSessionClientShape(session),
+      tracking: buildTrackingResponsePayload(session, { includeDriverToken: true }),
+      ...buildTrackingUrls(req, session.driver_token, session.customer_token),
+    });
+  } catch (err) {
+    console.error("Driver tracking session lookup error:", err);
+    return res.status(500).json({ error: err.message || "Failed to load driver tracking session." });
+  }
+});
+
+app.get("/api/tracking/session/customer", async (req, res) => {
+  try {
+    await ensureTripTrackingTables();
+
+    const token = String(req.query.token || "").trim();
+    if (!token) {
+      return res.status(400).json({ error: "token is required." });
+    }
+
+    const session = await getTrackingSessionByToken({ token, role: "customer" });
+    if (!session) {
+      return res.status(404).json({ error: "Tracking session not found." });
+    }
+
+    return res.json({
+      success: true,
+      session: buildTrackingSessionClientShape(session),
+      tracking: buildTrackingResponsePayload(session),
+      customer_url: buildTrackingUrls(req, session.driver_token, session.customer_token).customer_url,
+    });
+  } catch (err) {
+    console.error("Customer tracking session lookup error:", err);
+    return res.status(500).json({ error: err.message || "Failed to load customer tracking session." });
+  }
+});
+
+app.post("/api/tracking/location", async (req, res) => {
+  try {
+    await ensureTripTrackingTables();
+
+    const token = String(req.body.token || "").trim();
+    const lat = parseOptionalNumber(req.body.lat);
+    const lng = parseOptionalNumber(req.body.lng);
+    const heading = parseOptionalNumber(req.body.heading);
+    const speed = parseOptionalNumber(req.body.speed);
+    const accuracy = parseOptionalNumber(req.body.accuracy);
+
+    if (!token || lat === null || lng === null) {
+      return res.status(400).json({ error: "token, lat, and lng are required." });
+    }
+
+    const lookup = await pool.query(
+      `SELECT id, status
+       FROM trip_tracking_sessions
+       WHERE driver_token = $1
+       LIMIT 1`,
+      [token]
+    );
+
+    if (!lookup.rows.length) {
+      return res.status(404).json({ error: "Tracking session not found." });
+    }
+
+    const session = lookup.rows[0];
+    if (session.status === "completed") {
+      return res.status(400).json({ error: "Trip tracking is already completed." });
+    }
+
+    await pool.query(
+      `UPDATE trip_tracking_sessions
+       SET current_lat = $2,
+           current_lng = $3,
+           heading = $4,
+           speed = $5,
+           accuracy = $6,
+           last_location_at = NOW(),
+           started_at = COALESCE(started_at, NOW()),
+           updated_at = NOW()
+       WHERE id = $1`,
+      [session.id, lat, lng, heading, speed, accuracy]
+    );
+
+    await pool.query(
+      `INSERT INTO trip_tracking_points (
+        id, tracking_session_id, lat, lng, heading, speed, accuracy, recorded_at
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,NOW())`,
+      [randomUUID(), session.id, lat, lng, heading, speed, accuracy]
+    );
+
+    return res.json({
+      success: true,
+      tracking_session_id: session.id,
+      last_location_at: new Date().toISOString(),
+    });
+  } catch (err) {
+    console.error("Driver tracking location update error:", err);
+    return res.status(500).json({ error: err.message || "Failed to save tracking location." });
+  }
+});
+
+app.post("/api/tracking/status", async (req, res) => {
+  try {
+    await ensureTripTrackingTables();
+
+    const token = String(req.body.token || "").trim();
+    const status = normalizeTrackingStatus(req.body.status);
+
+    if (!token) {
+      return res.status(400).json({ error: "token is required." });
+    }
+
+    const result = await pool.query(
+      `UPDATE trip_tracking_sessions
+       SET status = $2,
+           started_at = CASE
+             WHEN $2 <> 'driver_assigned' THEN COALESCE(started_at, NOW())
+             ELSE started_at
+           END,
+           ended_at = CASE
+             WHEN $2 = 'completed' THEN NOW()
+             ELSE ended_at
+           END,
+           updated_at = NOW()
+       WHERE driver_token = $1
+       RETURNING id, status`,
+      [token, status]
+    );
+
+    if (!result.rows.length) {
+      return res.status(404).json({ error: "Tracking session not found." });
+    }
+
+    return res.json({
+      success: true,
+      tracking_session_id: result.rows[0].id,
+      status: result.rows[0].status,
+    });
+  } catch (err) {
+    console.error("Driver tracking status update error:", err);
+    return res.status(500).json({ error: err.message || "Failed to update tracking status." });
+  }
+});
+
 app.post("/api/dispatch/create", async (req, res) => {
   try {
     await ensureDispatchTables();
@@ -5212,7 +5484,7 @@ app.post("/api/pricing/quote", async (req, res) => {
 
     if (distanceToCenter > profile.service_radius_miles) {
       return res.status(400).json({ 
-          error: `Location outside of service area. We only service within ${profile.service_radius_miles} miles.` 
+          error: "Pickup is outside this operator's service boundary. If fixed destination is chosen, use the standard selection."
       });
     }
 

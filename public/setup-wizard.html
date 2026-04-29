@@ -109,7 +109,7 @@
                         <label class="block text-[10px] font-bold mb-2 uppercase text-slate-400">Google Maps API Key</label>
                         <input type="password" id="maps_key" class="input-mini" placeholder="AIzaSy...">
                         <p id="maps-key-status" class="text-[11px] text-slate-500 mt-2 leading-relaxed">
-                            Paste a Google Maps API key here, not a Google Map ID. The map should load as soon as the key is valid.
+                            Paste a Google Maps API key here, not a Google Map ID. The wizard will show Loading map... and then Map ready when it finishes.
                         </p>
                         <button type="button" id="load-map-btn" class="wizard-btn-accent text-[10px] font-bold rounded-lg px-3 py-2 uppercase mt-3">
                             Load Map
@@ -473,7 +473,7 @@ async function ensureGoogleMapsLoaded(mapsKey) {
     const shouldReloadScript = Boolean(existing && existingKey && existingKey !== trimmedKey);
 
     if (window.google?.maps?.places && !shouldReloadScript) {
-        setMapsKeyStatus("Google Maps loaded. Search city/state or drag the service area to continue.");
+        setMapsKeyStatus("Map ready. Search city/state or drag the service area to continue.");
         return;
     }
 
@@ -491,23 +491,23 @@ async function ensureGoogleMapsLoaded(mapsKey) {
         script.defer = true;
         script.onerror = () => {
             console.error('Google Maps script failed to load for setup wizard.');
-            setMapsKeyStatus("Google Maps script failed to load. Verify this is an API key and not a Map ID.", true);
+            setMapsKeyStatus("Map failed to load. Verify this is an API key and not a Map ID.", true);
         };
         document.head.appendChild(script);
     }
 
-    setMapsKeyStatus("Loading Google Maps with the entered API key...");
+    setMapsKeyStatus("Loading map...");
 
     await new Promise((resolve, reject) => {
         const started = Date.now();
         const check = setInterval(() => {
             if (window.google?.maps?.places) {
                 clearInterval(check);
-                setMapsKeyStatus("Google Maps loaded. Search city/state or drag the service area to continue.");
+                setMapsKeyStatus("Map ready. Search city/state or drag the service area to continue.");
                 resolve();
             } else if (Date.now() - started > 10000) {
                 clearInterval(check);
-                setMapsKeyStatus("Google Maps failed to load. Verify the API key, billing, enabled APIs, and allowed referrers.", true);
+                setMapsKeyStatus("Map failed to load. Verify the API key, billing, enabled APIs, and allowed referrers.", true);
                 reject(new Error("Google Maps failed to load. Verify the API key, enabled APIs, billing, and allowed referrers."));
             }
         }, 120);
