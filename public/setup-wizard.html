@@ -148,8 +148,20 @@
                         <input type="password" id="crm_api_key" class="input-mini" placeholder="pit-...">
                     </div>
                     <div class="md:col-span-3 lg:col-span-1">
-                        <label class="block text-[10px] font-bold mb-2 uppercase text-slate-400">Tax Rate (%)</label>
-                        <input type="number" step="0.01" id="tax_rate" class="input-mini" value="8.25">
+                        <label class="block text-[10px] font-bold mb-2 uppercase text-slate-400">Tax Rate (%) Optional</label>
+                        <input type="number" step="0.01" id="tax_rate" class="input-mini" value="" placeholder="Leave blank if you do not charge tax">
+                    </div>
+                    <div>
+                        <label class="block text-[10px] font-bold mb-2 uppercase text-slate-400">Processing / Service Fee Type</label>
+                        <select id="service_fee_type" class="input-mini">
+                            <option value="">No Fee</option>
+                            <option value="percent">Percentage</option>
+                            <option value="fixed">Dollar Amount</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-[10px] font-bold mb-2 uppercase text-slate-400">Processing / Service Fee Value</label>
+                        <input type="number" step="0.01" id="service_fee_value" class="input-mini" value="" placeholder="Example: 3.5 or 10.00">
                     </div>
                 </div>
             </div>
@@ -214,6 +226,11 @@
                         <tr>
                             <th>Slot ID</th>
                             <th class="w-1/3">Vehicle Category</th>
+                            <th>Vehicle Photo</th>
+                            <th>Year</th>
+                            <th>Make</th>
+                            <th>Model</th>
+                            <th>License Plate</th>
                             <th>Base ($)</th>
                             <th>Mile ($)</th>
                             <th>Calendar ID</th>
@@ -355,6 +372,9 @@
                 </button>
                 <button onclick="sendSamplePayloadToCrm()" id="sample-payload-btn" class="w-full wizard-btn-muted font-black py-4 rounded-2xl shadow uppercase tracking-widest text-xs">
                     Send John Doe Sample to CRM
+                </button>
+                <button onclick="openTestRunPage()" id="test-run-btn" class="w-full wizard-btn-muted font-black py-4 rounded-2xl shadow uppercase tracking-widest text-xs">
+                    Open Practice Test Run
                 </button>
                 <div class="bg-slate-900 rounded-[2rem] p-6 text-white">
                     <h3 class="text-xs font-bold uppercase tracking-widest text-slate-400 mb-4">Widget Embed Code</h3>
@@ -924,11 +944,47 @@ function renumberFleetRows() {
     updateFleetPricingSummary();
 }
 
+function fileToDataUrl(file) {
+    return new Promise((resolve, reject) => {
+        if (!file) {
+            reject(new Error('No image file was selected.'));
+            return;
+        }
+        if (!String(file.type || '').startsWith('image/')) {
+            reject(new Error('Please choose an image file.'));
+            return;
+        }
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ''));
+        reader.onerror = () => reject(new Error('Unable to read the selected image.'));
+        reader.readAsDataURL(file);
+    });
+}
+
 function bindFleetRow(row) {
     row.querySelector('.v-type')?.addEventListener('change', renumberFleetRows);
     row.querySelector('.fleet-remove')?.addEventListener('click', () => {
         row.remove();
         renumberFleetRows();
+    });
+    row.querySelector('.v-image-input')?.addEventListener('change', async (event) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+        try {
+            const dataUrl = await fileToDataUrl(file);
+            const hidden = row.querySelector('.v-image-data');
+            const preview = row.querySelector('.v-image-preview');
+            if (hidden) hidden.value = dataUrl;
+            if (preview) {
+                preview.src = dataUrl;
+                preview.classList.remove('hidden');
+            }
+        } catch (err) {
+            console.error('Fleet image upload failed:', err);
+            showNotification(err?.message || 'Unable to load vehicle photo.', false);
+        } finally {
+            event.target.value = '';
+        }
     });
 }
 
@@ -956,6 +1012,20 @@ function addFleetRow(data = {}, shouldRenumber = true) {
     tr.innerHTML = `
         <td class="py-4 font-mono text-[9px] text-slate-400 font-bold">${data.vehicle_slot_id || ''}</td>
         <td class="py-2"><select class="v-type input-mini font-bold">${VEHICLE_LIST.map(v => `<option value="${v}" ${data.vehicle_type === v ? 'selected' : ''}>${v}</option>`).join('')}</select></td>
+        <td class="py-2 px-1">
+            <div class="flex flex-col gap-2">
+                <img class="v-image-preview ${data.vehicle_image ? '' : 'hidden'} w-20 h-14 object-cover rounded-lg border border-slate-200" src="${data.vehicle_image || ''}" alt="Vehicle preview">
+                <input type="hidden" class="v-image-data" value="${data.vehicle_image || ''}">
+                <label class="wizard-btn-accent text-[10px] font-bold px-3 py-2 rounded-lg text-center cursor-pointer">
+                    Upload Photo
+                    <input type="file" accept="image/*" class="v-image-input hidden">
+                </label>
+            </div>
+        </td>
+        <td class="py-2 px-1"><input type="text" class="v-year input-mini" placeholder="2024" value="${data.vehicle_year || ''}"></td>
+        <td class="py-2 px-1"><input type="text" class="v-make input-mini" placeholder="Cadillac" value="${data.vehicle_make || ''}"></td>
+        <td class="py-2 px-1"><input type="text" class="v-model input-mini" placeholder="Escalade" value="${data.vehicle_model || ''}"></td>
+        <td class="py-2 px-1"><input type="text" class="v-plate input-mini" placeholder="License Plate" value="${data.vehicle_license_plate || ''}"></td>
         <td class="py-2 px-1"><input type="number" class="v-base input-mini" value="${data.base_rate || 50}"></td>
         <td class="py-2 px-1"><input type="number" step="0.1" class="v-mile input-mini" value="${data.mile_rate || 3.5}"></td>
         <td class="py-2 px-1"><input type="text" class="v-cal input-mini" placeholder="Calendar ID" value="${data.calendar_id || ''}"></td>
@@ -1079,7 +1149,9 @@ async function loadFromBackend() {
             document.getElementById('square_application_id').value = data.square_application_id || '';
             document.getElementById('square_access_token').value = data.square_access_token || '';
             document.getElementById('square_location_id').value = data.square_location_id || '';
-            document.getElementById('tax_rate').value = data.tax_rate ?? data.financials?.tax_rate ?? '8.25';
+            document.getElementById('tax_rate').value = data.tax_rate ?? data.financials?.tax_rate ?? '';
+            document.getElementById('service_fee_type').value = data.service_fee_type || data.financials?.service_fee_type || '';
+            document.getElementById('service_fee_value').value = data.service_fee_value ?? data.financials?.service_fee_value ?? '';
             document.getElementById('general_buffer_min').value = data.general_buffer_min ?? data.fleet?.[0]?.outbound_buffer_min ?? 20;
             updatePaymentProviderUI();
 
@@ -1157,11 +1229,13 @@ async function saveToBackend() {
     const webhookUrl = document.getElementById('webhook_url').value;
     const crmApiKey = document.getElementById('crm_api_key').value;
     const taxRate = document.getElementById('tax_rate').value;
+    const serviceFeeType = document.getElementById('service_fee_type').value;
+    const serviceFeeValue = document.getElementById('service_fee_value').value;
     const generalBufferMin = parseInt(document.getElementById('general_buffer_min').value, 10) || 0;
     const fleetRows = document.querySelectorAll('#fleet-body tr');
 
-    if (!mapsKey || !webhookUrl || !taxRate || fleetRows.length === 0) {
-        showNotification("Credentials, Tax, and Fleet Slot are REQUIRED.", false);
+    if (!mapsKey || !webhookUrl || fleetRows.length === 0) {
+        showNotification("Credentials and at least one fleet slot are required.", false);
         return;
     }
 
@@ -1193,7 +1267,9 @@ async function saveToBackend() {
         square_application_id: squareApplicationId.trim(),
         square_access_token: squareAccessToken.trim(),
         square_location_id: squareLocationId.trim(),
-        tax_rate: parseFloat(taxRate) || 0,
+        tax_rate: taxRate === '' ? null : (parseFloat(taxRate) || 0),
+        service_fee_type: serviceFeeType || '',
+        service_fee_value: serviceFeeValue === '' ? null : (parseFloat(serviceFeeValue) || 0),
         service_lat: parseFloat(document.getElementById('svc_lat').value),
         service_lng: parseFloat(document.getElementById('svc_lng').value),
         service_radius: parseFloat(document.getElementById('svc_radius').value),
@@ -1201,6 +1277,11 @@ async function saveToBackend() {
         fleet: Array.from(fleetRows).slice(0, getEffectiveFleetLimit()).map(tr => ({
             vehicle_slot_id: tr.cells[0].innerText.trim(), 
             vehicle_type: tr.querySelector('.v-type').value,
+            vehicle_image: tr.querySelector('.v-image-data')?.value || '',
+            vehicle_year: tr.querySelector('.v-year')?.value.trim() || '',
+            vehicle_make: tr.querySelector('.v-make')?.value.trim() || '',
+            vehicle_model: tr.querySelector('.v-model')?.value.trim() || '',
+            vehicle_license_plate: tr.querySelector('.v-plate')?.value.trim() || '',
             base_rate: parseFloat(tr.querySelector('.v-base').value) || 0,
             mile_rate: parseFloat(tr.querySelector('.v-mile').value) || 0,
             calendar_id: tr.querySelector('.v-cal').value,
@@ -1295,11 +1376,13 @@ function collectWizardPayload() {
     const webhookUrl = document.getElementById('webhook_url').value;
     const crmApiKey = document.getElementById('crm_api_key').value;
     const taxRate = document.getElementById('tax_rate').value;
+    const serviceFeeType = document.getElementById('service_fee_type').value;
+    const serviceFeeValue = document.getElementById('service_fee_value').value;
     const generalBufferMin = parseInt(document.getElementById('general_buffer_min').value, 10) || 0;
     const fleetRows = document.querySelectorAll('#fleet-body tr');
 
-    if (!mapsKey || !webhookUrl || !taxRate || fleetRows.length === 0) {
-        throw new Error("Credentials, Tax, and Fleet Slot are REQUIRED.");
+    if (!mapsKey || !webhookUrl || fleetRows.length === 0) {
+        throw new Error("Credentials and at least one fleet slot are required.");
     }
 
     if (paymentProvider === 'stripe' && !stripeSecretKey.trim()) {
@@ -1328,13 +1411,20 @@ function collectWizardPayload() {
         square_application_id: squareApplicationId.trim(),
         square_access_token: squareAccessToken.trim(),
         square_location_id: squareLocationId.trim(),
-        tax_rate: parseFloat(taxRate) || 0,
+        tax_rate: taxRate === '' ? null : (parseFloat(taxRate) || 0),
+        service_fee_type: serviceFeeType || '',
+        service_fee_value: serviceFeeValue === '' ? null : (parseFloat(serviceFeeValue) || 0),
         service_lat: parseFloat(document.getElementById('svc_lat').value),
         service_lng: parseFloat(document.getElementById('svc_lng').value),
         service_radius: parseFloat(document.getElementById('svc_radius').value),
         fleet: Array.from(fleetRows).slice(0, getEffectiveFleetLimit()).map(tr => ({
             vehicle_slot_id: tr.cells[0].innerText.trim(),
             vehicle_type: tr.querySelector('.v-type').value,
+            vehicle_image: tr.querySelector('.v-image-data')?.value || '',
+            vehicle_year: tr.querySelector('.v-year')?.value.trim() || '',
+            vehicle_make: tr.querySelector('.v-make')?.value.trim() || '',
+            vehicle_model: tr.querySelector('.v-model')?.value.trim() || '',
+            vehicle_license_plate: tr.querySelector('.v-plate')?.value.trim() || '',
             base_rate: parseFloat(tr.querySelector('.v-base').value) || 0,
             mile_rate: parseFloat(tr.querySelector('.v-mile').value) || 0,
             calendar_id: tr.querySelector('.v-cal').value,
@@ -1417,6 +1507,11 @@ async function sendSamplePayloadToCrm() {
 function copyEmbed() {
     navigator.clipboard.writeText(document.getElementById('embed-box').innerText);
     showNotification("Code copied to clipboard!");
+}
+
+function openTestRunPage() {
+    const testRunUrl = `${BACKEND_URL}/test-run.html?location_id=${encodeURIComponent(location_id)}`;
+    window.open(testRunUrl, '_blank', 'noopener');
 }
 
 let mapsKeyReloadTimer = null;

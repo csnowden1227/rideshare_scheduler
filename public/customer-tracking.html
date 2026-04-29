@@ -10,9 +10,10 @@
       font-family: Arial, Helvetica, sans-serif;
       background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
       color: #0f172a;
+      -webkit-text-size-adjust: 100%;
     }
     .wrap {
-      max-width: 1080px;
+      max-width: 1160px;
       margin: 0 auto;
       padding: 24px 16px 40px;
     }
@@ -76,10 +77,34 @@
       font-size: 15px;
       line-height: 1.7;
       color: #111827;
+      overflow-wrap: anywhere;
+    }
+    .avatar {
+      width: 88px;
+      height: 88px;
+      border-radius: 18px;
+      object-fit: cover;
+      border: 1px solid #cbd5e1;
+      background: #e2e8f0;
+      display: block;
+    }
+    .vehicle-photo {
+      width: 100%;
+      max-width: 280px;
+      height: 160px;
+      border-radius: 16px;
+      object-fit: cover;
+      border: 1px solid #cbd5e1;
+      background: #e2e8f0;
+      display: block;
+      margin-top: 12px;
+    }
+    .hidden {
+      display: none;
     }
     .map {
       width: 100%;
-      height: 520px;
+      height: 620px;
       border-radius: 18px;
       overflow: hidden;
       border: 1px solid #ddd6fe;
@@ -96,15 +121,36 @@
         grid-template-columns: 1fr;
       }
       .map {
-        height: 380px;
+        height: 420px;
       }
     }
     @media (max-width: 640px) {
+      .wrap {
+        padding: 16px 12px 32px;
+      }
+      .hero,
+      .card {
+        border-radius: 20px;
+      }
+      .hero {
+        padding: 22px 18px;
+      }
+      .card {
+        padding: 18px;
+      }
+      .avatar {
+        width: 96px;
+        height: 96px;
+      }
+      .vehicle-photo {
+        max-width: 100%;
+        height: 180px;
+      }
       .hero h1 {
         font-size: 28px;
       }
       .map {
-        height: 320px;
+        height: 300px;
       }
     }
   </style>
@@ -113,7 +159,7 @@
   <div class="wrap">
     <div class="hero">
       <h1>Track Your Driver</h1>
-      <p>Use this secure tracking page to view the current location and trip status for your reservation.</p>
+      <p>Use this secure tracking page to view your driver, vehicle, live route, and current trip status for this reservation.</p>
     </div>
 
     <div class="card">
@@ -127,6 +173,19 @@
           <div class="box">
             <span class="label">Reservation For</span>
             <div class="value" id="cust-customer-name">Loading...</div>
+          </div>
+
+          <div class="box">
+            <span class="label">Your Driver</span>
+            <img id="cust-driver-photo" class="avatar hidden" alt="Driver photo" />
+            <div class="value" id="cust-driver-name" style="margin-top:12px;">Driver details will appear once your chauffeur starts the trip.</div>
+          </div>
+
+          <div class="box">
+            <span class="label">Vehicle</span>
+            <div class="value" id="cust-vehicle-type">Vehicle details will appear once assigned.</div>
+            <div class="value" id="cust-vehicle-plate" style="margin-top:8px;">License plate details will appear once assigned.</div>
+            <img id="cust-vehicle-image" class="vehicle-photo hidden" alt="Vehicle photo" />
           </div>
 
           <div class="box">
@@ -171,6 +230,19 @@
     function setText(id, value) {
       const el = document.getElementById(id);
       if (el) el.textContent = value || "";
+    }
+
+    function setImage(id, value, altText) {
+      const el = document.getElementById(id);
+      if (!el) return;
+      if (value) {
+        el.src = value;
+        el.alt = altText || "Image";
+        el.classList.remove("hidden");
+      } else {
+        el.removeAttribute("src");
+        el.classList.add("hidden");
+      }
     }
 
     function formatWhen(value) {
@@ -320,6 +392,11 @@
         setText("cust-dropoff-address", session.dropoff_address || "");
         setText("cust-last-update", formatWhen(session.last_location_at));
         setText("cust-status-message", "Tracking is active.");
+        setText("cust-driver-name", session.driver_name || "Driver details will appear once your chauffeur starts the trip.");
+        setText("cust-vehicle-type", session.vehicle_display_name || session.vehicle_type || "Vehicle details will appear once assigned.");
+        setText("cust-vehicle-plate", session.vehicle_license_plate ? `License Plate: ${session.vehicle_license_plate}` : "License plate details will appear once assigned.");
+        setImage("cust-driver-photo", session.driver_photo_data || "", "Driver photo");
+        setImage("cust-vehicle-image", session.vehicle_image || "", "Vehicle photo");
         pickupPosition = toLatLng(session.pickup_lat, session.pickup_lng);
         dropoffPosition = toLatLng(session.dropoff_lat, session.dropoff_lng);
 

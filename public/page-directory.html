@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Backend Page Directory</title>
+  <style>
+    :root {
+      --ink: #0f172a;
+      --muted: #64748b;
+      --line: #ddd6fe;
+      --accent: #5b21b6;
+      --accent-2: #0f766e;
+      --card: #ffffff;
+      --bg: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      color: var(--ink);
+      background: var(--bg);
+    }
+    .wrap {
+      max-width: 1240px;
+      margin: 0 auto;
+      padding: 24px 16px 40px;
+    }
+    .hero {
+      background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
+      color: #fff;
+      border-radius: 24px;
+      padding: 30px 24px;
+      box-shadow: 0 18px 42px rgba(76, 29, 149, 0.18);
+    }
+    .hero h1 {
+      margin: 0 0 12px;
+      font-size: 36px;
+      line-height: 1.08;
+    }
+    .hero p {
+      margin: 0;
+      line-height: 1.8;
+      max-width: 860px;
+    }
+    .note {
+      margin-top: 18px;
+      padding: 14px 16px;
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.12);
+      line-height: 1.7;
+    }
+    .section {
+      margin-top: 22px;
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      padding: 22px;
+      box-shadow: 0 10px 26px rgba(15, 23, 42, 0.05);
+    }
+    .section h2 {
+      margin: 0 0 10px;
+      color: var(--accent);
+      font-size: 25px;
+    }
+    .section p {
+      margin: 0 0 14px;
+      color: var(--muted);
+      line-height: 1.8;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 18px;
+      background: #fff;
+    }
+    .card h3 {
+      margin: 0 0 8px;
+      font-size: 18px;
+      color: var(--ink);
+    }
+    .purpose {
+      margin: 0 0 12px;
+      color: #334155;
+      line-height: 1.75;
+    }
+    .meta {
+      margin: 0 0 10px;
+      font-size: 13px;
+      color: var(--muted);
+      line-height: 1.7;
+    }
+    .link {
+      display: block;
+      word-break: break-word;
+      color: var(--accent);
+      font-weight: 700;
+      text-decoration: none;
+      line-height: 1.6;
+    }
+    .link:hover {
+      text-decoration: underline;
+    }
+    .badge {
+      display: inline-block;
+      margin: 0 8px 8px 0;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: #f5f3ff;
+      color: var(--accent);
+      font-size: 12px;
+      font-weight: 700;
+    }
+    code {
+      font-family: Consolas, monospace;
+      font-size: 13px;
+      background: #f8fafc;
+      padding: 2px 6px;
+      border-radius: 6px;
+    }
+    @media (max-width: 900px) {
+      .grid {
+        grid-template-columns: 1fr;
+      }
+    }
+    @media (max-width: 640px) {
+      .wrap {
+        padding: 16px 12px 32px;
+      }
+      .hero,
+      .section {
+        border-radius: 20px;
+      }
+      .hero {
+        padding: 24px 18px;
+      }
+      .section {
+        padding: 18px;
+      }
+      .hero h1 {
+        font-size: 29px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="hero">
+      <h1>Backend Page Directory</h1>
+      <p>
+        This page lists the main HTML pages currently served by the backend so you can open them quickly, understand what each one is for, and know whether it needs a token or a location id.
+      </p>
+      <div class="note">
+        Base app URL used here: <code>https://rideshare-scheduler-axx6.onrender.com</code><br />
+        Pages that use <code>token</code> or <code>location_id</code> need a real value to fully work.
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>Main App and Setup Pages</h2>
+      <p>These are the pages you will use most often for onboarding, setup, practice testing, and internal access.</p>
+      <div class="grid">
+        <article class="card">
+          <span class="badge">Protected</span>
+          <span class="badge">Setup</span>
+          <h3>Setup Wizard</h3>
+          <p class="purpose">Used to configure the client account, including maps key, CRM webhook, CRM private token, payment settings, service area, fleet, vehicle photo, license plate, year, make, model, and practice test access.</p>
+          <p class="meta">Needs: <code>location_id</code> and <code>token</code></p>
+          <a class="link" href="https://rideshare-scheduler-axx6.onrender.com/setup-wizard.html?location_id=YOUR_LOCATION_ID&token=YOUR_SETUP_WIZARD_TOKEN" target="_blank">https://rideshare-scheduler-axx6.onrender.com/setup-wizard.html?location_id=YOUR_LOCATION_ID&amp;token=YOUR_SETUP_WIZARD_TOKEN</a>
+        </article>
+
+        <article class="card">
+          <span class="badge">Client Onboarding</span>
+          <h3>Rideshare Onboarding</h3>
+          <p class="purpose">This is the client-facing onboarding guide that walks new SaaS users through setup steps and sends them into the setup wizard.</p>
+          <p class="meta">Works best with: <code>location_id</code></p>
+          <a class="link" href="https://rideshare-scheduler-axx6.onrender.com/rideshare-onboarding.html?location_id=YOUR_LOCATION_ID" target="_blank">https://rideshare-scheduler-axx6.onrender.com/rideshare-onboarding.html?location_id=YOUR_LOCATION_ID</a>
+        </article>
+
+        <article class="card">
+          <span class="badge">Practice</span>
+          <h3>Test Run</h3>
+          <p class="purpose">Lets the client simulate a booking, run a low-dollar practice Stripe checkout, and test the live tracking flow after setup is complete.</p>
+          <p class="meta">Needs: <code>location_id</code></p>
+          <a class="link" href="https://rideshare-scheduler-axx6.onrender.com/test-run.html?location_id=YOUR_LOCATION_ID" target="_blank">https://rideshare-scheduler-axx6.onrender.com/test-run.html?location_id=YOUR_LOCATION_ID</a>
+        </article>
+
+        <article class="card">
+          <span class="badge">Directory</span>
+          <h3>Backend Page Directory</h3>
+          <p class="purpose">This page. It gives you one place to open and review the backend-served HTML pages.</p>
+          <p class="meta">Needs: none</p>
+          <a class="link" href="https://rideshare-scheduler-axx6.onrender.com/page-directory.html" target="_blank">https://rideshare-scheduler-axx6.onrender.com/page-directory.html</a>
+        </article>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>Dispatch and Partner Pages</h2>
+      <p>These support dispatch network management, partner invite onboarding, and the public explanation page for the feature.</p>
+      <div class="grid">
+        <article class="card">
+          <span class="badge">Dispatch</span>
+          <h3>Dispatch Network Manager</h3>
+          <p class="purpose">Used by the source operator to invite partners, view the dispatch network, and manage split percentages.</p>
+          <p class="meta">Needs: <code>location_id</code></p>
+          <a class="link" href="https://rideshare-scheduler-axx6.onrender.com/dispatch-network-manager.html?location_id=YOUR_LOCATION_ID" target="_blank">https://rideshare-scheduler-axx6.onrender.com/dispatch-network-manager.html?location_id=YOUR_LOCATION_ID</a>
+        </article>
+
+        <article class="card">
+          <span class="badge">Partner Invite</span>
+          <h3>Partner Onboarding</h3>
+          <p class="purpose">Invite-only page where a dispatch partner enters their business details, CRM credentials, fleet, and service area.</p>
+          <p class="meta">Needs: real invite <code>token</code></p>
+          <a class="link" href="https://rideshare-scheduler-axx6.onrender.com/partner-onboarding.html?token=REAL_INVITE_TOKEN" target="_blank">https://rideshare-scheduler-axx6.onrender.com/partner-onboarding.html?token=REAL_INVITE_TOKEN</a>
+        </article>
+
+        <article class="card">
+          <span class="badge">Info Page</span>
+          <h3>Network Dispatch Info</h3>
+          <p class="purpose">Public explainer page describing the network dispatch and farm-out feature.</p>
+          <p class="meta">Needs: none</p>
+          <a class="link" href="https://rideshare-scheduler-axx6.onrender.com/network-dispatch.html" target="_blank">https://rideshare-scheduler-axx6.onrender.com/network-dispatch.html</a>
+        </article>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>Tracking and Follow-Up Pages</h2>
+      <p>These pages power the live trip flow and the post-ride review and tip experience.</p>
+      <div class="grid">
+        <article class="card">
+          <span class="badge">Driver Tracking</span>
+          <h3>Driver Tracking</h3>
+          <p class="purpose">Used by the driver or vehicle operator to start live tracking, update trip status, set En Route, and Complete Trip.</p>
+          <p class="meta">Needs: real driver <code>token</code></p>
+          <a class="link" href="https://rideshare-scheduler-axx6.onrender.com/driver-tracking.html?token=REAL_DRIVER_TOKEN" target="_blank">https://rideshare-scheduler-axx6.onrender.com/driver-tracking.html?token=REAL_DRIVER_TOKEN</a>
+        </article>
+
+        <article class="card">
+          <span class="badge">Customer Tracking</span>
+          <h3>Customer Tracking</h3>
+          <p class="purpose">Used by the customer to view the driver, the vehicle, the plate, and the live trip route.</p>
+          <p class="meta">Needs: real customer <code>token</code></p>
+          <a class="link" href="https://rideshare-scheduler-axx6.onrender.com/customer-tracking.html?token=REAL_CUSTOMER_TOKEN" target="_blank">https://rideshare-scheduler-axx6.onrender.com/customer-tracking.html?token=REAL_CUSTOMER_TOKEN</a>
+        </article>
+
+        <article class="card">
+          <span class="badge">Post Ride</span>
+          <h3>Ride Follow-Up</h3>
+          <p class="purpose">Used after ride completion so the customer can rate their experience, leave feedback, and optionally leave a tip.</p>
+          <p class="meta">Needs: real customer <code>token</code></p>
+          <a class="link" href="https://rideshare-scheduler-axx6.onrender.com/ride-follow-up.html?token=REAL_CUSTOMER_TOKEN" target="_blank">https://rideshare-scheduler-axx6.onrender.com/ride-follow-up.html?token=REAL_CUSTOMER_TOKEN</a>
+        </article>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>Sales and Marketing Pages</h2>
+      <p>These are your branded marketing pages and upgrade pages.</p>
+      <div class="grid">
+        <article class="card">
+          <span class="badge">Sales</span>
+          <h3>SaaS Sales</h3>
+          <p class="purpose">Sales page for your rideshare SaaS offer, pricing, and positioning.</p>
+          <p class="meta">Needs: none</p>
+          <a class="link" href="https://rideshare-scheduler-axx6.onrender.com/saas-sales.html" target="_blank">https://rideshare-scheduler-axx6.onrender.com/saas-sales.html</a>
+        </article>
+
+        <article class="card">
+          <span class="badge">Upgrades</span>
+          <h3>Add-Ons</h3>
+          <p class="purpose">Displays available add-ons and upgrade options for the SaaS offer.</p>
+          <p class="meta">Needs: none</p>
+          <a class="link" href="https://rideshare-scheduler-axx6.onrender.com/addons.html" target="_blank">https://rideshare-scheduler-axx6.onrender.com/addons.html</a>
+        </article>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>Payment and Base Pages</h2>
+      <p>These are general utility pages that are also part of the backend’s HTML surface.</p>
+      <div class="grid">
+        <article class="card">
+          <span class="badge">Utility</span>
+          <h3>Payment Complete</h3>
+          <p class="purpose">Generic completion page used after a successful payment flow.</p>
+          <p class="meta">Needs: none</p>
+          <a class="link" href="https://rideshare-scheduler-axx6.onrender.com/payment-complete.html" target="_blank">https://rideshare-scheduler-axx6.onrender.com/payment-complete.html</a>
+        </article>
+
+        <article class="card">
+          <span class="badge">Utility</span>
+          <h3>Payment Cancelled</h3>
+          <p class="purpose">Generic cancellation page used after a cancelled payment flow.</p>
+          <p class="meta">Needs: none</p>
+          <a class="link" href="https://rideshare-scheduler-axx6.onrender.com/payment-cancelled.html" target="_blank">https://rideshare-scheduler-axx6.onrender.com/payment-cancelled.html</a>
+        </article>
+
+        <article class="card">
+          <span class="badge">Base Page</span>
+          <h3>Index</h3>
+          <p class="purpose">The root frontend page in the public folder.</p>
+          <p class="meta">Needs: none</p>
+          <a class="link" href="https://rideshare-scheduler-axx6.onrender.com/index.html" target="_blank">https://rideshare-scheduler-axx6.onrender.com/index.html</a>
+        </article>
+      </div>
+    </section>
+  </div>
+</body>
+</html>

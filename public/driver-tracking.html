@@ -10,9 +10,10 @@
       font-family: Arial, Helvetica, sans-serif;
       background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
       color: #0f172a;
+      -webkit-text-size-adjust: 100%;
     }
     .wrap {
-      max-width: 1080px;
+      max-width: 1160px;
       margin: 0 auto;
       padding: 24px 16px 40px;
     }
@@ -76,10 +77,11 @@
       font-size: 15px;
       line-height: 1.7;
       color: #111827;
+      overflow-wrap: anywhere;
     }
     .map {
       width: 100%;
-      height: 520px;
+      height: 620px;
       border-radius: 18px;
       overflow: hidden;
       border: 1px solid #ddd6fe;
@@ -98,6 +100,8 @@
       border: 0;
       font-weight: 700;
       cursor: pointer;
+      min-height: 52px;
+      -webkit-appearance: none;
     }
     .btn-primary {
       background: linear-gradient(135deg, #5b21b6 0%, #0f766e 100%);
@@ -107,6 +111,53 @@
       background: #fff;
       color: #5b21b6;
       border: 1px solid #c4b5fd;
+    }
+    .field-group {
+      display: grid;
+      gap: 12px;
+      margin-top: 12px;
+    }
+    .field-group input,
+    .field-group select {
+      width: 100%;
+      border: 1px solid #cbd5e1;
+      border-radius: 12px;
+      padding: 12px;
+      font-size: 16px;
+      box-sizing: border-box;
+      -webkit-appearance: none;
+    }
+    .upload-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+      margin-top: 12px;
+    }
+    .avatar,
+    .vehicle-photo {
+      width: 86px;
+      height: 86px;
+      border-radius: 18px;
+      object-fit: cover;
+      background: #e2e8f0;
+      border: 1px solid #cbd5e1;
+      display: block;
+    }
+    .vehicle-photo {
+      width: 100%;
+      max-width: 280px;
+      height: 160px;
+      border-radius: 16px;
+    }
+    .hidden {
+      display: none;
+    }
+    .small-note {
+      font-size: 12px;
+      line-height: 1.6;
+      color: #64748b;
+      margin-top: 8px;
     }
     .status {
       margin-top: 14px;
@@ -119,18 +170,43 @@
         grid-template-columns: 1fr;
       }
       .map {
-        height: 380px;
+        height: 420px;
       }
     }
     @media (max-width: 640px) {
+      .wrap {
+        padding: 16px 12px 32px;
+      }
+      .hero,
+      .card {
+        border-radius: 20px;
+      }
+      .hero {
+        padding: 22px 18px;
+      }
+      .card {
+        padding: 18px;
+      }
       .actions {
         grid-template-columns: 1fr;
+      }
+      .upload-row {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+      .avatar {
+        width: 96px;
+        height: 96px;
+      }
+      .vehicle-photo {
+        max-width: 100%;
+        height: 180px;
       }
       .hero h1 {
         font-size: 28px;
       }
       .map {
-        height: 320px;
+        height: 300px;
       }
     }
   </style>
@@ -139,7 +215,7 @@
   <div class="wrap">
     <div class="hero">
       <h1>Driver Tracking</h1>
-      <p>Use this secure page to send live trip location updates during the ride.</p>
+      <p>Choose the active driver for this vehicle, then use this secure page to send live trip updates. The customer page will show the same driver and vehicle details you set here.</p>
     </div>
 
     <div class="card">
@@ -156,6 +232,30 @@
           </div>
 
           <div class="box">
+            <span class="label">Driver Profile</span>
+            <div class="field-group">
+              <select id="saved-driver-select">
+                <option value="">Choose a saved driver for this vehicle</option>
+              </select>
+              <input id="driver-name-input" type="text" placeholder="Driver full name" />
+            </div>
+            <div class="upload-row">
+              <img id="driver-photo-preview" class="avatar hidden" alt="Driver photo preview" />
+              <div>
+                <label class="btn btn-secondary" style="display:inline-block; width:auto;">
+                  Upload Driver Photo
+                  <input id="driver-photo-input" type="file" accept="image/*" class="hidden" />
+                </label>
+                <div class="small-note">Upload once per driver. The selected driver will be reused next time this same vehicle slot is booked.</div>
+              </div>
+            </div>
+            <div class="actions" style="margin-top:16px;">
+              <button id="save-driver-btn" class="btn btn-primary" type="button">Save Driver To This Vehicle</button>
+            </div>
+            <div class="small-note">Before tapping <strong>En Route</strong>, make sure the active driver and photo are right so the customer sees the right person on the tracking page.</div>
+          </div>
+
+          <div class="box">
             <span class="label">Pickup</span>
             <div class="value" id="pickup-address">Loading...</div>
           </div>
@@ -163,6 +263,13 @@
           <div class="box">
             <span class="label">Dropoff</span>
             <div class="value" id="dropoff-address">Loading...</div>
+          </div>
+
+          <div class="box">
+            <span class="label">Customer View</span>
+            <div class="value" id="customer-view-driver">No driver selected yet.</div>
+            <div class="value" id="customer-view-plate" style="margin-top:8px;">Vehicle plate will appear once saved in the setup wizard.</div>
+            <img id="customer-view-vehicle" class="vehicle-photo hidden" alt="Vehicle preview for customer view" style="margin-top:12px;" />
           </div>
 
           <div class="box box-teal">
@@ -201,6 +308,9 @@
     let watchId = null;
     let mapsLoaded = false;
     let googleMapsPromise = null;
+    let currentSession = null;
+    let savedDriverProfiles = [];
+    let pendingDriverPhotoData = "";
 
     function setText(id, value) {
       const el = document.getElementById(id);
@@ -224,6 +334,142 @@
         throw new Error(data.error || "Request failed.");
       }
       return data;
+    }
+
+    function fileToDataUrl(file) {
+      return new Promise((resolve, reject) => {
+        if (!file) {
+          reject(new Error("No image was selected."));
+          return;
+        }
+        if (!String(file.type || "").startsWith("image/")) {
+          reject(new Error("Please choose an image file."));
+          return;
+        }
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ""));
+        reader.onerror = () => reject(new Error("Unable to read the selected image."));
+        reader.readAsDataURL(file);
+      });
+    }
+
+    function setImagePreview(id, value, fallbackAlt) {
+      const el = document.getElementById(id);
+      if (!el) return;
+      if (value) {
+        el.src = value;
+        el.alt = fallbackAlt || "Preview";
+        el.classList.remove("hidden");
+      } else {
+        el.removeAttribute("src");
+        el.classList.add("hidden");
+      }
+    }
+
+    function refreshCustomerView(session) {
+      const driverName = session?.driver_name || "";
+      const vehicleType = session?.vehicle_display_name || session?.vehicle_type || "";
+      const vehiclePlate = session?.vehicle_license_plate || "";
+      const driverLine = driverName
+        ? `${driverName}${vehicleType ? ` is assigned to this ${vehicleType}.` : " is assigned to this ride."}`
+        : "No driver selected yet.";
+      setText("customer-view-driver", driverLine);
+      setText("customer-view-plate", vehiclePlate ? `License Plate: ${vehiclePlate}` : "Vehicle plate will appear once saved in the setup wizard.");
+      setImagePreview("customer-view-vehicle", session?.vehicle_image || "", "Vehicle photo");
+    }
+
+    function populateDriverOptions(profiles, selectedProfileId) {
+      const select = document.getElementById("saved-driver-select");
+      if (!select) return;
+      select.innerHTML = `<option value="">Choose a saved driver for this vehicle</option>`;
+      profiles.forEach((profile) => {
+        const option = document.createElement("option");
+        option.value = profile.id;
+        option.textContent = profile.driver_name || "Saved driver";
+        if (selectedProfileId && profile.id === selectedProfileId) {
+          option.selected = true;
+        }
+        select.appendChild(option);
+      });
+    }
+
+    function applyDriverProfileToForm(profile) {
+      const nameInput = document.getElementById("driver-name-input");
+      const source = profile || currentSession || {};
+      if (nameInput) {
+        nameInput.value = source.driver_name || "";
+      }
+      pendingDriverPhotoData = source.driver_photo_data || "";
+      setImagePreview("driver-photo-preview", pendingDriverPhotoData, "Driver photo preview");
+    }
+
+    async function loadDriverProfiles() {
+      const data = await requestJson(`${apiBase}/api/tracking/driver-profiles?token=${encodeURIComponent(token)}`);
+      savedDriverProfiles = Array.isArray(data.profiles) ? data.profiles : [];
+      const selectedId = data.active_profile?.id || currentSession?.driver_profile_id || "";
+      populateDriverOptions(savedDriverProfiles, selectedId);
+      const activeProfile = savedDriverProfiles.find((profile) => profile.id === selectedId) || data.active_profile || null;
+      applyDriverProfileToForm(activeProfile);
+    }
+
+    async function saveSelectedDriver() {
+      const select = document.getElementById("saved-driver-select");
+      const profileId = String(select?.value || "").trim();
+      const driverName = String(document.getElementById("driver-name-input")?.value || "").trim();
+      if (!profileId && !driverName) {
+        throw new Error("Choose a saved driver or enter the driver name first.");
+      }
+
+      const button = document.getElementById("save-driver-btn");
+      const originalText = button?.textContent || "Save Driver To This Vehicle";
+      if (button) {
+        button.disabled = true;
+        button.textContent = "Saving Driver...";
+      }
+
+      try {
+        const data = await requestJson(`${apiBase}/api/tracking/driver-profile/select`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            token,
+            profile_id: profileId || undefined,
+            driver_name: driverName,
+            driver_photo_data: pendingDriverPhotoData || ""
+          })
+        });
+
+        currentSession = data.session || currentSession;
+        savedDriverProfiles = Array.isArray(data.profiles) ? data.profiles : savedDriverProfiles;
+        populateDriverOptions(savedDriverProfiles, data.profile?.id || currentSession?.driver_profile_id || "");
+        applyDriverProfileToForm(data.profile || null);
+        refreshCustomerView(currentSession);
+        setText("driver-status-message", "Driver profile saved for this vehicle slot.");
+      } finally {
+        if (button) {
+          button.disabled = false;
+          button.textContent = originalText;
+        }
+      }
+    }
+
+    function driverSelectionDiffersFromSession() {
+      const selectedProfileId = String(document.getElementById("saved-driver-select")?.value || "").trim();
+      const inputName = String(document.getElementById("driver-name-input")?.value || "").trim();
+      const sessionProfileId = String(currentSession?.driver_profile_id || "").trim();
+      const sessionDriverName = String(currentSession?.driver_name || "").trim();
+      const sessionPhoto = String(currentSession?.driver_photo_data || "").trim();
+
+      if (selectedProfileId && selectedProfileId !== sessionProfileId) {
+        return true;
+      }
+      if (inputName && inputName !== sessionDriverName) {
+        return true;
+      }
+      if (pendingDriverPhotoData && pendingDriverPhotoData !== sessionPhoto) {
+        return true;
+      }
+      return false;
     }
 
     function loadGoogleMaps(apiKey) {
@@ -346,24 +592,27 @@
 
       try {
         const data = await requestJson(`${apiBase}/api/tracking/session/driver?token=${encodeURIComponent(token)}`);
-        const session = getSessionData(data);
+        currentSession = getSessionData(data);
 
-        setText("trip-status", session.status || "driver_assigned");
-        setText("customer-name", session.customer_name || "Assigned customer");
-        setText("pickup-address", session.pickup_address || "");
-        setText("dropoff-address", session.dropoff_address || "");
-        setText("last-update", formatWhen(session.last_location_at));
-        pickupPosition = toLatLng(session.pickup_lat, session.pickup_lng);
-        dropoffPosition = toLatLng(session.dropoff_lat, session.dropoff_lng);
+        setText("trip-status", currentSession.status || "driver_assigned");
+        setText("customer-name", currentSession.customer_name || "Assigned customer");
+        setText("pickup-address", currentSession.pickup_address || "");
+        setText("dropoff-address", currentSession.dropoff_address || "");
+        setText("last-update", formatWhen(currentSession.last_location_at));
+        pickupPosition = toLatLng(currentSession.pickup_lat, currentSession.pickup_lng);
+        dropoffPosition = toLatLng(currentSession.dropoff_lat, currentSession.dropoff_lng);
 
-        if (Number.isFinite(Number(session.current_lat)) && Number.isFinite(Number(session.current_lng))) {
+        if (Number.isFinite(Number(currentSession.current_lat)) && Number.isFinite(Number(currentSession.current_lng))) {
           latestPosition = {
-            lat: Number(session.current_lat),
-            lng: Number(session.current_lng)
+            lat: Number(currentSession.current_lat),
+            lng: Number(currentSession.current_lng)
           };
         }
 
-        await loadGoogleMaps(session.maps_api_key || "");
+        refreshCustomerView(currentSession);
+        applyDriverProfileToForm(null);
+        await loadDriverProfiles();
+        await loadGoogleMaps(currentSession.maps_api_key || "");
         initOrUpdateMap(latestPosition);
         startTracking();
       } catch (error) {
@@ -425,6 +674,20 @@
       }
 
       try {
+        if (status === "en_route_to_pickup") {
+          const hasAnyDriverSelection =
+            String(document.getElementById("saved-driver-select")?.value || "").trim() ||
+            String(document.getElementById("driver-name-input")?.value || "").trim();
+
+          if (!String(currentSession?.driver_name || "").trim() && !hasAnyDriverSelection) {
+            throw new Error("Please choose or enter the active driver before marking this trip en route.");
+          }
+
+          if (driverSelectionDiffersFromSession()) {
+            await saveSelectedDriver();
+          }
+        }
+
         const data = await requestJson(`${apiBase}/api/tracking/status`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -436,6 +699,33 @@
         setText("driver-status-message", error.message || "Unable to update trip status.");
       }
     }
+
+    document.getElementById("saved-driver-select")?.addEventListener("change", (event) => {
+      const selectedId = String(event.target.value || "").trim();
+      const profile = savedDriverProfiles.find((item) => item.id === selectedId) || null;
+      applyDriverProfileToForm(profile);
+    });
+
+    document.getElementById("driver-photo-input")?.addEventListener("change", async (event) => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+      try {
+        pendingDriverPhotoData = await fileToDataUrl(file);
+        setImagePreview("driver-photo-preview", pendingDriverPhotoData, "Driver photo preview");
+      } catch (error) {
+        setText("driver-status-message", error.message || "Unable to load the selected photo.");
+      } finally {
+        event.target.value = "";
+      }
+    });
+
+    document.getElementById("save-driver-btn")?.addEventListener("click", async () => {
+      try {
+        await saveSelectedDriver();
+      } catch (error) {
+        setText("driver-status-message", error.message || "Unable to save the selected driver.");
+      }
+    });
 
     document.querySelectorAll("[data-status]").forEach((button) => {
       button.addEventListener("click", () => setStatus(button.getAttribute("data-status")));

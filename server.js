@@ -63,6 +63,7 @@ const pool = new Pool({
 let bookingSyncColumnsReady = null;
 let crmLocationTokenColumnsReady = null;
 let profileCrmApiKeyColumnReady = null;
+let profilePricingColumnsReady = null;
 let profileEntitlementColumnsReady = null;
 let saasAddonPurchasesTableReady = null;
 let dispatchTablesReady = null;
@@ -431,6 +432,10 @@ async function ensureTripTrackingTables() {
       await pool.query(`CREATE INDEX IF NOT EXISTS idx_trip_tracking_sessions_location_id ON trip_tracking_sessions(location_id)`);
       await pool.query(`CREATE INDEX IF NOT EXISTS idx_trip_tracking_sessions_status ON trip_tracking_sessions(status)`);
       await pool.query(`ALTER TABLE trip_tracking_sessions ADD COLUMN IF NOT EXISTS customer_notified_en_route_at TIMESTAMPTZ`);
+      await pool.query(`ALTER TABLE trip_tracking_sessions ADD COLUMN IF NOT EXISTS customer_followup_sent_at TIMESTAMPTZ`);
+      await pool.query(`ALTER TABLE trip_tracking_sessions ADD COLUMN IF NOT EXISTS driver_profile_id TEXT`);
+      await pool.query(`ALTER TABLE trip_tracking_sessions ADD COLUMN IF NOT EXISTS driver_display_name TEXT`);
+      await pool.query(`ALTER TABLE trip_tracking_sessions ADD COLUMN IF NOT EXISTS driver_photo_data TEXT`);
 
       await pool.query(`
         CREATE TABLE IF NOT EXISTS trip_tracking_points (
@@ -446,6 +451,33 @@ async function ensureTripTrackingTables() {
       `);
       await pool.query(`CREATE INDEX IF NOT EXISTS idx_trip_tracking_points_session_id ON trip_tracking_points(tracking_session_id)`);
       await pool.query(`CREATE INDEX IF NOT EXISTS idx_trip_tracking_points_recorded_at ON trip_tracking_points(recorded_at DESC)`);
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS trip_feedback (
+          id TEXT PRIMARY KEY,
+          tracking_session_id TEXT NOT NULL UNIQUE REFERENCES trip_tracking_sessions(id) ON DELETE CASCADE,
+          rating INTEGER,
+          feedback_text TEXT,
+          tip_checkout_session_id TEXT,
+          tip_amount NUMERIC DEFAULT 0,
+          tipped_at TIMESTAMPTZ,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_trip_feedback_tracking_session_id ON trip_feedback(tracking_session_id)`);
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS driver_profiles (
+          id TEXT PRIMARY KEY,
+          location_id TEXT NOT NULL,
+          vehicle_slot_id TEXT NOT NULL,
+          driver_name TEXT NOT NULL,
+          driver_photo_data TEXT,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_driver_profiles_location_vehicle ON driver_profiles(location_id, vehicle_slot_id)`);
+      await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_driver_profiles_location_vehicle_name ON driver_profiles(location_id, vehicle_slot_id, LOWER(driver_name))`);
     })().catch((err) => {
       tripTrackingTablesReady = null;
       throw err;
@@ -477,12 +509,113 @@ function createTrackingToken(prefix) {
   return `${prefix}_${randomBytes(24).toString("hex")}`;
 }
 
+async function ensureProfilePricingColumns() {
+  if (!profilePricingColumnsReady) {
+    profilePricingColumnsReady = (async () => {
+      await pool.query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS service_fee_type TEXT`);
+      await pool.query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS service_fee_value NUMERIC`);
+    })().catch((err) => {
+      profilePricingColumnsReady = null;
+      throw err;
+    });
+  }
+  return profilePricingColumnsReady;
+}
+
+function normalizeDriverName(value) {
+  return String(value || "").trim().replace(/\s+/g, " ").slice(0, 120);
+}
+
+function normalizeImageDataUrl(value, maxLength = 2_500_000) {
+  const normalized = String(value || "").trim();
+  if (!normalized) return "";
+  if (!normalized.startsWith("data:image/")) {
+    throw new Error("Only image uploads are supported.");
+  }
+  if (normalized.length > maxLength) {
+    throw new Error("Image is too large. Please use a smaller image.");
+  }
+  return normalized;
+}
+
+function getVehicleRecordForSession(session) {
+  const fleet = Array.isArray(session?.fleet)
+    ? session.fleet
+    : safeParseJson(session?.fleet);
+  if (!Array.isArray(fleet)) return null;
+  const vehicleSlotId = String(session?.vehicle_slot_id || "").trim();
+  return fleet.find((item) => String(item?.vehicle_slot_id || "").trim() === vehicleSlotId) || null;
+}
+
+function buildVehicleDisplayName(vehicleRecord = null, fallbackType = "") {
+  if (!vehicleRecord) return String(fallbackType || "").trim();
+  const parts = [
+    String(vehicleRecord.vehicle_year || "").trim(),
+    String(vehicleRecord.vehicle_make || "").trim(),
+    String(vehicleRecord.vehicle_model || "").trim()
+  ].filter(Boolean);
+  if (parts.length) return parts.join(" ");
+  return String(vehicleRecord.vehicle_type || fallbackType || "").trim();
+}
+
+function buildDriverProfileShape(profile) {
+  if (!profile) return null;
+  return {
+    id: profile.id,
+    driver_name: profile.driver_name || "",
+    driver_photo_data: profile.driver_photo_data || "",
+    vehicle_slot_id: profile.vehicle_slot_id || "",
+    location_id: profile.location_id || "",
+    created_at: profile.created_at || null,
+    updated_at: profile.updated_at || null,
+  };
+}
+
+function normalizeServiceFeeType(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (normalized === "percent") return "percent";
+  if (normalized === "fixed") return "fixed";
+  return "";
+}
+
+function parseOptionalRate(value) {
+  if (value === "" || value === null || value === undefined) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function calculateServiceFeeAmount({ subtotal = 0, feeType = "", feeValue = 0 }) {
+  const normalizedSubtotal = Number(subtotal || 0);
+  const normalizedValue = Number(feeValue || 0);
+  if (!normalizedSubtotal || !normalizedValue) return 0;
+  if (feeType === "percent") {
+    return Number(((normalizedSubtotal * normalizedValue) / 100).toFixed(2));
+  }
+  if (feeType === "fixed") {
+    return Number(normalizedValue.toFixed(2));
+  }
+  return 0;
+}
+
 function buildTrackingUrls(req, driverToken, customerToken) {
   const baseUrl = getPublicAppUrl(req);
   return {
     driver_url: `${baseUrl}/driver-tracking.html?token=${encodeURIComponent(driverToken)}`,
     customer_url: `${baseUrl}/customer-tracking.html?token=${encodeURIComponent(customerToken)}`,
+    follow_up_url: `${baseUrl}/ride-follow-up.html?token=${encodeURIComponent(customerToken)}`,
   };
+}
+
+function normalizeFeedbackRating(value) {
+  const rating = Number(value);
+  if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
+    throw new Error("Rating must be a whole number between 1 and 5.");
+  }
+  return rating;
+}
+
+function normalizeFeedbackText(value) {
+  return String(value || "").trim().replace(/\s+/g, " ").slice(0, 2000);
 }
 
 async function getTrackingSessionByToken({ token, role = "customer" }) {
@@ -507,7 +640,9 @@ async function getTrackingSessionByToken({ token, role = "customer" }) {
       b.vehicle_slot_id,
       b.status AS booking_status,
       p.business_name,
-      p.maps_api_key
+      p.maps_api_key,
+      p.payment_provider,
+      p.fleet
      FROM trip_tracking_sessions s
      INNER JOIN bookings b ON b.id = s.booking_id
      LEFT JOIN profiles p ON p.${profileIdColumn} = s.location_id
@@ -540,7 +675,9 @@ async function getTrackingSessionById(sessionId) {
       b.status AS booking_status,
       p.business_name,
       p.maps_api_key,
-      p.crm_webhook_url
+      p.crm_webhook_url,
+      p.payment_provider,
+      p.fleet
      FROM trip_tracking_sessions s
      INNER JOIN bookings b ON b.id = s.booking_id
      LEFT JOIN profiles p ON p.${profileIdColumn} = s.location_id
@@ -551,7 +688,21 @@ async function getTrackingSessionById(sessionId) {
   return result.rows[0] || null;
 }
 
+async function getTrackingFeedbackBySessionId(trackingSessionId) {
+  const result = await pool.query(
+    `SELECT id, tracking_session_id, rating, feedback_text, tip_checkout_session_id, tip_amount, tipped_at, created_at, updated_at
+     FROM trip_feedback
+     WHERE tracking_session_id = $1
+     LIMIT 1`,
+    [trackingSessionId]
+  );
+  return result.rows[0] || null;
+}
+
 function buildTrackingResponsePayload(session, { includeDriverToken = false } = {}) {
+  const vehicleRecord = getVehicleRecordForSession(session);
+  const vehicleDisplayName = buildVehicleDisplayName(vehicleRecord, session.vehicle_slot_id || "");
+  const trackingUrls = buildTrackingUrls(null, session.driver_token, session.customer_token);
   const payload = {
     tracking_session_id: session.id,
     booking_id: session.booking_id,
@@ -581,9 +732,25 @@ function buildTrackingResponsePayload(session, { includeDriverToken = false } = 
       vehicle_slot_id: session.vehicle_slot_id || "",
       booking_status: session.booking_status || "",
     },
+    assigned_driver: {
+      id: session.driver_profile_id || null,
+      name: session.driver_display_name || "",
+      photo_data: session.driver_photo_data || "",
+    },
+    vehicle: {
+      slot_id: session.vehicle_slot_id || "",
+      type: vehicleRecord?.vehicle_type || "",
+      display_name: vehicleDisplayName,
+      year: vehicleRecord?.vehicle_year || "",
+      make: vehicleRecord?.vehicle_make || "",
+      model: vehicleRecord?.vehicle_model || "",
+      image_data: vehicleRecord?.vehicle_image || "",
+      license_plate: vehicleRecord?.vehicle_license_plate || "",
+    },
     business_name: session.business_name || "Chauffeur Deluxe",
     maps_api_key: session.maps_api_key || "",
     customer_tracking_token: session.customer_token,
+    follow_up_url: trackingUrls.follow_up_url,
   };
 
   if (includeDriverToken) {
@@ -595,6 +762,9 @@ function buildTrackingResponsePayload(session, { includeDriverToken = false } = 
 
 function buildTrackingSessionClientShape(session) {
   const customerName = [session.first_name, session.last_name].filter(Boolean).join(" ").trim();
+  const vehicleRecord = getVehicleRecordForSession(session);
+  const vehicleDisplayName = buildVehicleDisplayName(vehicleRecord, session.vehicle_slot_id || "");
+  const trackingUrls = buildTrackingUrls(null, session.driver_token, session.customer_token);
   return {
     id: session.id,
     tracking_session_id: session.id,
@@ -622,17 +792,31 @@ function buildTrackingSessionClientShape(session) {
     end_time: session.end_time,
     total_price: session.total_price,
     vehicle_slot_id: session.vehicle_slot_id || "",
+    vehicle_type: vehicleRecord?.vehicle_type || "",
+    vehicle_display_name: vehicleDisplayName,
+    vehicle_year: vehicleRecord?.vehicle_year || "",
+    vehicle_make: vehicleRecord?.vehicle_make || "",
+    vehicle_model: vehicleRecord?.vehicle_model || "",
+    vehicle_image: vehicleRecord?.vehicle_image || "",
+    vehicle_license_plate: vehicleRecord?.vehicle_license_plate || "",
     booking_status: session.booking_status || "",
+    driver_profile_id: session.driver_profile_id || null,
+    driver_name: session.driver_display_name || "",
+    driver_photo_data: session.driver_photo_data || "",
     business_name: session.business_name || "Chauffeur Deluxe",
     maps_api_key: session.maps_api_key || "",
     customer_tracking_token: session.customer_token,
     driver_tracking_token: session.driver_token,
+    payment_provider: normalizePaymentProvider(session.payment_provider || "stripe"),
+    follow_up_url: trackingUrls.follow_up_url,
   };
 }
 
 function buildTrackingStatusWebhookPayload({ req, session, status }) {
   const trackingUrls = buildTrackingUrls(req, session.driver_token, session.customer_token);
   const customerName = [session.first_name, session.last_name].filter(Boolean).join(" ").trim();
+  const vehicleRecord = getVehicleRecordForSession(session);
+  const vehicleDisplayName = buildVehicleDisplayName(vehicleRecord, session.vehicle_slot_id || "");
 
   return {
     webhook_type: "webhook_tracking_status",
@@ -640,8 +824,14 @@ function buildTrackingStatusWebhookPayload({ req, session, status }) {
     location_id: session.location_id,
     booking_id: session.booking_id,
     tracking_session_id: session.id,
-    trigger_reason: status === "en_route_to_pickup" ? "vehicle_en_route" : "tracking_status_changed",
+    trigger_reason:
+      status === "en_route_to_pickup"
+        ? "vehicle_en_route"
+        : status === "completed"
+          ? "ride_completed"
+          : "tracking_status_changed",
     send_customer_tracking_sms: status === "en_route_to_pickup",
+    send_post_ride_followup_sms: status === "completed",
     business_name: session.business_name || "Chauffeur Deluxe",
     customer: {
       first_name: session.first_name || null,
@@ -673,11 +863,44 @@ function buildTrackingStatusWebhookPayload({ req, session, status }) {
       last_location_at: session.last_location_at || null,
       customer_tracking_token: session.customer_token,
       customer_tracking_url: trackingUrls.customer_url,
+      follow_up_url: trackingUrls.follow_up_url,
       driver_tracking_token: session.driver_token,
       driver_tracking_url: trackingUrls.driver_url,
     },
+    follow_up: {
+      review_and_tip_url: trackingUrls.follow_up_url,
+      tip_enabled: normalizePaymentProvider(session.payment_provider || "stripe") === "stripe",
+      suggested_tip_amounts: [5, 10, 20],
+    },
+    assigned_driver: {
+      id: session.driver_profile_id || null,
+      name: session.driver_display_name || null,
+      photo_data: session.driver_photo_data || null,
+    },
+    vehicle: {
+      slot_id: session.vehicle_slot_id || null,
+      type: vehicleRecord?.vehicle_type || null,
+      display_name: vehicleDisplayName || null,
+      year: vehicleRecord?.vehicle_year || null,
+      make: vehicleRecord?.vehicle_make || null,
+      model: vehicleRecord?.vehicle_model || null,
+      image_data: vehicleRecord?.vehicle_image || null,
+      license_plate: vehicleRecord?.vehicle_license_plate || null,
+    },
     created_at: new Date().toISOString(),
   };
+}
+
+async function listDriverProfiles(locationId, vehicleSlotId) {
+  const result = await pool.query(
+    `SELECT id, location_id, vehicle_slot_id, driver_name, driver_photo_data, created_at, updated_at
+     FROM driver_profiles
+     WHERE location_id = $1
+       AND vehicle_slot_id = $2
+     ORDER BY LOWER(driver_name) ASC, created_at ASC`,
+    [String(locationId || "").trim(), String(vehicleSlotId || "").trim()]
+  );
+  return result.rows.map(buildDriverProfileShape);
 }
 
 async function triggerTrackingStatusWebhook({ req, trackingSessionId, status }) {
@@ -711,6 +934,7 @@ async function triggerTrackingStatusWebhook({ req, trackingSessionId, status }) 
     skipped: false,
     status: response.status,
     customer_tracking_url: payload.tracking.customer_tracking_url,
+    follow_up_url: payload.follow_up.review_and_tip_url,
   };
 }
 
@@ -1712,6 +1936,15 @@ app.get("/driver-tracking.html", (req, res) => {
 app.get("/customer-tracking.html", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "customer-tracking.html"));
 });
+app.get("/ride-follow-up.html", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "ride-follow-up.html"));
+});
+app.get("/page-directory.html", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "page-directory.html"));
+});
+app.get("/test-run.html", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "test-run.html"));
+});
 app.use(express.static(path.join(__dirname, "public")));
 
 // --- IFRAME & SECURITY POLICY ---
@@ -1749,6 +1982,8 @@ async function saveConfigHandler(req, res) {
       square_access_token,
       square_location_id,
       tax_rate,
+      service_fee_type,
+      service_fee_value,
       service_lat,
       service_lng,
       service_radius,
@@ -1762,6 +1997,7 @@ async function saveConfigHandler(req, res) {
 
     await client.query("BEGIN");
     await ensureProfileCrmApiKeyColumn();
+    await ensureProfilePricingColumns();
     await ensureProfileEntitlementColumns();
     const profileColumns = await getTableColumns("profiles");
     const profileIdColumn = profileColumns.has("location_id") ? "location_id" : "id";
@@ -1809,7 +2045,9 @@ async function saveConfigHandler(req, res) {
     pushProfileField("square_application_id", square_application_id || null);
     pushProfileField("square_access_token", square_access_token || null);
     pushProfileField("square_location_id", square_location_id || null);
-    pushProfileField("tax_rate", tax_rate);
+    pushProfileField("tax_rate", parseOptionalRate(tax_rate));
+    pushProfileField("service_fee_type", normalizeServiceFeeType(service_fee_type) || null);
+    pushProfileField("service_fee_value", parseOptionalRate(service_fee_value));
     pushProfileField("service_lat", service_lat);
     pushProfileField("service_lng", service_lng);
     pushProfileField("service_radius", service_radius);
@@ -2523,6 +2761,37 @@ async function getRouteMetrics({
   }
 
   return fallback();
+}
+
+async function geocodeAddress(address, mapsApiKey) {
+  const formattedAddress = String(address || "").trim();
+  if (!formattedAddress || !mapsApiKey) {
+    return {
+      formattedAddress,
+      lat: null,
+      lng: null,
+    };
+  }
+
+  try {
+    const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(formattedAddress)}&key=${encodeURIComponent(mapsApiKey)}`;
+    const response = await fetch(url);
+    const data = await response.json();
+    const result = data?.results?.[0];
+    const location = result?.geometry?.location;
+    return {
+      formattedAddress: result?.formatted_address || formattedAddress,
+      lat: Number.isFinite(Number(location?.lat)) ? Number(location.lat) : null,
+      lng: Number.isFinite(Number(location?.lng)) ? Number(location.lng) : null,
+    };
+  } catch (err) {
+    console.warn("Geocode lookup failed:", err.message);
+    return {
+      formattedAddress,
+      lat: null,
+      lng: null,
+    };
+  }
 }
 
 /* 📈 Peak Multiplier Logic (Rush Hour: 6:30-10 AM & 3:30-7 PM) */
@@ -3684,6 +3953,426 @@ app.get("/api/tracking/session/customer", async (req, res) => {
   }
 });
 
+app.get("/api/tracking/follow-up", async (req, res) => {
+  try {
+    await ensureTripTrackingTables();
+
+    const token = String(req.query.token || "").trim();
+    if (!token) {
+      return res.status(400).json({ error: "token is required." });
+    }
+
+    const session = await getTrackingSessionByToken({ token, role: "customer" });
+    if (!session) {
+      return res.status(404).json({ error: "Tracking session not found." });
+    }
+
+    const feedback = await getTrackingFeedbackBySessionId(session.id);
+
+    return res.json({
+      success: true,
+      session: buildTrackingSessionClientShape(session),
+      feedback: feedback
+        ? {
+            rating: feedback.rating ?? null,
+            feedback_text: feedback.feedback_text || "",
+            tip_amount: feedback.tip_amount != null ? Number(feedback.tip_amount) : 0,
+            tipped_at: feedback.tipped_at || null,
+          }
+        : null,
+      tip_enabled: normalizePaymentProvider(session.payment_provider || "stripe") === "stripe",
+      suggested_tip_amounts: [5, 10, 20],
+      follow_up_url: buildTrackingUrls(req, session.driver_token, session.customer_token).follow_up_url,
+    });
+  } catch (err) {
+    console.error("Tracking follow-up lookup error:", err);
+    return res.status(500).json({ error: err.message || "Failed to load follow-up session." });
+  }
+});
+
+app.post("/api/tracking/feedback", async (req, res) => {
+  try {
+    await ensureTripTrackingTables();
+
+    const token = String(req.body.token || "").trim();
+    if (!token) {
+      return res.status(400).json({ error: "token is required." });
+    }
+
+    const session = await getTrackingSessionByToken({ token, role: "customer" });
+    if (!session) {
+      return res.status(404).json({ error: "Tracking session not found." });
+    }
+
+    const rating = normalizeFeedbackRating(req.body.rating);
+    const feedbackText = normalizeFeedbackText(req.body.feedback_text);
+
+    await pool.query(
+      `INSERT INTO trip_feedback (id, tracking_session_id, rating, feedback_text, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, NOW(), NOW())
+       ON CONFLICT (tracking_session_id)
+       DO UPDATE SET
+         rating = EXCLUDED.rating,
+         feedback_text = EXCLUDED.feedback_text,
+         updated_at = NOW()`,
+      [randomUUID(), session.id, rating, feedbackText || null]
+    );
+
+    return res.json({
+      success: true,
+      rating,
+      feedback_text: feedbackText,
+    });
+  } catch (err) {
+    console.error("Tracking feedback save error:", err);
+    return res.status(500).json({ error: err.message || "Failed to save follow-up feedback." });
+  }
+});
+
+app.post("/api/tracking/tip-checkout", async (req, res) => {
+  try {
+    await ensureTripTrackingTables();
+
+    const token = String(req.body.token || "").trim();
+    const tipAmount = Number(req.body.tip_amount || 0);
+
+    if (!token) {
+      return res.status(400).json({ error: "token is required." });
+    }
+    if (!Number.isFinite(tipAmount) || tipAmount <= 0) {
+      return res.status(400).json({ error: "A valid tip amount is required." });
+    }
+
+    const session = await getTrackingSessionByToken({ token, role: "customer" });
+    if (!session) {
+      return res.status(404).json({ error: "Tracking session not found." });
+    }
+
+    const paymentProfile = await getPaymentProfileForLocation(session.location_id);
+    if (paymentProfile.provider !== "stripe" || !paymentProfile.stripeSecretKey) {
+      return res.status(400).json({ error: "Tipping is only available when Stripe is configured on this account." });
+    }
+
+    const baseUrl = getPublicAppUrl(req);
+    const followUpUrl = `${baseUrl}/ride-follow-up.html?token=${encodeURIComponent(token)}`;
+    const checkoutSession = await createStripeCheckoutSessionForAmount({
+      apiKey: paymentProfile.stripeSecretKey,
+      amount: tipAmount,
+      customerEmail: session.customer_email || null,
+      bookingId: session.booking_id,
+      locationId: session.location_id,
+      totalPrice: tipAmount,
+      depositAmount: 0,
+      depositPercent: 0,
+      paymentStatus: "tip",
+      title: "Driver Tip",
+      description: `Tip for your completed ride with ${session.business_name || "your chauffeur service"}`,
+      successUrl: `${followUpUrl}&tip=success&session_id={CHECKOUT_SESSION_ID}`,
+      cancelUrl: `${followUpUrl}&tip=cancelled`,
+      paymentChoice: "tip",
+      balanceDueDeadline: null,
+    });
+
+    await pool.query(
+      `INSERT INTO trip_feedback (id, tracking_session_id, tip_checkout_session_id, tip_amount, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, NOW(), NOW())
+       ON CONFLICT (tracking_session_id)
+       DO UPDATE SET
+         tip_checkout_session_id = EXCLUDED.tip_checkout_session_id,
+         tip_amount = EXCLUDED.tip_amount,
+         updated_at = NOW()`,
+      [randomUUID(), session.id, checkoutSession.id, Number(tipAmount.toFixed(2))]
+    );
+
+    return res.json({
+      success: true,
+      checkout_url: checkoutSession.url,
+      session_id: checkoutSession.id,
+    });
+  } catch (err) {
+    console.error("Tracking tip checkout error:", err);
+    return res.status(500).json({ error: err.message || "Failed to start tip checkout." });
+  }
+});
+
+app.get("/api/tracking/tip-checkout-status", async (req, res) => {
+  try {
+    await ensureTripTrackingTables();
+
+    const token = String(req.query.token || "").trim();
+    const sessionId = String(req.query.session_id || "").trim();
+    if (!token || !sessionId) {
+      return res.status(400).json({ error: "token and session_id are required." });
+    }
+
+    const session = await getTrackingSessionByToken({ token, role: "customer" });
+    if (!session) {
+      return res.status(404).json({ error: "Tracking session not found." });
+    }
+
+    const paymentProfile = await getPaymentProfileForLocation(session.location_id);
+    if (paymentProfile.provider !== "stripe" || !paymentProfile.stripeSecretKey) {
+      return res.status(400).json({ error: "Tipping is only available when Stripe is configured on this account." });
+    }
+
+    const stripeSession = await stripeFormRequest(`/v1/checkout/sessions/${encodeURIComponent(sessionId)}`, {}, "GET", paymentProfile.stripeSecretKey);
+    const paid = stripeSession.payment_status === "paid";
+
+    if (paid) {
+      await pool.query(
+        `UPDATE trip_feedback
+         SET tipped_at = COALESCE(tipped_at, NOW()),
+             updated_at = NOW()
+         WHERE tracking_session_id = $1
+           AND tip_checkout_session_id = $2`,
+        [session.id, sessionId]
+      );
+    }
+
+    return res.json({
+      success: true,
+      paid,
+      tip_amount: Number(stripeSession.metadata?.total_price || 0),
+      payment_status: stripeSession.payment_status || "unpaid",
+    });
+  } catch (err) {
+    console.error("Tracking tip checkout status error:", err);
+    return res.status(500).json({ error: err.message || "Failed to verify tip checkout." });
+  }
+});
+
+app.get("/api/test-run/config/:location_id", async (req, res) => {
+  try {
+    await ensureProfilePricingColumns();
+    await ensureProfileEntitlementColumns();
+
+    const locationId = String(req.params.location_id || "").trim();
+    if (!locationId) {
+      return res.status(400).json({ error: "location_id is required." });
+    }
+
+    const profileIdColumn = await getProfileIdColumn();
+    const result = await pool.query(
+      `SELECT *
+       FROM profiles
+       WHERE ${profileIdColumn} = $1
+       LIMIT 1`,
+      [locationId]
+    );
+
+    if (!result.rows.length) {
+      return res.status(404).json({ error: "Profile not found." });
+    }
+
+    const profile = result.rows[0];
+    const entitlements = buildPlanEntitlements({
+      planName: profile.plan_name || "starter",
+      addonBrandingUnlocked: profile.addon_branding_unlocked,
+      addonFunnelUnlocked: profile.addon_funnel_unlocked,
+      addonExtraVehicleCount: profile.addon_extra_vehicle_count,
+    });
+    const sanitizedFleet = sanitizeFleetByEntitlements(safeParseJson(profile.fleet), entitlements);
+
+    return res.json({
+      success: true,
+      location_id: locationId,
+      business_name: profile.business_name || "",
+      payment_provider: normalizePaymentProvider(profile.payment_provider),
+      tax_rate: profile.tax_rate != null ? parseFloat(profile.tax_rate) : null,
+      service_fee_type: normalizeServiceFeeType(profile.service_fee_type),
+      service_fee_value: profile.service_fee_value != null ? parseFloat(profile.service_fee_value) : null,
+      fleet: sanitizedFleet.map((vehicle) => ({
+        vehicle_slot_id: vehicle.vehicle_slot_id || "",
+        vehicle_type: vehicle.vehicle_type || "",
+        vehicle_year: vehicle.vehicle_year || "",
+        vehicle_make: vehicle.vehicle_make || "",
+        vehicle_model: vehicle.vehicle_model || "",
+        vehicle_image: vehicle.vehicle_image || "",
+        vehicle_license_plate: vehicle.vehicle_license_plate || "",
+      })),
+    });
+  } catch (err) {
+    console.error("Test run config error:", err);
+    return res.status(500).json({ error: err.message || "Failed to load test run config." });
+  }
+});
+
+app.get("/api/tracking/driver-profiles", async (req, res) => {
+  try {
+    await ensureTripTrackingTables();
+
+    const token = String(req.query.token || "").trim();
+    if (!token) {
+      return res.status(400).json({ error: "token is required." });
+    }
+
+    const session = await getTrackingSessionByToken({ token, role: "driver" });
+    if (!session) {
+      return res.status(404).json({ error: "Tracking session not found." });
+    }
+
+    const profiles = await listDriverProfiles(session.location_id, session.vehicle_slot_id);
+    return res.json({
+      success: true,
+      profiles,
+      active_profile: buildDriverProfileShape({
+        id: session.driver_profile_id,
+        driver_name: session.driver_display_name,
+        driver_photo_data: session.driver_photo_data,
+        vehicle_slot_id: session.vehicle_slot_id,
+        location_id: session.location_id,
+      }),
+    });
+  } catch (err) {
+    console.error("Driver profile lookup error:", err);
+    return res.status(500).json({ error: err.message || "Failed to load driver profiles." });
+  }
+});
+
+app.post("/api/tracking/driver-profile/select", async (req, res) => {
+  let client;
+  try {
+    await ensureTripTrackingTables();
+
+    const token = String(req.body.token || "").trim();
+    const profileId = String(req.body.profile_id || "").trim();
+    const driverName = normalizeDriverName(req.body.driver_name);
+    const driverPhotoData = normalizeImageDataUrl(req.body.driver_photo_data);
+
+    if (!token) {
+      return res.status(400).json({ error: "token is required." });
+    }
+
+    if (!profileId && !driverName) {
+      return res.status(400).json({ error: "Choose a saved driver or enter a driver name." });
+    }
+
+    client = await pool.connect();
+    await client.query("BEGIN");
+
+    const sessionLookup = await client.query(
+      `SELECT id, location_id, vehicle_slot_id
+       FROM trip_tracking_sessions
+       WHERE driver_token = $1
+       LIMIT 1
+       FOR UPDATE`,
+      [token]
+    );
+
+    if (!sessionLookup.rows.length) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: "Tracking session not found." });
+    }
+
+    const sessionRecord = sessionLookup.rows[0];
+    let chosenProfile = null;
+
+    if (profileId) {
+      const profileLookup = await client.query(
+        `SELECT id, location_id, vehicle_slot_id, driver_name, driver_photo_data, created_at, updated_at
+         FROM driver_profiles
+         WHERE id = $1
+           AND location_id = $2
+           AND vehicle_slot_id = $3
+         LIMIT 1`,
+        [profileId, sessionRecord.location_id, sessionRecord.vehicle_slot_id]
+      );
+
+      if (!profileLookup.rows.length) {
+        await client.query("ROLLBACK");
+        return res.status(404).json({ error: "Saved driver was not found for this vehicle slot." });
+      }
+
+      chosenProfile = profileLookup.rows[0];
+
+      if (driverPhotoData && driverPhotoData !== String(chosenProfile.driver_photo_data || "")) {
+        const updatedProfile = await client.query(
+          `UPDATE driver_profiles
+           SET driver_photo_data = $2,
+               updated_at = NOW()
+           WHERE id = $1
+           RETURNING id, location_id, vehicle_slot_id, driver_name, driver_photo_data, created_at, updated_at`,
+          [chosenProfile.id, driverPhotoData]
+        );
+        chosenProfile = updatedProfile.rows[0];
+      }
+    } else {
+      const existingProfile = await client.query(
+        `SELECT id, location_id, vehicle_slot_id, driver_name, driver_photo_data, created_at, updated_at
+         FROM driver_profiles
+         WHERE location_id = $1
+           AND vehicle_slot_id = $2
+           AND LOWER(driver_name) = LOWER($3)
+         LIMIT 1`,
+        [sessionRecord.location_id, sessionRecord.vehicle_slot_id, driverName]
+      );
+
+      if (existingProfile.rows.length) {
+        chosenProfile = existingProfile.rows[0];
+        if (driverPhotoData && driverPhotoData !== String(chosenProfile.driver_photo_data || "")) {
+          const updatedProfile = await client.query(
+            `UPDATE driver_profiles
+             SET driver_photo_data = $2,
+                 updated_at = NOW()
+             WHERE id = $1
+             RETURNING id, location_id, vehicle_slot_id, driver_name, driver_photo_data, created_at, updated_at`,
+            [chosenProfile.id, driverPhotoData]
+          );
+          chosenProfile = updatedProfile.rows[0];
+        }
+      } else {
+        const inserted = await client.query(
+          `INSERT INTO driver_profiles (
+             id, location_id, vehicle_slot_id, driver_name, driver_photo_data, created_at, updated_at
+           ) VALUES ($1,$2,$3,$4,$5,NOW(),NOW())
+           RETURNING id, location_id, vehicle_slot_id, driver_name, driver_photo_data, created_at, updated_at`,
+          [randomUUID(), sessionRecord.location_id, sessionRecord.vehicle_slot_id, driverName, driverPhotoData || null]
+        );
+        chosenProfile = inserted.rows[0];
+      }
+    }
+
+    await client.query(
+      `UPDATE trip_tracking_sessions
+       SET driver_profile_id = $2,
+           driver_display_name = $3,
+           driver_photo_data = $4,
+           updated_at = NOW()
+       WHERE id = $1`,
+      [
+        sessionRecord.id,
+        chosenProfile.id,
+        chosenProfile.driver_name,
+        chosenProfile.driver_photo_data || null,
+      ]
+    );
+
+    await client.query("COMMIT");
+
+    const refreshedSession = await getTrackingSessionById(sessionRecord.id);
+    const profiles = await listDriverProfiles(sessionRecord.location_id, sessionRecord.vehicle_slot_id);
+
+    return res.json({
+      success: true,
+      profile: buildDriverProfileShape(chosenProfile),
+      profiles,
+      session: refreshedSession ? buildTrackingSessionClientShape(refreshedSession) : null,
+      tracking: refreshedSession ? buildTrackingResponsePayload(refreshedSession, { includeDriverToken: true }) : null,
+      ...buildTrackingUrls(req, token, refreshedSession?.customer_token || ""),
+    });
+  } catch (err) {
+    if (client) {
+      try {
+        await client.query("ROLLBACK");
+      } catch (_) {}
+    }
+    console.error("Driver profile save/select error:", err);
+    return res.status(500).json({ error: err.message || "Failed to save the selected driver." });
+  } finally {
+    if (client) client.release();
+  }
+});
+
 app.post("/api/tracking/location", async (req, res) => {
   try {
     await ensureTripTrackingTables();
@@ -3764,7 +4453,7 @@ app.post("/api/tracking/status", async (req, res) => {
     await client.query("BEGIN");
 
     const existingSessionResult = await client.query(
-      `SELECT id, status, customer_notified_en_route_at
+      `SELECT id, status, customer_notified_en_route_at, customer_followup_sent_at
        FROM trip_tracking_sessions
        WHERE driver_token = $1
        LIMIT 1
@@ -3801,6 +4490,11 @@ app.post("/api/tracking/status", async (req, res) => {
       existingSession.status !== "en_route_to_pickup" &&
       !existingSession.customer_notified_en_route_at;
 
+    const shouldTriggerPostRideFollowup =
+      status === "completed" &&
+      existingSession.status !== "completed" &&
+      !existingSession.customer_followup_sent_at;
+
     if (shouldTriggerCustomerTracking) {
       await client.query(
         `UPDATE trip_tracking_sessions
@@ -3810,31 +4504,41 @@ app.post("/api/tracking/status", async (req, res) => {
       );
     }
 
+    if (shouldTriggerPostRideFollowup) {
+      await client.query(
+        `UPDATE trip_tracking_sessions
+         SET customer_followup_sent_at = NOW()
+         WHERE id = $1`,
+        [existingSession.id]
+      );
+    }
+
     await client.query("COMMIT");
 
-    let customerTrackingWebhook = {
+    let statusWebhook = {
       triggered: false,
       skipped: true,
-      reason: "Status change does not require customer tracking notification.",
+      reason: "Status change does not require a customer-facing tracking or follow-up notification.",
     };
 
-    if (shouldTriggerCustomerTracking) {
+    if (shouldTriggerCustomerTracking || shouldTriggerPostRideFollowup) {
       try {
         const webhookResult = await triggerTrackingStatusWebhook({
           req,
           trackingSessionId: existingSession.id,
           status,
         });
-        customerTrackingWebhook = {
+        statusWebhook = {
           triggered: Boolean(webhookResult.success),
           skipped: Boolean(webhookResult.skipped),
           status: webhookResult.status || null,
           reason: webhookResult.error || null,
           customer_tracking_url: webhookResult.customer_tracking_url || null,
+          follow_up_url: webhookResult.follow_up_url || null,
         };
       } catch (webhookError) {
         console.error("Tracking status webhook error:", webhookError);
-        customerTrackingWebhook = {
+        statusWebhook = {
           triggered: false,
           skipped: false,
           reason: webhookError?.message || "Tracking status webhook failed.",
@@ -3846,7 +4550,7 @@ app.post("/api/tracking/status", async (req, res) => {
       success: true,
       tracking_session_id: result.rows[0].id,
       status: result.rows[0].status,
-      customer_tracking_webhook: customerTrackingWebhook,
+      tracking_status_webhook: statusWebhook,
     });
   } catch (err) {
     if (client) {
@@ -5480,6 +6184,188 @@ app.post("/api/create-checkout-session", async (req, res) => {
   }
 });
 
+app.post("/api/test-run/create-checkout-session", async (req, res) => {
+  let bookingId = null;
+  try {
+    await ensureProfilePricingColumns();
+
+    const locationId = String(req.body.location_id || "").trim();
+    const vehicleSlotId = String(req.body.vehicle_slot_id || "").trim();
+    const firstName = String(req.body.first_name || "").trim();
+    const lastName = String(req.body.last_name || "").trim();
+    const email = String(req.body.email || "").trim();
+    const phone = String(req.body.phone || "").trim();
+    const pickupAddress = String(req.body.pickup_address || "").trim();
+    const dropoffAddress = String(req.body.dropoff_address || "").trim();
+    const startTime = String(req.body.start_time || "").trim();
+    const acceptedTerms = Boolean(req.body.accepted_terms);
+
+    if (!locationId || !vehicleSlotId || !firstName || !lastName || !email || !phone || !pickupAddress || !dropoffAddress || !startTime) {
+      return res.status(400).json({ error: "location_id, vehicle_slot_id, customer details, pickup, dropoff, and start_time are required." });
+    }
+
+    if (!acceptedTerms) {
+      return res.status(400).json({ error: "Please accept the test run terms before continuing." });
+    }
+
+    const paymentProfile = await getPaymentProfileForLocation(locationId);
+    if (paymentProfile.provider !== "stripe" || !paymentProfile.stripeSecretKey) {
+      return res.status(400).json({ error: "Test checkout currently requires Stripe on the account." });
+    }
+
+    const profileLookup = await pool.query(
+      `SELECT business_name, maps_api_key, tax_rate, service_fee_type, service_fee_value, fleet
+       FROM profiles
+       WHERE location_id = $1
+       LIMIT 1`,
+      [locationId]
+    );
+    const profile = profileLookup.rows[0] || {};
+    if (!profileLookup.rows.length) {
+      return res.status(404).json({ error: "Profile not found." });
+    }
+
+    const fleet = Array.isArray(profile.fleet) ? profile.fleet : safeParseJson(profile.fleet);
+    const vehicle = (Array.isArray(fleet) ? fleet : []).find((item) => String(item?.vehicle_slot_id || "").trim() === vehicleSlotId);
+    if (!vehicle) {
+      return res.status(404).json({ error: "Vehicle slot not found on this account." });
+    }
+
+    const pickupGeo = await geocodeAddress(pickupAddress, profile.maps_api_key || "");
+    const dropoffGeo = await geocodeAddress(dropoffAddress, profile.maps_api_key || "");
+    const testBaseAmount = 1.00;
+    const serviceFeeType = normalizeServiceFeeType(profile.service_fee_type);
+    const serviceFeeValue = profile.service_fee_value != null ? Number(profile.service_fee_value) : 0;
+    const serviceFeeAmount = calculateServiceFeeAmount({
+      subtotal: testBaseAmount,
+      feeType: serviceFeeType,
+      feeValue: serviceFeeValue,
+    });
+    const taxRate = profile.tax_rate != null ? Number(profile.tax_rate) : 0;
+    const taxAmount = taxRate > 0
+      ? Number(((testBaseAmount * taxRate) / 100).toFixed(2))
+      : 0;
+    const totalPrice = Number((testBaseAmount + serviceFeeAmount + taxAmount).toFixed(2));
+    const returnUrl = sanitizeReturnUrl(req.body.return_url, req);
+
+    const bookingResult = await createBookingRecord(
+      {
+        location_id: locationId,
+        vehicle_slot_id: vehicleSlotId,
+        first_name: firstName,
+        last_name: lastName,
+        email,
+        phone,
+        pickup_address: pickupGeo.formattedAddress || pickupAddress,
+        dropoff_address: dropoffGeo.formattedAddress || dropoffAddress,
+        pickup_lat: pickupGeo.lat,
+        pickup_lng: pickupGeo.lng,
+        dropoff_lat: dropoffGeo.lat,
+        dropoff_lng: dropoffGeo.lng,
+        start_time: startTime,
+        quoted_price: testBaseAmount,
+        addon_total: serviceFeeAmount,
+        tax_amount: taxAmount,
+        total_price: totalPrice,
+        payment_status: "unpaid",
+        payment_paid: false,
+        deposit_paid: false,
+        balance_paid: false,
+        payment_provider: "stripe",
+        booking_confirmed: false,
+        deposit_percent: 100,
+        deposit_amount: totalPrice,
+        booking_mode: "test_run",
+        payment_choice: "full",
+        amount_due_now: totalPrice,
+        balance_due_deadline: null,
+        hours_until_ride: getHoursUntilRide(startTime),
+        deposit_eligible: false,
+        pricing_label: "Test Run",
+        fixed_rate_name: null,
+        peak_multiplier: 1,
+        fixed_surcharge: serviceFeeAmount,
+        route_distance_miles: null,
+        route_duration_minutes: null,
+        booking_buffer_minutes: null,
+        booking_duration_minutes: null,
+        timing_source: "test_run",
+        passenger_count: 1,
+        carry_on_count: 0,
+        checked_bag_count: 0,
+        additional_items_aboard: "Internal test run",
+        selected_event_name: "Test Run",
+        selected_fixed_destination: null,
+        selected_addons: serviceFeeAmount > 0
+          ? [{ description: `${serviceFeeType === "percent" ? "Processing Fee" : "Service Fee"}`, price: serviceFeeAmount, type: "per_booking" }]
+          : [],
+      },
+      { triggerWebhook: false }
+    );
+
+    bookingId = bookingResult.booking?.id;
+
+    const successUrl = appendQueryParams(returnUrl, {
+      checkout: "success",
+      session_id: "{CHECKOUT_SESSION_ID}",
+      booking_id: bookingId,
+      test_run: "1",
+      location_id: locationId,
+    });
+    const cancelUrl = appendQueryParams(returnUrl, {
+      checkout: "cancel",
+      booking_id: bookingId,
+      test_run: "1",
+      location_id: locationId,
+    });
+
+    const session = await createStripeCheckoutSessionForAmount({
+      apiKey: paymentProfile.stripeSecretKey,
+      amount: totalPrice,
+      customerEmail: email,
+      bookingId,
+      locationId,
+      totalPrice,
+      depositAmount: totalPrice,
+      depositPercent: 100,
+      paymentStatus: "paid_in_full",
+      paymentChoice: "full",
+      balanceDueDeadline: null,
+      title: `Rideshare Test Run ${profile.business_name || "Account"} Payment`,
+      description: `${vehicle.vehicle_type || "Vehicle"} test run for ${firstName} ${lastName}`.trim(),
+      successUrl,
+      cancelUrl,
+    });
+
+    return res.json({
+      success: true,
+      checkout_url: session.url,
+      booking_id: bookingId,
+      total_price: totalPrice,
+      quoted_price: testBaseAmount,
+      service_fee_amount: serviceFeeAmount,
+      service_fee_type: serviceFeeType,
+      tax_amount: taxAmount,
+      vehicle: {
+        vehicle_slot_id: vehicleSlotId,
+        vehicle_type: vehicle.vehicle_type || "",
+        vehicle_image: vehicle.vehicle_image || "",
+        vehicle_license_plate: vehicle.vehicle_license_plate || "",
+      },
+    });
+  } catch (err) {
+    if (bookingId) {
+      try {
+        await pool.query(`DELETE FROM bookings WHERE id = $1 AND status = $2`, [bookingId, "pending"]);
+      } catch (cleanupErr) {
+        console.error("Test run checkout cleanup error:", cleanupErr);
+      }
+    }
+    console.error("Test run checkout session error:", err);
+    return res.status(500).json({ error: err.message || "Failed to create test run checkout session." });
+  }
+});
+
 app.get("/api/checkout-session-status", async (req, res) => {
   try {
     const sessionId = String(req.query.session_id || "").trim();
@@ -5856,6 +6742,7 @@ app.get("/api/get-profile/:location_id", requireWizardToken, async (req, res) =>
   try {
     await ensureProfileEntitlementColumns();
     client = await pool.connect();
+    await ensureProfilePricingColumns();
     const profileIdColumn = await getProfileIdColumn();
     const profileRes = await client.query(`SELECT * FROM profiles WHERE ${profileIdColumn} = $1`, [location_id]);
 
@@ -5915,10 +6802,14 @@ res.json({
   square_access_token: profile.square_access_token || "",
   square_location_id: profile.square_location_id || "",
   crm_webhook_url: profile.crm_webhook_url,
-  tax_rate: parseFloat(profile.tax_rate) || 0,
+  tax_rate: profile.tax_rate != null ? parseFloat(profile.tax_rate) : null,
+  service_fee_type: normalizeServiceFeeType(profile.service_fee_type),
+  service_fee_value: profile.service_fee_value != null ? parseFloat(profile.service_fee_value) : null,
 
   financials: {
-    tax_rate: parseFloat(profile.tax_rate) || 0,
+    tax_rate: profile.tax_rate != null ? parseFloat(profile.tax_rate) : null,
+    service_fee_type: normalizeServiceFeeType(profile.service_fee_type),
+    service_fee_value: profile.service_fee_value != null ? parseFloat(profile.service_fee_value) : null,
     default_deposit_percent: parseFloat(profile.deposit_percent) || 0,
     default_deposit_flat_cents: parseInt(profile.deposit_flat_cents) || 0
   },
@@ -5941,13 +6832,18 @@ res.json({
   fleet: sanitizedFleet.map(v => ({
     vehicle_slot_id: v.vehicle_slot_id,
     vehicle_type: v.vehicle_type,
+    vehicle_year: v.vehicle_year || "",
+    vehicle_make: v.vehicle_make || "",
+    vehicle_model: v.vehicle_model || "",
     vehicle_category: v.vehicle_category || null,
     base_rate: parseFloat(v.base_rate) || 0,
     mile_rate: parseFloat(v.mile_rate) || 0,
     deposit_percent: parseFloat(v.deposit_percent) || 0,
     deposit_flat_cents: parseInt(v.deposit_flat_cents) || 0,
     calendar_id: v.calendar_id || null,
-    outbound_buffer_min: parseInt(v.outbound_buffer_min, 10) || BOOKING_BUFFER_MINUTES
+    outbound_buffer_min: parseInt(v.outbound_buffer_min, 10) || BOOKING_BUFFER_MINUTES,
+    vehicle_image: v.vehicle_image || "",
+    vehicle_license_plate: v.vehicle_license_plate || ""
   })),
 
   general_buffer_min: sanitizedFleet[0]?.outbound_buffer_min ?? BOOKING_BUFFER_MINUTES,
@@ -6125,7 +7021,9 @@ app.get("/api/get-profile-widget/:location_id", async (req, res) => {
         maps_api_key: p.maps_api_key,
         maps_key: p.maps_api_key,
         payment_provider: normalizePaymentProvider(p.payment_provider),
-        tax_rate: p.tax_rate,
+        tax_rate: p.tax_rate != null ? parseFloat(p.tax_rate) : null,
+        service_fee_type: normalizeServiceFeeType(p.service_fee_type),
+        service_fee_value: p.service_fee_value != null ? parseFloat(p.service_fee_value) : null,
         fleet: sanitizedFleet,
         general_buffer_min: sanitizedFleet[0]?.outbound_buffer_min ?? BOOKING_BUFFER_MINUTES,
         fixed_rates: fixedRates,

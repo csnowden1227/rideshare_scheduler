@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Booking Test Run</title>
+  <style>
+    body { margin:0; font-family: Arial, Helvetica, sans-serif; background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%); color:#0f172a; }
+    .wrap { max-width: 1120px; margin: 0 auto; padding: 24px 16px 48px; }
+    .hero { background: linear-gradient(135deg, #0f172a 0%, #5b21b6 50%, #0f766e 100%); color:#fff; border-radius: 28px; padding: 30px 24px; box-shadow: 0 18px 44px rgba(76,29,149,.18); }
+    .hero h1 { margin:0 0 10px; font-size: 36px; line-height:1.08; }
+    .hero p { margin:0; line-height:1.8; max-width: 780px; }
+    .grid { display:grid; grid-template-columns: 1.1fr .9fr; gap: 18px; margin-top: 20px; }
+    .card { background:#fff; border:1px solid #ddd6fe; border-radius: 22px; padding: 22px; box-shadow: 0 10px 24px rgba(15,23,42,.05); }
+    .label { display:block; font-size:12px; font-weight:800; text-transform:uppercase; letter-spacing:.08em; color:#64748b; margin-bottom:8px; }
+    .field-grid { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+    input, select { width:100%; padding:12px 14px; border-radius: 14px; border:1px solid #cbd5e1; font-size:14px; box-sizing:border-box; }
+    .full { grid-column: 1 / -1; }
+    .btn { border:0; border-radius:14px; padding:14px 16px; font-weight:700; cursor:pointer; width:100%; }
+    .btn-primary { color:#fff; background: linear-gradient(135deg, #5b21b6 0%, #0f766e 100%); }
+    .btn-secondary { color:#5b21b6; background:#fff; border:1px solid #c4b5fd; }
+    .status { margin-top:14px; font-size:14px; font-weight:700; color:#0f766e; }
+    .status.error { color:#dc2626; }
+    .summary { display:grid; gap:12px; }
+    .summary-box { border:1px solid #ddd6fe; border-radius:18px; padding:16px; background:#f8fafc; }
+    .vehicle-photo { width:100%; max-width:320px; height:180px; object-fit:cover; border-radius:18px; border:1px solid #cbd5e1; background:#e2e8f0; display:none; margin-top:12px; }
+    .link-list { display:grid; gap:10px; margin-top:16px; }
+    .link-list a { color:#5b21b6; font-weight:700; word-break:break-all; }
+    .small-note { font-size:12px; line-height:1.7; color:#64748b; margin-top:8px; }
+    @media (max-width: 920px) { .grid, .field-grid { grid-template-columns:1fr; } .full { grid-column:auto; } }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="hero">
+      <h1>Practice Booking and Live Tracking Test</h1>
+      <p>Create a real low-dollar practice booking, complete the checkout, and then open a live driver tracking session so you can rehearse the exact customer experience before going live.</p>
+    </section>
+
+    <div class="grid">
+      <section class="card">
+        <h2 style="margin-top:0;">Create Test Booking</h2>
+        <form id="test-run-form" class="field-grid">
+          <div>
+            <label class="label" for="first-name">First Name</label>
+            <input id="first-name" required />
+          </div>
+          <div>
+            <label class="label" for="last-name">Last Name</label>
+            <input id="last-name" required />
+          </div>
+          <div>
+            <label class="label" for="email">Email</label>
+            <input id="email" type="email" required />
+          </div>
+          <div>
+            <label class="label" for="phone">Phone</label>
+            <input id="phone" required />
+          </div>
+          <div class="full">
+            <label class="label" for="vehicle-slot">Vehicle Slot</label>
+            <select id="vehicle-slot" required></select>
+            <img id="vehicle-preview" class="vehicle-photo" alt="Selected vehicle preview" />
+          </div>
+          <div class="full">
+            <label class="label" for="pickup-address">Test Pickup Address</label>
+            <input id="pickup-address" placeholder="123 Main St, City, State" required />
+          </div>
+          <div class="full">
+            <label class="label" for="dropoff-address">Test Dropoff Address</label>
+            <input id="dropoff-address" placeholder="456 Airport Blvd, City, State" required />
+          </div>
+          <div class="full">
+            <label class="label" for="start-time">Pickup Time</label>
+            <input id="start-time" type="datetime-local" required />
+          </div>
+          <div class="full">
+            <label style="display:flex; gap:10px; align-items:flex-start; font-size:14px; line-height:1.6;">
+              <input id="accept-terms" type="checkbox" style="width:auto; margin-top:4px;" />
+              <span>I understand this will create a live Stripe test checkout on my account for the low-dollar practice booking amount shown on the right.</span>
+            </label>
+          </div>
+          <div class="full">
+            <button type="submit" class="btn btn-primary">Start $1 Test Checkout</button>
+            <div id="form-status" class="status"></div>
+          </div>
+        </form>
+      </section>
+
+      <aside class="card">
+        <h2 style="margin-top:0;">What You’ll Pay</h2>
+        <div class="summary">
+          <div class="summary-box">
+            <div class="label">Base Test Charge</div>
+            <div id="summary-base">$1.00</div>
+          </div>
+          <div class="summary-box">
+            <div class="label">Tax</div>
+            <div id="summary-tax">$0.00</div>
+          </div>
+          <div class="summary-box">
+            <div class="label">Processing / Service Fee</div>
+            <div id="summary-fee">$0.00</div>
+          </div>
+          <div class="summary-box">
+            <div class="label">Total Test Charge</div>
+            <div id="summary-total" style="font-size:24px; font-weight:800;">$1.00</div>
+          </div>
+        </div>
+        <div class="small-note" id="pricing-note"></div>
+
+        <div id="success-panel" class="summary-box" style="display:none; margin-top:20px;">
+          <div class="label">Test Run Ready</div>
+          <div id="success-message" style="line-height:1.7;"></div>
+          <div class="link-list">
+            <a id="driver-link" href="#" target="_blank" rel="noopener">Open Driver Tracking Test</a>
+            <a id="customer-link" href="#" target="_blank" rel="noopener">Open Customer Tracking Test</a>
+          </div>
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <script>
+    const query = new URLSearchParams(window.location.search);
+    const locationId = (query.get("location_id") || "").trim();
+    const apiBase = window.location.origin;
+    const state = {
+      config: null,
+      lastCheckout: null
+    };
+
+    function money(value) {
+      return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(Number(value || 0));
+    }
+
+    function setStatus(message, isError = false) {
+      const el = document.getElementById("form-status");
+      el.textContent = message || "";
+      el.classList.toggle("error", Boolean(isError));
+    }
+
+    async function requestJson(url, options = {}) {
+      const response = await fetch(url, options);
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.error || "Request failed.");
+      }
+      return data;
+    }
+
+    function calculateTotals() {
+      const subtotal = 1;
+      const taxRate = Number(state.config?.tax_rate || 0);
+      const feeType = String(state.config?.service_fee_type || "");
+      const feeValue = Number(state.config?.service_fee_value || 0);
+      const feeAmount = feeType === "percent"
+        ? Number(((subtotal * feeValue) / 100).toFixed(2))
+        : feeType === "fixed"
+          ? Number(feeValue.toFixed(2))
+          : 0;
+      const taxAmount = taxRate > 0
+        ? Number(((subtotal * taxRate) / 100).toFixed(2))
+        : 0;
+      const total = Number((subtotal + feeAmount + taxAmount).toFixed(2));
+      return { subtotal, feeAmount, taxAmount, total };
+    }
+
+    function renderPricingSummary() {
+      const totals = calculateTotals();
+      document.getElementById("summary-base").textContent = money(totals.subtotal);
+      document.getElementById("summary-tax").textContent = money(totals.taxAmount);
+      document.getElementById("summary-fee").textContent = money(totals.feeAmount);
+      document.getElementById("summary-total").textContent = money(totals.total);
+
+      const feeType = String(state.config?.service_fee_type || "");
+      const feeValue = Number(state.config?.service_fee_value || 0);
+      const parts = [];
+      if (state.config?.tax_rate) {
+        parts.push(`Tax is set to ${state.config.tax_rate}% in the setup wizard.`);
+      } else {
+        parts.push("No tax rate is currently saved.");
+      }
+      if (feeType && feeValue > 0) {
+        parts.push(feeType === "percent"
+          ? `A ${feeValue}% processing/service fee will be added to the $1 base charge.`
+          : `A ${money(feeValue)} processing/service fee will be added to the $1 base charge.`);
+      } else {
+        parts.push("No processing/service fee is currently saved.");
+      }
+      if (state.config?.payment_provider !== "stripe") {
+        parts.push("This account is not set to Stripe, so test checkout is disabled until Stripe is selected in the setup wizard.");
+      }
+      document.getElementById("pricing-note").textContent = parts.join(" ");
+    }
+
+    function renderVehicleOptions() {
+      const select = document.getElementById("vehicle-slot");
+      select.innerHTML = "";
+      (state.config?.fleet || []).forEach((vehicle) => {
+        const option = document.createElement("option");
+        option.value = vehicle.vehicle_slot_id;
+        const displayName = [vehicle.vehicle_year, vehicle.vehicle_make, vehicle.vehicle_model].filter(Boolean).join(" ") || vehicle.vehicle_type || "Vehicle";
+        option.textContent = `${displayName}${vehicle.vehicle_license_plate ? ` (${vehicle.vehicle_license_plate})` : ""}`;
+        select.appendChild(option);
+      });
+      updateVehiclePreview();
+    }
+
+    function updateVehiclePreview() {
+      const selectedId = String(document.getElementById("vehicle-slot").value || "");
+      const vehicle = (state.config?.fleet || []).find((item) => item.vehicle_slot_id === selectedId);
+      const img = document.getElementById("vehicle-preview");
+      if (vehicle?.vehicle_image) {
+        img.src = vehicle.vehicle_image;
+        img.style.display = "block";
+      } else {
+        img.removeAttribute("src");
+        img.style.display = "none";
+      }
+    }
+
+    async function loadConfig() {
+      if (!locationId) {
+        throw new Error("Missing location_id in the URL.");
+      }
+      state.config = await requestJson(`${apiBase}/api/test-run/config/${encodeURIComponent(locationId)}`);
+      if (!Array.isArray(state.config.fleet) || !state.config.fleet.length) {
+        throw new Error("No vehicle slots are configured yet. Finish the setup wizard fleet section first.");
+      }
+      renderPricingSummary();
+      renderVehicleOptions();
+      if (state.config.payment_provider !== "stripe") {
+        document.querySelector('button[type="submit"]').disabled = true;
+      }
+    }
+
+    async function handleReturnFromCheckout() {
+      const checkoutState = query.get("checkout");
+      const sessionId = query.get("session_id");
+      const bookingId = query.get("booking_id");
+      const isTestRun = query.get("test_run");
+      if (!checkoutState || isTestRun !== "1") return;
+
+      if (checkoutState === "cancel") {
+        setStatus("Test checkout was canceled. You can adjust the booking details and try again.", true);
+        return;
+      }
+
+      if (checkoutState === "success" && sessionId && bookingId) {
+        setStatus("Verifying payment and opening test tracking session...");
+        const checkout = await requestJson(`${apiBase}/api/checkout-session-status?session_id=${encodeURIComponent(sessionId)}&location_id=${encodeURIComponent(locationId)}`);
+        if (!checkout.paid) {
+          throw new Error("Stripe has not marked the practice payment as paid yet.");
+        }
+        const tracking = await requestJson(`${apiBase}/api/tracking/session/create`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            booking_id: Number(bookingId),
+            location_id: locationId
+          })
+        });
+        state.lastCheckout = { checkout, tracking };
+        const driverUrl = tracking.driver_url;
+        const customerUrl = tracking.customer_url;
+        document.getElementById("success-panel").style.display = "block";
+        document.getElementById("success-message").textContent = "Your practice booking is paid and your live tracking session is ready. Open the driver link first, tap En Route, and then compare it with the customer link.";
+        document.getElementById("driver-link").href = driverUrl;
+        document.getElementById("customer-link").href = customerUrl;
+        setStatus("Practice booking paid. Your live tracking links are ready.");
+      }
+    }
+
+    async function submitTestRun(event) {
+      event.preventDefault();
+      setStatus("");
+      if (!document.getElementById("accept-terms").checked) {
+        setStatus("Please confirm the test run terms before continuing.", true);
+        return;
+      }
+
+      const button = event.submitter;
+      const original = button.textContent;
+      button.disabled = true;
+      button.textContent = "Creating Test Checkout...";
+
+      try {
+        const payload = {
+          location_id: locationId,
+          vehicle_slot_id: document.getElementById("vehicle-slot").value,
+          first_name: document.getElementById("first-name").value.trim(),
+          last_name: document.getElementById("last-name").value.trim(),
+          email: document.getElementById("email").value.trim(),
+          phone: document.getElementById("phone").value.trim(),
+          pickup_address: document.getElementById("pickup-address").value.trim(),
+          dropoff_address: document.getElementById("dropoff-address").value.trim(),
+          start_time: new Date(document.getElementById("start-time").value).toISOString(),
+          accepted_terms: true,
+          return_url: window.location.origin + "/test-run.html?location_id=" + encodeURIComponent(locationId)
+        };
+        const data = await requestJson(`${apiBase}/api/test-run/create-checkout-session`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        window.location.href = data.checkout_url;
+      } catch (error) {
+        setStatus(error.message || "Unable to start the test checkout.", true);
+        button.disabled = false;
+        button.textContent = original;
+      }
+    }
+
+    document.getElementById("vehicle-slot").addEventListener("change", updateVehiclePreview);
+    document.getElementById("test-run-form").addEventListener("submit", submitTestRun);
+
+    (async function init() {
+      try {
+        await loadConfig();
+        await handleReturnFromCheckout();
+      } catch (error) {
+        setStatus(error.message || "Unable to load the test run page.", true);
+      }
+    })();
+  </script>
+</body>
+</html>
