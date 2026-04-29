@@ -430,6 +430,7 @@ async function ensureTripTrackingTables() {
       `);
       await pool.query(`CREATE INDEX IF NOT EXISTS idx_trip_tracking_sessions_location_id ON trip_tracking_sessions(location_id)`);
       await pool.query(`CREATE INDEX IF NOT EXISTS idx_trip_tracking_sessions_status ON trip_tracking_sessions(status)`);
+      await pool.query(`ALTER TABLE trip_tracking_sessions ADD COLUMN IF NOT EXISTS customer_notified_en_route_at TIMESTAMPTZ`);
 
       await pool.query(`
         CREATE TABLE IF NOT EXISTS trip_tracking_points (
@@ -517,6 +518,39 @@ async function getTrackingSessionByToken({ token, role = "customer" }) {
   return result.rows[0] || null;
 }
 
+async function getTrackingSessionById(sessionId) {
+  const profileIdColumn = await getProfileIdColumn();
+  const result = await pool.query(
+    `SELECT
+      s.*,
+      b.first_name,
+      b.last_name,
+      b.customer_email,
+      b.customer_phone,
+      b.pickup_address,
+      b.dropoff_address,
+      b.pickup_lat,
+      b.pickup_lng,
+      b.dropoff_lat,
+      b.dropoff_lng,
+      b.start_time,
+      b.end_time,
+      b.total_price,
+      b.vehicle_slot_id,
+      b.status AS booking_status,
+      p.business_name,
+      p.maps_api_key,
+      p.crm_webhook_url
+     FROM trip_tracking_sessions s
+     INNER JOIN bookings b ON b.id = s.booking_id
+     LEFT JOIN profiles p ON p.${profileIdColumn} = s.location_id
+     WHERE s.id = $1
+     LIMIT 1`,
+    [sessionId]
+  );
+  return result.rows[0] || null;
+}
+
 function buildTrackingResponsePayload(session, { includeDriverToken = false } = {}) {
   const payload = {
     tracking_session_id: session.id,
@@ -593,6 +627,90 @@ function buildTrackingSessionClientShape(session) {
     maps_api_key: session.maps_api_key || "",
     customer_tracking_token: session.customer_token,
     driver_tracking_token: session.driver_token,
+  };
+}
+
+function buildTrackingStatusWebhookPayload({ req, session, status }) {
+  const trackingUrls = buildTrackingUrls(req, session.driver_token, session.customer_token);
+  const customerName = [session.first_name, session.last_name].filter(Boolean).join(" ").trim();
+
+  return {
+    webhook_type: "webhook_tracking_status",
+    event: status,
+    location_id: session.location_id,
+    booking_id: session.booking_id,
+    tracking_session_id: session.id,
+    trigger_reason: status === "en_route_to_pickup" ? "vehicle_en_route" : "tracking_status_changed",
+    send_customer_tracking_sms: status === "en_route_to_pickup",
+    business_name: session.business_name || "Chauffeur Deluxe",
+    customer: {
+      first_name: session.first_name || null,
+      last_name: session.last_name || null,
+      full_name: customerName || null,
+      email: session.customer_email || null,
+      phone: session.customer_phone || null,
+    },
+    booking: {
+      status: session.booking_status || null,
+      pickup_address: session.pickup_address || null,
+      dropoff_address: session.dropoff_address || null,
+      pickup_lat: session.pickup_lat ?? null,
+      pickup_lng: session.pickup_lng ?? null,
+      dropoff_lat: session.dropoff_lat ?? null,
+      dropoff_lng: session.dropoff_lng ?? null,
+      start_time: session.start_time || null,
+      end_time: session.end_time || null,
+      vehicle_slot_id: session.vehicle_slot_id || null,
+      total_price: Number(session.total_price || 0),
+    },
+    tracking: {
+      status,
+      driver_lat: session.current_lat ?? null,
+      driver_lng: session.current_lng ?? null,
+      heading: session.heading ?? null,
+      speed: session.speed ?? null,
+      accuracy: session.accuracy ?? null,
+      last_location_at: session.last_location_at || null,
+      customer_tracking_token: session.customer_token,
+      customer_tracking_url: trackingUrls.customer_url,
+      driver_tracking_token: session.driver_token,
+      driver_tracking_url: trackingUrls.driver_url,
+    },
+    created_at: new Date().toISOString(),
+  };
+}
+
+async function triggerTrackingStatusWebhook({ req, trackingSessionId, status }) {
+  const session = await getTrackingSessionById(trackingSessionId);
+  if (!session) {
+    return {
+      success: false,
+      skipped: true,
+      error: "Tracking session not found.",
+    };
+  }
+
+  const webhookUrl = String(session.crm_webhook_url || "").trim();
+  if (!webhookUrl || !webhookUrl.startsWith("http")) {
+    return {
+      success: false,
+      skipped: true,
+      error: "No valid CRM webhook URL configured.",
+    };
+  }
+
+  const payload = buildTrackingStatusWebhookPayload({ req, session, status });
+  const response = await fetch(webhookUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  return {
+    success: response.ok,
+    skipped: false,
+    status: response.status,
+    customer_tracking_url: payload.tracking.customer_tracking_url,
   };
 }
 
@@ -3441,6 +3559,7 @@ app.post("/api/tracking/location", async (req, res) => {
 });
 
 app.post("/api/tracking/status", async (req, res) => {
+  let client;
   try {
     await ensureTripTrackingTables();
 
@@ -3451,7 +3570,26 @@ app.post("/api/tracking/status", async (req, res) => {
       return res.status(400).json({ error: "token is required." });
     }
 
-    const result = await pool.query(
+    client = await pool.connect();
+    await client.query("BEGIN");
+
+    const existingSessionResult = await client.query(
+      `SELECT id, status, customer_notified_en_route_at
+       FROM trip_tracking_sessions
+       WHERE driver_token = $1
+       LIMIT 1
+       FOR UPDATE`,
+      [token]
+    );
+
+    if (!existingSessionResult.rows.length) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: "Tracking session not found." });
+    }
+
+    const existingSession = existingSessionResult.rows[0];
+
+    const result = await client.query(
       `UPDATE trip_tracking_sessions
        SET status = $2,
            started_at = CASE
@@ -3463,23 +3601,73 @@ app.post("/api/tracking/status", async (req, res) => {
              ELSE ended_at
            END,
            updated_at = NOW()
-       WHERE driver_token = $1
+       WHERE id = $1
        RETURNING id, status`,
-      [token, status]
+      [existingSession.id, status]
     );
 
-    if (!result.rows.length) {
-      return res.status(404).json({ error: "Tracking session not found." });
+    const shouldTriggerCustomerTracking =
+      status === "en_route_to_pickup" &&
+      existingSession.status !== "en_route_to_pickup" &&
+      !existingSession.customer_notified_en_route_at;
+
+    if (shouldTriggerCustomerTracking) {
+      await client.query(
+        `UPDATE trip_tracking_sessions
+         SET customer_notified_en_route_at = NOW()
+         WHERE id = $1`,
+        [existingSession.id]
+      );
+    }
+
+    await client.query("COMMIT");
+
+    let customerTrackingWebhook = {
+      triggered: false,
+      skipped: true,
+      reason: "Status change does not require customer tracking notification.",
+    };
+
+    if (shouldTriggerCustomerTracking) {
+      try {
+        const webhookResult = await triggerTrackingStatusWebhook({
+          req,
+          trackingSessionId: existingSession.id,
+          status,
+        });
+        customerTrackingWebhook = {
+          triggered: Boolean(webhookResult.success),
+          skipped: Boolean(webhookResult.skipped),
+          status: webhookResult.status || null,
+          reason: webhookResult.error || null,
+          customer_tracking_url: webhookResult.customer_tracking_url || null,
+        };
+      } catch (webhookError) {
+        console.error("Tracking status webhook error:", webhookError);
+        customerTrackingWebhook = {
+          triggered: false,
+          skipped: false,
+          reason: webhookError?.message || "Tracking status webhook failed.",
+        };
+      }
     }
 
     return res.json({
       success: true,
       tracking_session_id: result.rows[0].id,
       status: result.rows[0].status,
+      customer_tracking_webhook: customerTrackingWebhook,
     });
   } catch (err) {
+    if (client) {
+      try {
+        await client.query("ROLLBACK");
+      } catch (_) {}
+    }
     console.error("Driver tracking status update error:", err);
     return res.status(500).json({ error: err.message || "Failed to update tracking status." });
+  } finally {
+    if (client) client.release();
   }
 });
 
