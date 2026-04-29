@@ -2400,6 +2400,27 @@ async function checkFixedRate(location_id, pickupAddr, dropoffAddr) {
   return null;
 }
 
+app.post('/api/crm-webhook/reseed', async (req, res) => {
+  try {
+    const location_id = String(req.body.location_id || req.query.location_id || '').trim();
+    const booking_id = Number(req.body.booking_id || req.query.booking_id || 0);
+
+    if (!location_id || !booking_id) {
+      return res.status(400).json({
+        success: false,
+        error: 'location_id and booking_id are required.'
+      });
+    }
+
+    const result = await triggerCrmWebhook(location_id, booking_id);
+    return res.status(result?.status || (result?.success ? 200 : 500)).json(result);
+  } catch (err) {
+    return res.status(500).json({
+      success: false,
+      error: err?.message || 'Unable to reseed CRM webhook.'
+    });
+  }
+});
 
 /*****************************************************
  4️⃣ SAVE SETTINGS ROUTE
@@ -4407,6 +4428,7 @@ function buildCrmBookingPayload({
       booking_id: booking.booking_id,
       status: normalizedStatus,
       is_confirmed: isConfirmed,
+      booking_mode: booking.booking_mode || "standard",
       pickup_address: booking.pickup_address || null,
       dropoff_address: booking.dropoff_address || null,
       pickup_lat: booking.pickup_lat ?? null,
@@ -4422,11 +4444,13 @@ function buildCrmBookingPayload({
       checked_bag_count: Number(booking.checked_bag_count || 0),
       additional_items_aboard: booking.additional_items_aboard || null,
       selected_event_name: booking.selected_event_name || null,
+      selected_fixed_destination: booking.selected_fixed_destination || null,
       selected_addons: Array.isArray(booking.selected_addons) ? booking.selected_addons : [],
     },
     customer: {
       first_name: customer.first_name || null,
       last_name: customer.last_name || null,
+      full_name: [customer.first_name, customer.last_name].filter(Boolean).join(" ") || null,
       email: customer.email || null,
       phone: customer.phone || null,
     },
@@ -4435,6 +4459,31 @@ function buildCrmBookingPayload({
       vehicle_type: vehicle.vehicle_type || null,
       vehicle_category: vehicle.vehicle_category || null,
       calendar_id: vehicle.calendar_id || null,
+    },
+    route: {
+      distance_miles: Number.isFinite(Number(meta.route_distance_miles))
+        ? Number(Number(meta.route_distance_miles).toFixed(2))
+        : null,
+      drive_duration_minutes: Number.isFinite(Number(meta.route_duration_minutes))
+        ? Number(meta.route_duration_minutes)
+        : null,
+      booking_buffer_minutes: Number.isFinite(Number(meta.booking_buffer_minutes))
+        ? Number(meta.booking_buffer_minutes)
+        : null,
+      booking_duration_minutes: Number.isFinite(Number(meta.booking_duration_minutes))
+        ? Number(meta.booking_duration_minutes)
+        : null,
+      timing_source: meta.timing_source || null,
+    },
+    pricing: {
+      pricing_label: meta.pricing_label || null,
+      fixed_rate_name: meta.fixed_rate_name || null,
+      peak_multiplier: Number.isFinite(Number(meta.peak_multiplier))
+        ? Number(meta.peak_multiplier)
+        : null,
+      fixed_surcharge: Number.isFinite(Number(meta.fixed_surcharge))
+        ? Number(meta.fixed_surcharge)
+        : null,
     },
     financials: {
       quoted_price: Number(financials.quoted_price || 0),
@@ -4452,8 +4501,14 @@ function buildCrmBookingPayload({
       payment_link: financials.payment_link || null,
       balance_payment_link: financials.balance_payment_link || null,
       payment_choice: financials.payment_choice || null,
+      deposit_eligible: Object.prototype.hasOwnProperty.call(financials, "deposit_eligible")
+        ? Boolean(financials.deposit_eligible)
+        : Number(financials.deposit_amount || 0) > 0,
       amount_due_now: Number(financials.amount_due_now || financials.deposit_amount || financials.total_price || 0),
       balance_due_deadline: balanceDueDeadline,
+      hours_until_ride: Number.isFinite(Number(financials.hours_until_ride))
+        ? Number(financials.hours_until_ride)
+        : null,
       payment_provider: paymentProvider,
     },
     follow_up: {
@@ -4657,14 +4712,29 @@ async function createBookingRecord(input, { paymentLink = null, triggerWebhook =
     balance_paid = false,
     payment_provider = null,
     booking_confirmed,
-      deposit_percent = 0,
-      deposit_amount = 0,
-      booking_mode = "standard",
-      passenger_count = 1,
+    deposit_percent = 0,
+    deposit_amount = 0,
+    booking_mode = "standard",
+    payment_choice = null,
+    amount_due_now = 0,
+    balance_due_deadline = null,
+    hours_until_ride = null,
+    deposit_eligible = false,
+    pricing_label = null,
+    fixed_rate_name = null,
+    peak_multiplier = 1,
+    fixed_surcharge = 0,
+    route_distance_miles = null,
+    route_duration_minutes = null,
+    booking_buffer_minutes = null,
+    booking_duration_minutes = null,
+    timing_source = null,
+    passenger_count = 1,
     carry_on_count = 0,
     checked_bag_count = 0,
     additional_items_aboard = null,
     selected_event_name = null,
+    selected_fixed_destination = null,
     selected_addons = []
   } = input;
 
@@ -4852,6 +4922,7 @@ async function createBookingRecord(input, { paymentLink = null, triggerWebhook =
       booking: {
         booking_id,
         status: bookingStatus,
+        booking_mode,
         pickup_address,
         dropoff_address,
         pickup_lat,
@@ -4865,6 +4936,7 @@ async function createBookingRecord(input, { paymentLink = null, triggerWebhook =
         checked_bag_count,
         additional_items_aboard,
         selected_event_name,
+        selected_fixed_destination,
         selected_addons,
       },
       customer: {
@@ -4892,11 +4964,25 @@ async function createBookingRecord(input, { paymentLink = null, triggerWebhook =
         deposit_paid: paymentState.depositPaid,
         balance_paid: paymentState.balancePaid,
         payment_link: paymentLink,
+        payment_choice,
+        deposit_eligible,
+        amount_due_now,
+        balance_due_deadline,
+        hours_until_ride,
         payment_provider: resolvedPaymentProvider,
       },
       meta: {
         source: "booking_widget",
         payment_provider: resolvedPaymentProvider,
+        pricing_label,
+        fixed_rate_name,
+        peak_multiplier,
+        fixed_surcharge,
+        route_distance_miles: route_distance_miles ?? routeMetrics.distanceMiles,
+        route_duration_minutes: route_duration_minutes ?? routeMetrics.durationMinutes,
+        booking_buffer_minutes: booking_buffer_minutes ?? (generalBufferMinutes + additionalTrafficBufferMinutes),
+        booking_duration_minutes: booking_duration_minutes ?? bookingDurationMinutes,
+        timing_source: timing_source || routeMetrics.source,
       },
     });
 
@@ -5093,6 +5179,11 @@ app.post("/api/create-checkout-session", async (req, res) => {
           deposit_paid: false,
           balance_paid: false,
           deposit_amount: minimumDepositAmount,
+          deposit_eligible: depositEligible,
+          payment_choice: payInFull ? "full" : "deposit",
+          amount_due_now: Number(amountToCharge.toFixed(2)),
+          balance_due_deadline: balanceDueDeadline,
+          hours_until_ride: hoursUntilRide,
           payment_provider: paymentProvider,
         },
         { triggerWebhook: true, paymentLink: null }
@@ -5130,6 +5221,11 @@ app.post("/api/create-checkout-session", async (req, res) => {
         deposit_paid: false,
         balance_paid: false,
         deposit_amount: minimumDepositAmount,
+        deposit_eligible: depositEligible,
+        payment_choice: payInFull ? "full" : "deposit",
+        amount_due_now: Number(amountToCharge.toFixed(2)),
+        balance_due_deadline: balanceDueDeadline,
+        hours_until_ride: hoursUntilRide,
         payment_provider: paymentProvider,
       },
       { triggerWebhook: false }
@@ -5413,6 +5509,10 @@ app.get("/api/stripe-health-raw", async (req, res) => {
 async function triggerCrmWebhook(location_id, booking_id) {
   let client;
   try {
+    if (!location_id || !booking_id) {
+      return { success: false, status: 400, error: "location_id and booking_id are required." };
+    }
+
     client = await pool.connect();
 
     const bookingRes = await client.query(
@@ -5421,20 +5521,20 @@ async function triggerCrmWebhook(location_id, booking_id) {
     );
     if (bookingRes.rows.length === 0) {
       console.log("⚠️ Booking not found.");
-      return;
+      return { success: false, status: 404, error: "Booking not found." };
     }
 
     const b = bookingRes.rows[0];
 
     const profileRes = await client.query(
-      "SELECT crm_webhook_url, tax_rate, business_name FROM profiles WHERE location_id = $1",
+      "SELECT crm_webhook_url, tax_rate, business_name, payment_provider FROM profiles WHERE location_id = $1",
       [location_id]
     );
     const p = profileRes.rows[0];
 
     if (!p?.crm_webhook_url) {
       console.log(`⚠️ No CRM Webhook found for location: ${location_id}`);
-      return;
+      return { success: false, status: 400, error: "No CRM webhook configured for this location." };
     }
 
     const totalPrice = Number(b.total_price || 0);
@@ -5451,6 +5551,7 @@ async function triggerCrmWebhook(location_id, booking_id) {
       console.error("Balance payment link generation error:", balanceLinkError);
     }
 
+    const inferredPaymentChoice = depositAmount > 0 && balanceDue > 0 ? "deposit" : "full";
     const payload = buildCrmBookingPayload({
       webhookType: "webhook_bookings",
       locationId: location_id,
@@ -5458,6 +5559,7 @@ async function triggerCrmWebhook(location_id, booking_id) {
       booking: {
         booking_id: b.id,
         status: b.status || "confirmed",
+        booking_mode: "standard",
         pickup_address: b.pickup_address,
         dropoff_address: b.dropoff_address,
         pickup_lat: b.pickup_lat,
@@ -5466,6 +5568,7 @@ async function triggerCrmWebhook(location_id, booking_id) {
         dropoff_lng: b.dropoff_lng,
         start_time: b.start_time,
         end_time: b.end_time,
+        selected_addons: [],
       },
       customer: {
         first_name: b.first_name,
@@ -5483,10 +5586,20 @@ async function triggerCrmWebhook(location_id, booking_id) {
         deposit_amount: depositAmount,
         deposit_percent: Number(b.deposit_percent || 0),
         balance_due: balanceDue,
+        payment_status: depositAmount > 0 && balanceDue > 0 ? "paid_deposit" : (totalPrice > 0 ? "paid_in_full" : "unpaid"),
+        payment_paid: totalPrice > 0 ? balanceDue <= 0 || depositAmount > 0 : false,
+        deposit_paid: depositAmount > 0,
+        balance_paid: balanceDue <= 0,
+        payment_choice: inferredPaymentChoice,
+        amount_due_now: inferredPaymentChoice === "deposit" ? depositAmount : totalPrice,
+        hours_until_ride: b.start_time ? getHoursUntilRide(b.start_time) : null,
+        payment_provider: normalizePaymentProvider(p.payment_provider || "stripe"),
         balance_payment_link: balancePaymentLink,
       },
       meta: {
         source: "database_listener",
+        payment_provider: normalizePaymentProvider(p.payment_provider || "stripe"),
+        seeded_from_database: true,
       },
     });
 
@@ -5496,9 +5609,21 @@ async function triggerCrmWebhook(location_id, booking_id) {
       body: JSON.stringify(payload)
     });
 
+    return {
+      success: resp.ok,
+      status: resp.status,
+      webhook_url: p.crm_webhook_url,
+      payload,
+    };
+
     console.log(`✅ Webhook sent to GHL. Status: ${resp.status}`);
   } catch (err) {
     console.error("❌ Webhook Trigger Error:", err);
+    return {
+      success: false,
+      status: 500,
+      error: err?.message || "Webhook trigger failed.",
+    };
   } finally {
     if (client) client.release();
   }

@@ -1054,8 +1054,16 @@
       total_price: Number(state.quote.total || 0),
       deposit_percent: Number(state.quote.deposit_percent || 0),
       deposit_amount: Number(state.quote.deposit_amount || 0),
+      deposit_eligible: !!state.quote.deposit_eligible,
       amount_due_now: Number(state.quote.amount_due_now || state.quote.total || 0),
+      hours_until_ride: Number(state.quote.hours_until_ride || 0),
       balance_due_deadline: state.quote.balance_due_deadline || null,
+      pricing_label: state.quote.pricing_label || null,
+      fixed_rate_name: state.quote.fixed_rate_name || null,
+      peak_multiplier: Number(state.quote.peak_multiplier || 1),
+      fixed_surcharge: Number(state.quote.fixed_surcharge || 0),
+      route_distance_miles: Number(state.quote.miles || state.route.miles || 0),
+      route_duration_minutes: Number(state.route.durationMinutes || 0),
       return_url: currentPageUrl(),
     });
 
