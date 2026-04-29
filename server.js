@@ -1570,6 +1570,30 @@ app.get("/setup-wizard.html", requireWizardToken, (req, res) => {
 app.get("/setup-wizard", requireWizardToken, (req, res) => {
   res.sendFile(path.join(__dirname, "public", "setup-wizard.html"));
 });
+app.get("/rideshare-onboarding.html", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "rideshare-onboarding.html"));
+});
+app.get("/partner-onboarding.html", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "partner-onboarding.html"));
+});
+app.get("/dispatch-network-manager.html", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "dispatch-network-manager.html"));
+});
+app.get("/network-dispatch.html", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "network-dispatch.html"));
+});
+app.get("/saas-sales.html", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "saas-sales.html"));
+});
+app.get("/addons.html", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "addons.html"));
+});
+app.get("/driver-tracking.html", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "driver-tracking.html"));
+});
+app.get("/customer-tracking.html", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "customer-tracking.html"));
+});
 app.use(express.static(path.join(__dirname, "public")));
 
 // --- IFRAME & SECURITY POLICY ---
