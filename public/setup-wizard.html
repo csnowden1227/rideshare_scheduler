@@ -175,6 +175,16 @@
                             <option value="sandbox">Sandbox</option>
                         </select>
                     </div>
+                    <div class="md:col-span-2 xl:col-span-4" style="margin-top:4px;">
+                        <div style="border:1px solid #ddd6fe; background:#f8fafc; border-radius:16px; padding:14px 16px; color:#475569; font-size:13px; line-height:1.7;">
+                            <strong style="display:block; color:#4c1d95; margin-bottom:6px;">Test Mode vs Live Mode</strong>
+                            Use <strong>test</strong> or <strong>sandbox</strong> credentials if you want fake practice payments only. Use <strong>live</strong> or <strong>production</strong> credentials only when you are ready to accept real customer payments.
+                            <br><strong>Stripe:</strong> use a test secret key and Stripe test cards such as <code>4242 4242 4242 4242</code>.
+                            <br><strong>Square:</strong> use Square sandbox access token and sandbox location ID.
+                            <br><strong>PayPal:</strong> use PayPal sandbox client ID and secret with a sandbox buyer account.
+                            <br><strong>Authorize.Net:</strong> use sandbox API Login ID and transaction key with sandbox card data.
+                        </div>
+                    </div>
                     <div>
                         <label class="block text-[10px] font-bold mb-2 uppercase text-slate-400">CRM Webhook URL</label>
                         <input type="text" id="webhook_url" class="input-mini" placeholder="https://services.leadconnectorhq.com/...">
