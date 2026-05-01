@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ride Hub</title>
+  <style>
+    :root {
+      --ink: #0f172a;
+      --muted: #64748b;
+      --line: #ddd6fe;
+      --accent: #5b21b6;
+      --accent-2: #0f766e;
+      --bg: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
+      --card: rgba(255, 255, 255, 0.94);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top right, rgba(91, 33, 182, 0.1), transparent 26%),
+        radial-gradient(circle at bottom left, rgba(15, 118, 110, 0.08), transparent 24%),
+        var(--bg);
+      -webkit-text-size-adjust: 100%;
+    }
+    .wrap {
+      max-width: 920px;
+      margin: 0 auto;
+      padding: 24px 16px 36px;
+    }
+    .hero {
+      background: linear-gradient(135deg, #1f1147 0%, var(--accent) 46%, var(--accent-2) 100%);
+      color: #fff;
+      border-radius: 28px;
+      padding: 28px 22px;
+      box-shadow: 0 24px 56px rgba(76, 29, 149, 0.2);
+    }
+    .eyebrow {
+      margin: 0 0 12px;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+      opacity: 0.9;
+    }
+    h1 {
+      margin: 0 0 12px;
+      font-size: 34px;
+      line-height: 1.08;
+    }
+    .hero p {
+      margin: 0;
+      line-height: 1.8;
+      max-width: 680px;
+    }
+    .status-band {
+      margin-top: 16px;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 14px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.16);
+      font-size: 13px;
+      font-weight: 700;
+    }
+    .grid {
+      display: grid;
+      gap: 16px;
+      margin-top: 18px;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      padding: 20px;
+      box-shadow: 0 12px 28px rgba(15, 23, 42, 0.06);
+    }
+    .card h2 {
+      margin: 0 0 8px;
+      font-size: 22px;
+      color: var(--accent);
+    }
+    .card p {
+      margin: 0;
+      color: #334155;
+      line-height: 1.75;
+    }
+    .button-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 16px;
+    }
+    .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 52px;
+      padding: 14px 18px;
+      border-radius: 16px;
+      text-decoration: none;
+      font-weight: 700;
+      font-size: 14px;
+      transition: transform 0.18s ease, filter 0.18s ease;
+    }
+    .button:hover {
+      transform: translateY(-1px);
+      filter: brightness(0.98);
+    }
+    .button-primary {
+      background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      color: #fff;
+    }
+    .button-secondary {
+      background: #fff;
+      color: var(--accent);
+      border: 1px solid #c4b5fd;
+    }
+    .hidden {
+      display: none !important;
+    }
+    .detail-list {
+      margin-top: 14px;
+      display: grid;
+      gap: 10px;
+      color: #334155;
+      line-height: 1.7;
+    }
+    .detail-label {
+      display: block;
+      font-size: 12px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      margin-bottom: 4px;
+    }
+    .download-card {
+      background: linear-gradient(180deg, #f0fdfa 0%, #ffffff 100%);
+      border-color: #99f6e4;
+    }
+    @media (max-width: 640px) {
+      .wrap {
+        padding: 16px 12px 28px;
+      }
+      .hero,
+      .card {
+        border-radius: 20px;
+      }
+      .hero {
+        padding: 22px 18px;
+      }
+      h1 {
+        font-size: 28px;
+      }
+      .button-row {
+        display: grid;
+      }
+      .button {
+        width: 100%;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="hero">
+      <p class="eyebrow">Customer Ride Hub</p>
+      <h1 id="hero-title">Your Ride Details in One Place</h1>
+      <p id="hero-copy">Use this page to track your ride, review your reservation details, and come back after your trip to rate your experience and leave a tip if you'd like.</p>
+      <div class="status-band" id="status-band">Current Status: <span id="status-text">Reservation Confirmed</span></div>
+    </section>
+
+    <section class="grid">
+      <article class="card">
+        <h2>Track Your Ride</h2>
+        <p>When your chauffeur is on the way, use the live tracking page to see the driver, vehicle, plate, and route updates in real time.</p>
+        <div class="button-row">
+          <a id="tracking-link" class="button button-primary hidden" href="#" target="_blank" rel="noopener noreferrer">Open Live Tracking</a>
+          <span id="tracking-waiting" class="button button-secondary">Tracking link will appear when your ride is active</span>
+        </div>
+      </article>
+
+      <article class="card">
+        <h2>Reservation Snapshot</h2>
+        <p>This branded page works well inside CRM or the client portal, while the live trip screens stay on the backend where they can safely load your real-time trip data.</p>
+        <div class="detail-list">
+          <div>
+            <span class="detail-label">Pickup</span>
+            <div id="pickup-text">Your pickup address can be placed here or passed in from the CRM page.</div>
+          </div>
+          <div>
+            <span class="detail-label">Dropoff</span>
+            <div id="dropoff-text">Your dropoff address can be placed here or passed in from the CRM page.</div>
+          </div>
+          <div>
+            <span class="detail-label">Ride Time</span>
+            <div id="ride-time-text">Your ride time can be placed here or passed in from the CRM page.</div>
+          </div>
+        </div>
+      </article>
+
+      <article class="card">
+        <h2>After Your Ride</h2>
+        <p>Once the ride is complete, the review and tip page will open from the link below. That backend page is better suited for the live rating and tip flow, especially on mobile.</p>
+        <div class="button-row">
+          <a id="follow-up-link" class="button button-primary hidden" href="#" target="_blank" rel="noopener noreferrer">Rate Your Experience</a>
+          <span id="follow-up-waiting" class="button button-secondary">This link activates after the ride is completed</span>
+        </div>
+      </article>
+
+      <article id="app-download-card" class="card download-card hidden">
+        <h2>Download Our App</h2>
+        <p id="app-copy">For the best experience, download our branded mobile app to keep everything in one place.</p>
+        <div class="button-row">
+          <a id="app-download-link" class="button button-primary hidden" href="#" target="_blank" rel="noopener noreferrer">Download the App</a>
+          <a id="ios-download-link" class="button button-secondary hidden" href="#" target="_blank" rel="noopener noreferrer">Download on iPhone</a>
+          <a id="android-download-link" class="button button-secondary hidden" href="#" target="_blank" rel="noopener noreferrer">Download on Android</a>
+        </div>
+      </article>
+    </section>
+  </div>
+
+  <script>
+    const query = new URLSearchParams(window.location.search);
+
+    function textValue(key, fallback) {
+      const value = (query.get(key) || "").trim();
+      return value || fallback;
+    }
+
+    function truthy(key) {
+      const value = (query.get(key) || "").trim().toLowerCase();
+      return value === "1" || value === "true" || value === "yes";
+    }
+
+    function setLink(id, url) {
+      const el = document.getElementById(id);
+      if (!el || !url) return false;
+      el.href = url;
+      el.classList.remove("hidden");
+      return true;
+    }
+
+    function setText(id, value) {
+      const el = document.getElementById(id);
+      if (el) el.textContent = value;
+    }
+
+    const trackingUrl = (query.get("tracking_url") || "").trim();
+    const followUpUrl = (query.get("follow_up_url") || "").trim();
+    const appDownloadUrl = (query.get("app_download_url") || "").trim();
+    const iosAppUrl = (query.get("ios_app_url") || "").trim();
+    const androidAppUrl = (query.get("android_app_url") || "").trim();
+    const showAppSection = truthy("show_app") || Boolean(appDownloadUrl || iosAppUrl || androidAppUrl);
+
+    setText("hero-title", textValue("title", "Your Ride Details in One Place"));
+    setText("hero-copy", textValue("hero_copy", "Use this page to track your ride, review your reservation details, and come back after your trip to rate your experience and leave a tip if you'd like."));
+    setText("status-text", textValue("ride_status", "Reservation Confirmed"));
+    setText("pickup-text", textValue("pickup_address", "Your pickup address can be placed here or passed in from the CRM page."));
+    setText("dropoff-text", textValue("dropoff_address", "Your dropoff address can be placed here or passed in from the CRM page."));
+    setText("ride-time-text", textValue("ride_time", "Your ride time can be placed here or passed in from the CRM page."));
+
+    if (setLink("tracking-link", trackingUrl)) {
+      document.getElementById("tracking-waiting").classList.add("hidden");
+    }
+    if (setLink("follow-up-link", followUpUrl)) {
+      document.getElementById("follow-up-waiting").classList.add("hidden");
+    }
+
+    if (showAppSection) {
+      document.getElementById("app-download-card").classList.remove("hidden");
+      setText("app-copy", textValue("app_copy", "For the best experience, download our branded mobile app to keep everything in one place."));
+      setLink("app-download-link", appDownloadUrl);
+      setLink("ios-download-link", iosAppUrl);
+      setLink("android-download-link", androidAppUrl);
+    }
+  </script>
+</body>
+</html>

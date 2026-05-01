@@ -275,30 +275,19 @@
       background: linear-gradient(135deg, #ede9fe 0%, #ecfeff 100%);
       border-color: #c4b5fd;
     }
-    .video-shell {
-      min-height: 320px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      text-align: center;
+    .video-frame {
       border-radius: 22px;
-      background:
-        linear-gradient(135deg, rgba(15,23,42,0.92), rgba(91,33,182,0.86)),
-        linear-gradient(180deg, #1e293b 0%, #0f172a 100%);
-      color: #fff;
-      padding: 26px;
+      overflow: hidden;
+      background: var(--navy);
+      width: 100%;
+      box-shadow: 0 18px 42px rgba(15, 23, 42, 0.14);
     }
-    .play-ring {
-      width: 76px;
-      height: 76px;
-      border-radius: 999px;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      background: rgba(255,255,255,0.1);
-      border: 1px solid rgba(255,255,255,0.22);
-      margin-bottom: 16px;
-      font-size: 28px;
+    .video-frame video {
+      display: block;
+      width: 100%;
+      height: auto;
+      max-height: 560px;
+      background: var(--navy);
     }
     .steps {
       display: grid;
@@ -348,7 +337,6 @@
       h3 { font-size: 20px; }
       .price { font-size: 30px; }
       th, td { font-size: 13px; line-height: 1.6; }
-      .video-shell { min-height: 240px; }
     }
   </style>
 </head>
@@ -405,21 +393,17 @@
         <div>
           <h2>See the Platform in Action</h2>
           <p style="margin: 0;">
-            Add your CRM media video here to show operators what the booking flow, setup wizard, and premium experience
-            look like before they buy.
+            Watch the full platform walkthrough to see the booking flow, CRM automation, setup wizard, and customer experience in action before operators buy.
           </p>
           <div class="btn-row">
             <a class="btn btn-surface" href="https://app.crmonesource.com/">Log In to Continue Setup After Purchase</a>
           </div>
         </div>
-        <div class="video-shell">
-          <div>
-            <div class="play-ring">▶</div>
-            <h3 style="margin-bottom: 8px; color: #fff;">Video Placeholder</h3>
-            <p style="margin: 0; opacity: 0.92;">
-              Send the CRM media link and this section can become an embedded video or a styled watch button.
-            </p>
-          </div>
+        <div class="video-frame">
+          <video controls playsinline preload="metadata">
+            <source src="/rideshare-crm-one-source-platform-final.mp4" type="video/mp4">
+            Your browser does not support the video tag.
+          </video>
         </div>
       </div>
     </section>

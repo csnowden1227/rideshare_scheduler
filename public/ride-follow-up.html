@@ -5,6 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Rate Your Ride</title>
   <style>
+    :root {
+      --brand-primary: #082f49;
+      --brand-secondary: #0f766e;
+      --brand-accent: #ecfeff;
+      --brand-line: #ddd6fe;
+      --brand-muted: #64748b;
+      --brand-card-shadow: rgba(76, 29, 149, 0.18);
+    }
     body {
       margin: 0;
       font-family: Arial, Helvetica, sans-serif;
@@ -18,11 +26,11 @@
       padding: 24px 16px 40px;
     }
     .hero {
-      background: linear-gradient(135deg, #5b21b6 0%, #0f766e 100%);
+      background: linear-gradient(135deg, var(--brand-primary) 0%, var(--brand-secondary) 100%);
       color: #fff;
       border-radius: 24px;
       padding: 28px 22px;
-      box-shadow: 0 18px 40px rgba(76, 29, 149, 0.18);
+      box-shadow: 0 18px 40px var(--brand-card-shadow);
     }
     .hero h1 {
       margin: 0 0 10px;
@@ -41,7 +49,7 @@
     }
     .card {
       background: #fff;
-      border: 1px solid #ddd6fe;
+      border: 1px solid var(--brand-line);
       border-radius: 22px;
       padding: 22px;
       box-shadow: 0 10px 26px rgba(15, 23, 42, 0.05);
@@ -52,7 +60,7 @@
       font-weight: 800;
       text-transform: uppercase;
       letter-spacing: 0.08em;
-      color: #64748b;
+      color: var(--brand-muted);
       margin-bottom: 6px;
     }
     .value {
@@ -91,9 +99,9 @@
       margin-top: 12px;
     }
     .star-btn, .tip-btn, .btn {
-      border: 1px solid #c4b5fd;
+      border: 1px solid var(--brand-line);
       background: #fff;
-      color: #5b21b6;
+      color: var(--brand-primary);
       border-radius: 14px;
       cursor: pointer;
       font-weight: 700;
@@ -106,7 +114,7 @@
       filter: brightness(0.99);
     }
     .star-btn.active, .tip-btn.active {
-      background: linear-gradient(135deg, #5b21b6 0%, #0f766e 100%);
+      background: linear-gradient(135deg, var(--brand-primary) 0%, var(--brand-secondary) 100%);
       color: #fff;
       border-color: transparent;
     }
@@ -149,13 +157,13 @@
       margin-top: 14px;
       font-size: 14px;
       font-weight: 700;
-      color: #0f766e;
+      color: var(--brand-secondary);
     }
     .status.error {
       color: #dc2626;
     }
     .muted {
-      color: #64748b;
+      color: var(--brand-muted);
       font-size: 14px;
       line-height: 1.7;
     }
@@ -288,6 +296,22 @@
       }
     }
 
+    function applyBranding(branding = {}, businessName = "") {
+      const root = document.documentElement;
+      if (branding.brand_color_primary) {
+        root.style.setProperty("--brand-primary", branding.brand_color_primary);
+      }
+      if (branding.brand_color_secondary) {
+        root.style.setProperty("--brand-secondary", branding.brand_color_secondary);
+      }
+      if (branding.brand_color_accent) {
+        root.style.setProperty("--brand-accent", branding.brand_color_accent);
+      }
+      if (businessName) {
+        document.title = `Rate ${businessName}`;
+      }
+    }
+
     async function requestJson(url, options = {}) {
       const response = await fetch(url, options);
       const data = await response.json().catch(() => ({}));
@@ -353,6 +377,7 @@
 
       const data = await requestJson(`/api/tracking/follow-up?token=${encodeURIComponent(token)}`);
       fillTripSummary(data.session || {});
+      applyBranding(data.session?.branding || {}, data.session?.business_name || "");
       state.tipEnabled = Boolean(data.tip_enabled);
       state.suggestedTips = Array.isArray(data.suggested_tip_amounts) && data.suggested_tip_amounts.length
         ? data.suggested_tip_amounts

@@ -60,18 +60,28 @@
     (async function () {
       const params = new URLSearchParams(window.location.search);
       const sessionId = params.get("session_id");
+      const provider = params.get("provider") || "stripe";
+      const bookingId = params.get("booking_id");
+      const token = params.get("token");
       const title = document.getElementById("title");
       const message = document.getElementById("message");
       const error = document.getElementById("error");
 
-      if (!sessionId) {
+      if (!sessionId && provider !== "paypal") {
         title.textContent = "Payment completed";
-        message.textContent = "Your payment has been submitted. If you do not receive confirmation shortly, please contact support.";
+        message.textContent = provider === "authorize_net"
+          ? "Your Authorize.Net payment has been submitted. Your reservation should update shortly."
+          : provider === "square"
+            ? "Your Square payment has been submitted. Your reservation should update shortly."
+            : "Your payment has been submitted. If you do not receive confirmation shortly, please contact support.";
         return;
       }
 
       try {
-        const response = await fetch(`/api/checkout-session-status?session_id=${encodeURIComponent(sessionId)}`);
+        const verificationUrl = sessionId
+          ? `/api/checkout-session-status?session_id=${encodeURIComponent(sessionId)}`
+          : `/api/checkout-session-status?provider=${encodeURIComponent(provider)}&booking_id=${encodeURIComponent(bookingId || "")}&token=${encodeURIComponent(token || "")}`;
+        const response = await fetch(verificationUrl);
         const data = await response.json();
         if (!response.ok) {
           throw new Error(data.error || "Unable to verify the payment.");

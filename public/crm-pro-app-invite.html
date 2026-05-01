@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Download Our App</title>
+  <style>
+    :root {
+      --ink: #0f172a;
+      --muted: #64748b;
+      --line: #ddd6fe;
+      --accent: #5b21b6;
+      --accent-2: #0f766e;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top left, rgba(91, 33, 182, 0.12), transparent 24%),
+        linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
+      -webkit-text-size-adjust: 100%;
+    }
+    .wrap {
+      max-width: 760px;
+      margin: 0 auto;
+      padding: 24px 16px 36px;
+    }
+    .hero {
+      background: linear-gradient(135deg, #12152f 0%, var(--accent) 44%, var(--accent-2) 100%);
+      color: #fff;
+      border-radius: 28px;
+      padding: 30px 24px;
+      box-shadow: 0 24px 56px rgba(76, 29, 149, 0.18);
+    }
+    .eyebrow {
+      margin: 0 0 12px;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+      opacity: 0.9;
+    }
+    h1 {
+      margin: 0 0 12px;
+      font-size: 34px;
+      line-height: 1.08;
+    }
+    .hero p {
+      margin: 0;
+      line-height: 1.8;
+    }
+    .card {
+      margin-top: 18px;
+      background: rgba(255, 255, 255, 0.95);
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      padding: 22px;
+      box-shadow: 0 12px 28px rgba(15, 23, 42, 0.06);
+    }
+    .card h2 {
+      margin: 0 0 8px;
+      color: var(--accent);
+      font-size: 23px;
+    }
+    .card p, .card li {
+      color: #334155;
+      line-height: 1.8;
+    }
+    .card ul {
+      margin: 12px 0 0;
+      padding-left: 18px;
+    }
+    .button-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 18px;
+    }
+    .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 52px;
+      padding: 14px 18px;
+      border-radius: 16px;
+      text-decoration: none;
+      font-weight: 700;
+      font-size: 14px;
+      transition: transform 0.18s ease, filter 0.18s ease;
+    }
+    .button:hover {
+      transform: translateY(-1px);
+      filter: brightness(0.98);
+    }
+    .button-primary {
+      background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      color: #fff;
+    }
+    .button-secondary {
+      background: #fff;
+      color: var(--accent);
+      border: 1px solid #c4b5fd;
+    }
+    .hidden {
+      display: none !important;
+    }
+    @media (max-width: 640px) {
+      .wrap {
+        padding: 16px 12px 28px;
+      }
+      .hero,
+      .card {
+        border-radius: 20px;
+      }
+      .hero {
+        padding: 22px 18px;
+      }
+      h1 {
+        font-size: 28px;
+      }
+      .button-row {
+        display: grid;
+      }
+      .button {
+        width: 100%;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="hero">
+      <p class="eyebrow">Pro Customer Experience</p>
+      <h1 id="hero-title">Take Your Ride Experience Mobile</h1>
+      <p id="hero-copy">Download our app for faster updates, easier access to your reservation details, and a smoother branded experience on your phone.</p>
+    </section>
+
+    <section class="card">
+      <h2>Why Download the App?</h2>
+      <ul>
+        <li>Keep your ride information handy on your phone.</li>
+        <li>Open your reservation links from one familiar branded place.</li>
+        <li>Stay closer to important updates before and after your trip.</li>
+      </ul>
+      <div class="button-row">
+        <a id="app-download-link" class="button button-primary hidden" href="#" target="_blank" rel="noopener noreferrer">Download the App</a>
+        <a id="ios-download-link" class="button button-secondary hidden" href="#" target="_blank" rel="noopener noreferrer">Download on iPhone</a>
+        <a id="android-download-link" class="button button-secondary hidden" href="#" target="_blank" rel="noopener noreferrer">Download on Android</a>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Need Live Tracking?</h2>
+      <p>The live ride tracking and post-ride review pages still open through secure mobile web links, which lets us safely load your trip-specific route, driver, vehicle, and feedback details.</p>
+      <div class="button-row">
+        <a id="tracking-link" class="button button-secondary hidden" href="#" target="_blank" rel="noopener noreferrer">Open Ride Tracking</a>
+        <a id="follow-up-link" class="button button-secondary hidden" href="#" target="_blank" rel="noopener noreferrer">Rate Your Ride</a>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const query = new URLSearchParams(window.location.search);
+
+    function textValue(key, fallback) {
+      const value = (query.get(key) || "").trim();
+      return value || fallback;
+    }
+
+    function setLink(id, url) {
+      const el = document.getElementById(id);
+      if (!el || !url) return;
+      el.href = url;
+      el.classList.remove("hidden");
+    }
+
+    document.getElementById("hero-title").textContent = textValue("title", "Take Your Ride Experience Mobile");
+    document.getElementById("hero-copy").textContent = textValue("hero_copy", "Download our app for faster updates, easier access to your reservation details, and a smoother branded experience on your phone.");
+
+    setLink("app-download-link", (query.get("app_download_url") || "").trim());
+    setLink("ios-download-link", (query.get("ios_app_url") || "").trim());
+    setLink("android-download-link", (query.get("android_app_url") || "").trim());
+    setLink("tracking-link", (query.get("tracking_url") || "").trim());
+    setLink("follow-up-link", (query.get("follow_up_url") || "").trim());
+  </script>
+</body>
+</html>

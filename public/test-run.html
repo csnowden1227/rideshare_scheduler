@@ -34,7 +34,7 @@
   <div class="wrap">
     <section class="hero">
       <h1>Practice Booking and Live Tracking Test</h1>
-      <p>Create a real low-dollar practice booking, complete the checkout, and then open a live driver tracking session so you can rehearse the exact customer experience before going live.</p>
+      <p>Create a real low-dollar practice booking, complete checkout through the active payment provider on this account, and then open a live driver tracking session so you can rehearse the exact customer experience before going live.</p>
     </section>
 
     <div class="grid">
@@ -77,11 +77,11 @@
           <div class="full">
             <label style="display:flex; gap:10px; align-items:flex-start; font-size:14px; line-height:1.6;">
               <input id="accept-terms" type="checkbox" style="width:auto; margin-top:4px;" />
-              <span>I understand this will create a live Stripe test checkout on my account for the low-dollar practice booking amount shown on the right.</span>
+              <span>I understand this will create a live practice checkout on my account using the active payment provider for the low-dollar practice booking amount shown on the right.</span>
             </label>
           </div>
           <div class="full">
-            <button type="submit" class="btn btn-primary">Start $1 Test Checkout</button>
+            <button type="submit" class="btn btn-primary">Start Practice Checkout</button>
             <div id="form-status" class="status"></div>
           </div>
         </form>
@@ -188,9 +188,7 @@
       } else {
         parts.push("No processing/service fee is currently saved.");
       }
-      if (state.config?.payment_provider !== "stripe") {
-        parts.push("This account is not set to Stripe, so test checkout is disabled until Stripe is selected in the setup wizard.");
-      }
+      parts.push(`This account is currently set to ${String(state.config?.payment_provider || "stripe").replace("_", " ")} for practice checkout.`);
       document.getElementById("pricing-note").textContent = parts.join(" ");
     }
 
@@ -230,9 +228,6 @@
       }
       renderPricingSummary();
       renderVehicleOptions();
-      if (state.config.payment_provider !== "stripe") {
-        document.querySelector('button[type="submit"]').disabled = true;
-      }
     }
 
     async function handleReturnFromCheckout() {
@@ -240,6 +235,7 @@
       const sessionId = query.get("session_id");
       const bookingId = query.get("booking_id");
       const isTestRun = query.get("test_run");
+      const provider = query.get("provider") || state.config?.payment_provider || "stripe";
       if (!checkoutState || isTestRun !== "1") return;
 
       if (checkoutState === "cancel") {
@@ -247,11 +243,14 @@
         return;
       }
 
-      if (checkoutState === "success" && sessionId && bookingId) {
+      if (checkoutState === "success" && bookingId) {
         setStatus("Verifying payment and opening test tracking session...");
-        const checkout = await requestJson(`${apiBase}/api/checkout-session-status?session_id=${encodeURIComponent(sessionId)}&location_id=${encodeURIComponent(locationId)}`);
+        const verificationUrl = sessionId
+          ? `${apiBase}/api/checkout-session-status?session_id=${encodeURIComponent(sessionId)}&location_id=${encodeURIComponent(locationId)}`
+          : `${apiBase}/api/checkout-session-status?provider=${encodeURIComponent(provider)}&booking_id=${encodeURIComponent(bookingId)}`;
+        const checkout = await requestJson(verificationUrl);
         if (!checkout.paid) {
-          throw new Error("Stripe has not marked the practice payment as paid yet.");
+          throw new Error("The practice payment has not been marked paid yet.");
         }
         const tracking = await requestJson(`${apiBase}/api/tracking/session/create`, {
           method: "POST",
@@ -268,7 +267,7 @@
         document.getElementById("success-message").textContent = "Your practice booking is paid and your live tracking session is ready. Open the driver link first, tap En Route, and then compare it with the customer link.";
         document.getElementById("driver-link").href = driverUrl;
         document.getElementById("customer-link").href = customerUrl;
-        setStatus("Practice booking paid. Your live tracking links are ready.");
+        setStatus(`Practice booking paid through ${String(provider).replace("_", " ")}. Your live tracking links are ready.`);
       }
     }
 
@@ -283,7 +282,7 @@
       const button = event.submitter;
       const original = button.textContent;
       button.disabled = true;
-      button.textContent = "Creating Test Checkout...";
+      button.textContent = "Creating Practice Checkout...";
 
       try {
         const payload = {

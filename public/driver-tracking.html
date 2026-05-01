@@ -5,6 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Driver Tracking</title>
   <style>
+    :root {
+      --brand-primary: #082f49;
+      --brand-secondary: #0f766e;
+      --brand-accent: #ecfeff;
+      --brand-line: #ddd6fe;
+      --brand-muted: #64748b;
+      --brand-card-shadow: rgba(76, 29, 149, 0.18);
+    }
     body {
       margin: 0;
       font-family: Arial, Helvetica, sans-serif;
@@ -18,11 +26,11 @@
       padding: 24px 16px 40px;
     }
     .hero {
-      background: linear-gradient(135deg, #0f172a 0%, #5b21b6 48%, #0f766e 100%);
+      background: linear-gradient(135deg, #0f172a 0%, var(--brand-primary) 48%, var(--brand-secondary) 100%);
       color: #fff;
       border-radius: 24px;
       padding: 28px 22px;
-      box-shadow: 0 18px 40px rgba(76, 29, 149, 0.18);
+      box-shadow: 0 18px 40px var(--brand-card-shadow);
     }
     .hero h1 {
       margin: 0 0 10px 0;
@@ -36,7 +44,7 @@
     .card {
       margin-top: 20px;
       background: #fff;
-      border: 1px solid #ddd6fe;
+      border: 1px solid var(--brand-line);
       border-radius: 22px;
       padding: 22px;
       box-shadow: 0 10px 26px rgba(15, 23, 42, 0.05);
@@ -52,17 +60,17 @@
       gap: 14px;
     }
     .box {
-      border: 1px solid #ddd6fe;
+      border: 1px solid var(--brand-line);
       border-radius: 18px;
       padding: 16px;
       background: #fff;
     }
     .box-teal {
-      background: #f0fdfa;
-      border-color: #99f6e4;
+      background: var(--brand-accent);
+      border-color: var(--brand-line);
     }
     .box-purple {
-      background: #f5f3ff;
+      background: var(--brand-accent);
     }
     .label {
       display: block;
@@ -70,7 +78,7 @@
       font-weight: 800;
       text-transform: uppercase;
       letter-spacing: 0.08em;
-      color: #64748b;
+      color: var(--brand-muted);
       margin-bottom: 6px;
     }
     .value {
@@ -84,7 +92,7 @@
       height: 620px;
       border-radius: 18px;
       overflow: hidden;
-      border: 1px solid #ddd6fe;
+      border: 1px solid var(--brand-line);
       background: #e2e8f0;
     }
     .actions {
@@ -104,13 +112,13 @@
       -webkit-appearance: none;
     }
     .btn-primary {
-      background: linear-gradient(135deg, #5b21b6 0%, #0f766e 100%);
+      background: linear-gradient(135deg, var(--brand-primary) 0%, var(--brand-secondary) 100%);
       color: #fff;
     }
     .btn-secondary {
       background: #fff;
-      color: #5b21b6;
-      border: 1px solid #c4b5fd;
+      color: var(--brand-primary);
+      border: 1px solid var(--brand-line);
     }
     .field-group {
       display: grid;
@@ -156,14 +164,14 @@
     .small-note {
       font-size: 12px;
       line-height: 1.6;
-      color: #64748b;
+      color: var(--brand-muted);
       margin-top: 8px;
     }
     .status {
       margin-top: 14px;
       font-size: 14px;
       font-weight: 700;
-      color: #0f766e;
+      color: var(--brand-secondary);
     }
     @media (max-width: 900px) {
       .grid {
@@ -235,9 +243,10 @@
             <span class="label">Driver Profile</span>
             <div class="field-group">
               <select id="saved-driver-select">
-                <option value="">Choose a saved driver for this vehicle</option>
+                <option value="">Choose a saved driver</option>
               </select>
               <input id="driver-name-input" type="text" placeholder="Driver full name" />
+              <input id="driver-phone-input" type="tel" placeholder="Driver mobile number" />
             </div>
             <div class="upload-row">
               <img id="driver-photo-preview" class="avatar hidden" alt="Driver photo preview" />
@@ -246,13 +255,13 @@
                   Upload Driver Photo
                   <input id="driver-photo-input" type="file" accept="image/*" class="hidden" />
                 </label>
-                <div class="small-note">Upload once per driver. The selected driver will be reused next time this same vehicle slot is booked.</div>
+                <div class="small-note">Upload once per driver. Saved drivers stay available across this account, so next time you can simply choose the right chauffeur from the dropdown.</div>
               </div>
             </div>
             <div class="actions" style="margin-top:16px;">
-              <button id="save-driver-btn" class="btn btn-primary" type="button">Save Driver To This Vehicle</button>
+              <button id="save-driver-btn" class="btn btn-primary" type="button">Save Driver</button>
             </div>
-            <div class="small-note">Before tapping <strong>En Route</strong>, make sure the active driver and photo are right so the customer sees the right person on the tracking page.</div>
+            <div class="small-note">Before tapping <strong>En Route</strong>, make sure the active driver name, mobile number, and photo are right so the customer sees the right person and the driver receives their own tracking link.</div>
           </div>
 
           <div class="box">
@@ -315,6 +324,22 @@
     function setText(id, value) {
       const el = document.getElementById(id);
       if (el) el.textContent = value || "";
+    }
+
+    function applyBranding(branding = {}, businessName = "") {
+      const root = document.documentElement;
+      if (branding.brand_color_primary) {
+        root.style.setProperty("--brand-primary", branding.brand_color_primary);
+      }
+      if (branding.brand_color_secondary) {
+        root.style.setProperty("--brand-secondary", branding.brand_color_secondary);
+      }
+      if (branding.brand_color_accent) {
+        root.style.setProperty("--brand-accent", branding.brand_color_accent);
+      }
+      if (businessName) {
+        document.title = `${businessName} Driver Tracking`;
+      }
     }
 
     function formatWhen(value) {
@@ -381,7 +406,7 @@
     function populateDriverOptions(profiles, selectedProfileId) {
       const select = document.getElementById("saved-driver-select");
       if (!select) return;
-      select.innerHTML = `<option value="">Choose a saved driver for this vehicle</option>`;
+      select.innerHTML = `<option value="">Choose a saved driver</option>`;
       profiles.forEach((profile) => {
         const option = document.createElement("option");
         option.value = profile.id;
@@ -395,9 +420,13 @@
 
     function applyDriverProfileToForm(profile) {
       const nameInput = document.getElementById("driver-name-input");
+      const phoneInput = document.getElementById("driver-phone-input");
       const source = profile || currentSession || {};
       if (nameInput) {
         nameInput.value = source.driver_name || "";
+      }
+      if (phoneInput) {
+        phoneInput.value = source.driver_phone || "";
       }
       pendingDriverPhotoData = source.driver_photo_data || "";
       setImagePreview("driver-photo-preview", pendingDriverPhotoData, "Driver photo preview");
@@ -416,12 +445,16 @@
       const select = document.getElementById("saved-driver-select");
       const profileId = String(select?.value || "").trim();
       const driverName = String(document.getElementById("driver-name-input")?.value || "").trim();
+      const driverPhone = String(document.getElementById("driver-phone-input")?.value || "").trim();
       if (!profileId && !driverName) {
         throw new Error("Choose a saved driver or enter the driver name first.");
       }
+      if (!driverPhone) {
+        throw new Error("Enter the driver mobile number before saving.");
+      }
 
       const button = document.getElementById("save-driver-btn");
-      const originalText = button?.textContent || "Save Driver To This Vehicle";
+      const originalText = button?.textContent || "Save Driver";
       if (button) {
         button.disabled = true;
         button.textContent = "Saving Driver...";
@@ -435,6 +468,7 @@
             token,
             profile_id: profileId || undefined,
             driver_name: driverName,
+            driver_phone: driverPhone,
             driver_photo_data: pendingDriverPhotoData || ""
           })
         });
@@ -444,7 +478,7 @@
         populateDriverOptions(savedDriverProfiles, data.profile?.id || currentSession?.driver_profile_id || "");
         applyDriverProfileToForm(data.profile || null);
         refreshCustomerView(currentSession);
-        setText("driver-status-message", "Driver profile saved for this vehicle slot.");
+        setText("driver-status-message", "Driver profile saved for this account.");
       } finally {
         if (button) {
           button.disabled = false;
@@ -456,14 +490,19 @@
     function driverSelectionDiffersFromSession() {
       const selectedProfileId = String(document.getElementById("saved-driver-select")?.value || "").trim();
       const inputName = String(document.getElementById("driver-name-input")?.value || "").trim();
+      const inputPhone = String(document.getElementById("driver-phone-input")?.value || "").trim();
       const sessionProfileId = String(currentSession?.driver_profile_id || "").trim();
       const sessionDriverName = String(currentSession?.driver_name || "").trim();
+      const sessionDriverPhone = String(currentSession?.driver_phone || "").trim();
       const sessionPhoto = String(currentSession?.driver_photo_data || "").trim();
 
       if (selectedProfileId && selectedProfileId !== sessionProfileId) {
         return true;
       }
       if (inputName && inputName !== sessionDriverName) {
+        return true;
+      }
+      if (inputPhone && inputPhone !== sessionDriverPhone) {
         return true;
       }
       if (pendingDriverPhotoData && pendingDriverPhotoData !== sessionPhoto) {
@@ -609,6 +648,7 @@
           };
         }
 
+        applyBranding(currentSession.branding || {}, currentSession.business_name || "");
         refreshCustomerView(currentSession);
         applyDriverProfileToForm(null);
         await loadDriverProfiles();
@@ -678,9 +718,15 @@
           const hasAnyDriverSelection =
             String(document.getElementById("saved-driver-select")?.value || "").trim() ||
             String(document.getElementById("driver-name-input")?.value || "").trim();
+          const driverPhone =
+            String(document.getElementById("driver-phone-input")?.value || "").trim() ||
+            String(currentSession?.driver_phone || "").trim();
 
           if (!String(currentSession?.driver_name || "").trim() && !hasAnyDriverSelection) {
             throw new Error("Please choose or enter the active driver before marking this trip en route.");
+          }
+          if (!driverPhone) {
+            throw new Error("Please enter the driver mobile number before marking this trip en route.");
           }
 
           if (driverSelectionDiffersFromSession()) {

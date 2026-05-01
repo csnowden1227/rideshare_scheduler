@@ -120,6 +120,8 @@
                         <select id="payment_provider" class="input-mini">
                             <option value="stripe">Stripe</option>
                             <option value="square">Square</option>
+                            <option value="paypal">PayPal</option>
+                            <option value="authorize_net">Authorize.Net</option>
                             <option value="crm_invoice_only">CRM Invoice Only</option>
                         </select>
                     </div>
@@ -138,6 +140,40 @@
                     <div id="square_location_wrap">
                         <label class="block text-[10px] font-bold mb-2 uppercase text-slate-400">Square Location ID</label>
                         <input type="text" id="square_location_id" class="input-mini" placeholder="L1234567890">
+                    </div>
+                    <div id="paypal_client_id_wrap">
+                        <label class="block text-[10px] font-bold mb-2 uppercase text-slate-400">PayPal Client ID</label>
+                        <input type="password" id="paypal_client_id" class="input-mini" placeholder="PayPal Client ID">
+                    </div>
+                    <div id="paypal_client_secret_wrap">
+                        <label class="block text-[10px] font-bold mb-2 uppercase text-slate-400">PayPal Client Secret</label>
+                        <input type="password" id="paypal_client_secret" class="input-mini" placeholder="PayPal Client Secret">
+                    </div>
+                    <div id="paypal_environment_wrap">
+                        <label class="block text-[10px] font-bold mb-2 uppercase text-slate-400">PayPal Environment</label>
+                        <select id="paypal_environment" class="input-mini">
+                            <option value="live">Live</option>
+                            <option value="sandbox">Sandbox</option>
+                        </select>
+                    </div>
+                    <div id="authorize_api_login_id_wrap">
+                        <label class="block text-[10px] font-bold mb-2 uppercase text-slate-400">Authorize.Net API Login ID</label>
+                        <input type="password" id="authorize_api_login_id" class="input-mini" placeholder="API Login ID">
+                    </div>
+                    <div id="authorize_transaction_key_wrap">
+                        <label class="block text-[10px] font-bold mb-2 uppercase text-slate-400">Authorize.Net Transaction Key</label>
+                        <input type="password" id="authorize_transaction_key" class="input-mini" placeholder="Transaction Key">
+                    </div>
+                    <div id="authorize_client_key_wrap">
+                        <label class="block text-[10px] font-bold mb-2 uppercase text-slate-400">Authorize.Net Client Key (Optional)</label>
+                        <input type="password" id="authorize_client_key" class="input-mini" placeholder="Client Key">
+                    </div>
+                    <div id="authorize_environment_wrap">
+                        <label class="block text-[10px] font-bold mb-2 uppercase text-slate-400">Authorize.Net Environment</label>
+                        <select id="authorize_environment" class="input-mini">
+                            <option value="production">Production</option>
+                            <option value="sandbox">Sandbox</option>
+                        </select>
                     </div>
                     <div>
                         <label class="block text-[10px] font-bold mb-2 uppercase text-slate-400">CRM Webhook URL</label>
@@ -889,6 +925,13 @@ function updatePaymentProviderUI() {
     const squareAppWrap = document.getElementById('square_app_wrap');
     const squareTokenWrap = document.getElementById('square_token_wrap');
     const squareLocationWrap = document.getElementById('square_location_wrap');
+    const paypalClientIdWrap = document.getElementById('paypal_client_id_wrap');
+    const paypalClientSecretWrap = document.getElementById('paypal_client_secret_wrap');
+    const paypalEnvironmentWrap = document.getElementById('paypal_environment_wrap');
+    const authorizeApiLoginIdWrap = document.getElementById('authorize_api_login_id_wrap');
+    const authorizeTransactionKeyWrap = document.getElementById('authorize_transaction_key_wrap');
+    const authorizeClientKeyWrap = document.getElementById('authorize_client_key_wrap');
+    const authorizeEnvironmentWrap = document.getElementById('authorize_environment_wrap');
 
     if (stripeInput) {
         stripeInput.disabled = provider !== 'stripe';
@@ -898,6 +941,16 @@ function updatePaymentProviderUI() {
     [squareAppWrap, squareTokenWrap, squareLocationWrap].forEach((wrap) => {
         if (!wrap) return;
         wrap.style.display = provider === 'square' ? '' : 'none';
+    });
+
+    [paypalClientIdWrap, paypalClientSecretWrap, paypalEnvironmentWrap].forEach((wrap) => {
+        if (!wrap) return;
+        wrap.style.display = provider === 'paypal' ? '' : 'none';
+    });
+
+    [authorizeApiLoginIdWrap, authorizeTransactionKeyWrap, authorizeClientKeyWrap, authorizeEnvironmentWrap].forEach((wrap) => {
+        if (!wrap) return;
+        wrap.style.display = provider === 'authorize_net' ? '' : 'none';
     });
 }
 
@@ -1149,6 +1202,13 @@ async function loadFromBackend() {
             document.getElementById('square_application_id').value = data.square_application_id || '';
             document.getElementById('square_access_token').value = data.square_access_token || '';
             document.getElementById('square_location_id').value = data.square_location_id || '';
+            document.getElementById('paypal_client_id').value = data.paypal_client_id || '';
+            document.getElementById('paypal_client_secret').value = data.paypal_client_secret || '';
+            document.getElementById('paypal_environment').value = data.paypal_environment || 'live';
+            document.getElementById('authorize_api_login_id').value = data.authorize_api_login_id || '';
+            document.getElementById('authorize_transaction_key').value = data.authorize_transaction_key || '';
+            document.getElementById('authorize_client_key').value = data.authorize_client_key || '';
+            document.getElementById('authorize_environment').value = data.authorize_environment || 'production';
             document.getElementById('tax_rate').value = data.tax_rate ?? data.financials?.tax_rate ?? '';
             document.getElementById('service_fee_type').value = data.service_fee_type || data.financials?.service_fee_type || '';
             document.getElementById('service_fee_value').value = data.service_fee_value ?? data.financials?.service_fee_value ?? '';
@@ -1226,6 +1286,13 @@ async function saveToBackend() {
     const squareApplicationId = document.getElementById('square_application_id').value;
     const squareAccessToken = document.getElementById('square_access_token').value;
     const squareLocationId = document.getElementById('square_location_id').value;
+    const paypalClientId = document.getElementById('paypal_client_id').value;
+    const paypalClientSecret = document.getElementById('paypal_client_secret').value;
+    const paypalEnvironment = document.getElementById('paypal_environment').value;
+    const authorizeApiLoginId = document.getElementById('authorize_api_login_id').value;
+    const authorizeTransactionKey = document.getElementById('authorize_transaction_key').value;
+    const authorizeClientKey = document.getElementById('authorize_client_key').value;
+    const authorizeEnvironment = document.getElementById('authorize_environment').value;
     const webhookUrl = document.getElementById('webhook_url').value;
     const crmApiKey = document.getElementById('crm_api_key').value;
     const taxRate = document.getElementById('tax_rate').value;
@@ -1249,6 +1316,16 @@ async function saveToBackend() {
         return;
     }
 
+    if (paymentProvider === 'paypal' && (!paypalClientId.trim() || !paypalClientSecret.trim())) {
+        showNotification("PayPal client ID and client secret are required when PayPal is selected.", false);
+        return;
+    }
+
+    if (paymentProvider === 'authorize_net' && (!authorizeApiLoginId.trim() || !authorizeTransactionKey.trim())) {
+        showNotification("Authorize.Net API Login ID and transaction key are required when Authorize.Net is selected.", false);
+        return;
+    }
+
     const payload = {
         id: location_id,
         location_id,
@@ -1267,6 +1344,13 @@ async function saveToBackend() {
         square_application_id: squareApplicationId.trim(),
         square_access_token: squareAccessToken.trim(),
         square_location_id: squareLocationId.trim(),
+        paypal_client_id: paypalClientId.trim(),
+        paypal_client_secret: paypalClientSecret.trim(),
+        paypal_environment: paypalEnvironment,
+        authorize_api_login_id: authorizeApiLoginId.trim(),
+        authorize_transaction_key: authorizeTransactionKey.trim(),
+        authorize_client_key: authorizeClientKey.trim(),
+        authorize_environment: authorizeEnvironment,
         tax_rate: taxRate === '' ? null : (parseFloat(taxRate) || 0),
         service_fee_type: serviceFeeType || '',
         service_fee_value: serviceFeeValue === '' ? null : (parseFloat(serviceFeeValue) || 0),
@@ -1373,6 +1457,13 @@ function collectWizardPayload() {
     const squareApplicationId = document.getElementById('square_application_id').value;
     const squareAccessToken = document.getElementById('square_access_token').value;
     const squareLocationId = document.getElementById('square_location_id').value;
+    const paypalClientId = document.getElementById('paypal_client_id').value;
+    const paypalClientSecret = document.getElementById('paypal_client_secret').value;
+    const paypalEnvironment = document.getElementById('paypal_environment').value;
+    const authorizeApiLoginId = document.getElementById('authorize_api_login_id').value;
+    const authorizeTransactionKey = document.getElementById('authorize_transaction_key').value;
+    const authorizeClientKey = document.getElementById('authorize_client_key').value;
+    const authorizeEnvironment = document.getElementById('authorize_environment').value;
     const webhookUrl = document.getElementById('webhook_url').value;
     const crmApiKey = document.getElementById('crm_api_key').value;
     const taxRate = document.getElementById('tax_rate').value;
@@ -1393,6 +1484,14 @@ function collectWizardPayload() {
         throw new Error("Square access token and Square location ID are required when Square is selected.");
     }
 
+    if (paymentProvider === 'paypal' && (!paypalClientId.trim() || !paypalClientSecret.trim())) {
+        throw new Error("PayPal client ID and client secret are required when PayPal is selected.");
+    }
+
+    if (paymentProvider === 'authorize_net' && (!authorizeApiLoginId.trim() || !authorizeTransactionKey.trim())) {
+        throw new Error("Authorize.Net API Login ID and transaction key are required when Authorize.Net is selected.");
+    }
+
     return {
         id: location_id,
         location_id,
@@ -1411,6 +1510,13 @@ function collectWizardPayload() {
         square_application_id: squareApplicationId.trim(),
         square_access_token: squareAccessToken.trim(),
         square_location_id: squareLocationId.trim(),
+        paypal_client_id: paypalClientId.trim(),
+        paypal_client_secret: paypalClientSecret.trim(),
+        paypal_environment: paypalEnvironment,
+        authorize_api_login_id: authorizeApiLoginId.trim(),
+        authorize_transaction_key: authorizeTransactionKey.trim(),
+        authorize_client_key: authorizeClientKey.trim(),
+        authorize_environment: authorizeEnvironment,
         tax_rate: taxRate === '' ? null : (parseFloat(taxRate) || 0),
         service_fee_type: serviceFeeType || '',
         service_fee_value: serviceFeeValue === '' ? null : (parseFloat(serviceFeeValue) || 0),

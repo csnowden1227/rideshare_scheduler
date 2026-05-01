@@ -27,10 +27,24 @@ function normalizeStripeSecretKey(value) {
 function normalizePaymentProvider(value) {
   const normalized = String(value || "stripe").trim().toLowerCase();
   if (normalized === "square") return "square";
+  if (normalized === "paypal" || normalized === "pay_pal") return "paypal";
+  if (normalized === "authorize.net" || normalized === "authorize_net" || normalized === "authorizenet") {
+    return "authorize_net";
+  }
   if (normalized === "crm_invoice_only" || normalized === "invoice" || normalized === "invoice_only") {
     return "crm_invoice_only";
   }
   return "stripe";
+}
+
+function normalizePayPalEnvironment(value) {
+  const normalized = String(value || "live").trim().toLowerCase();
+  return normalized === "sandbox" ? "sandbox" : "live";
+}
+
+function normalizeAuthorizeEnvironment(value) {
+  const normalized = String(value || "production").trim().toLowerCase();
+  return normalized === "sandbox" ? "sandbox" : "production";
 }
 
 const envStripeSecretKey = normalizeStripeSecretKey(process.env.STRIPE_SECRET_KEY || "");
@@ -65,6 +79,7 @@ let crmLocationTokenColumnsReady = null;
 let profileCrmApiKeyColumnReady = null;
 let profilePricingColumnsReady = null;
 let profileEntitlementColumnsReady = null;
+let profilePaymentProviderColumnsReady = null;
 let saasAddonPurchasesTableReady = null;
 let dispatchTablesReady = null;
 let tripTrackingTablesReady = null;
@@ -435,6 +450,7 @@ async function ensureTripTrackingTables() {
       await pool.query(`ALTER TABLE trip_tracking_sessions ADD COLUMN IF NOT EXISTS customer_followup_sent_at TIMESTAMPTZ`);
       await pool.query(`ALTER TABLE trip_tracking_sessions ADD COLUMN IF NOT EXISTS driver_profile_id TEXT`);
       await pool.query(`ALTER TABLE trip_tracking_sessions ADD COLUMN IF NOT EXISTS driver_display_name TEXT`);
+      await pool.query(`ALTER TABLE trip_tracking_sessions ADD COLUMN IF NOT EXISTS driver_phone TEXT`);
       await pool.query(`ALTER TABLE trip_tracking_sessions ADD COLUMN IF NOT EXISTS driver_photo_data TEXT`);
 
       await pool.query(`
@@ -471,6 +487,7 @@ async function ensureTripTrackingTables() {
           location_id TEXT NOT NULL,
           vehicle_slot_id TEXT NOT NULL,
           driver_name TEXT NOT NULL,
+          driver_phone TEXT,
           driver_photo_data TEXT,
           created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
           updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -478,6 +495,46 @@ async function ensureTripTrackingTables() {
       `);
       await pool.query(`CREATE INDEX IF NOT EXISTS idx_driver_profiles_location_vehicle ON driver_profiles(location_id, vehicle_slot_id)`);
       await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_driver_profiles_location_vehicle_name ON driver_profiles(location_id, vehicle_slot_id, LOWER(driver_name))`);
+      await pool.query(`ALTER TABLE driver_profiles ADD COLUMN IF NOT EXISTS driver_phone TEXT`);
+      await pool.query(`
+        WITH ranked AS (
+          SELECT
+            id,
+            location_id,
+            LOWER(driver_name) AS driver_key,
+            ROW_NUMBER() OVER (
+              PARTITION BY location_id, LOWER(driver_name)
+              ORDER BY updated_at DESC NULLS LAST, created_at DESC NULLS LAST, id DESC
+            ) AS rn,
+            FIRST_VALUE(id) OVER (
+              PARTITION BY location_id, LOWER(driver_name)
+              ORDER BY updated_at DESC NULLS LAST, created_at DESC NULLS LAST, id DESC
+            ) AS keep_id
+          FROM driver_profiles
+        )
+        UPDATE trip_tracking_sessions AS s
+        SET driver_profile_id = ranked.keep_id
+        FROM ranked
+        WHERE s.driver_profile_id = ranked.id
+          AND ranked.rn > 1
+          AND ranked.keep_id <> ranked.id
+      `);
+      await pool.query(`
+        WITH ranked AS (
+          SELECT
+            id,
+            ROW_NUMBER() OVER (
+              PARTITION BY location_id, LOWER(driver_name)
+              ORDER BY updated_at DESC NULLS LAST, created_at DESC NULLS LAST, id DESC
+            ) AS rn
+          FROM driver_profiles
+        )
+        DELETE FROM driver_profiles AS d
+        USING ranked
+        WHERE d.id = ranked.id
+          AND ranked.rn > 1
+      `);
+      await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_driver_profiles_location_name ON driver_profiles(location_id, LOWER(driver_name))`);
     })().catch((err) => {
       tripTrackingTablesReady = null;
       throw err;
@@ -509,6 +566,24 @@ function createTrackingToken(prefix) {
   return `${prefix}_${randomBytes(24).toString("hex")}`;
 }
 
+async function ensureProfilePaymentProviderColumns() {
+  if (!profilePaymentProviderColumnsReady) {
+    profilePaymentProviderColumnsReady = (async () => {
+      await pool.query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS paypal_client_id TEXT`);
+      await pool.query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS paypal_client_secret TEXT`);
+      await pool.query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS paypal_environment TEXT`);
+      await pool.query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS authorize_api_login_id TEXT`);
+      await pool.query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS authorize_transaction_key TEXT`);
+      await pool.query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS authorize_client_key TEXT`);
+      await pool.query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS authorize_environment TEXT`);
+    })().catch((err) => {
+      profilePaymentProviderColumnsReady = null;
+      throw err;
+    });
+  }
+  return profilePaymentProviderColumnsReady;
+}
+
 async function ensureProfilePricingColumns() {
   if (!profilePricingColumnsReady) {
     profilePricingColumnsReady = (async () => {
@@ -524,6 +599,10 @@ async function ensureProfilePricingColumns() {
 
 function normalizeDriverName(value) {
   return String(value || "").trim().replace(/\s+/g, " ").slice(0, 120);
+}
+
+function normalizeDriverPhone(value) {
+  return String(value || "").trim().replace(/\s+/g, " ").slice(0, 40);
 }
 
 function normalizeImageDataUrl(value, maxLength = 2_500_000) {
@@ -563,6 +642,7 @@ function buildDriverProfileShape(profile) {
   return {
     id: profile.id,
     driver_name: profile.driver_name || "",
+    driver_phone: profile.driver_phone || "",
     driver_photo_data: profile.driver_photo_data || "",
     vehicle_slot_id: profile.vehicle_slot_id || "",
     location_id: profile.location_id || "",
@@ -641,6 +721,14 @@ async function getTrackingSessionByToken({ token, role = "customer" }) {
       b.status AS booking_status,
       p.business_name,
       p.maps_api_key,
+      p.plan_name,
+      p.addon_branding_unlocked,
+      p.addon_funnel_unlocked,
+      p.addon_extra_vehicle_count,
+      p.brand_color_primary,
+      p.brand_color_secondary,
+      p.brand_color_accent,
+      p.widget_tagline,
       p.payment_provider,
       p.fleet
      FROM trip_tracking_sessions s
@@ -676,6 +764,14 @@ async function getTrackingSessionById(sessionId) {
       p.business_name,
       p.maps_api_key,
       p.crm_webhook_url,
+      p.plan_name,
+      p.addon_branding_unlocked,
+      p.addon_funnel_unlocked,
+      p.addon_extra_vehicle_count,
+      p.brand_color_primary,
+      p.brand_color_secondary,
+      p.brand_color_accent,
+      p.widget_tagline,
       p.payment_provider,
       p.fleet
      FROM trip_tracking_sessions s
@@ -735,6 +831,7 @@ function buildTrackingResponsePayload(session, { includeDriverToken = false } = 
     assigned_driver: {
       id: session.driver_profile_id || null,
       name: session.driver_display_name || "",
+      phone: session.driver_phone || "",
       photo_data: session.driver_photo_data || "",
     },
     vehicle: {
@@ -765,6 +862,7 @@ function buildTrackingSessionClientShape(session) {
   const vehicleRecord = getVehicleRecordForSession(session);
   const vehicleDisplayName = buildVehicleDisplayName(vehicleRecord, session.vehicle_slot_id || "");
   const trackingUrls = buildTrackingUrls(null, session.driver_token, session.customer_token);
+  const branding = buildPublicBrandingFromProfile(session);
   return {
     id: session.id,
     tracking_session_id: session.id,
@@ -802,6 +900,7 @@ function buildTrackingSessionClientShape(session) {
     booking_status: session.booking_status || "",
     driver_profile_id: session.driver_profile_id || null,
     driver_name: session.driver_display_name || "",
+    driver_phone: session.driver_phone || "",
     driver_photo_data: session.driver_photo_data || "",
     business_name: session.business_name || "Chauffeur Deluxe",
     maps_api_key: session.maps_api_key || "",
@@ -809,6 +908,10 @@ function buildTrackingSessionClientShape(session) {
     driver_tracking_token: session.driver_token,
     payment_provider: normalizePaymentProvider(session.payment_provider || "stripe"),
     follow_up_url: trackingUrls.follow_up_url,
+    branding: {
+      ...branding,
+      plan_name: normalizePlanName(session.plan_name || "starter"),
+    },
   };
 }
 
@@ -831,6 +934,7 @@ function buildTrackingStatusWebhookPayload({ req, session, status }) {
           ? "ride_completed"
           : "tracking_status_changed",
     send_customer_tracking_sms: status === "en_route_to_pickup",
+    send_driver_tracking_sms: status === "en_route_to_pickup" && Boolean(String(session.driver_phone || "").trim()),
     send_post_ride_followup_sms: status === "completed",
     business_name: session.business_name || "Chauffeur Deluxe",
     customer: {
@@ -875,6 +979,7 @@ function buildTrackingStatusWebhookPayload({ req, session, status }) {
     assigned_driver: {
       id: session.driver_profile_id || null,
       name: session.driver_display_name || null,
+      phone: session.driver_phone || null,
       photo_data: session.driver_photo_data || null,
     },
     vehicle: {
@@ -891,14 +996,13 @@ function buildTrackingStatusWebhookPayload({ req, session, status }) {
   };
 }
 
-async function listDriverProfiles(locationId, vehicleSlotId) {
+async function listDriverProfiles(locationId) {
   const result = await pool.query(
-    `SELECT id, location_id, vehicle_slot_id, driver_name, driver_photo_data, created_at, updated_at
+    `SELECT id, location_id, vehicle_slot_id, driver_name, driver_phone, driver_photo_data, created_at, updated_at
      FROM driver_profiles
      WHERE location_id = $1
-       AND vehicle_slot_id = $2
      ORDER BY LOWER(driver_name) ASC, created_at ASC`,
-    [String(locationId || "").trim(), String(vehicleSlotId || "").trim()]
+    [String(locationId || "").trim()]
   );
   return result.rows.map(buildDriverProfileShape);
 }
@@ -1102,6 +1206,24 @@ function sanitizeBrandingByEntitlements({
     brand_color_accent: brandingEnabled ? (brandColorAccent || DEFAULT_BRAND_COLORS.accent) : DEFAULT_BRAND_COLORS.accent,
     widget_tagline: brandingEnabled ? (widgetTagline || "") : "",
   };
+}
+
+function buildPublicBrandingFromProfile(profile = {}) {
+  const entitlements = buildPlanEntitlements({
+    planName: profile.plan_name || "starter",
+    addonBrandingUnlocked: profile.addon_branding_unlocked,
+    addonFunnelUnlocked: profile.addon_funnel_unlocked,
+    addonExtraVehicleCount: profile.addon_extra_vehicle_count,
+  });
+
+  return sanitizeBrandingByEntitlements({
+    businessLogo: profile.business_logo,
+    brandColorPrimary: profile.brand_color_primary,
+    brandColorSecondary: profile.brand_color_secondary,
+    brandColorAccent: profile.brand_color_accent,
+    widgetTagline: profile.widget_tagline,
+    entitlements,
+  });
 }
 
 function sanitizeFleetByEntitlements(fleet = [], entitlements = {}) {
@@ -1724,14 +1846,24 @@ async function getPaymentProfileForLocation(locationId) {
     squareApplicationId: "",
     squareAccessToken: "",
     squareLocationId: "",
+    paypalClientId: "",
+    paypalClientSecret: "",
+    paypalEnvironment: "live",
+    authorizeApiLoginId: "",
+    authorizeTransactionKey: "",
+    authorizeClientKey: "",
+    authorizeEnvironment: "production",
   };
 
   if (!locationId) return fallback;
 
   try {
+    await ensureProfilePaymentProviderColumns();
     const profileIdColumn = await getProfileIdColumn();
     const result = await pool.query(
-      `SELECT payment_provider, stripe_secret_key, square_application_id, square_access_token, square_location_id
+      `SELECT payment_provider, stripe_secret_key, square_application_id, square_access_token, square_location_id,
+              paypal_client_id, paypal_client_secret, paypal_environment,
+              authorize_api_login_id, authorize_transaction_key, authorize_client_key, authorize_environment
        FROM profiles
        WHERE ${profileIdColumn} = $1
        LIMIT 1`,
@@ -1744,10 +1876,262 @@ async function getPaymentProfileForLocation(locationId) {
       squareApplicationId: String(row.square_application_id || "").trim(),
       squareAccessToken: String(row.square_access_token || "").trim(),
       squareLocationId: String(row.square_location_id || "").trim(),
+      paypalClientId: String(row.paypal_client_id || "").trim(),
+      paypalClientSecret: String(row.paypal_client_secret || "").trim(),
+      paypalEnvironment: normalizePayPalEnvironment(row.paypal_environment),
+      authorizeApiLoginId: String(row.authorize_api_login_id || "").trim(),
+      authorizeTransactionKey: String(row.authorize_transaction_key || "").trim(),
+      authorizeClientKey: String(row.authorize_client_key || "").trim(),
+      authorizeEnvironment: normalizeAuthorizeEnvironment(row.authorize_environment),
     };
   } catch {
     return fallback;
   }
+}
+
+function getPayPalApiBase(environment = "live") {
+  return normalizePayPalEnvironment(environment) === "sandbox"
+    ? "https://api-m.sandbox.paypal.com"
+    : "https://api-m.paypal.com";
+}
+
+function getAuthorizeApiBase(environment = "production") {
+  return normalizeAuthorizeEnvironment(environment) === "sandbox"
+    ? "https://apitest.authorize.net"
+    : "https://api.authorize.net";
+}
+
+function getAuthorizeHostedPaymentBase(environment = "production") {
+  return normalizeAuthorizeEnvironment(environment) === "sandbox"
+    ? "https://test.authorize.net"
+    : "https://accept.authorize.net";
+}
+
+function buildBalancePaymentEntryUrl(bookingId) {
+  const baseUrl = getPublicAppUrl();
+  return `${baseUrl}/pay/balance/${encodeURIComponent(String(bookingId))}`;
+}
+
+function canGenerateHostedPaymentLink(paymentProfile = {}) {
+  switch (normalizePaymentProvider(paymentProfile.provider)) {
+    case "stripe":
+      return Boolean(paymentProfile.stripeSecretKey);
+    case "square":
+      return Boolean(paymentProfile.squareAccessToken && paymentProfile.squareLocationId);
+    case "paypal":
+      return Boolean(paymentProfile.paypalClientId && paymentProfile.paypalClientSecret);
+    case "authorize_net":
+      return Boolean(paymentProfile.authorizeApiLoginId && paymentProfile.authorizeTransactionKey);
+    default:
+      return false;
+  }
+}
+
+async function getPayPalAccessToken(paymentProfile) {
+  const clientId = String(paymentProfile?.paypalClientId || "").trim();
+  const clientSecret = String(paymentProfile?.paypalClientSecret || "").trim();
+  if (!clientId || !clientSecret) {
+    throw new Error("PayPal is not configured on this account.");
+  }
+
+  const tokenResponse = await fetch(`${getPayPalApiBase(paymentProfile.paypalEnvironment)}/v1/oauth2/token`, {
+    method: "POST",
+    headers: {
+      Authorization: `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString("base64")}`,
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: "grant_type=client_credentials",
+  });
+  const tokenJson = await tokenResponse.json().catch(() => ({}));
+  if (!tokenResponse.ok || !tokenJson.access_token) {
+    throw new Error(tokenJson.error_description || tokenJson.error || "Unable to get a PayPal access token.");
+  }
+  return tokenJson.access_token;
+}
+
+async function createSquarePaymentLinkForBooking({
+  paymentProfile,
+  bookingRow,
+  amount,
+  successUrl,
+}) {
+  const response = await fetch("https://connect.squareup.com/v2/online-checkout/payment-links", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${paymentProfile.squareAccessToken}`,
+      "Content-Type": "application/json",
+      "Square-Version": "2026-01-22",
+    },
+    body: JSON.stringify({
+      idempotency_key: randomUUID(),
+      description: `Booking #${bookingRow.id} balance payment`,
+      order: {
+        location_id: paymentProfile.squareLocationId,
+        line_items: [
+          {
+            name: `${bookingRow.business_name || "Chauffeur"} reservation balance`,
+            quantity: "1",
+            base_price_money: {
+              amount: Math.round(Number(amount) * 100),
+              currency: "USD",
+            },
+          },
+        ],
+      },
+      checkout_options: {
+        redirect_url: successUrl,
+      },
+      pre_populated_data: {
+        buyer_email: bookingRow.customer_email || undefined,
+      },
+      payment_note: `Balance payment for booking ${bookingRow.id}`,
+    }),
+  });
+  const json = await response.json().catch(() => ({}));
+  if (!response.ok || !json.payment_link?.url) {
+    throw new Error(json?.errors?.[0]?.detail || "Unable to create a Square payment link.");
+  }
+  return {
+    url: json.payment_link.url,
+    paymentLinkId: json.payment_link.id || null,
+    orderId: json.related_resources?.orders?.[0]?.id || json.payment_link.order_id || null,
+  };
+}
+
+async function createPayPalApprovalLinkForBooking({
+  paymentProfile,
+  bookingRow,
+  amount,
+  successUrl,
+  cancelUrl,
+}) {
+  const accessToken = await getPayPalAccessToken(paymentProfile);
+  const response = await fetch(`${getPayPalApiBase(paymentProfile.paypalEnvironment)}/v2/checkout/orders`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+      "PayPal-Request-Id": randomUUID(),
+    },
+    body: JSON.stringify({
+      intent: "CAPTURE",
+      purchase_units: [
+        {
+          reference_id: `booking-${bookingRow.id}`,
+          custom_id: String(bookingRow.id),
+          description: `${bookingRow.business_name || "Chauffeur"} balance payment`,
+          amount: {
+            currency_code: "USD",
+            value: Number(amount).toFixed(2),
+          },
+        },
+      ],
+      payment_source: {
+        paypal: {
+          experience_context: {
+            brand_name: bookingRow.business_name || "Chauffeur",
+            return_url: successUrl,
+            cancel_url: cancelUrl,
+            user_action: "PAY_NOW",
+          },
+        },
+      },
+    }),
+  });
+  const json = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(json?.message || json?.details?.[0]?.description || "Unable to create a PayPal order.");
+  }
+  const approvalLink = Array.isArray(json.links)
+    ? json.links.find((link) => link.rel === "payer-action" || link.rel === "approve")
+    : null;
+  if (!approvalLink?.href) {
+    throw new Error("PayPal did not return an approval link.");
+  }
+  return {
+    url: approvalLink.href,
+    orderId: json.id || null,
+  };
+}
+
+async function createAuthorizeHostedPaymentToken({
+  paymentProfile,
+  bookingRow,
+  amount,
+  successUrl,
+  cancelUrl,
+}) {
+  const response = await fetch(`${getAuthorizeApiBase(paymentProfile.authorizeEnvironment)}/xml/v1/request.api`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      getHostedPaymentPageRequest: {
+        merchantAuthentication: {
+          name: paymentProfile.authorizeApiLoginId,
+          transactionKey: paymentProfile.authorizeTransactionKey,
+        },
+        transactionRequest: {
+          transactionType: "authCaptureTransaction",
+          amount: Number(amount).toFixed(2),
+          customer: {
+            email: bookingRow.customer_email || undefined,
+          },
+          billTo: {
+            firstName: bookingRow.first_name || undefined,
+            lastName: bookingRow.last_name || undefined,
+          },
+          order: {
+            invoiceNumber: String(bookingRow.id),
+            description: `${bookingRow.business_name || "Chauffeur"} balance payment`,
+          },
+        },
+        hostedPaymentSettings: {
+          setting: [
+            {
+              settingName: "hostedPaymentReturnOptions",
+              settingValue: JSON.stringify({
+                showReceipt: false,
+                url: successUrl,
+                urlText: "Continue",
+                cancelUrl,
+                cancelUrlText: "Cancel",
+              }),
+            },
+            {
+              settingName: "hostedPaymentButtonOptions",
+              settingValue: JSON.stringify({ text: "Pay Balance" }),
+            },
+            {
+              settingName: "hostedPaymentOrderOptions",
+              settingValue: JSON.stringify({
+                show: true,
+                merchantName: bookingRow.business_name || "Chauffeur",
+              }),
+            },
+            {
+              settingName: "hostedPaymentCustomerOptions",
+              settingValue: JSON.stringify({
+                showEmail: true,
+                requiredEmail: false,
+              }),
+            },
+          ],
+        },
+      },
+    }),
+  });
+  const json = await response.json().catch(() => ({}));
+  const token = json?.token;
+  if (!response.ok || !token) {
+    throw new Error(
+      json?.messages?.message?.[0]?.text ||
+      json?.messages?.message?.text ||
+      "Unable to create an Authorize.Net hosted payment token."
+    );
+  }
+  return token;
 }
 
 async function syncFixedRates(client, location_id, fixed_rates = []) {
@@ -1942,8 +2326,269 @@ app.get("/ride-follow-up.html", (req, res) => {
 app.get("/page-directory.html", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "page-directory.html"));
 });
+app.get("/crm-customer-hub.html", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "crm-customer-hub.html"));
+});
+app.get("/crm-pro-app-invite.html", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "crm-pro-app-invite.html"));
+});
 app.get("/test-run.html", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "test-run.html"));
+});
+app.get("/pay/balance/:bookingId", async (req, res) => {
+  try {
+    const bookingId = Number(req.params.bookingId || 0);
+    if (!bookingId) {
+      return res.status(400).send("Invalid booking ID.");
+    }
+
+    const bookingLookup = await pool.query(
+      `SELECT b.id, b.location_id, b.first_name, b.last_name, b.email AS customer_email, b.phone,
+              b.total_price, b.deposit_amount, b.deposit_percent, b.start_time, b.vehicle_slot_id, b.balance_due,
+              p.business_name
+       FROM bookings b
+       LEFT JOIN profiles p ON p.location_id = b.location_id
+       WHERE b.id = $1
+       LIMIT 1`,
+      [bookingId]
+    );
+    const bookingRow = bookingLookup.rows[0];
+    if (!bookingRow) {
+      return res.status(404).send("Booking not found.");
+    }
+
+    const totalPrice = Number(bookingRow.total_price || 0);
+    const depositAmount = Number(bookingRow.deposit_amount || 0);
+    const balanceDue = Number((totalPrice - depositAmount).toFixed(2));
+    if (balanceDue <= 0) {
+      return res.redirect(appendQueryParams(`${getPublicAppUrl(req)}/payment-complete.html`, {
+        booking_id: bookingId,
+        provider: normalizePaymentProvider((await getPaymentProfileForLocation(bookingRow.location_id)).provider),
+      }));
+    }
+
+    const paymentProfile = await getPaymentProfileForLocation(bookingRow.location_id);
+    const provider = normalizePaymentProvider(paymentProfile.provider);
+    if (!canGenerateHostedPaymentLink(paymentProfile)) {
+      return res.status(400).send("The selected payment provider is not fully configured for this account.");
+    }
+
+    const baseUrl = getPublicAppUrl(req);
+    const cancelUrl = appendQueryParams(`${baseUrl}/payment-cancelled.html`, {
+      booking_id: bookingId,
+      provider,
+    });
+
+    if (provider === "stripe") {
+      const successUrl = appendQueryParams(`${baseUrl}/payment-complete.html`, {
+        checkout: "success",
+        session_id: "{CHECKOUT_SESSION_ID}",
+        booking_id: bookingId,
+        provider,
+      });
+      const balanceDueDeadline = bookingRow.start_time
+        ? new Date(new Date(bookingRow.start_time).getTime() - (48 * 60 * 60 * 1000)).toISOString()
+        : null;
+      const session = await createStripeCheckoutSessionForAmount({
+        apiKey: paymentProfile.stripeSecretKey,
+        amount: balanceDue,
+        customerEmail: bookingRow.customer_email || null,
+        bookingId: bookingId,
+        locationId: bookingRow.location_id || null,
+        totalPrice,
+        depositAmount: totalPrice,
+        depositPercent: 100,
+        paymentStatus: "paid_in_full",
+        paymentChoice: "balance",
+        balanceDueDeadline,
+        title: `Rideshare Chauffeur Reservation ${(bookingRow.business_name || "Chauffeur")} Balance`,
+        description: `${bookingRow.vehicle_slot_id || "Private ride"} balance payment`,
+        successUrl,
+        cancelUrl,
+      });
+      return res.redirect(session?.url || cancelUrl);
+    }
+
+    if (provider === "square") {
+      const squareResult = await createSquarePaymentLinkForBooking({
+        paymentProfile,
+        bookingRow,
+        amount: balanceDue,
+        successUrl: appendQueryParams(`${baseUrl}/payment-complete.html`, {
+          booking_id: bookingId,
+          provider,
+        }),
+      });
+      const redirectUrl = squareResult.url;
+      return res.redirect(redirectUrl);
+    }
+
+    if (provider === "paypal") {
+      const payPalResult = await createPayPalApprovalLinkForBooking({
+        paymentProfile,
+        bookingRow,
+        amount: balanceDue,
+        successUrl: appendQueryParams(`${baseUrl}/payment-complete.html`, {
+          booking_id: bookingId,
+          provider,
+        }),
+        cancelUrl,
+      });
+      return res.redirect(payPalResult.url);
+    }
+
+    if (provider === "authorize_net") {
+      const token = await createAuthorizeHostedPaymentToken({
+        paymentProfile,
+        bookingRow,
+        amount: balanceDue,
+        successUrl: appendQueryParams(`${baseUrl}/payment-complete.html`, {
+          booking_id: bookingId,
+          provider,
+        }),
+        cancelUrl,
+      });
+      const actionUrl = `${getAuthorizeHostedPaymentBase(paymentProfile.authorizeEnvironment)}/payment/payment`;
+      return res.status(200).send(`<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Redirecting to secure checkout...</title></head>
+<body style="font-family:Arial,Helvetica,sans-serif;padding:24px;">
+  <p>Redirecting you to secure checkout...</p>
+  <form id="authorize-payment-form" method="post" action="${actionUrl}">
+    <input type="hidden" name="token" value="${String(token).replace(/"/g, "&quot;")}">
+  </form>
+  <script>document.getElementById('authorize-payment-form').submit();</script>
+</body>
+</html>`);
+    }
+
+    return res.status(400).send("This account is not configured for hosted checkout.");
+  } catch (err) {
+    console.error("Balance payment redirect error:", err);
+    return res.status(500).send(err.message || "Unable to open the payment page.");
+  }
+});
+app.get("/pay/test-run/:bookingId", async (req, res) => {
+  try {
+    const bookingId = Number(req.params.bookingId || 0);
+    if (!bookingId) {
+      return res.status(400).send("Invalid booking ID.");
+    }
+
+    const bookingLookup = await pool.query(
+      `SELECT b.id, b.location_id, b.first_name, b.last_name, b.email AS customer_email, b.phone,
+              b.total_price, b.deposit_amount, b.deposit_percent, b.start_time, b.vehicle_slot_id, b.booking_mode,
+              p.business_name
+       FROM bookings b
+       LEFT JOIN profiles p ON p.location_id = b.location_id
+       WHERE b.id = $1
+       LIMIT 1`,
+      [bookingId]
+    );
+    const bookingRow = bookingLookup.rows[0];
+    if (!bookingRow) {
+      return res.status(404).send("Booking not found.");
+    }
+    if (String(bookingRow.booking_mode || "") !== "test_run") {
+      return res.status(400).send("This checkout link is only valid for test-run bookings.");
+    }
+
+    const paymentProfile = await getPaymentProfileForLocation(bookingRow.location_id);
+    const provider = normalizePaymentProvider(paymentProfile.provider);
+    if (!canGenerateHostedPaymentLink(paymentProfile)) {
+      return res.status(400).send("The selected payment provider is not fully configured for this account.");
+    }
+
+    const returnUrl = sanitizeReturnUrl(req.query.return_url, req);
+    const baseUrl = getPublicAppUrl(req);
+    const successUrlBase = appendQueryParams(returnUrl, {
+      checkout: "success",
+      booking_id: bookingId,
+      test_run: "1",
+      location_id: bookingRow.location_id,
+      provider,
+    });
+    const cancelUrl = appendQueryParams(returnUrl, {
+      checkout: "cancel",
+      booking_id: bookingId,
+      test_run: "1",
+      location_id: bookingRow.location_id,
+      provider,
+    });
+    const totalPrice = Number(bookingRow.total_price || 0);
+
+    if (provider === "stripe") {
+      const successUrl = appendQueryParams(successUrlBase, {
+        session_id: "{CHECKOUT_SESSION_ID}",
+      });
+      const session = await createStripeCheckoutSessionForAmount({
+        apiKey: paymentProfile.stripeSecretKey,
+        amount: totalPrice,
+        customerEmail: bookingRow.customer_email || null,
+        bookingId,
+        locationId: bookingRow.location_id || null,
+        totalPrice,
+        depositAmount: totalPrice,
+        depositPercent: 100,
+        paymentStatus: "paid_in_full",
+        paymentChoice: "full",
+        balanceDueDeadline: null,
+        title: `Rideshare Test Run ${(bookingRow.business_name || "Account")} Payment`,
+        description: `${bookingRow.vehicle_slot_id || "Vehicle"} test run payment`,
+        successUrl,
+        cancelUrl,
+      });
+      return res.redirect(session?.url || cancelUrl);
+    }
+
+    if (provider === "square") {
+      const squareResult = await createSquarePaymentLinkForBooking({
+        paymentProfile,
+        bookingRow,
+        amount: totalPrice,
+        successUrl: successUrlBase,
+      });
+      return res.redirect(squareResult.url);
+    }
+
+    if (provider === "paypal") {
+      const payPalResult = await createPayPalApprovalLinkForBooking({
+        paymentProfile,
+        bookingRow,
+        amount: totalPrice,
+        successUrl: successUrlBase,
+        cancelUrl,
+      });
+      return res.redirect(payPalResult.url);
+    }
+
+    if (provider === "authorize_net") {
+      const token = await createAuthorizeHostedPaymentToken({
+        paymentProfile,
+        bookingRow,
+        amount: totalPrice,
+        successUrl: successUrlBase,
+        cancelUrl,
+      });
+      const actionUrl = `${getAuthorizeHostedPaymentBase(paymentProfile.authorizeEnvironment)}/payment/payment`;
+      return res.status(200).send(`<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Redirecting to secure checkout...</title></head>
+<body style="font-family:Arial,Helvetica,sans-serif;padding:24px;">
+  <p>Redirecting you to secure checkout...</p>
+  <form id="authorize-test-run-form" method="post" action="${actionUrl}">
+    <input type="hidden" name="token" value="${String(token).replace(/"/g, "&quot;")}">
+  </form>
+  <script>document.getElementById('authorize-test-run-form').submit();</script>
+</body>
+</html>`);
+    }
+
+    return res.status(400).send("This account is not configured for hosted test checkout.");
+  } catch (err) {
+    console.error("Test run redirect error:", err);
+    return res.status(500).send(err.message || "Unable to open the practice checkout.");
+  }
 });
 app.use(express.static(path.join(__dirname, "public")));
 
@@ -1981,6 +2626,13 @@ async function saveConfigHandler(req, res) {
       square_application_id,
       square_access_token,
       square_location_id,
+      paypal_client_id,
+      paypal_client_secret,
+      paypal_environment,
+      authorize_api_login_id,
+      authorize_transaction_key,
+      authorize_client_key,
+      authorize_environment,
       tax_rate,
       service_fee_type,
       service_fee_value,
@@ -1999,6 +2651,7 @@ async function saveConfigHandler(req, res) {
     await ensureProfileCrmApiKeyColumn();
     await ensureProfilePricingColumns();
     await ensureProfileEntitlementColumns();
+    await ensureProfilePaymentProviderColumns();
     const profileColumns = await getTableColumns("profiles");
     const profileIdColumn = profileColumns.has("location_id") ? "location_id" : "id";
     const existingProfileRes = await client.query(
@@ -2045,6 +2698,13 @@ async function saveConfigHandler(req, res) {
     pushProfileField("square_application_id", square_application_id || null);
     pushProfileField("square_access_token", square_access_token || null);
     pushProfileField("square_location_id", square_location_id || null);
+    pushProfileField("paypal_client_id", paypal_client_id || null);
+    pushProfileField("paypal_client_secret", paypal_client_secret || null);
+    pushProfileField("paypal_environment", normalizePayPalEnvironment(paypal_environment));
+    pushProfileField("authorize_api_login_id", authorize_api_login_id || null);
+    pushProfileField("authorize_transaction_key", authorize_transaction_key || null);
+    pushProfileField("authorize_client_key", authorize_client_key || null);
+    pushProfileField("authorize_environment", normalizeAuthorizeEnvironment(authorize_environment));
     pushProfileField("tax_rate", parseOptionalRate(tax_rate));
     pushProfileField("service_fee_type", normalizeServiceFeeType(service_fee_type) || null);
     pushProfileField("service_fee_value", parseOptionalRate(service_fee_value));
@@ -2132,6 +2792,12 @@ async function saveConfigHandler(req, res) {
         hasStripeKey: Boolean(String(stripe_secret_key || "").trim()),
         hasSquareAccessToken: Boolean(String(square_access_token || "").trim()),
         hasSquareLocationId: Boolean(String(square_location_id || "").trim()),
+        hasPayPalClientId: Boolean(String(paypal_client_id || "").trim()),
+        hasPayPalClientSecret: Boolean(String(paypal_client_secret || "").trim()),
+        payPalEnvironment: normalizePayPalEnvironment(paypal_environment),
+        hasAuthorizeApiLoginId: Boolean(String(authorize_api_login_id || "").trim()),
+        hasAuthorizeTransactionKey: Boolean(String(authorize_transaction_key || "").trim()),
+        authorizeEnvironment: normalizeAuthorizeEnvironment(authorize_environment),
         taxRate: parseFloat(tax_rate) || 0,
         serviceLat: service_lat,
         serviceLng: service_lng,
@@ -2172,6 +2838,12 @@ function buildWizardSyncPayload({
   hasStripeKey,
   hasSquareAccessToken,
   hasSquareLocationId,
+  hasPayPalClientId,
+  hasPayPalClientSecret,
+  payPalEnvironment,
+  hasAuthorizeApiLoginId,
+  hasAuthorizeTransactionKey,
+  authorizeEnvironment,
   taxRate,
   serviceLat,
   serviceLng,
@@ -2197,6 +2869,12 @@ function buildWizardSyncPayload({
       stripe_secret_key_present: Boolean(hasStripeKey),
       square_access_token_present: Boolean(hasSquareAccessToken),
       square_location_id_present: Boolean(hasSquareLocationId),
+      paypal_client_id_present: Boolean(hasPayPalClientId),
+      paypal_client_secret_present: Boolean(hasPayPalClientSecret),
+      paypal_environment: normalizePayPalEnvironment(payPalEnvironment),
+      authorize_api_login_id_present: Boolean(hasAuthorizeApiLoginId),
+      authorize_transaction_key_present: Boolean(hasAuthorizeTransactionKey),
+      authorize_environment: normalizeAuthorizeEnvironment(authorizeEnvironment),
       tax_rate: Number(taxRate || 0),
       service_area: {
         lat: serviceLat != null ? Number(serviceLat) : null,
@@ -4145,6 +4823,7 @@ app.get("/api/test-run/config/:location_id", async (req, res) => {
   try {
     await ensureProfilePricingColumns();
     await ensureProfileEntitlementColumns();
+    await ensureProfilePaymentProviderColumns();
 
     const locationId = String(req.params.location_id || "").trim();
     if (!locationId) {
@@ -4178,6 +4857,10 @@ app.get("/api/test-run/config/:location_id", async (req, res) => {
       location_id: locationId,
       business_name: profile.business_name || "",
       payment_provider: normalizePaymentProvider(profile.payment_provider),
+      branding: {
+        ...buildPublicBrandingFromProfile(profile),
+        plan_name: normalizePlanName(profile.plan_name || "starter"),
+      },
       tax_rate: profile.tax_rate != null ? parseFloat(profile.tax_rate) : null,
       service_fee_type: normalizeServiceFeeType(profile.service_fee_type),
       service_fee_value: profile.service_fee_value != null ? parseFloat(profile.service_fee_value) : null,
@@ -4211,13 +4894,14 @@ app.get("/api/tracking/driver-profiles", async (req, res) => {
       return res.status(404).json({ error: "Tracking session not found." });
     }
 
-    const profiles = await listDriverProfiles(session.location_id, session.vehicle_slot_id);
+    const profiles = await listDriverProfiles(session.location_id);
     return res.json({
       success: true,
       profiles,
       active_profile: buildDriverProfileShape({
         id: session.driver_profile_id,
         driver_name: session.driver_display_name,
+        driver_phone: session.driver_phone,
         driver_photo_data: session.driver_photo_data,
         vehicle_slot_id: session.vehicle_slot_id,
         location_id: session.location_id,
@@ -4237,6 +4921,7 @@ app.post("/api/tracking/driver-profile/select", async (req, res) => {
     const token = String(req.body.token || "").trim();
     const profileId = String(req.body.profile_id || "").trim();
     const driverName = normalizeDriverName(req.body.driver_name);
+    const driverPhone = normalizeDriverPhone(req.body.driver_phone);
     const driverPhotoData = normalizeImageDataUrl(req.body.driver_photo_data);
 
     if (!token) {
@@ -4245,6 +4930,9 @@ app.post("/api/tracking/driver-profile/select", async (req, res) => {
 
     if (!profileId && !driverName) {
       return res.status(400).json({ error: "Choose a saved driver or enter a driver name." });
+    }
+    if (!driverPhone) {
+      return res.status(400).json({ error: "Enter the driver mobile number before saving." });
     }
 
     client = await pool.connect();
@@ -4269,64 +4957,84 @@ app.post("/api/tracking/driver-profile/select", async (req, res) => {
 
     if (profileId) {
       const profileLookup = await client.query(
-        `SELECT id, location_id, vehicle_slot_id, driver_name, driver_photo_data, created_at, updated_at
+        `SELECT id, location_id, vehicle_slot_id, driver_name, driver_phone, driver_photo_data, created_at, updated_at
          FROM driver_profiles
          WHERE id = $1
            AND location_id = $2
-           AND vehicle_slot_id = $3
          LIMIT 1`,
-        [profileId, sessionRecord.location_id, sessionRecord.vehicle_slot_id]
+        [profileId, sessionRecord.location_id]
       );
 
       if (!profileLookup.rows.length) {
         await client.query("ROLLBACK");
-        return res.status(404).json({ error: "Saved driver was not found for this vehicle slot." });
+        return res.status(404).json({ error: "Saved driver was not found for this account." });
       }
 
       chosenProfile = profileLookup.rows[0];
 
-      if (driverPhotoData && driverPhotoData !== String(chosenProfile.driver_photo_data || "")) {
+      if (
+        String(sessionRecord.vehicle_slot_id || "") !== String(chosenProfile.vehicle_slot_id || "") ||
+        driverPhone !== String(chosenProfile.driver_phone || "") ||
+        (driverPhotoData && driverPhotoData !== String(chosenProfile.driver_photo_data || ""))
+      ) {
         const updatedProfile = await client.query(
           `UPDATE driver_profiles
-           SET driver_photo_data = $2,
+           SET vehicle_slot_id = $2,
+               driver_phone = $3,
+               driver_photo_data = $4,
                updated_at = NOW()
            WHERE id = $1
-           RETURNING id, location_id, vehicle_slot_id, driver_name, driver_photo_data, created_at, updated_at`,
-          [chosenProfile.id, driverPhotoData]
+           RETURNING id, location_id, vehicle_slot_id, driver_name, driver_phone, driver_photo_data, created_at, updated_at`,
+          [
+            chosenProfile.id,
+            sessionRecord.vehicle_slot_id,
+            driverPhone,
+            driverPhotoData || chosenProfile.driver_photo_data || null
+          ]
         );
         chosenProfile = updatedProfile.rows[0];
       }
     } else {
       const existingProfile = await client.query(
-        `SELECT id, location_id, vehicle_slot_id, driver_name, driver_photo_data, created_at, updated_at
+        `SELECT id, location_id, vehicle_slot_id, driver_name, driver_phone, driver_photo_data, created_at, updated_at
          FROM driver_profiles
          WHERE location_id = $1
-           AND vehicle_slot_id = $2
-           AND LOWER(driver_name) = LOWER($3)
+           AND LOWER(driver_name) = LOWER($2)
          LIMIT 1`,
-        [sessionRecord.location_id, sessionRecord.vehicle_slot_id, driverName]
+        [sessionRecord.location_id, driverName]
       );
 
       if (existingProfile.rows.length) {
         chosenProfile = existingProfile.rows[0];
-        if (driverPhotoData && driverPhotoData !== String(chosenProfile.driver_photo_data || "")) {
+        if (
+          String(sessionRecord.vehicle_slot_id || "") !== String(chosenProfile.vehicle_slot_id || "") ||
+          driverPhone !== String(chosenProfile.driver_phone || "") ||
+          (driverPhotoData && driverPhotoData !== String(chosenProfile.driver_photo_data || ""))
+        ) {
           const updatedProfile = await client.query(
             `UPDATE driver_profiles
-             SET driver_photo_data = $2,
+             SET vehicle_slot_id = $2,
+                 driver_phone = $3,
+                 driver_photo_data = $4,
                  updated_at = NOW()
              WHERE id = $1
-             RETURNING id, location_id, vehicle_slot_id, driver_name, driver_photo_data, created_at, updated_at`,
-            [chosenProfile.id, driverPhotoData]
+             RETURNING id, location_id, vehicle_slot_id, driver_name, driver_phone, driver_photo_data, created_at, updated_at`,
+            [
+              chosenProfile.id,
+              sessionRecord.vehicle_slot_id,
+              driverPhone,
+              driverPhotoData || chosenProfile.driver_photo_data || null
+            ]
           );
           chosenProfile = updatedProfile.rows[0];
         }
       } else {
         const inserted = await client.query(
           `INSERT INTO driver_profiles (
-             id, location_id, vehicle_slot_id, driver_name, driver_photo_data, created_at, updated_at
-           ) VALUES ($1,$2,$3,$4,$5,NOW(),NOW())
-           RETURNING id, location_id, vehicle_slot_id, driver_name, driver_photo_data, created_at, updated_at`,
-          [randomUUID(), sessionRecord.location_id, sessionRecord.vehicle_slot_id, driverName, driverPhotoData || null]
+             id, location_id, vehicle_slot_id, driver_name, driver_phone, driver_photo_data, created_at, updated_at
+           ) VALUES ($1,$2,$3,$4,$5,$6,NOW(),NOW())
+           RETURNING id, location_id, vehicle_slot_id, driver_name, driver_phone, driver_photo_data, created_at, updated_at`,
+          [randomUUID(), sessionRecord.location_id, sessionRecord.vehicle_slot_id, driverName, driverPhone, driverPhotoData || null]
         );
         chosenProfile = inserted.rows[0];
       }
@@ -4336,13 +5044,15 @@ app.post("/api/tracking/driver-profile/select", async (req, res) => {
       `UPDATE trip_tracking_sessions
        SET driver_profile_id = $2,
            driver_display_name = $3,
-           driver_photo_data = $4,
+           driver_phone = $4,
+           driver_photo_data = $5,
            updated_at = NOW()
        WHERE id = $1`,
       [
         sessionRecord.id,
         chosenProfile.id,
         chosenProfile.driver_name,
+        chosenProfile.driver_phone || null,
         chosenProfile.driver_photo_data || null,
       ]
     );
@@ -4350,7 +5060,7 @@ app.post("/api/tracking/driver-profile/select", async (req, res) => {
     await client.query("COMMIT");
 
     const refreshedSession = await getTrackingSessionById(sessionRecord.id);
-    const profiles = await listDriverProfiles(sessionRecord.location_id, sessionRecord.vehicle_slot_id);
+    const profiles = await listDriverProfiles(sessionRecord.location_id);
 
     return res.json({
       success: true,
@@ -5518,46 +6228,10 @@ async function createBalancePaymentLink(bookingRow) {
   const balanceDue = Number((totalPrice - depositAmount).toFixed(2));
 
   const paymentProfile = await getPaymentProfileForLocation(bookingRow?.location_id);
-  if (paymentProfile.provider !== "stripe" || !paymentProfile.stripeSecretKey || balanceDue <= 0 || !bookingRow?.id) {
+  if (balanceDue <= 0 || !bookingRow?.id || !canGenerateHostedPaymentLink(paymentProfile)) {
     return null;
   }
-
-  const baseUrl = getPublicAppUrl();
-  const successUrl = appendQueryParams(`${baseUrl}/payment-complete.html`, {
-    checkout: "success",
-    session_id: "{CHECKOUT_SESSION_ID}",
-    booking_id: bookingRow.id,
-  });
-  const cancelUrl = appendQueryParams(`${baseUrl}/payment-cancelled.html`, {
-    checkout: "cancel",
-    booking_id: bookingRow.id,
-  });
-  const companyName = bookingRow.business_name || "Chauffeur";
-  const vehicleType = bookingRow.vehicle_type || bookingRow.vehicle_slot_id || "Private ride";
-  const customerName = [bookingRow.first_name, bookingRow.last_name].filter(Boolean).join(" ").trim() || "Customer";
-  const balanceDueDeadline = bookingRow.start_time
-    ? new Date(new Date(bookingRow.start_time).getTime() - (48 * 60 * 60 * 1000)).toISOString()
-    : null;
-
-  const session = await createStripeCheckoutSessionForAmount({
-    apiKey: paymentProfile.stripeSecretKey,
-    amount: balanceDue,
-    customerEmail: bookingRow.customer_email || null,
-    bookingId: bookingRow.id,
-    locationId: bookingRow.location_id || null,
-    totalPrice,
-    depositAmount: totalPrice,
-    depositPercent: 100,
-    paymentStatus: "paid_in_full",
-    paymentChoice: "balance",
-    balanceDueDeadline,
-    title: `Rideshare Chauffeur Reservation ${companyName} Balance`,
-    description: `${vehicleType} balance payment for ${customerName}`,
-    successUrl,
-    cancelUrl,
-  });
-
-  return session?.url || null;
+  return buildBalancePaymentEntryUrl(bookingRow.id);
 }
 
 async function createBookingRecord(input, { paymentLink = null, triggerWebhook = true } = {}) {
@@ -6209,8 +6883,9 @@ app.post("/api/test-run/create-checkout-session", async (req, res) => {
     }
 
     const paymentProfile = await getPaymentProfileForLocation(locationId);
-    if (paymentProfile.provider !== "stripe" || !paymentProfile.stripeSecretKey) {
-      return res.status(400).json({ error: "Test checkout currently requires Stripe on the account." });
+    const paymentProvider = normalizePaymentProvider(paymentProfile.provider);
+    if (!canGenerateHostedPaymentLink(paymentProfile)) {
+      return res.status(400).json({ error: "The selected payment provider is not fully configured for this account." });
     }
 
     const profileLookup = await pool.query(
@@ -6271,7 +6946,7 @@ app.post("/api/test-run/create-checkout-session", async (req, res) => {
         payment_paid: false,
         deposit_paid: false,
         balance_paid: false,
-        payment_provider: "stripe",
+        payment_provider: paymentProvider,
         booking_confirmed: false,
         deposit_percent: 100,
         deposit_amount: totalPrice,
@@ -6304,43 +6979,15 @@ app.post("/api/test-run/create-checkout-session", async (req, res) => {
     );
 
     bookingId = bookingResult.booking?.id;
-
-    const successUrl = appendQueryParams(returnUrl, {
-      checkout: "success",
-      session_id: "{CHECKOUT_SESSION_ID}",
-      booking_id: bookingId,
-      test_run: "1",
-      location_id: locationId,
-    });
-    const cancelUrl = appendQueryParams(returnUrl, {
-      checkout: "cancel",
-      booking_id: bookingId,
-      test_run: "1",
-      location_id: locationId,
-    });
-
-    const session = await createStripeCheckoutSessionForAmount({
-      apiKey: paymentProfile.stripeSecretKey,
-      amount: totalPrice,
-      customerEmail: email,
-      bookingId,
-      locationId,
-      totalPrice,
-      depositAmount: totalPrice,
-      depositPercent: 100,
-      paymentStatus: "paid_in_full",
-      paymentChoice: "full",
-      balanceDueDeadline: null,
-      title: `Rideshare Test Run ${profile.business_name || "Account"} Payment`,
-      description: `${vehicle.vehicle_type || "Vehicle"} test run for ${firstName} ${lastName}`.trim(),
-      successUrl,
-      cancelUrl,
+    const checkoutUrl = appendQueryParams(`${getPublicAppUrl(req)}/pay/test-run/${encodeURIComponent(String(bookingId))}`, {
+      return_url: returnUrl,
     });
 
     return res.json({
       success: true,
-      checkout_url: session.url,
+      checkout_url: checkoutUrl,
       booking_id: bookingId,
+      payment_provider: paymentProvider,
       total_price: totalPrice,
       quoted_price: testBaseAmount,
       service_fee_amount: serviceFeeAmount,
@@ -6368,6 +7015,109 @@ app.post("/api/test-run/create-checkout-session", async (req, res) => {
 
 app.get("/api/checkout-session-status", async (req, res) => {
   try {
+    const provider = normalizePaymentProvider(req.query.provider || "stripe");
+    if (provider === "paypal") {
+      const bookingId = Number(req.query.booking_id || 0);
+      const orderId = String(req.query.token || "").trim();
+      if (!bookingId || !orderId) {
+        return res.status(400).json({ error: "booking_id and token are required for PayPal verification." });
+      }
+
+      const bookingLookup = await pool.query(
+        `SELECT id, location_id, total_price, deposit_amount, deposit_percent
+         FROM bookings
+         WHERE id = $1
+         LIMIT 1`,
+        [bookingId]
+      );
+      const bookingRow = bookingLookup.rows[0];
+      if (!bookingRow) {
+        return res.status(404).json({ error: "Booking not found." });
+      }
+
+      const paymentProfile = await getPaymentProfileForLocation(bookingRow.location_id);
+      const accessToken = await getPayPalAccessToken(paymentProfile);
+      const captureResponse = await fetch(
+        `${getPayPalApiBase(paymentProfile.paypalEnvironment)}/v2/checkout/orders/${encodeURIComponent(orderId)}/capture`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "Content-Type": "application/json",
+            "PayPal-Request-Id": randomUUID(),
+          },
+          body: "{}",
+        }
+      );
+      const captureJson = await captureResponse.json().catch(() => ({}));
+      if (!captureResponse.ok) {
+        return res.status(400).json({
+          error: captureJson?.message || captureJson?.details?.[0]?.description || "Unable to capture the PayPal order.",
+        });
+      }
+
+      const paid = String(captureJson.status || "").toUpperCase() === "COMPLETED";
+      if (!paid) {
+        return res.json({
+          success: true,
+          paid: false,
+          provider,
+          booking_id: bookingId,
+          payment_status: captureJson.status || "pending",
+        });
+      }
+
+      const confirmation = await updateBookingConfirmation({
+        bookingId,
+        paymentStatus: "paid_in_full",
+        totalPrice: bookingRow.total_price,
+        depositAmount: bookingRow.total_price,
+        depositPercent: 100,
+      });
+      return res.json({
+        success: true,
+        paid: true,
+        provider,
+        booking: confirmation,
+      });
+    }
+
+    if (provider === "square" || provider === "authorize_net") {
+      const bookingId = Number(req.query.booking_id || 0);
+      if (!bookingId) {
+        return res.status(400).json({ error: "booking_id is required for this provider." });
+      }
+
+      const bookingLookup = await pool.query(
+        `SELECT id, location_id, total_price, deposit_amount, deposit_percent, booking_mode
+         FROM bookings
+         WHERE id = $1
+         LIMIT 1`,
+        [bookingId]
+      );
+      const bookingRow = bookingLookup.rows[0];
+      if (!bookingRow) {
+        return res.status(404).json({ error: "Booking not found." });
+      }
+      if (String(bookingRow.booking_mode || "") !== "test_run") {
+        return res.status(400).json({ error: "Automatic provider return confirmation is only enabled here for test-run bookings." });
+      }
+
+      const confirmation = await updateBookingConfirmation({
+        bookingId,
+        paymentStatus: "paid_in_full",
+        totalPrice: bookingRow.total_price,
+        depositAmount: bookingRow.total_price,
+        depositPercent: 100,
+      });
+      return res.json({
+        success: true,
+        paid: true,
+        provider,
+        booking: confirmation,
+      });
+    }
+
     const sessionId = String(req.query.session_id || "").trim();
     const locationId = String(req.query.location_id || "").trim() || null;
     const stripeSecretKey = await getStripeSecretKeyForLocation(locationId);
@@ -6741,6 +7491,7 @@ app.get("/api/get-profile/:location_id", requireWizardToken, async (req, res) =>
   let client;
   try {
     await ensureProfileEntitlementColumns();
+    await ensureProfilePaymentProviderColumns();
     client = await pool.connect();
     await ensureProfilePricingColumns();
     const profileIdColumn = await getProfileIdColumn();
@@ -6801,6 +7552,13 @@ res.json({
   square_application_id: profile.square_application_id || "",
   square_access_token: profile.square_access_token || "",
   square_location_id: profile.square_location_id || "",
+  paypal_client_id: profile.paypal_client_id || "",
+  paypal_client_secret: profile.paypal_client_secret || "",
+  paypal_environment: normalizePayPalEnvironment(profile.paypal_environment),
+  authorize_api_login_id: profile.authorize_api_login_id || "",
+  authorize_transaction_key: profile.authorize_transaction_key || "",
+  authorize_client_key: profile.authorize_client_key || "",
+  authorize_environment: normalizeAuthorizeEnvironment(profile.authorize_environment),
   crm_webhook_url: profile.crm_webhook_url,
   tax_rate: profile.tax_rate != null ? parseFloat(profile.tax_rate) : null,
   service_fee_type: normalizeServiceFeeType(profile.service_fee_type),
@@ -6963,6 +7721,7 @@ app.get("/api/get-profile-widget/:location_id", async (req, res) => {
   try {
     const { location_id } = req.params;
     await ensureProfileEntitlementColumns();
+    await ensureProfilePaymentProviderColumns();
     const profileIdColumn = await getProfileIdColumn();
 
     // Fetch profile (the source of truth)
