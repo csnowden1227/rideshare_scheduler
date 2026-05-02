@@ -96,6 +96,7 @@ const PLAN_RULES = {
     maxFleet: 6,
     brandingIncluded: false,
     funnelIncluded: false,
+    trackingIncluded: false,
     logoIncluded: false,
   },
   premium: {
@@ -103,6 +104,7 @@ const PLAN_RULES = {
     maxFleet: 6,
     brandingIncluded: true,
     funnelIncluded: false,
+    trackingIncluded: true,
     logoIncluded: true,
   },
   pro: {
@@ -110,6 +112,7 @@ const PLAN_RULES = {
     maxFleet: 6,
     brandingIncluded: true,
     funnelIncluded: true,
+    trackingIncluded: true,
     logoIncluded: true,
   },
 };
@@ -132,6 +135,33 @@ const SAAS_ADDON_CATALOG = {
     label: "Digital Marketing Funnel",
     mode: "payment",
     amount_cents: 49700,
+  },
+};
+
+const SAAS_ADDON_RULES = {
+  branding_unlock: {
+    code: "branding_unlock",
+    label: "Full Branding Unlock",
+    mode: "payment",
+    amount_cents: 4999,
+  },
+  extra_vehicle_subscription: {
+    code: "extra_vehicle_subscription",
+    label: "Additional Fleet Vehicle",
+    mode: "subscription",
+    amount_cents: 10999,
+  },
+  funnel_unlock: {
+    code: "funnel_unlock",
+    label: "Digital Marketing Funnel",
+    mode: "payment",
+    amount_cents: 49700,
+  },
+  tracking_unlock: {
+    code: "tracking_unlock",
+    label: "Customer and Driver Live Tracking",
+    mode: "subscription",
+    amount_cents: 0,
   },
 };
 
@@ -223,6 +253,7 @@ async function ensureProfileEntitlementColumns() {
     profileEntitlementColumnsReady = (async () => {
       await pool.query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS addon_branding_unlocked BOOLEAN NOT NULL DEFAULT FALSE`);
       await pool.query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS addon_funnel_unlocked BOOLEAN NOT NULL DEFAULT FALSE`);
+      await pool.query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS addon_tracking_unlocked BOOLEAN NOT NULL DEFAULT FALSE`);
       await pool.query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS addon_extra_vehicle_count INTEGER NOT NULL DEFAULT 0`);
     })().catch((err) => {
       profileEntitlementColumnsReady = null;
@@ -374,6 +405,7 @@ async function ensureDispatchTables() {
       await pool.query(`ALTER TABLE dispatch_offers ADD COLUMN IF NOT EXISTS accepting_partner_percent NUMERIC`);
       await pool.query(`ALTER TABLE dispatch_offers ADD COLUMN IF NOT EXISTS split_model TEXT DEFAULT 'net_after_stripe_fee'`);
       await pool.query(`ALTER TABLE dispatch_offers ADD COLUMN IF NOT EXISTS fee_charged_to TEXT DEFAULT 'source_operator'`);
+      await pool.query(`ALTER TABLE dispatch_offers ADD COLUMN IF NOT EXISTS estimated_stripe_fee_amount NUMERIC DEFAULT 0`);
 
       await pool.query(`
         CREATE TABLE IF NOT EXISTS dispatch_assignments (
@@ -405,6 +437,9 @@ async function ensureDispatchTables() {
         )
       `);
       await pool.query(`CREATE INDEX IF NOT EXISTS idx_partner_payouts_dispatch_assignment_id ON partner_payouts(dispatch_assignment_id)`);
+      await pool.query(`ALTER TABLE partner_payouts ADD COLUMN IF NOT EXISTS estimated_stripe_fee_amount NUMERIC DEFAULT 0`);
+      await pool.query(`ALTER TABLE partner_payouts ADD COLUMN IF NOT EXISTS amount_transferred NUMERIC DEFAULT 0`);
+      await pool.query(`ALTER TABLE partner_payouts ADD COLUMN IF NOT EXISTS stripe_transfer_ids JSONB DEFAULT '[]'::jsonb`);
 
       await pool.query(`ALTER TABLE partners ADD COLUMN IF NOT EXISTS dispatch_pipeline_id TEXT`);
       await pool.query(`ALTER TABLE partners ADD COLUMN IF NOT EXISTS dispatch_stage_id TEXT`);
@@ -724,6 +759,7 @@ async function getTrackingSessionByToken({ token, role = "customer" }) {
       p.plan_name,
       p.addon_branding_unlocked,
       p.addon_funnel_unlocked,
+      p.addon_tracking_unlocked,
       p.addon_extra_vehicle_count,
       p.brand_color_primary,
       p.brand_color_secondary,
@@ -767,6 +803,7 @@ async function getTrackingSessionById(sessionId) {
       p.plan_name,
       p.addon_branding_unlocked,
       p.addon_funnel_unlocked,
+      p.addon_tracking_unlocked,
       p.addon_extra_vehicle_count,
       p.brand_color_primary,
       p.brand_color_secondary,
@@ -1016,6 +1053,13 @@ async function triggerTrackingStatusWebhook({ req, trackingSessionId, status }) 
       error: "Tracking session not found.",
     };
   }
+  if (!hasTrackingAccess(session)) {
+    return {
+      success: false,
+      skipped: true,
+      error: buildTrackingUpgradeMessage(),
+    };
+  }
 
   const webhookUrl = String(session.crm_webhook_url || "").trim();
   if (!webhookUrl || !webhookUrl.startsWith("http")) {
@@ -1163,6 +1207,7 @@ function buildPlanEntitlements({
   planName = "starter",
   addonBrandingUnlocked = false,
   addonFunnelUnlocked = false,
+  addonTrackingUnlocked = false,
   addonExtraVehicleCount = 0,
 } = {}) {
   const normalizedPlan = normalizePlanName(planName);
@@ -1181,11 +1226,38 @@ function buildPlanEntitlements({
     allowed_fleet_count: allowedFleetCount,
     branding_enabled: Boolean(rules.brandingIncluded || addonBrandingUnlocked),
     funnel_enabled: Boolean(rules.funnelIncluded || addonFunnelUnlocked),
+    tracking_enabled: Boolean(rules.trackingIncluded || addonTrackingUnlocked),
     logo_enabled: Boolean(rules.logoIncluded || addonBrandingUnlocked),
-    can_purchase_branding: !rules.brandingIncluded,
-    can_purchase_funnel: !rules.funnelIncluded,
+    can_purchase_branding: !rules.brandingIncluded && !addonBrandingUnlocked,
+    can_purchase_funnel: !rules.funnelIncluded && !addonFunnelUnlocked,
+    can_purchase_tracking: !rules.trackingIncluded && !addonTrackingUnlocked,
     can_purchase_extra_vehicle: rules.maxFleet > rules.includedFleet && allowedFleetCount < rules.maxFleet,
   };
+}
+
+function buildEntitlementsFromProfile(profile = {}) {
+  return buildPlanEntitlements({
+    planName: profile.plan_name || "starter",
+    addonBrandingUnlocked: profile.addon_branding_unlocked,
+    addonFunnelUnlocked: profile.addon_funnel_unlocked,
+    addonTrackingUnlocked: profile.addon_tracking_unlocked,
+    addonExtraVehicleCount: profile.addon_extra_vehicle_count,
+  });
+}
+
+function buildTrackingUpgradeMessage() {
+  return "Live customer and driver tracking is not included on this plan. Upgrade the account or apply the tracking add-on to turn this feature on.";
+}
+
+function hasTrackingAccess(profile = {}) {
+  return Boolean(buildEntitlementsFromProfile(profile).tracking_enabled);
+}
+
+function assertTrackingAccess(profile = {}) {
+  if (hasTrackingAccess(profile)) return;
+  const err = new Error(buildTrackingUpgradeMessage());
+  err.statusCode = 403;
+  throw err;
 }
 
 function sanitizeBrandingByEntitlements({
@@ -1209,12 +1281,7 @@ function sanitizeBrandingByEntitlements({
 }
 
 function buildPublicBrandingFromProfile(profile = {}) {
-  const entitlements = buildPlanEntitlements({
-    planName: profile.plan_name || "starter",
-    addonBrandingUnlocked: profile.addon_branding_unlocked,
-    addonFunnelUnlocked: profile.addon_funnel_unlocked,
-    addonExtraVehicleCount: profile.addon_extra_vehicle_count,
-  });
+  const entitlements = buildEntitlementsFromProfile(profile);
 
   return sanitizeBrandingByEntitlements({
     businessLogo: profile.business_logo,
@@ -1274,6 +1341,114 @@ async function getPartnerSplitAgreement(ownerLocationId, partnerId) {
     [String(ownerLocationId), String(partnerId)]
   );
 
+  return result.rows[0] || null;
+}
+
+function toUsdCents(amount) {
+  return Math.max(0, Math.round(Number(amount || 0) * 100));
+}
+
+function fromUsdCents(amountCents) {
+  return Number((Math.max(0, Number(amountCents || 0)) / 100).toFixed(2));
+}
+
+function estimateStripeProcessingFeeCents(amountCents) {
+  const normalizedAmount = Math.max(0, Number(amountCents || 0));
+  if (!normalizedAmount) return 0;
+  return Math.max(0, Math.round(normalizedAmount * 0.029) + 30);
+}
+
+function calculateDispatchPayoutAmounts({
+  grossAmount = 0,
+  acceptingPartnerPercent = 80,
+  sourceOperatorPercent = 20,
+  splitModel = "net_after_stripe_fee",
+  feeChargedTo = "source_operator",
+}) {
+  const grossAmountCents = toUsdCents(grossAmount);
+  const acceptingPercent = normalizeAcceptingPartnerPercent(acceptingPartnerPercent);
+  const sourcePercent = Math.max(0, Number(sourceOperatorPercent || (100 - acceptingPercent)));
+  const estimatedStripeFeeCents = estimateStripeProcessingFeeCents(grossAmountCents);
+  const splitBaseCents = splitModel === "net_after_stripe_fee" && feeChargedTo === "source_operator"
+    ? Math.max(0, grossAmountCents - estimatedStripeFeeCents)
+    : grossAmountCents;
+  const partnerPayoutCents = Math.min(
+    splitBaseCents,
+    Math.round(splitBaseCents * (acceptingPercent / 100))
+  );
+  const sourceOperatorNetCents = Math.max(
+    0,
+    grossAmountCents - estimatedStripeFeeCents - partnerPayoutCents
+  );
+
+  return {
+    grossAmountCents,
+    partnerPayoutCents,
+    sourceOperatorNetCents,
+    estimatedStripeFeeCents,
+    gross_amount: fromUsdCents(grossAmountCents),
+    partner_payout_amount: fromUsdCents(partnerPayoutCents),
+    platform_fee_amount: fromUsdCents(sourceOperatorNetCents),
+    estimated_stripe_fee_amount: fromUsdCents(estimatedStripeFeeCents),
+    source_operator_percent: Number(sourcePercent.toFixed(2)),
+    accepting_partner_percent: Number(acceptingPercent.toFixed(2)),
+    split_model: splitModel,
+    fee_charged_to: feeChargedTo,
+  };
+}
+
+function calculatePartnerTransferredTargetCents({
+  grossAmountCents = 0,
+  partnerPayoutCents = 0,
+  paidAmountCents = 0,
+}) {
+  const gross = Math.max(0, Number(grossAmountCents || 0));
+  const payout = Math.max(0, Number(partnerPayoutCents || 0));
+  const paid = Math.max(0, Number(paidAmountCents || 0));
+  if (!gross || !payout || !paid) return 0;
+  if (paid >= gross) return payout;
+  return Math.min(payout, Math.round((payout / gross) * paid));
+}
+
+async function getDispatchPayoutContextForBooking(bookingId) {
+  if (!bookingId) return null;
+  await ensureDispatchTables();
+  const result = await pool.query(
+    `SELECT
+       b.id AS booking_id,
+       b.location_id,
+       b.total_price,
+       b.deposit_amount,
+       b.balance_due,
+       b.assigned_partner_id,
+       b.dispatch_status,
+       da.id AS dispatch_assignment_id,
+       pp.id AS payout_id,
+       pp.gross_amount,
+       pp.partner_payout_amount,
+       pp.platform_fee_amount,
+       pp.estimated_stripe_fee_amount,
+       pp.amount_transferred,
+       pp.stripe_transfer_id,
+       pp.stripe_transfer_ids,
+       pp.status AS payout_status,
+       p.id AS partner_id,
+       p.business_name AS partner_business_name,
+       p.email AS partner_email,
+       p.stripe_account_id
+     FROM bookings b
+     JOIN dispatch_assignments da
+       ON da.booking_id = b.id
+      AND da.status = 'assigned'
+     JOIN partner_payouts pp
+       ON pp.dispatch_assignment_id = da.id
+     JOIN partners p
+       ON p.id = da.partner_id
+     WHERE b.id = $1
+     ORDER BY pp.created_at DESC
+     LIMIT 1`,
+    [bookingId]
+  );
   return result.rows[0] || null;
 }
 
@@ -2363,6 +2538,7 @@ app.get("/pay/balance/:bookingId", async (req, res) => {
     if (balanceDue <= 0) {
       return res.redirect(appendQueryParams(`${getPublicAppUrl(req)}/payment-complete.html`, {
         booking_id: bookingId,
+        location_id: bookingRow.location_id,
         provider: normalizePaymentProvider((await getPaymentProfileForLocation(bookingRow.location_id)).provider),
       }));
     }
@@ -2376,14 +2552,17 @@ app.get("/pay/balance/:bookingId", async (req, res) => {
     const baseUrl = getPublicAppUrl(req);
     const cancelUrl = appendQueryParams(`${baseUrl}/payment-cancelled.html`, {
       booking_id: bookingId,
+      location_id: bookingRow.location_id,
       provider,
     });
 
     if (provider === "stripe") {
+      const connectRouting = await getStripeConnectChargeRoutingForBooking(bookingId, balanceDue);
       const successUrl = appendQueryParams(`${baseUrl}/payment-complete.html`, {
         checkout: "success",
         session_id: "{CHECKOUT_SESSION_ID}",
         booking_id: bookingId,
+        location_id: bookingRow.location_id,
         provider,
       });
       const balanceDueDeadline = bookingRow.start_time
@@ -2405,6 +2584,14 @@ app.get("/pay/balance/:bookingId", async (req, res) => {
         description: `${bookingRow.vehicle_slot_id || "Private ride"} balance payment`,
         successUrl,
         cancelUrl,
+        connectDestinationAccountId: connectRouting?.destinationAccountId || null,
+        connectTransferAmountCents: connectRouting?.transferAmountCents || null,
+        extraMetadata: connectRouting ? {
+          dispatch_assignment_id: connectRouting.dispatchAssignmentId,
+          assigned_partner_id: connectRouting.partnerId,
+          connect_transfer_amount_cents: connectRouting.transferAmountCents,
+          payout_id: connectRouting.payoutId,
+        } : {},
       });
       return res.redirect(session?.url || cancelUrl);
     }
@@ -2416,6 +2603,7 @@ app.get("/pay/balance/:bookingId", async (req, res) => {
         amount: balanceDue,
         successUrl: appendQueryParams(`${baseUrl}/payment-complete.html`, {
           booking_id: bookingId,
+          location_id: bookingRow.location_id,
           provider,
         }),
       });
@@ -2430,6 +2618,7 @@ app.get("/pay/balance/:bookingId", async (req, res) => {
         amount: balanceDue,
         successUrl: appendQueryParams(`${baseUrl}/payment-complete.html`, {
           booking_id: bookingId,
+          location_id: bookingRow.location_id,
           provider,
         }),
         cancelUrl,
@@ -2444,6 +2633,7 @@ app.get("/pay/balance/:bookingId", async (req, res) => {
         amount: balanceDue,
         successUrl: appendQueryParams(`${baseUrl}/payment-complete.html`, {
           booking_id: bookingId,
+          location_id: bookingRow.location_id,
           provider,
         }),
         cancelUrl,
@@ -2664,6 +2854,7 @@ async function saveConfigHandler(req, res) {
       planName: normalizedPlanName,
       addonBrandingUnlocked: existingProfile.addon_branding_unlocked,
       addonFunnelUnlocked: existingProfile.addon_funnel_unlocked,
+      addonTrackingUnlocked: existingProfile.addon_tracking_unlocked,
       addonExtraVehicleCount: existingProfile.addon_extra_vehicle_count,
     });
     const sanitizedBranding = sanitizeBrandingByEntitlements({
@@ -3877,8 +4068,11 @@ async function createStripeCheckoutSessionForAmount({
   cancelUrl,
   paymentChoice = null,
   balanceDueDeadline = null,
+  connectDestinationAccountId = null,
+  connectTransferAmountCents = null,
+  extraMetadata = {},
 }) {
-  return stripeFormRequest("/v1/checkout/sessions", {
+  const params = {
     mode: "payment",
     success_url: successUrl,
     cancel_url: cancelUrl,
@@ -3896,7 +4090,24 @@ async function createStripeCheckoutSessionForAmount({
     "line_items[0][price_data][unit_amount]": Math.round(Number(amount || 0) * 100),
     "line_items[0][price_data][product_data][name]": title,
     "line_items[0][price_data][product_data][description]": description,
-  }, "POST", apiKey);
+  };
+
+  for (const [key, value] of Object.entries(extraMetadata || {})) {
+    if (value == null || value === "") continue;
+    params[`metadata[${key}]`] = String(value);
+  }
+
+  const normalizedTransferAmountCents = Math.max(0, Number(connectTransferAmountCents || 0));
+  if (connectDestinationAccountId && normalizedTransferAmountCents > 0) {
+    params["payment_intent_data[transfer_data][destination]"] = String(connectDestinationAccountId);
+    params["payment_intent_data[transfer_data][amount]"] = Math.round(normalizedTransferAmountCents);
+    params["payment_intent_data[metadata][connect_destination_account_id]"] = String(connectDestinationAccountId);
+    params["payment_intent_data[metadata][connect_transfer_amount_cents]"] = String(Math.round(normalizedTransferAmountCents));
+    params["payment_intent_data[metadata][booking_id]"] = String(bookingId);
+    params["payment_intent_data[metadata][location_id]"] = String(locationId || "");
+  }
+
+  return stripeFormRequest("/v1/checkout/sessions", params, "POST", apiKey);
 }
 
 async function createStripeAddonCheckoutSession({
@@ -3936,6 +4147,375 @@ async function createStripeAddonCheckoutSession({
   }
 
   return stripeFormRequest("/v1/checkout/sessions", params, "POST", apiKey);
+}
+
+function buildDispatchManagerUrl(baseUrl, ownerLocationId, partnerId = null) {
+  return appendQueryParams(`${baseUrl}/dispatch-network-manager.html`, {
+    location_id: ownerLocationId,
+    partner_id: partnerId || undefined,
+    connect: partnerId ? "stripe" : undefined,
+  });
+}
+
+function buildPartnerConnectStatusUrl(baseUrl, ownerLocationId, partnerId, state = "complete") {
+  return appendQueryParams(`${baseUrl}/partner-onboarding.html`, {
+    stripe_connect: state,
+    owner_location_id: ownerLocationId,
+    partner_id: partnerId || undefined,
+  });
+}
+
+async function ensureStripeConnectedAccountForPartner({
+  ownerLocationId,
+  partnerId,
+  partnerEmail = null,
+  partnerBusinessName = null,
+}) {
+  if (!ownerLocationId || !partnerId) {
+    throw new Error("owner_location_id and partner_id are required for Stripe Connect.");
+  }
+
+  const partnerLookup = await pool.query(
+    `SELECT id, owner_location_id, business_name, email, stripe_account_id
+     FROM partners
+     WHERE id = $1
+       AND owner_location_id = $2
+     LIMIT 1`,
+    [partnerId, ownerLocationId]
+  );
+
+  if (!partnerLookup.rows.length) {
+    throw new Error("Partner not found for Stripe Connect onboarding.");
+  }
+
+  const partner = partnerLookup.rows[0];
+  if (String(partner.stripe_account_id || "").trim()) {
+    return {
+      partner,
+      stripeAccountId: String(partner.stripe_account_id).trim(),
+      created: false,
+    };
+  }
+
+  const paymentProfile = await getPaymentProfileForLocation(ownerLocationId);
+  const provider = normalizePaymentProvider(paymentProfile.provider);
+  if (provider !== "stripe" || !paymentProfile.stripeSecretKey) {
+    throw new Error("The source operator must have Stripe configured to onboard partners for network payouts.");
+  }
+
+  const account = await stripeFormRequest("/v1/accounts", {
+    type: "express",
+    country: "US",
+    email: String(partnerEmail || partner.email || "").trim() || undefined,
+    "business_profile[name]": String(partnerBusinessName || partner.business_name || "").trim() || undefined,
+    "capabilities[transfers][requested]": true,
+  }, "POST", paymentProfile.stripeSecretKey);
+
+  const stripeAccountId = String(account?.id || "").trim();
+  if (!stripeAccountId) {
+    throw new Error("Stripe did not return a connected account ID.");
+  }
+
+  await pool.query(
+    `UPDATE partners
+     SET stripe_account_id = $2,
+         updated_at = NOW()
+     WHERE id = $1`,
+    [partnerId, stripeAccountId]
+  );
+
+  return {
+    partner: {
+      ...partner,
+      stripe_account_id: stripeAccountId,
+    },
+    stripeAccountId,
+    created: true,
+  };
+}
+
+async function createStripeConnectOnboardingLinkForPartner({
+  ownerLocationId,
+  partnerId,
+  partnerEmail = null,
+  partnerBusinessName = null,
+  baseUrl,
+  refreshUrl = null,
+  returnUrl = null,
+}) {
+  const paymentProfile = await getPaymentProfileForLocation(ownerLocationId);
+  const provider = normalizePaymentProvider(paymentProfile.provider);
+  if (provider !== "stripe" || !paymentProfile.stripeSecretKey) {
+    throw new Error("The source operator must have Stripe configured before creating partner payout onboarding links.");
+  }
+
+  const connected = await ensureStripeConnectedAccountForPartner({
+    ownerLocationId,
+    partnerId,
+    partnerEmail,
+    partnerBusinessName,
+  });
+  const resolvedBaseUrl = baseUrl || getPublicAppUrl();
+  const resolvedRefreshUrl = refreshUrl || buildPartnerConnectStatusUrl(resolvedBaseUrl, ownerLocationId, partnerId, "refresh");
+  const resolvedReturnUrl = returnUrl || buildPartnerConnectStatusUrl(resolvedBaseUrl, ownerLocationId, partnerId, "complete");
+
+  const link = await stripeFormRequest("/v1/account_links", {
+    account: connected.stripeAccountId,
+    refresh_url: resolvedRefreshUrl,
+    return_url: resolvedReturnUrl,
+    type: "account_onboarding",
+  }, "POST", paymentProfile.stripeSecretKey);
+
+  return {
+    stripe_account_id: connected.stripeAccountId,
+    onboarding_url: link?.url || null,
+    expires_at: link?.expires_at
+      ? new Date(Number(link.expires_at) * 1000).toISOString()
+      : null,
+    created_account: connected.created,
+  };
+}
+
+async function createStripeTransferForPartnerPayout({
+  ownerLocationId,
+  destinationAccountId,
+  amountCents,
+  bookingId,
+  payoutId,
+  dispatchAssignmentId,
+}) {
+  const paymentProfile = await getPaymentProfileForLocation(ownerLocationId);
+  const provider = normalizePaymentProvider(paymentProfile.provider);
+  if (provider !== "stripe" || !paymentProfile.stripeSecretKey) {
+    throw new Error("Stripe is not configured for the source operator account.");
+  }
+
+  return stripeFormRequest("/v1/transfers", {
+    amount: Math.max(0, Math.round(Number(amountCents || 0))),
+    currency: "usd",
+    destination: String(destinationAccountId || "").trim(),
+    "metadata[booking_id]": String(bookingId || ""),
+    "metadata[payout_id]": String(payoutId || ""),
+    "metadata[dispatch_assignment_id]": String(dispatchAssignmentId || ""),
+  }, "POST", paymentProfile.stripeSecretKey);
+}
+
+async function updatePartnerPayoutTransferState({
+  payoutId,
+  transferredAmountCents = 0,
+  partnerPayoutCents = 0,
+  stripeTransferId = null,
+}) {
+  if (!payoutId || transferredAmountCents <= 0) return;
+
+  const payoutLookup = await pool.query(
+    `SELECT amount_transferred, stripe_transfer_ids
+     FROM partner_payouts
+     WHERE id = $1
+     LIMIT 1`,
+    [payoutId]
+  );
+  if (!payoutLookup.rows.length) return;
+
+  const existingTransferredCents = toUsdCents(payoutLookup.rows[0].amount_transferred || 0);
+  const nextTransferredCents = Math.min(
+    Math.max(0, Number(partnerPayoutCents || 0)),
+    existingTransferredCents + Math.max(0, Number(transferredAmountCents || 0))
+  );
+  const existingTransferIds = safeParseJson(payoutLookup.rows[0].stripe_transfer_ids, []);
+  const nextTransferIds = stripeTransferId
+    ? Array.from(new Set([...(Array.isArray(existingTransferIds) ? existingTransferIds : []), stripeTransferId]))
+    : (Array.isArray(existingTransferIds) ? existingTransferIds : []);
+  const nextStatus = nextTransferredCents >= Math.max(0, Number(partnerPayoutCents || 0))
+    ? "paid"
+    : "partially_paid";
+
+  await pool.query(
+    `UPDATE partner_payouts
+     SET amount_transferred = $2,
+         stripe_transfer_id = COALESCE($3, stripe_transfer_id),
+         stripe_transfer_ids = $4::jsonb,
+         status = $5
+     WHERE id = $1`,
+    [
+      payoutId,
+      fromUsdCents(nextTransferredCents),
+      stripeTransferId || null,
+      JSON.stringify(nextTransferIds),
+      nextStatus,
+    ]
+  );
+}
+
+async function syncPartnerPayoutForBooking(bookingId, options = {}) {
+  const context = await getDispatchPayoutContextForBooking(bookingId);
+  if (!context) {
+    return { success: false, attempted: false, reason: "no_assigned_partner_payout" };
+  }
+
+  const sourcePaymentProfile = await getPaymentProfileForLocation(context.location_id);
+  if (normalizePaymentProvider(sourcePaymentProfile.provider) !== "stripe" || !sourcePaymentProfile.stripeSecretKey) {
+    return { success: false, attempted: false, reason: "source_operator_not_using_stripe" };
+  }
+  if (!String(context.stripe_account_id || "").trim()) {
+    return { success: false, attempted: false, reason: "partner_missing_connect_account" };
+  }
+
+  const grossAmountCents = toUsdCents(context.gross_amount || context.total_price || 0);
+  const partnerPayoutCents = toUsdCents(context.partner_payout_amount || 0);
+  const amountTransferredCents = toUsdCents(context.amount_transferred || 0);
+  if (!grossAmountCents || !partnerPayoutCents) {
+    return { success: false, attempted: false, reason: "missing_payout_amounts" };
+  }
+
+  if (options.transferAlreadyExecuted) {
+    const executedTransferCents = Math.min(
+      Math.max(0, Number(options.transferredAmountCents || 0)),
+      Math.max(0, partnerPayoutCents - amountTransferredCents)
+    );
+    if (!executedTransferCents) {
+      return { success: true, attempted: false, reason: "nothing_to_record" };
+    }
+
+    await updatePartnerPayoutTransferState({
+      payoutId: context.payout_id,
+      transferredAmountCents: executedTransferCents,
+      partnerPayoutCents,
+      stripeTransferId: options.stripeTransferId || null,
+    });
+    return {
+      success: true,
+      attempted: true,
+      payout_id: context.payout_id,
+      transfer_amount: fromUsdCents(executedTransferCents),
+      stripe_transfer_id: options.stripeTransferId || null,
+      mode: "record_existing_transfer",
+    };
+  }
+
+  const totalPaidCents = toUsdCents(Number(context.total_price || 0) - Number(context.balance_due || 0));
+  const targetTransferredCents = calculatePartnerTransferredTargetCents({
+    grossAmountCents,
+    partnerPayoutCents,
+    paidAmountCents: totalPaidCents,
+  });
+  const transferDueCents = Math.max(0, targetTransferredCents - amountTransferredCents);
+
+  if (!transferDueCents) {
+    return { success: true, attempted: false, reason: "partner_payout_already_synced" };
+  }
+
+  const transfer = await createStripeTransferForPartnerPayout({
+    ownerLocationId: context.location_id,
+    destinationAccountId: context.stripe_account_id,
+    amountCents: transferDueCents,
+    bookingId: context.booking_id,
+    payoutId: context.payout_id,
+    dispatchAssignmentId: context.dispatch_assignment_id,
+  });
+
+  await updatePartnerPayoutTransferState({
+    payoutId: context.payout_id,
+    transferredAmountCents: transferDueCents,
+    partnerPayoutCents,
+    stripeTransferId: transfer?.id || null,
+  });
+
+  return {
+    success: true,
+    attempted: true,
+    payout_id: context.payout_id,
+    transfer_amount: fromUsdCents(transferDueCents),
+    stripe_transfer_id: transfer?.id || null,
+    mode: "manual_transfer",
+  };
+}
+
+async function getStripeConnectChargeRoutingForBooking(bookingId, chargeAmount) {
+  const context = await getDispatchPayoutContextForBooking(bookingId);
+  if (!context || !String(context.stripe_account_id || "").trim()) {
+    return null;
+  }
+
+  const grossAmountCents = toUsdCents(context.gross_amount || context.total_price || 0);
+  const partnerPayoutCents = toUsdCents(context.partner_payout_amount || 0);
+  const alreadyTransferredCents = toUsdCents(context.amount_transferred || 0);
+  const alreadyPaidCents = toUsdCents(Number(context.total_price || 0) - Number(context.balance_due || 0));
+  const incomingChargeCents = toUsdCents(chargeAmount);
+
+  if (!grossAmountCents || !partnerPayoutCents || !incomingChargeCents) {
+    return null;
+  }
+
+  const targetAfterChargeCents = calculatePartnerTransferredTargetCents({
+    grossAmountCents,
+    partnerPayoutCents,
+    paidAmountCents: Math.min(grossAmountCents, alreadyPaidCents + incomingChargeCents),
+  });
+  const transferForThisChargeCents = Math.max(0, targetAfterChargeCents - alreadyTransferredCents);
+
+  if (!transferForThisChargeCents) {
+    return null;
+  }
+
+  return {
+    payoutId: context.payout_id,
+    dispatchAssignmentId: context.dispatch_assignment_id,
+    partnerId: context.partner_id,
+    destinationAccountId: String(context.stripe_account_id).trim(),
+    transferAmountCents: Math.min(incomingChargeCents, transferForThisChargeCents),
+  };
+}
+
+async function applyAddonEntitlement({
+  locationId,
+  addonCode,
+  quantity = 1,
+  client = pool,
+}) {
+  const normalizedLocationId = String(locationId || "").trim();
+  const normalizedAddonCode = String(addonCode || "").trim();
+  const normalizedQuantity = Math.max(1, Number(quantity || 1));
+
+  if (!normalizedLocationId) {
+    throw new Error("location_id is required to apply an add-on entitlement.");
+  }
+  if (!SAAS_ADDON_RULES[normalizedAddonCode]) {
+    throw new Error("Unsupported add-on entitlement.");
+  }
+
+  if (normalizedAddonCode === "branding_unlock") {
+    await client.query(
+      `UPDATE profiles SET addon_branding_unlocked = TRUE WHERE location_id = $1`,
+      [normalizedLocationId]
+    );
+    return;
+  }
+
+  if (normalizedAddonCode === "funnel_unlock") {
+    await client.query(
+      `UPDATE profiles SET addon_funnel_unlocked = TRUE WHERE location_id = $1`,
+      [normalizedLocationId]
+    );
+    return;
+  }
+
+  if (normalizedAddonCode === "tracking_unlock") {
+    await client.query(
+      `UPDATE profiles SET addon_tracking_unlocked = TRUE WHERE location_id = $1`,
+      [normalizedLocationId]
+    );
+    return;
+  }
+
+  if (normalizedAddonCode === "extra_vehicle_subscription") {
+    await client.query(
+      `UPDATE profiles
+       SET addon_extra_vehicle_count = LEAST(5, COALESCE(addon_extra_vehicle_count, 0) + $2)
+       WHERE location_id = $1`,
+      [normalizedLocationId, normalizedQuantity]
+    );
+  }
 }
 
 async function applyAddonPurchaseFromSession(session = {}) {
@@ -3984,24 +4564,12 @@ async function applyAddonPurchaseFromSession(session = {}) {
       ]
     );
 
-    if (addon.code === "branding_unlock") {
-      await pool.query(
-        `UPDATE profiles SET addon_branding_unlocked = TRUE WHERE location_id = $1`,
-        [locationId]
-      );
-    } else if (addon.code === "funnel_unlock") {
-      await pool.query(
-        `UPDATE profiles SET addon_funnel_unlocked = TRUE WHERE location_id = $1`,
-        [locationId]
-      );
-    } else if (addon.code === "extra_vehicle_subscription") {
-      await pool.query(
-        `UPDATE profiles
-         SET addon_extra_vehicle_count = LEAST(5, COALESCE(addon_extra_vehicle_count, 0) + $2)
-         WHERE location_id = $1`,
-        [locationId, quantity]
-      );
-    }
+    await applyAddonEntitlement({
+      locationId,
+      addonCode: addon.code,
+      quantity,
+      client: pool,
+    });
 
     await pool.query("COMMIT");
     return { already_processed: false, addon_code: addon.code, location_id: locationId };
@@ -4057,7 +4625,7 @@ app.post("/api/create-addon-checkout-session", async (req, res) => {
     }
 
     const profileRes = await pool.query(
-      `SELECT plan_name, addon_branding_unlocked, addon_funnel_unlocked, addon_extra_vehicle_count
+      `SELECT plan_name, addon_branding_unlocked, addon_funnel_unlocked, addon_tracking_unlocked, addon_extra_vehicle_count
        FROM profiles
        WHERE location_id = $1
        LIMIT 1`,
@@ -4072,6 +4640,7 @@ app.post("/api/create-addon-checkout-session", async (req, res) => {
       planName: profile.plan_name,
       addonBrandingUnlocked: profile.addon_branding_unlocked,
       addonFunnelUnlocked: profile.addon_funnel_unlocked,
+      addonTrackingUnlocked: profile.addon_tracking_unlocked,
       addonExtraVehicleCount: profile.addon_extra_vehicle_count,
     });
 
@@ -4171,6 +4740,96 @@ app.get("/api/addon-checkout-session-status", async (req, res) => {
   } catch (err) {
     console.error("Add-on checkout status error:", err);
     return res.status(500).json({ error: err.message || "Failed to verify add-on checkout session." });
+  }
+});
+
+app.post("/api/saas/apply-addon-entitlement", async (req, res) => {
+  try {
+    await ensureProfileEntitlementColumns();
+
+    const locationId = String(req.body.location_id || "").trim();
+    const addonCode = String(req.body.addon_code || "").trim();
+    const quantity = Math.max(1, Number(req.body.quantity || 1));
+    const providedCrmApiKey = String(
+      req.get("x-crm-api-key") ||
+      req.body.crm_api_key ||
+      req.body.api_key ||
+      ""
+    ).trim();
+
+    if (!locationId) {
+      return res.status(400).json({ error: "location_id is required." });
+    }
+    if (!SAAS_ADDON_RULES[addonCode]) {
+      return res.status(400).json({ error: "Unsupported add-on entitlement." });
+    }
+
+    const profileRes = await pool.query(
+      `SELECT location_id, crm_api_key, plan_name, addon_branding_unlocked, addon_funnel_unlocked, addon_tracking_unlocked, addon_extra_vehicle_count
+       FROM profiles
+       WHERE location_id = $1
+       LIMIT 1`,
+      [locationId]
+    );
+    if (!profileRes.rows.length) {
+      return res.status(404).json({ error: "Profile not found." });
+    }
+
+    const profile = profileRes.rows[0];
+    const storedCrmApiKey = String(profile.crm_api_key || "").trim();
+    if (storedCrmApiKey && providedCrmApiKey && storedCrmApiKey !== providedCrmApiKey) {
+      return res.status(403).json({ error: "The CRM API key did not match this SaaS account." });
+    }
+    if (storedCrmApiKey && !providedCrmApiKey) {
+      return res.status(403).json({ error: "A matching CRM API key is required to apply add-on entitlements for this SaaS account." });
+    }
+
+    const entitlements = buildEntitlementsFromProfile(profile);
+    if (addonCode === "branding_unlock" && !entitlements.can_purchase_branding) {
+      return res.status(400).json({ error: "Branding is already active on this SaaS account." });
+    }
+    if (addonCode === "funnel_unlock" && !entitlements.can_purchase_funnel) {
+      return res.status(400).json({ error: "Funnel access is already active on this SaaS account." });
+    }
+    if (addonCode === "tracking_unlock" && !entitlements.can_purchase_tracking) {
+      return res.status(400).json({ error: "Customer and driver live tracking is already active on this SaaS account." });
+    }
+    if (addonCode === "extra_vehicle_subscription") {
+      if (!entitlements.can_purchase_extra_vehicle) {
+        return res.status(400).json({ error: "This SaaS plan cannot add more fleet vehicles." });
+      }
+      if ((entitlements.allowed_fleet_count + quantity) > entitlements.max_fleet_count) {
+        return res.status(400).json({ error: `This purchase would exceed the fleet limit of ${entitlements.max_fleet_count} vehicles.` });
+      }
+    }
+
+    await applyAddonEntitlement({
+      locationId,
+      addonCode,
+      quantity,
+      client: pool,
+    });
+
+    const updatedProfileRes = await pool.query(
+      `SELECT location_id, plan_name, addon_branding_unlocked, addon_funnel_unlocked, addon_tracking_unlocked, addon_extra_vehicle_count
+       FROM profiles
+       WHERE location_id = $1
+       LIMIT 1`,
+      [locationId]
+    );
+    const updatedProfile = updatedProfileRes.rows[0];
+
+    return res.json({
+      success: true,
+      location_id: locationId,
+      addon_code: addonCode,
+      quantity,
+      entitlements: buildEntitlementsFromProfile(updatedProfile),
+      message: "SaaS add-on entitlement applied successfully.",
+    });
+  } catch (err) {
+    console.error("Apply SaaS add-on entitlement error:", err);
+    return res.status(err.statusCode || 500).json({ error: err.message || "Failed to apply the SaaS add-on entitlement." });
   }
 });
 
@@ -4382,6 +5041,8 @@ app.get("/api/partners/:owner_location_id", async (req, res) => {
         p.email,
         p.phone,
         p.status,
+        p.payment_provider,
+        p.stripe_account_id,
         p.dispatch_pipeline_id,
         p.dispatch_stage_id,
         p.accepts_dispatch,
@@ -4400,6 +5061,53 @@ app.get("/api/partners/:owner_location_id", async (req, res) => {
   } catch (err) {
     console.error("List partners error:", err);
     return res.status(500).json({ error: err.message || "Failed to load partners." });
+  }
+});
+
+app.post("/api/partners/:partner_id/stripe-connect/onboarding-link", async (req, res) => {
+  try {
+    await ensureDispatchTables();
+    const partnerId = String(req.params.partner_id || "").trim();
+    const ownerLocationId = String(req.body.owner_location_id || "").trim();
+    if (!partnerId || !ownerLocationId) {
+      return res.status(400).json({ error: "partner_id and owner_location_id are required." });
+    }
+
+    const baseUrl = getPublicAppUrl(req);
+    const partnerLookup = await pool.query(
+      `SELECT id, owner_location_id, business_name, email
+       FROM partners
+       WHERE id = $1
+         AND owner_location_id = $2
+       LIMIT 1`,
+      [partnerId, ownerLocationId]
+    );
+    if (!partnerLookup.rows.length) {
+      return res.status(404).json({ error: "Partner not found for this location." });
+    }
+
+    const partner = partnerLookup.rows[0];
+    const link = await createStripeConnectOnboardingLinkForPartner({
+      ownerLocationId,
+      partnerId,
+      partnerEmail: partner.email || null,
+      partnerBusinessName: partner.business_name || null,
+      baseUrl,
+      refreshUrl: String(req.body.refresh_url || "").trim() || null,
+      returnUrl: String(req.body.return_url || "").trim() || null,
+    });
+
+    return res.json({
+      success: true,
+      partner_id: partnerId,
+      stripe_account_id: link.stripe_account_id,
+      onboarding_url: link.onboarding_url,
+      expires_at: link.expires_at,
+      created_account: link.created_account,
+    });
+  } catch (err) {
+    console.error("Stripe Connect onboarding link error:", err);
+    return res.status(500).json({ error: err.message || "Failed to create a Stripe Connect onboarding link." });
   }
 });
 
@@ -4536,6 +5244,19 @@ app.post("/api/tracking/session/create", async (req, res) => {
       return res.status(400).json({ error: "location_id is required for tracking." });
     }
 
+    const profileIdColumn = await getProfileIdColumn();
+    const profileLookup = await pool.query(
+      `SELECT plan_name, addon_branding_unlocked, addon_funnel_unlocked, addon_tracking_unlocked, addon_extra_vehicle_count
+       FROM profiles
+       WHERE ${profileIdColumn} = $1
+       LIMIT 1`,
+      [locationId]
+    );
+    if (!profileLookup.rows.length) {
+      return res.status(404).json({ error: "Profile not found for tracking." });
+    }
+    assertTrackingAccess(profileLookup.rows[0]);
+
     const existing = await pool.query(
       `SELECT *
        FROM trip_tracking_sessions
@@ -4575,7 +5296,7 @@ app.post("/api/tracking/session/create", async (req, res) => {
     });
   } catch (err) {
     console.error("Create tracking session error:", err);
-    return res.status(500).json({ error: err.message || "Failed to create tracking session." });
+    return res.status(err.statusCode || 500).json({ error: err.message || "Failed to create tracking session." });
   }
 });
 
@@ -4592,6 +5313,7 @@ app.get("/api/tracking/session/driver", async (req, res) => {
     if (!session) {
       return res.status(404).json({ error: "Tracking session not found." });
     }
+    assertTrackingAccess(session);
 
     return res.json({
       success: true,
@@ -4601,7 +5323,7 @@ app.get("/api/tracking/session/driver", async (req, res) => {
     });
   } catch (err) {
     console.error("Driver tracking session lookup error:", err);
-    return res.status(500).json({ error: err.message || "Failed to load driver tracking session." });
+    return res.status(err.statusCode || 500).json({ error: err.message || "Failed to load driver tracking session." });
   }
 });
 
@@ -4618,6 +5340,7 @@ app.get("/api/tracking/session/customer", async (req, res) => {
     if (!session) {
       return res.status(404).json({ error: "Tracking session not found." });
     }
+    assertTrackingAccess(session);
 
     return res.json({
       success: true,
@@ -4627,7 +5350,7 @@ app.get("/api/tracking/session/customer", async (req, res) => {
     });
   } catch (err) {
     console.error("Customer tracking session lookup error:", err);
-    return res.status(500).json({ error: err.message || "Failed to load customer tracking session." });
+    return res.status(err.statusCode || 500).json({ error: err.message || "Failed to load customer tracking session." });
   }
 });
 
@@ -4644,6 +5367,7 @@ app.get("/api/tracking/follow-up", async (req, res) => {
     if (!session) {
       return res.status(404).json({ error: "Tracking session not found." });
     }
+    assertTrackingAccess(session);
 
     const feedback = await getTrackingFeedbackBySessionId(session.id);
 
@@ -4664,7 +5388,7 @@ app.get("/api/tracking/follow-up", async (req, res) => {
     });
   } catch (err) {
     console.error("Tracking follow-up lookup error:", err);
-    return res.status(500).json({ error: err.message || "Failed to load follow-up session." });
+    return res.status(err.statusCode || 500).json({ error: err.message || "Failed to load follow-up session." });
   }
 });
 
@@ -4681,6 +5405,7 @@ app.post("/api/tracking/feedback", async (req, res) => {
     if (!session) {
       return res.status(404).json({ error: "Tracking session not found." });
     }
+    assertTrackingAccess(session);
 
     const rating = normalizeFeedbackRating(req.body.rating);
     const feedbackText = normalizeFeedbackText(req.body.feedback_text);
@@ -4703,7 +5428,7 @@ app.post("/api/tracking/feedback", async (req, res) => {
     });
   } catch (err) {
     console.error("Tracking feedback save error:", err);
-    return res.status(500).json({ error: err.message || "Failed to save follow-up feedback." });
+    return res.status(err.statusCode || 500).json({ error: err.message || "Failed to save follow-up feedback." });
   }
 });
 
@@ -4725,6 +5450,7 @@ app.post("/api/tracking/tip-checkout", async (req, res) => {
     if (!session) {
       return res.status(404).json({ error: "Tracking session not found." });
     }
+    assertTrackingAccess(session);
 
     const paymentProfile = await getPaymentProfileForLocation(session.location_id);
     if (paymentProfile.provider !== "stripe" || !paymentProfile.stripeSecretKey) {
@@ -4769,7 +5495,7 @@ app.post("/api/tracking/tip-checkout", async (req, res) => {
     });
   } catch (err) {
     console.error("Tracking tip checkout error:", err);
-    return res.status(500).json({ error: err.message || "Failed to start tip checkout." });
+    return res.status(err.statusCode || 500).json({ error: err.message || "Failed to start tip checkout." });
   }
 });
 
@@ -4787,6 +5513,7 @@ app.get("/api/tracking/tip-checkout-status", async (req, res) => {
     if (!session) {
       return res.status(404).json({ error: "Tracking session not found." });
     }
+    assertTrackingAccess(session);
 
     const paymentProfile = await getPaymentProfileForLocation(session.location_id);
     if (paymentProfile.provider !== "stripe" || !paymentProfile.stripeSecretKey) {
@@ -4815,7 +5542,7 @@ app.get("/api/tracking/tip-checkout-status", async (req, res) => {
     });
   } catch (err) {
     console.error("Tracking tip checkout status error:", err);
-    return res.status(500).json({ error: err.message || "Failed to verify tip checkout." });
+    return res.status(err.statusCode || 500).json({ error: err.message || "Failed to verify tip checkout." });
   }
 });
 
@@ -4848,6 +5575,7 @@ app.get("/api/test-run/config/:location_id", async (req, res) => {
       planName: profile.plan_name || "starter",
       addonBrandingUnlocked: profile.addon_branding_unlocked,
       addonFunnelUnlocked: profile.addon_funnel_unlocked,
+      addonTrackingUnlocked: profile.addon_tracking_unlocked,
       addonExtraVehicleCount: profile.addon_extra_vehicle_count,
     });
     const sanitizedFleet = sanitizeFleetByEntitlements(safeParseJson(profile.fleet), entitlements);
@@ -4893,6 +5621,7 @@ app.get("/api/tracking/driver-profiles", async (req, res) => {
     if (!session) {
       return res.status(404).json({ error: "Tracking session not found." });
     }
+    assertTrackingAccess(session);
 
     const profiles = await listDriverProfiles(session.location_id);
     return res.json({
@@ -4909,7 +5638,7 @@ app.get("/api/tracking/driver-profiles", async (req, res) => {
     });
   } catch (err) {
     console.error("Driver profile lookup error:", err);
-    return res.status(500).json({ error: err.message || "Failed to load driver profiles." });
+    return res.status(err.statusCode || 500).json({ error: err.message || "Failed to load driver profiles." });
   }
 });
 
@@ -4953,6 +5682,8 @@ app.post("/api/tracking/driver-profile/select", async (req, res) => {
     }
 
     const sessionRecord = sessionLookup.rows[0];
+    const session = await getTrackingSessionById(sessionRecord.id);
+    assertTrackingAccess(session || {});
     let chosenProfile = null;
 
     if (profileId) {
@@ -5077,7 +5808,7 @@ app.post("/api/tracking/driver-profile/select", async (req, res) => {
       } catch (_) {}
     }
     console.error("Driver profile save/select error:", err);
-    return res.status(500).json({ error: err.message || "Failed to save the selected driver." });
+    return res.status(err.statusCode || 500).json({ error: err.message || "Failed to save the selected driver." });
   } finally {
     if (client) client.release();
   }
@@ -5111,6 +5842,8 @@ app.post("/api/tracking/location", async (req, res) => {
     }
 
     const session = lookup.rows[0];
+    const fullSession = await getTrackingSessionById(session.id);
+    assertTrackingAccess(fullSession || {});
     if (session.status === "completed") {
       return res.status(400).json({ error: "Trip tracking is already completed." });
     }
@@ -5143,7 +5876,7 @@ app.post("/api/tracking/location", async (req, res) => {
     });
   } catch (err) {
     console.error("Driver tracking location update error:", err);
-    return res.status(500).json({ error: err.message || "Failed to save tracking location." });
+    return res.status(err.statusCode || 500).json({ error: err.message || "Failed to save tracking location." });
   }
 });
 
@@ -5177,6 +5910,8 @@ app.post("/api/tracking/status", async (req, res) => {
     }
 
     const existingSession = existingSessionResult.rows[0];
+    const fullSession = await getTrackingSessionById(existingSession.id);
+    assertTrackingAccess(fullSession || {});
 
     const result = await client.query(
       `UPDATE trip_tracking_sessions
@@ -5269,7 +6004,7 @@ app.post("/api/tracking/status", async (req, res) => {
       } catch (_) {}
     }
     console.error("Driver tracking status update error:", err);
-    return res.status(500).json({ error: err.message || "Failed to update tracking status." });
+    return res.status(err.statusCode || 500).json({ error: err.message || "Failed to update tracking status." });
   } finally {
     if (client) client.release();
   }
@@ -5360,32 +6095,44 @@ app.post("/api/dispatch/:dispatch_request_id/offer", async (req, res) => {
     }
 
     const ownerLocationId = String(dispatchLookup.rows[0].owner_location_id || "").trim();
+    const quotedPrice = Number(req.body.quoted_price || 0);
+    if (!(quotedPrice > 0)) {
+      return res.status(400).json({ error: "quoted_price is required to calculate partner payouts." });
+    }
     let offersSent = 0;
 
     for (const partnerId of partnerIds) {
       const splitAgreement = await getPartnerSplitAgreement(ownerLocationId, String(partnerId));
       const split = splitAgreement || buildPartnerSplitAgreementPayload(req.body.accepting_partner_percent);
+      const payoutAmounts = calculateDispatchPayoutAmounts({
+        grossAmount: quotedPrice,
+        acceptingPartnerPercent: split.accepting_partner_percent,
+        sourceOperatorPercent: split.source_operator_percent,
+        splitModel: split.split_model,
+        feeChargedTo: split.fee_charged_to,
+      });
 
       await pool.query(
         `INSERT INTO dispatch_offers (
           id, dispatch_request_id, partner_id, status, sent_at, expires_at,
-          quoted_price, partner_payout_amount, platform_fee_amount, notes,
+          quoted_price, partner_payout_amount, platform_fee_amount, estimated_stripe_fee_amount, notes,
           source_operator_percent, accepting_partner_percent, split_model, fee_charged_to
-        ) VALUES ($1,$2,$3,$4,NOW(),$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+        ) VALUES ($1,$2,$3,$4,NOW(),$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
         [
           randomUUID(),
           dispatchRequestId,
           String(partnerId),
           "sent",
           expiresAt,
-          req.body.quoted_price != null ? Number(req.body.quoted_price) : null,
-          req.body.partner_payout_amount != null ? Number(req.body.partner_payout_amount) : null,
-          req.body.platform_fee_amount != null ? Number(req.body.platform_fee_amount) : null,
+          payoutAmounts.gross_amount,
+          payoutAmounts.partner_payout_amount,
+          payoutAmounts.platform_fee_amount,
+          payoutAmounts.estimated_stripe_fee_amount,
           String(req.body.notes || "").trim() || null,
-          Number(split.source_operator_percent),
-          Number(split.accepting_partner_percent),
-          String(split.split_model || "net_after_stripe_fee"),
-          String(split.fee_charged_to || "source_operator"),
+          Number(payoutAmounts.source_operator_percent),
+          Number(payoutAmounts.accepting_partner_percent),
+          String(payoutAmounts.split_model || "net_after_stripe_fee"),
+          String(payoutAmounts.fee_charged_to || "source_operator"),
         ]
       );
       offersSent += 1;
@@ -5444,7 +6191,7 @@ app.post("/api/dispatch/:dispatch_request_id/assign", async (req, res) => {
     }
 
     const acceptedOffer = await client.query(
-      `SELECT id, quoted_price, partner_payout_amount, platform_fee_amount
+      `SELECT id, quoted_price, partner_payout_amount, platform_fee_amount, estimated_stripe_fee_amount
        FROM dispatch_offers
        WHERE dispatch_request_id = $1 AND partner_id = $2 AND status = 'accepted'
        LIMIT 1`,
@@ -5493,8 +6240,9 @@ app.post("/api/dispatch/:dispatch_request_id/assign", async (req, res) => {
     const offer = acceptedOffer.rows[0];
     await client.query(
       `INSERT INTO partner_payouts (
-        id, dispatch_assignment_id, booking_id, gross_amount, partner_payout_amount, platform_fee_amount, status
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+        id, dispatch_assignment_id, booking_id, gross_amount, partner_payout_amount, platform_fee_amount,
+        estimated_stripe_fee_amount, amount_transferred, status
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
       [
         randomUUID(),
         assignmentId,
@@ -5502,6 +6250,8 @@ app.post("/api/dispatch/:dispatch_request_id/assign", async (req, res) => {
         offer.quoted_price != null ? Number(offer.quoted_price) : 0,
         offer.partner_payout_amount != null ? Number(offer.partner_payout_amount) : 0,
         offer.platform_fee_amount != null ? Number(offer.platform_fee_amount) : 0,
+        offer.estimated_stripe_fee_amount != null ? Number(offer.estimated_stripe_fee_amount) : 0,
+        0,
         "pending",
       ]
     );
@@ -5624,6 +6374,26 @@ app.post("/api/dispatch/:dispatch_request_id/assign", async (req, res) => {
       };
     }
 
+    let payoutSync = {
+      attempted: false,
+      success: false,
+      reason: null,
+      stripe_transfer_id: null,
+      transfer_amount: 0,
+    };
+    try {
+      payoutSync = bookingId ? await syncPartnerPayoutForBooking(bookingId) : payoutSync;
+    } catch (payoutErr) {
+      console.error("Partner payout sync error after dispatch assignment:", payoutErr);
+      payoutSync = {
+        attempted: true,
+        success: false,
+        reason: payoutErr?.message || "Unable to sync partner payout after assignment.",
+        stripe_transfer_id: null,
+        transfer_amount: 0,
+      };
+    }
+
     return res.json({
       success: true,
       assignment_id: assignmentId,
@@ -5631,6 +6401,7 @@ app.post("/api/dispatch/:dispatch_request_id/assign", async (req, res) => {
       partner_booking_id: null,
       partner_crm_event_id: null,
       crm_sync: crmSync,
+      payout_sync: payoutSync,
       message: crmSync.success
         ? "Partner assignment created and pushed into partner CRM."
         : "Partner assignment created, but partner CRM sync needs attention.",
@@ -7134,6 +7905,7 @@ app.get("/api/checkout-session-status", async (req, res) => {
     const totalPrice = Number(session.metadata?.total_price || 0);
     const depositAmount = Number(session.metadata?.deposit_amount || 0);
     const depositPercent = Number(session.metadata?.deposit_percent || 100);
+    const connectTransferAmountCents = Math.max(0, Number(session.metadata?.connect_transfer_amount_cents || 0));
 
     if (session.payment_status === "paid" && bookingId) {
       const confirmation = await updateBookingConfirmation({
@@ -7152,11 +7924,48 @@ app.get("/api/checkout-session-status", async (req, res) => {
         [bookingId]
       );
 
+      let payoutSync = {
+        attempted: false,
+        success: false,
+        reason: null,
+        stripe_transfer_id: null,
+        transfer_amount: 0,
+      };
+      try {
+        let stripeTransferId = null;
+        if (session.payment_intent && connectTransferAmountCents > 0) {
+          const paymentIntent = await stripeFormRequest(
+            `/v1/payment_intents/${encodeURIComponent(String(session.payment_intent))}?expand[]=latest_charge.transfer`,
+            {},
+            "GET",
+            stripeSecretKey
+          );
+          stripeTransferId = paymentIntent?.latest_charge?.transfer?.id
+            || paymentIntent?.charges?.data?.[0]?.transfer
+            || null;
+        }
+        payoutSync = await syncPartnerPayoutForBooking(bookingId, {
+          transferAlreadyExecuted: connectTransferAmountCents > 0,
+          transferredAmountCents: connectTransferAmountCents,
+          stripeTransferId,
+        });
+      } catch (payoutErr) {
+        console.error("Partner payout sync error after Stripe payment:", payoutErr);
+        payoutSync = {
+          attempted: true,
+          success: false,
+          reason: payoutErr?.message || "Unable to sync partner payout after payment.",
+          stripe_transfer_id: null,
+          transfer_amount: 0,
+        };
+      }
+
       return res.json({
         success: true,
         paid: true,
         booking: confirmation,
         reservation: bookingLookup.rows[0] || null,
+        payout_sync: payoutSync,
       });
     }
 
@@ -7522,6 +8331,7 @@ const entitlements = buildPlanEntitlements({
   planName: profile.plan_name || "starter",
   addonBrandingUnlocked: profile.addon_branding_unlocked,
   addonFunnelUnlocked: profile.addon_funnel_unlocked,
+  addonTrackingUnlocked: profile.addon_tracking_unlocked,
   addonExtraVehicleCount: profile.addon_extra_vehicle_count,
 });
 const sanitizedBranding = sanitizeBrandingByEntitlements({
@@ -7756,6 +8566,7 @@ app.get("/api/get-profile-widget/:location_id", async (req, res) => {
         planName: p.plan_name || "starter",
         addonBrandingUnlocked: p.addon_branding_unlocked,
         addonFunnelUnlocked: p.addon_funnel_unlocked,
+        addonTrackingUnlocked: p.addon_tracking_unlocked,
         addonExtraVehicleCount: p.addon_extra_vehicle_count,
       });
       const sanitizedBranding = sanitizeBrandingByEntitlements({

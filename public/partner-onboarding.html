@@ -252,12 +252,17 @@
             <select id="payment_provider">
               <option value="stripe">Stripe</option>
               <option value="square">Square</option>
+              <option value="paypal">PayPal</option>
+              <option value="authorize_net">Authorize.Net</option>
               <option value="crm_invoice_only">CRM Invoice Only</option>
             </select>
           </div>
           <div class="field">
             <label for="stripe_account_id">Stripe Connect Account ID</label>
             <input id="stripe_account_id" placeholder="acct_..." />
+            <div class="small-note">
+              Optional. The source operator can also send you a Stripe Connect onboarding link later if you will receive network-dispatch payouts through Stripe.
+            </div>
           </div>
           <div class="field">
             <label for="timezone">Timezone</label>
@@ -313,6 +318,7 @@
   <script>
     const query = new URLSearchParams(window.location.search);
     const token = (query.get("token") || "").trim();
+    const stripeConnectState = (query.get("stripe_connect") || "").trim();
 
     const inviteSummaryEl = document.getElementById("invite-summary");
     const inviteStatusEl = document.getElementById("invite-status");
@@ -371,6 +377,26 @@
     }
 
     async function loadInvite() {
+      if (!token && stripeConnectState) {
+        const stateLabel = stripeConnectState === "refresh"
+          ? "Your Stripe Connect onboarding session expired or needs to be refreshed."
+          : "Stripe Connect onboarding is complete for this partner payout account.";
+        inviteSummaryEl.innerHTML = `
+          <div><strong>Stripe Connect Status:</strong> ${stateLabel}</div>
+          <div><strong>Next Step:</strong> Return to the source operator if they need anything else from you.</div>
+        `;
+        showStatus(
+          inviteStatusEl,
+          stripeConnectState === "refresh"
+            ? "Ask the source operator for a fresh Stripe Connect onboarding link to continue your payout setup."
+            : "You can close this page now. Your Stripe payout onboarding has been submitted.",
+          stripeConnectState === "refresh"
+        );
+        invalidInviteHelpEl.style.display = "none";
+        onboardingForm.style.display = "none";
+        return;
+      }
+
       if (!token) {
         showStatus(inviteStatusEl, "This partner onboarding link is missing its invite token.", true);
         invalidInviteHelpEl.style.display = "block";

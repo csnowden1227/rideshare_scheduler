@@ -449,9 +449,17 @@
                 <div><strong>Contact:</strong> ${partner.contact_name || "Not provided"}${partner.email ? ` | ${partner.email}` : ""}</div>
                 <div><strong>Phone:</strong> ${partner.phone || "Not provided"}</div>
                 <div><strong>Active Fleet Rows:</strong> ${partner.active_fleet_count || 0}</div>
+                <div><strong>Stripe Connect Payouts:</strong> ${partner.stripe_account_id ? "Ready" : "Not linked yet"}</div>
               </div>
             </div>
             <span class="pill ${partner.status === "active" ? "pill-green" : "pill-muted"}">${partner.status || "pending"}</span>
+          </div>
+          <div class="btn-row" style="margin-top:12px;">
+            <button type="button" class="btn btn-secondary" data-role="connect-btn">${partner.stripe_account_id ? "Refresh Stripe Connect Link" : "Create Stripe Connect Link"}</button>
+          </div>
+          <div class="copy-link" data-role="connect-link" style="display:none;"></div>
+          <div class="small-note">
+            Their booking provider can stay different. Stripe Connect here is only for network-dispatch payouts.
           </div>
           <div class="split-grid">
             <div>
@@ -473,6 +481,8 @@
         const acceptingInput = card.querySelector('[data-role="accepting-input"]');
         const sourceOutput = card.querySelector('[data-role="source-output"]');
         const saveBtn = card.querySelector('[data-role="save-btn"]');
+        const connectBtn = card.querySelector('[data-role="connect-btn"]');
+        const connectLinkEl = card.querySelector('[data-role="connect-link"]');
         const rowStatus = card.querySelector('[data-role="row-status"]');
 
         acceptingInput.addEventListener("input", () => {
@@ -502,6 +512,42 @@
             showStatus(rowStatus, err.message || "Unable to save split agreement.", true);
           } finally {
             saveBtn.disabled = false;
+          }
+        });
+
+        connectBtn.addEventListener("click", async () => {
+          try {
+            connectBtn.disabled = true;
+            const data = await requestJson(`/api/partners/${encodeURIComponent(partner.id)}/stripe-connect/onboarding-link`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                owner_location_id: ownerLocationId,
+              })
+            });
+
+            if (data.onboarding_url) {
+              connectLinkEl.style.display = "block";
+              connectLinkEl.textContent = data.onboarding_url;
+              try {
+                await navigator.clipboard.writeText(data.onboarding_url);
+                showStatus(
+                  rowStatus,
+                  `${data.created_account ? "Created" : "Refreshed"} Stripe Connect onboarding link and copied it to your clipboard.`
+                );
+              } catch (_) {
+                showStatus(
+                  rowStatus,
+                  `${data.created_account ? "Created" : "Refreshed"} Stripe Connect onboarding link. Copy it below and send it to the partner.`
+                );
+              }
+            } else {
+              showStatus(rowStatus, "Stripe Connect onboarding link created, but no URL was returned.", true);
+            }
+          } catch (err) {
+            showStatus(rowStatus, err.message || "Unable to create a Stripe Connect onboarding link.", true);
+          } finally {
+            connectBtn.disabled = false;
           }
         });
 
