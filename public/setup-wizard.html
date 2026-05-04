@@ -21,6 +21,7 @@
         .section-header { text-transform: uppercase; font-style: italic; font-weight: 800; color: #1e293b; border-bottom: 2px solid #e2e8f0; padding-bottom: 0.5rem; margin-bottom: 1.5rem; }
         .coord-input { font-family: monospace; font-size: 10px; color: #64748b; background-color: #f8fafc; }
         #map { height: 400px; width: 100%; border-radius: 1rem; }
+        #route-map { height: 320px; width: 100%; border-radius: 1rem; }
         .disabled-btn { opacity: 0.5; cursor: not-allowed; filter: grayscale(1); }
         #logo-preview { max-height: 60px; object-fit: contain; border-radius: 8px; }
         .wizard-btn-primary { background: linear-gradient(135deg, var(--wizard-teal) 0%, var(--wizard-purple) 100%); color: #fff; transition: all 0.2s; }
@@ -133,6 +134,7 @@
             .card { padding: 1.25rem; border-radius: 1.25rem; margin-bottom: 1.25rem; }
             .section-header { font-size: 0.95rem; margin-bottom: 1rem; }
             #map { height: 280px; }
+            #route-map { height: 260px; }
             #logo-upload-wrap { flex-direction: column; align-items: flex-start; }
             .sticky { position: static !important; top: auto !important; }
             .wizard-table-scroll table { min-width: 680px; }
@@ -516,7 +518,8 @@
             <div class="card mt-6">
                 <h3 class="section-header italic font-bold text-lg mb-4">Fixed Rate Zones (Specific Locations)</h3>
                 <p class="text-xs text-slate-500 mb-4 leading-relaxed">Fixed Rate Zones control pricing only. They do not override your main Service Area Type boundary unless an exception-zone feature is added later.</p>
-                <p class="text-xs text-slate-500 mb-4 leading-relaxed">Each fixed destination radius appears on the Google map above so you can visually confirm the center point and coverage circle while building pricing zones. Every zone keeps its own color, and you can drag either the marker or the circle itself to reposition it.</p>
+                <p class="text-xs text-slate-500 mb-4 leading-relaxed">This section now has its own dedicated map so you can move each fixed destination radius visually. Every zone keeps its own color, and you can drag either the marker or the circle itself to reposition it.</p>
+                <div id="route-map" class="mb-4"></div>
                 <div class="wizard-table-scroll">
                     <table class="w-full text-left border-collapse">
                         <thead>
@@ -622,8 +625,9 @@ const wizardToken = urlParams.get('token') || '';
 const requestedPlan = String(urlParams.get('plan') || '').trim().toLowerCase();
 const planOverride = ['starter', 'premium', 'pro'].includes(requestedPlan) ? requestedPlan : '';
 const BACKEND_URL = "https://rideshare-scheduler-axx6.onrender.com";
-let map, circle, marker, autocomplete;
+let map, circle, marker, autocomplete, routeMap;
 let routeCircles = []; 
+let serviceAreaBoundaryOverlays = [];
 let logoBase64 = '';
 let loadedStripeSecretKeyRaw = '';
 let serviceAreaRulesState = {
@@ -652,6 +656,11 @@ const ROUTE_GEOFENCE_COLORS = [
     { fill: "#ec4899", stroke: "#db2777" },
     { fill: "#14b8a6", stroke: "#0f766e" },
 ];
+const SERVICE_AREA_BOUNDARY_COLORS = {
+    cities: "#2563eb",
+    counties: "#7c3aed",
+    zips: "#0f766e"
+};
 const VEHICLE_LIST = ["Standard Sedan", "Luxury Sedan", "Standard SUV", "Luxury SUV", "Standard XL SUV", "Luxury XL SUV"];
 
 // --- UI NOTIFICATION HELPER ---
@@ -715,6 +724,23 @@ function refreshServiceAreaOverlay() {
     if (bounds) {
         map.fitBounds(bounds);
     }
+}
+
+function initRouteMap(lat = 34.0522, lng = -118.2437) {
+    if (!google?.maps) return;
+
+    const center = {
+        lat: Number(lat) || 34.0522,
+        lng: Number(lng) || -118.2437
+    };
+
+    routeMap = new google.maps.Map(document.getElementById('route-map'), {
+        center,
+        zoom: 9,
+        mapTypeControl: false,
+        streetViewControl: false,
+        fullscreenControl: true
+    });
 }
 
 async function ensureGoogleMapsLoaded(mapsKey) {
@@ -819,7 +845,10 @@ function initServiceMap(lat = 34.0522, lng = -118.2437, radiusMiles = 90) {
 
     updateFields();
     refreshServiceAreaOverlay();
+    renderServiceAreaBoundaries();
     setTimeout(refreshServiceAreaOverlay, 150);
+    initRouteMap(center.lat, center.lng);
+    updateRouteMap();
     initAutocomplete();
 }
 
@@ -944,6 +973,9 @@ function updateMapFromCoordinates() {
     circle.setCenter(pos);
     circle.setRadius(radius * 1609.34);
     refreshServiceAreaOverlay();
+    if (routeMap) {
+        routeMap.setCenter(pos);
+    }
 }
 
 function useCurrentLocation() {
@@ -954,6 +986,9 @@ function useCurrentLocation() {
             circle.setCenter(pos);
             marker.setPosition(pos);
             refreshServiceAreaOverlay();
+            if (routeMap) {
+                routeMap.setCenter(pos);
+            }
         });
     }
 }
@@ -998,6 +1033,11 @@ function updateRouteMap() {
     });
     routeCircles = [];
 
+    if (!routeMap || !google?.maps) return;
+
+    const bounds = new google.maps.LatLngBounds();
+    let hasRouteBounds = false;
+
     document.querySelectorAll('.route-row').forEach((row, index) => {
         const lat = parseFloat(row.querySelector('.r-lat').value);
         const lng = parseFloat(row.querySelector('.r-lng').value);
@@ -1006,7 +1046,7 @@ function updateRouteMap() {
 
         if (!isNaN(lat) && !isNaN(lng)) {
             const marker = new google.maps.Marker({
-                map: map,
+                map: routeMap,
                 position: { lat, lng },
                 draggable: true,
                 icon: {
@@ -1021,7 +1061,7 @@ function updateRouteMap() {
             });
 
             const c = new google.maps.Circle({
-                map: map,
+                map: routeMap,
                 center: { lat, lng },
                 radius: rad * 1609.34,
                 fillColor: overlayColors.fill,
@@ -1050,8 +1090,19 @@ function updateRouteMap() {
             });
 
             routeCircles.push({ circle: c, marker });
+
+            bounds.extend({ lat, lng });
+            const circleBounds = c.getBounds();
+            if (circleBounds) {
+                bounds.union(circleBounds);
+            }
+            hasRouteBounds = true;
         }
     });
+
+    if (hasRouteBounds) {
+        routeMap.fitBounds(bounds);
+    }
 }
 
 // --- RENDERERS ---
@@ -1166,6 +1217,7 @@ function renderServiceAreaRuleLists() {
     renderServiceAreaList('service-city-list', serviceAreaRulesState.cities, 'cities');
     renderServiceAreaList('service-county-list', serviceAreaRulesState.counties, 'counties');
     renderServiceAreaList('service-zip-list', serviceAreaRulesState.zips, 'zips');
+    renderServiceAreaBoundaries();
 }
 
 function addServiceAreaRule(key, rawValue) {
@@ -1187,6 +1239,101 @@ function removeServiceAreaRule(key, index) {
         [key]: nextValues
     };
     renderServiceAreaRuleLists();
+}
+
+function clearServiceAreaBoundaryOverlays() {
+    serviceAreaBoundaryOverlays.forEach((overlay) => overlay?.setMap?.(null));
+    serviceAreaBoundaryOverlays = [];
+}
+
+function createBoundarySearchRequest(ruleType, rawValue) {
+    const value = String(rawValue || '').trim();
+    if (!value) return null;
+
+    if (ruleType === 'zips') {
+        return {
+            componentRestrictions: {
+                country: 'US',
+                postalCode: value
+            }
+        };
+    }
+
+    return { address: `${value}, USA` };
+}
+
+async function geocodeBoundaryRule(ruleType, value) {
+    if (!geocoder) return null;
+    const request = createBoundarySearchRequest(ruleType, value);
+    if (!request) return null;
+
+    try {
+        const result = await geocoder.geocode(request);
+        return result?.results?.[0] || null;
+    } catch (err) {
+        console.warn(`Boundary geocode failed for ${ruleType}:`, value, err);
+        return null;
+    }
+}
+
+function addBoundaryOverlayFromResult(ruleType, result) {
+    if (!map || !google?.maps || !result?.geometry) return;
+
+    const color = SERVICE_AREA_BOUNDARY_COLORS[ruleType] || "#2563eb";
+    const geometry = result.geometry;
+    const bounds = geometry.bounds || geometry.viewport;
+
+    if (bounds) {
+        const rectangle = new google.maps.Rectangle({
+            map,
+            bounds,
+            strokeColor: color,
+            strokeOpacity: 0.95,
+            strokeWeight: 2,
+            fillColor: color,
+            fillOpacity: 0.08,
+            clickable: false,
+            zIndex: 4
+        });
+        serviceAreaBoundaryOverlays.push(rectangle);
+        return;
+    }
+
+    if (geometry.location) {
+        const fallbackCircle = new google.maps.Circle({
+            map,
+            center: geometry.location,
+            radius: ruleType === 'zips' ? 2500 : 5000,
+            strokeColor: color,
+            strokeOpacity: 0.95,
+            strokeWeight: 2,
+            fillColor: color,
+            fillOpacity: 0.08,
+            clickable: false,
+            zIndex: 4
+        });
+        serviceAreaBoundaryOverlays.push(fallbackCircle);
+    }
+}
+
+async function renderServiceAreaBoundaries() {
+    clearServiceAreaBoundaryOverlays();
+
+    const type = document.getElementById('service_area_type')?.value || 'radius';
+    if (type !== 'city_county_zip' || !map || !geocoder || !google?.maps) return;
+
+    const ruleGroups = [
+        ['cities', serviceAreaRulesState.cities],
+        ['counties', serviceAreaRulesState.counties],
+        ['zips', serviceAreaRulesState.zips]
+    ];
+
+    for (const [ruleType, values] of ruleGroups) {
+        for (const value of values) {
+            const result = await geocodeBoundaryRule(ruleType, value);
+            if (result) addBoundaryOverlayFromResult(ruleType, result);
+        }
+    }
 }
 
 function updateServiceAreaTypeUI() {
@@ -1222,8 +1369,11 @@ function updateServiceAreaTypeUI() {
     if (showReferenceMap) {
         requestAnimationFrame(() => {
             refreshServiceAreaOverlay();
+            renderServiceAreaBoundaries();
             updateRouteMap();
         });
+    } else {
+        clearServiceAreaBoundaryOverlays();
     }
 }
 
