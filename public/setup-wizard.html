@@ -419,7 +419,7 @@
                     </div>
                     <div class="md:col-span-2 service-area-panel">
                         <div class="text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-2">How this works</div>
-                        <div id="service-area-mode-help" class="service-area-note">Use a service center and mileage radius for the fastest setup.</div>
+                        <div id="service-area-mode-help" class="service-area-note">Use a service center and mileage radius for the fastest setup. Your selected service area type is always the main booking boundary.</div>
                     </div>
                 </div>
 
@@ -450,14 +450,14 @@
                         <div class="service-area-panel">
                             <label class="block text-[10px] font-bold mb-2 uppercase text-slate-400">Add City</label>
                             <div class="flex gap-2">
-                                <input type="text" id="service-city-input" class="input-mini" placeholder="e.g. Beverly Hills">
+                                <input type="text" id="service-city-input" class="input-mini" placeholder="e.g. Beverly Hills, CA">
                                 <button type="button" id="add-service-city-btn" class="wizard-btn-accent text-[10px] font-bold rounded-lg px-3 uppercase">Add</button>
                             </div>
                         </div>
                         <div class="service-area-panel">
                             <label class="block text-[10px] font-bold mb-2 uppercase text-slate-400">Add County</label>
                             <div class="flex gap-2">
-                                <input type="text" id="service-county-input" class="input-mini" placeholder="e.g. Los Angeles County">
+                                <input type="text" id="service-county-input" class="input-mini" placeholder="e.g. Orange County, CA">
                                 <button type="button" id="add-service-county-btn" class="wizard-btn-accent text-[10px] font-bold rounded-lg px-3 uppercase">Add</button>
                             </div>
                         </div>
@@ -469,6 +469,8 @@
                             </div>
                         </div>
                     </div>
+
+                    <p class="service-area-note mt-4">For places that exist in more than one state, include the state in the name, like <strong>Orange County, CA</strong> or <strong>Orange County, FL</strong>. ZIP code entries do not need a state.</p>
 
                     <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mt-4">
                         <div>
@@ -500,6 +502,7 @@
 
             <div class="card mt-6">
                 <h3 class="section-header italic font-bold text-lg mb-4">Fixed Rate Zones (Specific Locations)</h3>
+                <p class="text-xs text-slate-500 mb-4 leading-relaxed">Fixed Rate Zones control pricing only. They do not override your main Service Area Type boundary unless an exception-zone feature is added later.</p>
                 <div class="wizard-table-scroll">
                     <table class="w-full text-left border-collapse">
                         <thead>
@@ -1186,11 +1189,11 @@ function updateServiceAreaTypeUI() {
 
     if (help) {
         if (type === 'city_county_zip') {
-            help.textContent = 'Build your service boundary around real cities, counties, and ZIP codes instead of one large circle.';
+            help.textContent = 'Build your service boundary around real cities, counties, and ZIP codes instead of one large circle. Add the state for duplicate names like Orange County, CA. Fixed Rate Zones still affect pricing only, not boundary access.';
         } else if (type === 'custom_zones') {
             help.textContent = 'Custom zones are reserved for advanced multi-area coverage. Use this as a planning mode for now while we keep radius and city/county/ZIP fully functional.';
         } else {
-            help.textContent = 'Use a service center and mileage radius for the fastest setup.';
+            help.textContent = 'Use a service center and mileage radius for the fastest setup. Fixed Rate Zones still affect pricing only, not boundary access.';
         }
     }
 
@@ -1488,6 +1491,112 @@ function addAddonRow(data = {}) {
     document.getElementById('addon-body').appendChild(tr);
 }
 
+function applyLocalPlanFallback(planName = planOverride || currentPlanName || 'starter') {
+    const normalizedPlan = String(planName || 'starter').trim().toLowerCase();
+    const fallbackPlan = ['starter', 'premium', 'pro'].includes(normalizedPlan) ? normalizedPlan : 'starter';
+    loadedStripeSecretKeyRaw = '';
+    setFleetPlanMessage(fallbackPlan);
+    currentEntitlements = {
+        ...currentEntitlements,
+        plan_name: fallbackPlan,
+        allowed_fleet_count: fallbackPlan === 'pro' ? 3 : 1,
+        included_fleet_count: fallbackPlan === 'pro' ? 3 : 1,
+        max_fleet_count: 6,
+        branding_enabled: fallbackPlan === 'premium' || fallbackPlan === 'pro',
+        logo_enabled: fallbackPlan === 'premium' || fallbackPlan === 'pro',
+        funnel_enabled: fallbackPlan === 'pro'
+    };
+    setBrandingPlanMessage(fallbackPlan);
+    renderFleet(getIncludedFleetCount(), []);
+    updateFleetControls();
+    updatePaymentProviderUI();
+    serviceAreaRulesState = createNormalizedServiceAreaRuleState({});
+    renderServiceAreaRuleLists();
+    updateServiceAreaTypeUI();
+}
+
+function applyProfileToWizard(data = {}, { allowSensitive = true } = {}) {
+    if (!data || data.error) return false;
+
+    if (planOverride) data.plan_name = planOverride;
+    currentEntitlements = data.entitlements || currentEntitlements;
+    document.getElementById('business_name').value = data.business_name || '';
+    logoBase64 = data.business_logo || '';
+    if (logoBase64) {
+        const preview = document.getElementById('logo-preview');
+        if (preview) {
+            preview.src = logoBase64;
+            preview.classList.remove('hidden');
+        }
+    }
+    document.getElementById('brand_color_primary').value = data.brand_color_primary || '#082f49';
+    document.getElementById('brand_color_secondary').value = data.brand_color_secondary || '#0f766e';
+    document.getElementById('brand_color_accent').value = data.brand_color_accent || '#ecfeff';
+    document.getElementById('widget_tagline').value = data.widget_tagline || 'Luxury airport transfers, executive rides, and premium service tailored to every reservation.';
+    document.getElementById('webhook_url').value = data.crm_webhook_url || '';
+    document.getElementById('maps_key').value = data.maps_api_key || '';
+    document.getElementById('crm_api_key').value = data.crm_api_key || '';
+    document.getElementById('payment_provider').value = data.payment_provider || 'stripe';
+    if (allowSensitive) {
+        loadedStripeSecretKeyRaw = String(data.stripe_secret_key || '').trim();
+        document.getElementById('stripe_secret_key').value = isStripeLiveKey(loadedStripeSecretKeyRaw) ? loadedStripeSecretKeyRaw : '';
+        document.getElementById('stripe_test_secret_key').value = String(data.stripe_test_secret_key || '').trim() || (isStripeTestKey(loadedStripeSecretKeyRaw) ? loadedStripeSecretKeyRaw : '');
+        document.getElementById('square_application_id').value = data.square_application_id || '';
+        document.getElementById('square_access_token').value = data.square_access_token || '';
+        document.getElementById('square_location_id').value = data.square_location_id || '';
+        document.getElementById('paypal_client_id').value = data.paypal_client_id || '';
+        document.getElementById('paypal_client_secret').value = data.paypal_client_secret || '';
+        document.getElementById('paypal_environment').value = data.paypal_environment || 'live';
+        document.getElementById('authorize_api_login_id').value = data.authorize_api_login_id || '';
+        document.getElementById('authorize_transaction_key').value = data.authorize_transaction_key || '';
+        document.getElementById('authorize_client_key').value = data.authorize_client_key || '';
+        document.getElementById('authorize_environment').value = data.authorize_environment || 'production';
+    }
+    document.getElementById('service_area_type').value = data.service_area_type || 'radius';
+    serviceAreaRulesState = createNormalizedServiceAreaRuleState(data.service_area_rules || {});
+    renderServiceAreaRuleLists();
+    updateServiceAreaTypeUI();
+    document.getElementById('tax_rate').value = data.tax_rate ?? data.financials?.tax_rate ?? '';
+    document.getElementById('service_fee_type').value = data.service_fee_type || data.financials?.service_fee_type || '';
+    document.getElementById('service_fee_value').value = data.service_fee_value ?? data.financials?.service_fee_value ?? '';
+    document.getElementById('general_buffer_min').value = data.general_buffer_min ?? data.fleet?.[0]?.outbound_buffer_min ?? 20;
+    updatePaymentProviderUI();
+
+    setFleetPlanMessage(data.plan_name || 'starter');
+    setBrandingPlanMessage(data.plan_name || 'starter');
+    const fleetCount = Math.max((data.fleet || []).length, Math.min(getEffectiveFleetLimit(), getIncludedFleetCount()));
+    renderFleet(fleetCount, data.fleet || []);
+
+    if (data.fixed_rates) data.fixed_rates.forEach(r => addRouteRow(r));
+    if (data.peak_windows) {
+        data.peak_windows.forEach(p => {
+            if (parseFloat(p.multiplier) && parseFloat(p.multiplier) !== 1) {
+                addStandardMultiplierRow(p);
+            }
+            if (parseFloat(p.fixed_surcharge ?? p.flat_surcharge)) {
+                addFixedAddonRow(p);
+            }
+        });
+    }
+    if (data.events) data.events.forEach(e => addEventRow(e));
+    if (data.addons) data.addons.forEach(a => addAddonRow(a));
+
+    return true;
+}
+
+async function loadPublicProfileFallback() {
+    try {
+        const res = await fetch(`${BACKEND_URL}/api/get-profile-widget/${location_id}`);
+        const data = await res.json();
+        if (res.ok && data && !data.error) {
+            return data;
+        }
+    } catch (error) {
+        console.error('Public profile fallback failed:', error);
+    }
+    return null;
+}
+
 // --- BACKEND OPS ---
 async function loadFromBackend() {
     document.getElementById('display-loc-id').innerText = location_id;
@@ -1505,113 +1614,30 @@ async function loadFromBackend() {
         
         console.log("Database says:", data);
         
-        if (data && !data.error) {
-            if (planOverride) data.plan_name = planOverride;
-            currentEntitlements = data.entitlements || currentEntitlements;
-            document.getElementById('business_name').value = data.business_name || '';
-            logoBase64 = data.business_logo || '';
-            if (logoBase64) {
-                const preview = document.getElementById('logo-preview');
-                if (preview) {
-                    preview.src = logoBase64;
-                    preview.classList.remove('hidden');
-                }
-            }
-            document.getElementById('brand_color_primary').value = data.brand_color_primary || '#082f49';
-            document.getElementById('brand_color_secondary').value = data.brand_color_secondary || '#0f766e';
-            document.getElementById('brand_color_accent').value = data.brand_color_accent || '#ecfeff';
-            document.getElementById('widget_tagline').value = data.widget_tagline || 'Luxury airport transfers, executive rides, and premium service tailored to every reservation.';
-            document.getElementById('webhook_url').value = data.crm_webhook_url || '';
-            document.getElementById('maps_key').value = data.maps_api_key || '';
-            document.getElementById('crm_api_key').value = data.crm_api_key || '';
-            document.getElementById('payment_provider').value = data.payment_provider || 'stripe';
-            loadedStripeSecretKeyRaw = String(data.stripe_secret_key || '').trim();
-            document.getElementById('stripe_secret_key').value = isStripeLiveKey(loadedStripeSecretKeyRaw) ? loadedStripeSecretKeyRaw : '';
-            document.getElementById('stripe_test_secret_key').value = String(data.stripe_test_secret_key || '').trim() || (isStripeTestKey(loadedStripeSecretKeyRaw) ? loadedStripeSecretKeyRaw : '');
-            document.getElementById('service_area_type').value = data.service_area_type || 'radius';
-            serviceAreaRulesState = createNormalizedServiceAreaRuleState(data.service_area_rules || {});
-            renderServiceAreaRuleLists();
-            updateServiceAreaTypeUI();
-            document.getElementById('square_application_id').value = data.square_application_id || '';
-            document.getElementById('square_access_token').value = data.square_access_token || '';
-            document.getElementById('square_location_id').value = data.square_location_id || '';
-            document.getElementById('paypal_client_id').value = data.paypal_client_id || '';
-            document.getElementById('paypal_client_secret').value = data.paypal_client_secret || '';
-            document.getElementById('paypal_environment').value = data.paypal_environment || 'live';
-            document.getElementById('authorize_api_login_id').value = data.authorize_api_login_id || '';
-            document.getElementById('authorize_transaction_key').value = data.authorize_transaction_key || '';
-            document.getElementById('authorize_client_key').value = data.authorize_client_key || '';
-            document.getElementById('authorize_environment').value = data.authorize_environment || 'production';
-            document.getElementById('tax_rate').value = data.tax_rate ?? data.financials?.tax_rate ?? '';
-            document.getElementById('service_fee_type').value = data.service_fee_type || data.financials?.service_fee_type || '';
-            document.getElementById('service_fee_value').value = data.service_fee_value ?? data.financials?.service_fee_value ?? '';
-            document.getElementById('general_buffer_min').value = data.general_buffer_min ?? data.fleet?.[0]?.outbound_buffer_min ?? 20;
-            updatePaymentProviderUI();
-
-            setFleetPlanMessage(data.plan_name || 'starter');
-            setBrandingPlanMessage(data.plan_name || 'starter');
-            const fleetCount = Math.max((data.fleet || []).length, Math.min(getEffectiveFleetLimit(), getIncludedFleetCount()));
-            renderFleet(fleetCount, data.fleet || []);
-            
-            if (data.fixed_rates) data.fixed_rates.forEach(r => addRouteRow(r));
-            if (data.peak_windows) {
-                data.peak_windows.forEach(p => {
-                    if (parseFloat(p.multiplier) && parseFloat(p.multiplier) !== 1) {
-                        addStandardMultiplierRow(p);
-                    }
-                    if (parseFloat(p.fixed_surcharge ?? p.flat_surcharge)) {
-                        addFixedAddonRow(p);
-                    }
-                });
-            }
-            if (data.events) data.events.forEach(e => addEventRow(e));
-            if (data.addons) data.addons.forEach(a => addAddonRow(a));
-
+        if (applyProfileToWizard(data, { allowSensitive: true })) {
             await ensureGoogleMapsLoaded(data.maps_api_key || '');
             initServiceMap(data.service_lat || 34.0522, data.service_lng || -118.2437, data.service_radius || 90);
         } else {
-            loadedStripeSecretKeyRaw = '';
-            setFleetPlanMessage(planOverride || 'starter');
-            currentEntitlements = {
-                ...currentEntitlements,
-                plan_name: planOverride || 'starter',
-                allowed_fleet_count: planOverride === 'pro' ? 3 : 1,
-                included_fleet_count: planOverride === 'pro' ? 3 : 1,
-                max_fleet_count: 6,
-                branding_enabled: planOverride === 'premium' || planOverride === 'pro',
-                logo_enabled: planOverride === 'premium' || planOverride === 'pro',
-                funnel_enabled: planOverride === 'pro'
-            };
-            setBrandingPlanMessage(planOverride || 'starter');
-            renderFleet(getIncludedFleetCount(), []);
-            updatePaymentProviderUI();
-            serviceAreaRulesState = createNormalizedServiceAreaRuleState({});
-            renderServiceAreaRuleLists();
-            updateServiceAreaTypeUI();
+            const publicProfile = await loadPublicProfileFallback();
+            if (applyProfileToWizard(publicProfile, { allowSensitive: false })) {
+                await ensureGoogleMapsLoaded(publicProfile.maps_api_key || '');
+                initServiceMap(publicProfile.service_lat || 34.0522, publicProfile.service_lng || -118.2437, publicProfile.service_radius || 90);
+                return;
+            }
+            applyLocalPlanFallback();
             await ensureGoogleMapsLoaded(document.getElementById('maps_key').value || '');
             initServiceMap();
         }
     } catch (e) {
         console.error(e);
-        loadedStripeSecretKeyRaw = '';
-        setFleetPlanMessage(planOverride || 'starter');
-        currentEntitlements = {
-            ...currentEntitlements,
-            plan_name: planOverride || 'starter',
-            allowed_fleet_count: planOverride === 'pro' ? 3 : 1,
-            included_fleet_count: planOverride === 'pro' ? 3 : 1,
-            max_fleet_count: 6,
-            branding_enabled: planOverride === 'premium' || planOverride === 'pro',
-            logo_enabled: planOverride === 'premium' || planOverride === 'pro',
-            funnel_enabled: planOverride === 'pro'
-        };
-        setBrandingPlanMessage(planOverride || 'starter');
-        renderFleet(getIncludedFleetCount(), []);
-        updatePaymentProviderUI();
-        serviceAreaRulesState = createNormalizedServiceAreaRuleState({});
-        renderServiceAreaRuleLists();
-        updateServiceAreaTypeUI();
         try {
+            const publicProfile = await loadPublicProfileFallback();
+            if (applyProfileToWizard(publicProfile, { allowSensitive: false })) {
+                await ensureGoogleMapsLoaded(publicProfile.maps_api_key || '');
+                initServiceMap(publicProfile.service_lat || 34.0522, publicProfile.service_lng || -118.2437, publicProfile.service_radius || 90);
+                return;
+            }
+            applyLocalPlanFallback();
             await ensureGoogleMapsLoaded(document.getElementById('maps_key').value || '');
             initServiceMap();
         } catch (mapErr) {
