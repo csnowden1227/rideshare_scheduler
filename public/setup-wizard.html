@@ -33,7 +33,15 @@
         .wizard-soft-pill { color: var(--wizard-teal); background: var(--wizard-soft-teal); }
         .wizard-border { border-color: #c4b5fd; }
         .wizard-table-scroll { overflow-x: auto; }
-        .wizard-table-scroll table { min-width: 1120px; }
+        .wizard-table-scroll table { min-width: 680px; }
+        .fleet-summary-table { min-width: 0 !important; table-layout: fixed; }
+        .fleet-summary-table td,
+        .fleet-summary-table th {
+            white-space: normal;
+            overflow-wrap: anywhere;
+            word-break: break-word;
+        }
+        .fleet-rows-scroll table { min-width: 1120px; }
         .fleet-config-table { table-layout: fixed; }
         .fleet-config-table th { vertical-align: bottom; }
         .fleet-slot-cell {
@@ -127,7 +135,8 @@
             #map { height: 280px; }
             #logo-upload-wrap { flex-direction: column; align-items: flex-start; }
             .sticky { position: static !important; top: auto !important; }
-            .wizard-table-scroll table { min-width: 1080px; }
+            .wizard-table-scroll table { min-width: 680px; }
+            .fleet-rows-scroll table { min-width: 1040px; }
             .fleet-slot-pill { font-size: 0.65rem; }
         }
     </style>
@@ -298,11 +307,11 @@
             </div>
 
             <div class="card">
-                <div class="flex justify-between items-start gap-4 mb-4">
+                <div class="flex flex-col xl:flex-row xl:justify-between xl:items-start gap-4 mb-4">
                     <div>
                         <h2 class="section-header !mb-2 !border-0">SECTION: FLEET SLOTS</h2>
                         <div class="wizard-table-scroll mb-4">
-                <table class="w-full text-sm fleet-config-table">
+                <table class="w-full text-sm fleet-config-table fleet-summary-table">
                                 <thead>
                                     <tr class="text-left text-slate-400 uppercase text-[10px] tracking-widest">
                                         <th class="py-3 pr-4">Feature</th>
@@ -349,9 +358,9 @@
                             </div>
                         </div>
                     </div>
-                    <button type="button" id="add-fleet-btn" onclick="addFleetRow()" class="wizard-btn-accent text-xs font-bold px-4 py-2 rounded-lg whitespace-nowrap">+ Add Fleet Vehicle</button>
+                    <button type="button" id="add-fleet-btn" onclick="addFleetRow()" class="wizard-btn-accent text-xs font-bold px-4 py-2 rounded-lg whitespace-nowrap self-start xl:self-auto">+ Add Fleet Vehicle</button>
                 </div>
-                <div class="wizard-table-scroll">
+                <div class="wizard-table-scroll fleet-rows-scroll">
                 <table class="w-full">
                     <thead>
                         <tr>
