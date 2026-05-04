@@ -1563,6 +1563,104 @@ async function getProfileCrmApiKey(locationId) {
   return String(result.rows[0]?.crm_api_key || "").trim() || null;
 }
 
+async function getStoredOrRefreshedCrmToken(locationId) {
+  const storedToken = await getStoredCrmToken(locationId);
+  if (!storedToken?.access_token) return null;
+
+  const expiresAt = storedToken.expires_at ? new Date(storedToken.expires_at) : null;
+  const hasExpired = expiresAt && !Number.isNaN(expiresAt.getTime()) && expiresAt.getTime() <= (Date.now() + 60_000);
+
+  if (!hasExpired) {
+    return String(storedToken.access_token || "").trim() || null;
+  }
+
+  if (storedToken.refresh_token) {
+    const refreshed = await refreshCrmAccessToken(storedToken.refresh_token);
+    await saveCrmToken(locationId, {
+      access_token: refreshed.access_token,
+      refresh_token: refreshed.refresh_token || storedToken.refresh_token,
+      expires_in: refreshed.expires_in,
+      expires_at: refreshed.expires_at,
+      token_type: refreshed.token_type,
+      scope: refreshed.scope,
+    });
+    return String(refreshed.access_token || "").trim() || null;
+  }
+
+  return String(storedToken.access_token || "").trim() || null;
+}
+
+async function getCrmAccessTokenCandidates(locationId) {
+  const candidates = [];
+  const seen = new Set();
+
+  const pushCandidate = (token, source) => {
+    const normalized = String(token || "").trim();
+    if (!normalized || seen.has(normalized)) return;
+    seen.add(normalized);
+    candidates.push({ token: normalized, source });
+  };
+
+  pushCandidate(await getProfileCrmApiKey(locationId), "profile_pit");
+  pushCandidate(await getStoredOrRefreshedCrmToken(locationId), "location_oauth");
+  pushCandidate(CRM_ONESOURCE_API_KEY, "env_fallback");
+
+  return candidates;
+}
+
+function buildCrmHeaders(token, extraHeaders = {}) {
+  return {
+    Authorization: `Bearer ${token}`,
+    Version: "2021-07-28",
+    Accept: "application/json",
+    ...extraHeaders,
+  };
+}
+
+async function fetchCrmWithFallback(locationId, url, init = {}, retryStatuses = [401, 403]) {
+  const candidates = await getCrmAccessTokenCandidates(locationId);
+  if (!candidates.length) {
+    return {
+      response: null,
+      bodyText: "",
+      tokenSource: null,
+      attemptedSources: [],
+    };
+  }
+
+  let lastResult = {
+    response: null,
+    bodyText: "",
+    tokenSource: null,
+    attemptedSources: [],
+  };
+
+  for (let index = 0; index < candidates.length; index += 1) {
+    const candidate = candidates[index];
+    const response = await fetch(url, {
+      ...init,
+      headers: buildCrmHeaders(candidate.token, init.headers || {}),
+    });
+    const bodyText = await response.text();
+    lastResult = {
+      response,
+      bodyText,
+      tokenSource: candidate.source,
+      attemptedSources: [...lastResult.attemptedSources, candidate.source],
+    };
+
+    if (response.ok) {
+      return lastResult;
+    }
+
+    if (!retryStatuses.includes(response.status)) {
+      return lastResult;
+    }
+  }
+
+  return lastResult;
+}
+
 async function saveCrmToken(locationId, tokenData = {}) {
   if (!locationId || !tokenData.access_token) {
     throw new Error("locationId and access_token are required to save CRM token.");
@@ -1639,35 +1737,8 @@ async function refreshCrmAccessToken(refreshToken) {
 }
 
 async function getCrmAccessTokenForLocation(locationId) {
-  const storedToken = await getStoredCrmToken(locationId);
-  if (storedToken?.access_token) {
-    const expiresAt = storedToken.expires_at ? new Date(storedToken.expires_at) : null;
-    const hasExpired = expiresAt && !Number.isNaN(expiresAt.getTime()) && expiresAt.getTime() <= (Date.now() + 60_000);
-
-    if (!hasExpired) {
-      return storedToken.access_token;
-    }
-
-    if (storedToken.refresh_token) {
-      const refreshed = await refreshCrmAccessToken(storedToken.refresh_token);
-      await saveCrmToken(locationId, {
-        access_token: refreshed.access_token,
-        refresh_token: refreshed.refresh_token || storedToken.refresh_token,
-        expires_in: refreshed.expires_in,
-        expires_at: refreshed.expires_at,
-        token_type: refreshed.token_type,
-        scope: refreshed.scope,
-      });
-      return refreshed.access_token;
-    }
-  }
-
-  const profileToken = await getProfileCrmApiKey(locationId);
-  if (profileToken) {
-    return profileToken;
-  }
-
-  return CRM_ONESOURCE_API_KEY || null;
+  const candidates = await getCrmAccessTokenCandidates(locationId);
+  return candidates[0]?.token || null;
 }
 
 async function getProfileIdColumn() {
@@ -1769,30 +1840,32 @@ async function getCrmCalendarEvents({
     return [];
   }
 
-  const crmAccessToken = await getCrmAccessTokenForLocation(locationId);
-  if (!crmAccessToken) return [];
-
   const url = new URL("/calendars/events", CRM_API_BASE_URL);
   url.searchParams.set("locationId", String(locationId));
   url.searchParams.set("calendarId", String(calendarId));
   url.searchParams.set("startTime", String(startTime));
   url.searchParams.set("endTime", String(endTime));
 
-  const response = await fetch(url, {
+  const { response, bodyText, tokenSource, attemptedSources } = await fetchCrmWithFallback(locationId, url, {
     method: "GET",
     headers: {
-      Authorization: `Bearer ${crmAccessToken}`,
       Version: "2021-07-28",
       Accept: "application/json",
     },
   });
 
+  if (!response) return [];
+
   if (!response.ok) {
-    const body = await response.text();
-    throw new Error(`CRM calendar lookup failed (${response.status}): ${body.slice(0, 200)}`);
+    const hint = tokenSource === "profile_pit"
+      ? " Make sure the CRM Private Integration Token was created inside this sub-account and includes Contacts plus Calendars/Appointments permissions."
+      : "";
+    throw new Error(
+      `CRM calendar lookup failed (${response.status}) [source=${tokenSource || "unknown"} attempted=${attemptedSources.join(",") || "none"}]: ${bodyText.slice(0, 200)}${hint}`
+    );
   }
 
-  const data = await response.json();
+  const data = bodyText ? JSON.parse(bodyText) : {};
   const rawEvents = extractCalendarEvents(data);
 
   return rawEvents.map(normalizeCalendarEvent);
@@ -1859,13 +1932,9 @@ async function upsertCrmContact({
   if (!locationId) return null;
   if (!email && !phone && !firstName && !lastName) return null;
 
-  const crmAccessToken = await getCrmAccessTokenForLocation(locationId);
-  if (!crmAccessToken) return null;
-
-  const response = await fetch(new URL("/contacts/upsert", CRM_API_BASE_URL), {
+  const { response, bodyText, tokenSource, attemptedSources } = await fetchCrmWithFallback(locationId, new URL("/contacts/upsert", CRM_API_BASE_URL), {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${crmAccessToken}`,
       Version: "2021-07-28",
       Accept: "application/json",
       "Content-Type": "application/json",
@@ -1881,12 +1950,18 @@ async function upsertCrmContact({
     }),
   });
 
+  if (!response) return null;
+
   if (!response.ok) {
-    const body = await response.text();
-    throw new Error(`CRM contact upsert failed (${response.status}): ${body.slice(0, 200)}`);
+    const hint = tokenSource === "profile_pit"
+      ? " Make sure the CRM Private Integration Token was created inside this sub-account and includes Contacts permissions."
+      : "";
+    throw new Error(
+      `CRM contact upsert failed (${response.status}) [source=${tokenSource || "unknown"} attempted=${attemptedSources.join(",") || "none"}]: ${bodyText.slice(0, 200)}${hint}`
+    );
   }
 
-  const data = await response.json();
+  const data = bodyText ? JSON.parse(bodyText) : {};
   return extractCrmContactId(data);
 }
 
@@ -1904,13 +1979,9 @@ async function createCrmAppointment({
     return null;
   }
 
-  const crmAccessToken = await getCrmAccessTokenForLocation(locationId);
-  if (!crmAccessToken) return null;
-
-  const response = await fetch(new URL("/calendars/events/appointments", CRM_API_BASE_URL), {
+  const { response, bodyText, tokenSource, attemptedSources } = await fetchCrmWithFallback(locationId, new URL("/calendars/events/appointments", CRM_API_BASE_URL), {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${crmAccessToken}`,
       Version: "2021-07-28",
       Accept: "application/json",
       "Content-Type": "application/json",
@@ -1928,33 +1999,41 @@ async function createCrmAppointment({
     }),
   });
 
+  if (!response) return null;
+
   if (!response.ok) {
-    const body = await response.text();
-    throw new Error(`CRM appointment creation failed (${response.status}): ${body.slice(0, 200)}`);
+    const hint = tokenSource === "profile_pit"
+      ? " Make sure the CRM Private Integration Token was created inside this sub-account and includes Contacts plus Calendars/Appointments permissions."
+      : "";
+    throw new Error(
+      `CRM appointment creation failed (${response.status}) [source=${tokenSource || "unknown"} attempted=${attemptedSources.join(",") || "none"}]: ${bodyText.slice(0, 200)}${hint}`
+    );
   }
 
-  const data = await response.json();
+  const data = bodyText ? JSON.parse(bodyText) : {};
   return extractCrmAppointmentId(data);
 }
 
 async function deleteCrmEvent(locationId, eventId) {
   if (!locationId || !eventId) return false;
 
-  const crmAccessToken = await getCrmAccessTokenForLocation(locationId);
-  if (!crmAccessToken) return false;
-
-  const response = await fetch(new URL(`/calendars/events/${encodeURIComponent(String(eventId))}`, CRM_API_BASE_URL), {
+  const { response, bodyText, tokenSource, attemptedSources } = await fetchCrmWithFallback(locationId, new URL(`/calendars/events/${encodeURIComponent(String(eventId))}`, CRM_API_BASE_URL), {
     method: "DELETE",
     headers: {
-      Authorization: `Bearer ${crmAccessToken}`,
       Version: "2021-07-28",
       Accept: "application/json",
     },
   });
 
+  if (!response) return false;
+
   if (!response.ok) {
-    const body = await response.text();
-    throw new Error(`CRM event delete failed (${response.status}): ${body.slice(0, 200)}`);
+    const hint = tokenSource === "profile_pit"
+      ? " Make sure the CRM Private Integration Token was created inside this sub-account and includes Calendars/Appointments permissions."
+      : "";
+    throw new Error(
+      `CRM event delete failed (${response.status}) [source=${tokenSource || "unknown"} attempted=${attemptedSources.join(",") || "none"}]: ${bodyText.slice(0, 200)}${hint}`
+    );
   }
 
   return true;
