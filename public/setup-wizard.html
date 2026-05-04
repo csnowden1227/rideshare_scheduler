@@ -33,7 +33,86 @@
         .wizard-soft-pill { color: var(--wizard-teal); background: var(--wizard-soft-teal); }
         .wizard-border { border-color: #c4b5fd; }
         .wizard-table-scroll { overflow-x: auto; }
-        .wizard-table-scroll table { min-width: 680px; }
+        .wizard-table-scroll table { min-width: 1120px; }
+        .fleet-config-table { table-layout: fixed; }
+        .fleet-config-table th { vertical-align: bottom; }
+        .fleet-slot-cell {
+            width: 16%;
+            min-width: 170px;
+            white-space: normal;
+            overflow-wrap: anywhere;
+            word-break: break-word;
+            line-height: 1.35;
+        }
+        .fleet-slot-pill {
+            display: inline-block;
+            max-width: 100%;
+            white-space: normal;
+            overflow-wrap: anywhere;
+            word-break: break-word;
+            background: #dbeafe;
+            color: #1d4ed8;
+            border-radius: 0.5rem;
+            padding: 0.35rem 0.42rem;
+            font-size: 0.66rem;
+            line-height: 1.28;
+        }
+        .fleet-type-cell { width: 16%; min-width: 180px; }
+        .fleet-photo-cell { width: 12%; min-width: 150px; }
+        .fleet-year-cell { width: 8%; min-width: 88px; }
+        .fleet-make-cell { width: 12%; min-width: 130px; }
+        .fleet-model-cell { width: 12%; min-width: 130px; }
+        .fleet-plate-cell { width: 10%; min-width: 120px; }
+        .fleet-base-cell,
+        .fleet-mile-cell { width: 7%; min-width: 72px; }
+        .fleet-calendar-cell { width: 12%; min-width: 130px; }
+        .fleet-remove-cell { width: 4%; min-width: 36px; }
+        .fleet-input-compact { min-width: 0; }
+        .service-area-panel {
+            border: 1px solid #e2e8f0;
+            border-radius: 1rem;
+            background: #f8fafc;
+            padding: 1rem;
+        }
+        .service-area-chip-wrap {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            min-height: 2.5rem;
+            padding: 0.75rem;
+            border: 1px solid #e2e8f0;
+            border-radius: 0.75rem;
+            background: #fff;
+        }
+        .service-area-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            padding: 0.45rem 0.7rem;
+            border-radius: 999px;
+            background: #ede9fe;
+            color: #5b21b6;
+            font-size: 0.75rem;
+            font-weight: 700;
+            line-height: 1.2;
+        }
+        .service-area-chip button {
+            border: 0;
+            background: transparent;
+            color: inherit;
+            font-size: 0.95rem;
+            line-height: 1;
+            cursor: pointer;
+        }
+        .service-area-empty {
+            color: #94a3b8;
+            font-size: 0.78rem;
+        }
+        .service-area-note {
+            font-size: 0.75rem;
+            color: #64748b;
+            line-height: 1.55;
+        }
         
         /* Toast Notification Animation */
         @keyframes slideIn {
@@ -48,6 +127,8 @@
             #map { height: 280px; }
             #logo-upload-wrap { flex-direction: column; align-items: flex-start; }
             .sticky { position: static !important; top: auto !important; }
+            .wizard-table-scroll table { min-width: 1080px; }
+            .fleet-slot-pill { font-size: 0.65rem; }
         }
     </style>
 </head>
@@ -69,7 +150,7 @@
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
                     <div>
                         <label class="block text-[10px] font-bold mb-2 uppercase text-slate-400">Business Name</label>
-                        <input type="text" id="business_name" class="input-mini" placeholder="e.g. Snowden Luxury Travel">
+                        <input type="text" id="business_name" class="input-mini" placeholder="e.g. Your Luxury Transportation Brand">
                     </div>
                     <div>
                         <label class="block text-[10px] font-bold mb-2 uppercase text-slate-400">Business Logo</label>
@@ -126,8 +207,12 @@
                         </select>
                     </div>
                     <div>
-                        <label class="block text-[10px] font-bold mb-2 uppercase text-slate-400">Stripe Secret Key</label>
+                        <label class="block text-[10px] font-bold mb-2 uppercase text-slate-400">Stripe Live Secret Key</label>
                         <input type="password" id="stripe_secret_key" class="input-mini" placeholder="sk_live_...">
+                    </div>
+                    <div>
+                        <label class="block text-[10px] font-bold mb-2 uppercase text-slate-400">Stripe Test Secret Key (Test Run Only)</label>
+                        <input type="password" id="stripe_test_secret_key" class="input-mini" placeholder="sk_test_...">
                     </div>
                     <div id="square_app_wrap">
                         <label class="block text-[10px] font-bold mb-2 uppercase text-slate-400">Square Application ID</label>
@@ -217,7 +302,7 @@
                     <div>
                         <h2 class="section-header !mb-2 !border-0">SECTION: FLEET SLOTS</h2>
                         <div class="wizard-table-scroll mb-4">
-                            <table class="w-full text-sm">
+                <table class="w-full text-sm fleet-config-table">
                                 <thead>
                                     <tr class="text-left text-slate-400 uppercase text-[10px] tracking-widest">
                                         <th class="py-3 pr-4">Feature</th>
@@ -309,26 +394,96 @@
             </div>
 
             <div class="card">
-                <h2 class="section-header">SECTION: SERVICE AREA (GEOFENCE)</h2>
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                    <input type="text" id="map-search" class="input-mini md:col-span-2" placeholder="Search city or zip code...">
+                <div class="flex flex-col gap-3 mb-6">
+                    <h2 class="section-header !mb-0 !border-0">SECTION: SERVICE AREA & GEOFENCING</h2>
+                    <p class="text-xs text-slate-500 leading-relaxed">Choose how you want the service boundary enforced. Radius is fastest. City / County / ZIP gives you real territory control. Custom zones can be layered in later for more advanced coverage.</p>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                    <div>
+                        <label class="block text-[10px] font-bold mb-2 uppercase text-slate-400">Service Area Type</label>
+                        <select id="service_area_type" class="input-mini">
+                            <option value="radius">Radius</option>
+                            <option value="city_county_zip">City / County / ZIP</option>
+                            <option value="custom_zones">Custom Zones</option>
+                        </select>
+                    </div>
+                    <div class="md:col-span-2 service-area-panel">
+                        <div class="text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-2">How this works</div>
+                        <div id="service-area-mode-help" class="service-area-note">Use a service center and mileage radius for the fastest setup.</div>
+                    </div>
+                </div>
+
+                <div id="service-area-radius-wrap">
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                        <input type="text" id="map-search" class="input-mini md:col-span-2" placeholder="Search city or zip code...">
                         <button onclick="useCurrentLocation()" class="wizard-btn-accent text-[10px] font-bold rounded-lg px-2 uppercase">📍 Use My Location</button>
+                    </div>
+                    <div id="map" class="mb-4"></div>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div>
+                            <label class="text-[10px] font-bold text-slate-400">LATITUDE</label>
+                            <input type="text" id="svc_lat" class="input-mini coord-input" onchange="updateMapFromCoordinates()">
+                        </div>
+                        <div>
+                            <label class="text-[10px] font-bold text-slate-400">LONGITUDE</label>
+                            <input type="text" id="svc_lng" class="input-mini coord-input" onchange="updateMapFromCoordinates()">
+                        </div>
+                        <div>
+                            <label class="text-[10px] font-bold text-slate-400">RADIUS (MILES)</label>
+                            <input type="number" id="svc_radius" class="input-mini" value="90" onchange="updateCircleFromInput()">
+                        </div>
+                    </div>
                 </div>
-                <div id="map" class="mb-4"></div>
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div>
-                        <label class="text-[10px] font-bold text-slate-400">LATITUDE</label>
-                        <input type="text" id="svc_lat" class="input-mini coord-input" onchange="updateMapFromCoordinates()">
+
+                <div id="service-area-boundary-wrap" class="hidden">
+                    <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                        <div class="service-area-panel">
+                            <label class="block text-[10px] font-bold mb-2 uppercase text-slate-400">Add City</label>
+                            <div class="flex gap-2">
+                                <input type="text" id="service-city-input" class="input-mini" placeholder="e.g. Beverly Hills">
+                                <button type="button" id="add-service-city-btn" class="wizard-btn-accent text-[10px] font-bold rounded-lg px-3 uppercase">Add</button>
+                            </div>
+                        </div>
+                        <div class="service-area-panel">
+                            <label class="block text-[10px] font-bold mb-2 uppercase text-slate-400">Add County</label>
+                            <div class="flex gap-2">
+                                <input type="text" id="service-county-input" class="input-mini" placeholder="e.g. Los Angeles County">
+                                <button type="button" id="add-service-county-btn" class="wizard-btn-accent text-[10px] font-bold rounded-lg px-3 uppercase">Add</button>
+                            </div>
+                        </div>
+                        <div class="service-area-panel">
+                            <label class="block text-[10px] font-bold mb-2 uppercase text-slate-400">Add ZIP Code</label>
+                            <div class="flex gap-2">
+                                <input type="text" id="service-zip-input" class="input-mini" placeholder="e.g. 90210">
+                                <button type="button" id="add-service-zip-btn" class="wizard-btn-accent text-[10px] font-bold rounded-lg px-3 uppercase">Add</button>
+                            </div>
+                        </div>
                     </div>
-                    <div>
-                        <label class="text-[10px] font-bold text-slate-400">LONGITUDE</label>
-                        <input type="text" id="svc_lng" class="input-mini coord-input" onchange="updateMapFromCoordinates()">
-                    </div>
-                    <div>
-                        <label class="text-[10px] font-bold text-slate-400">RADIUS (MILES)</label>
-                        <input type="number" id="svc_radius" class="input-mini" value="90" onchange="updateCircleFromInput()">
+
+                    <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mt-4">
+                        <div>
+                            <label class="block text-[10px] font-bold mb-2 uppercase text-slate-400">Included Cities</label>
+                            <div id="service-city-list" class="service-area-chip-wrap"></div>
+                        </div>
+                        <div>
+                            <label class="block text-[10px] font-bold mb-2 uppercase text-slate-400">Included Counties</label>
+                            <div id="service-county-list" class="service-area-chip-wrap"></div>
+                        </div>
+                        <div>
+                            <label class="block text-[10px] font-bold mb-2 uppercase text-slate-400">Included ZIP Codes</label>
+                            <div id="service-zip-list" class="service-area-chip-wrap"></div>
+                        </div>
                     </div>
                 </div>
+
+                <div id="service-area-custom-wrap" class="hidden">
+                    <div class="service-area-panel">
+                        <div class="text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-2">Custom zones</div>
+                        <p class="service-area-note">Custom polygon and multi-zone coverage is the next phase. For now, use Radius for broad coverage or City / County / ZIP for real territory rules, then keep Fixed Rate Zones below for special pricing areas.</p>
+                    </div>
+                </div>
+
                 <button onclick="confirmLocation()" id="lock-btn" class="w-full mt-6 bg-green-600 text-white font-bold py-3 rounded-xl hover:bg-green-700 transition uppercase text-xs tracking-widest">
                     Confirm & Lock Service Area
                 </button>
@@ -444,6 +599,12 @@ const BACKEND_URL = "https://rideshare-scheduler-axx6.onrender.com";
 let map, circle, marker, autocomplete;
 let routeCircles = []; 
 let logoBase64 = '';
+let loadedStripeSecretKeyRaw = '';
+let serviceAreaRulesState = {
+    cities: [],
+    counties: [],
+    zips: []
+};
 let currentPlanName = 'starter';
 let currentEntitlements = {
     plan_name: 'starter',
@@ -774,13 +935,14 @@ function useCurrentLocation() {
 function confirmLocation() {
     const lockBtn = document.getElementById('lock-btn');
     const syncBtn = document.getElementById('save-btn');
+    const serviceAreaType = document.getElementById('service_area_type')?.value || 'radius';
     if (syncBtn) {
         syncBtn.disabled = false;
         syncBtn.classList.remove('disabled-btn');
     }
-    lockBtn.innerText = "✅ LOCATION LOCKED";
+    lockBtn.innerText = serviceAreaType === 'radius' ? "✅ LOCATION LOCKED" : "✅ SERVICE AREA RULES READY";
     lockBtn.classList.add('bg-slate-800');
-    showNotification("Location validated and locked!");
+    showNotification(serviceAreaType === 'radius' ? "Location validated and locked!" : "Service area rules are ready to save.");
 }
 
 // --- FIXED ROUTE LOGIC ---
@@ -876,8 +1038,13 @@ function setFleetPlanMessage(planName = 'starter') {
     if (badge) badge.innerText = `${planLabel} Plan`;
 }
 
+function getPlanFleetBaseline() {
+    return currentPlanName === 'pro' ? 3 : 1;
+}
+
 function getEffectiveFleetLimit() {
-    return Math.max(1, Number(currentEntitlements?.allowed_fleet_count || (currentPlanName === 'pro' ? 3 : 1)));
+    const entitlementLimit = Number(currentEntitlements?.allowed_fleet_count || 0);
+    return Math.max(getPlanFleetBaseline(), entitlementLimit || 0, 1);
 }
 
 function setBrandingPlanMessage(planName = 'starter') {
@@ -929,9 +1096,134 @@ function setBrandingPlanMessage(planName = 'starter') {
     }
 }
 
+function createNormalizedServiceAreaRuleState(rules = {}) {
+    const normalizeList = (values = []) => {
+        const seen = new Set();
+        return (Array.isArray(values) ? values : [])
+            .map(value => String(value || '').trim())
+            .filter(Boolean)
+            .filter(value => {
+                const key = value.toLowerCase();
+                if (seen.has(key)) return false;
+                seen.add(key);
+                return true;
+            });
+    };
+
+    return {
+        cities: normalizeList(rules.cities),
+        counties: normalizeList(rules.counties),
+        zips: normalizeList(rules.zips)
+    };
+}
+
+function getServiceAreaRulesPayload() {
+    return createNormalizedServiceAreaRuleState(serviceAreaRulesState);
+}
+
+function renderServiceAreaList(listId, values = [], key) {
+    const list = document.getElementById(listId);
+    if (!list) return;
+    if (!values.length) {
+        list.innerHTML = `<span class="service-area-empty">No ${key} added yet.</span>`;
+        return;
+    }
+    list.innerHTML = values.map((value, index) => `
+        <span class="service-area-chip">
+            ${value}
+            <button type="button" onclick="removeServiceAreaRule('${key}', ${index})" aria-label="Remove ${value}">&times;</button>
+        </span>
+    `).join('');
+}
+
+function renderServiceAreaRuleLists() {
+    renderServiceAreaList('service-city-list', serviceAreaRulesState.cities, 'cities');
+    renderServiceAreaList('service-county-list', serviceAreaRulesState.counties, 'counties');
+    renderServiceAreaList('service-zip-list', serviceAreaRulesState.zips, 'zips');
+}
+
+function addServiceAreaRule(key, rawValue) {
+    const value = String(rawValue || '').trim();
+    if (!value) return;
+    const nextState = createNormalizedServiceAreaRuleState({
+        ...serviceAreaRulesState,
+        [key]: [...(serviceAreaRulesState[key] || []), value]
+    });
+    serviceAreaRulesState = nextState;
+    renderServiceAreaRuleLists();
+}
+
+function removeServiceAreaRule(key, index) {
+    const nextValues = [...(serviceAreaRulesState[key] || [])];
+    nextValues.splice(index, 1);
+    serviceAreaRulesState = {
+        ...serviceAreaRulesState,
+        [key]: nextValues
+    };
+    renderServiceAreaRuleLists();
+}
+
+function updateServiceAreaTypeUI() {
+    const type = document.getElementById('service_area_type')?.value || 'radius';
+    const radiusWrap = document.getElementById('service-area-radius-wrap');
+    const boundaryWrap = document.getElementById('service-area-boundary-wrap');
+    const customWrap = document.getElementById('service-area-custom-wrap');
+    const help = document.getElementById('service-area-mode-help');
+    const lockBtn = document.getElementById('lock-btn');
+
+    if (radiusWrap) radiusWrap.classList.toggle('hidden', type !== 'radius');
+    if (boundaryWrap) boundaryWrap.classList.toggle('hidden', type !== 'city_county_zip');
+    if (customWrap) customWrap.classList.toggle('hidden', type !== 'custom_zones');
+
+    if (help) {
+        if (type === 'city_county_zip') {
+            help.textContent = 'Build your service boundary around real cities, counties, and ZIP codes instead of one large circle.';
+        } else if (type === 'custom_zones') {
+            help.textContent = 'Custom zones are reserved for advanced multi-area coverage. Use this as a planning mode for now while we keep radius and city/county/ZIP fully functional.';
+        } else {
+            help.textContent = 'Use a service center and mileage radius for the fastest setup.';
+        }
+    }
+
+    if (lockBtn) {
+        lockBtn.textContent = type === 'radius'
+            ? 'Confirm & Lock Service Area'
+            : 'Save Service Area Rules';
+    }
+}
+
+function bindServiceAreaRuleButtons() {
+    document.getElementById('add-service-city-btn')?.addEventListener('click', () => {
+        const input = document.getElementById('service-city-input');
+        addServiceAreaRule('cities', input?.value);
+        if (input) input.value = '';
+    });
+    document.getElementById('add-service-county-btn')?.addEventListener('click', () => {
+        const input = document.getElementById('service-county-input');
+        addServiceAreaRule('counties', input?.value);
+        if (input) input.value = '';
+    });
+    document.getElementById('add-service-zip-btn')?.addEventListener('click', () => {
+        const input = document.getElementById('service-zip-input');
+        addServiceAreaRule('zips', input?.value);
+        if (input) input.value = '';
+    });
+
+    ['service-city-input', 'service-county-input', 'service-zip-input'].forEach((id) => {
+        document.getElementById(id)?.addEventListener('keydown', (event) => {
+            if (event.key !== 'Enter') return;
+            event.preventDefault();
+            if (id === 'service-city-input') document.getElementById('add-service-city-btn')?.click();
+            if (id === 'service-county-input') document.getElementById('add-service-county-btn')?.click();
+            if (id === 'service-zip-input') document.getElementById('add-service-zip-btn')?.click();
+        });
+    });
+}
+
 function updatePaymentProviderUI() {
     const provider = document.getElementById('payment_provider')?.value || 'stripe';
     const stripeInput = document.getElementById('stripe_secret_key');
+    const stripeTestInput = document.getElementById('stripe_test_secret_key');
     const squareAppWrap = document.getElementById('square_app_wrap');
     const squareTokenWrap = document.getElementById('square_token_wrap');
     const squareLocationWrap = document.getElementById('square_location_wrap');
@@ -946,6 +1238,11 @@ function updatePaymentProviderUI() {
     if (stripeInput) {
         stripeInput.disabled = provider !== 'stripe';
         stripeInput.classList.toggle('opacity-60', provider !== 'stripe');
+    }
+
+    if (stripeTestInput) {
+        stripeTestInput.disabled = provider !== 'stripe';
+        stripeTestInput.classList.toggle('opacity-60', provider !== 'stripe');
     }
 
     [squareAppWrap, squareTokenWrap, squareLocationWrap].forEach((wrap) => {
@@ -964,6 +1261,14 @@ function updatePaymentProviderUI() {
     });
 }
 
+function isStripeLiveKey(value) {
+    return String(value || '').trim().startsWith('sk_live_');
+}
+
+function isStripeTestKey(value) {
+    return String(value || '').trim().startsWith('sk_test_');
+}
+
 function slugifyVehicleType(vehicleType = '') {
     return String(vehicleType || 'vehicle')
         .toLowerCase()
@@ -972,7 +1277,8 @@ function slugifyVehicleType(vehicleType = '') {
 }
 
 function getIncludedFleetCount() {
-    return currentPlanName === 'pro' ? 3 : 1;
+    const entitlementIncluded = Number(currentEntitlements?.included_fleet_count || 0);
+    return Math.max(getPlanFleetBaseline(), entitlementIncluded || 0, 1);
 }
 
 function getFleetDiscountRate(billableVehicles) {
@@ -1002,7 +1308,9 @@ function renumberFleetRows() {
         countsByType[typeSlug] = (countsByType[typeSlug] || 0) + 1;
         const typeCount = countsByType[typeSlug];
         const slotId = `${location_id}_vehicle_${String(index + 1).padStart(2, '0')}_${typeSlug}_${String(typeCount).padStart(2, '0')}`;
-        row.cells[0].innerText = slotId;
+        row.dataset.vehicleSlotId = slotId;
+        const slotLabel = row.querySelector('.fleet-slot-pill');
+        if (slotLabel) slotLabel.textContent = slotId;
     });
     updateFleetPricingSummary();
 }
@@ -1073,9 +1381,9 @@ function addFleetRow(data = {}, shouldRenumber = true) {
     const tr = document.createElement('tr');
     tr.className = "border-b border-slate-50";
     tr.innerHTML = `
-        <td class="py-4 font-mono text-[9px] text-slate-400 font-bold">${data.vehicle_slot_id || ''}</td>
-        <td class="py-2"><select class="v-type input-mini font-bold">${VEHICLE_LIST.map(v => `<option value="${v}" ${data.vehicle_type === v ? 'selected' : ''}>${v}</option>`).join('')}</select></td>
-        <td class="py-2 px-1">
+        <td class="py-4 pr-3 align-top fleet-slot-cell"><span class="fleet-slot-pill">${data.vehicle_slot_id || ''}</span></td>
+        <td class="py-2 px-1 fleet-type-cell"><select class="v-type input-mini fleet-input-compact font-bold">${VEHICLE_LIST.map(v => `<option value="${v}" ${data.vehicle_type === v ? 'selected' : ''}>${v}</option>`).join('')}</select></td>
+        <td class="py-2 px-1 fleet-photo-cell">
             <div class="flex flex-col gap-2">
                 <img class="v-image-preview ${data.vehicle_image ? '' : 'hidden'} w-20 h-14 object-cover rounded-lg border border-slate-200" src="${data.vehicle_image || ''}" alt="Vehicle preview">
                 <input type="hidden" class="v-image-data" value="${data.vehicle_image || ''}">
@@ -1085,14 +1393,14 @@ function addFleetRow(data = {}, shouldRenumber = true) {
                 </label>
             </div>
         </td>
-        <td class="py-2 px-1"><input type="text" class="v-year input-mini" placeholder="2024" value="${data.vehicle_year || ''}"></td>
-        <td class="py-2 px-1"><input type="text" class="v-make input-mini" placeholder="Cadillac" value="${data.vehicle_make || ''}"></td>
-        <td class="py-2 px-1"><input type="text" class="v-model input-mini" placeholder="Escalade" value="${data.vehicle_model || ''}"></td>
-        <td class="py-2 px-1"><input type="text" class="v-plate input-mini" placeholder="License Plate" value="${data.vehicle_license_plate || ''}"></td>
-        <td class="py-2 px-1"><input type="number" class="v-base input-mini" value="${data.base_rate || 50}"></td>
-        <td class="py-2 px-1"><input type="number" step="0.1" class="v-mile input-mini" value="${data.mile_rate || 3.5}"></td>
-        <td class="py-2 px-1"><input type="text" class="v-cal input-mini" placeholder="Calendar ID" value="${data.calendar_id || ''}"></td>
-        <td class="py-2 text-right"><button type="button" class="fleet-remove text-red-400 text-lg leading-none">&times;</button></td>
+        <td class="py-2 px-1 fleet-year-cell"><input type="text" class="v-year input-mini fleet-input-compact" placeholder="2024" value="${data.vehicle_year || ''}"></td>
+        <td class="py-2 px-1 fleet-make-cell"><input type="text" class="v-make input-mini fleet-input-compact" placeholder="Cadillac" value="${data.vehicle_make || ''}"></td>
+        <td class="py-2 px-1 fleet-model-cell"><input type="text" class="v-model input-mini fleet-input-compact" placeholder="Escalade" value="${data.vehicle_model || ''}"></td>
+        <td class="py-2 px-1 fleet-plate-cell"><input type="text" class="v-plate input-mini fleet-input-compact" placeholder="License Plate" value="${data.vehicle_license_plate || ''}"></td>
+        <td class="py-2 px-1 fleet-base-cell"><input type="number" class="v-base input-mini fleet-input-compact" value="${data.base_rate || 50}"></td>
+        <td class="py-2 px-1 fleet-mile-cell"><input type="number" step="0.1" class="v-mile input-mini fleet-input-compact" value="${data.mile_rate || 3.5}"></td>
+        <td class="py-2 px-1 fleet-calendar-cell"><input type="text" class="v-cal input-mini fleet-input-compact" placeholder="Calendar ID" value="${data.calendar_id || ''}"></td>
+        <td class="py-2 text-right fleet-remove-cell"><button type="button" class="fleet-remove text-red-400 text-lg leading-none">&times;</button></td>
     `;
     tbody.appendChild(tr);
     bindFleetRow(tr);
@@ -1208,7 +1516,13 @@ async function loadFromBackend() {
             document.getElementById('maps_key').value = data.maps_api_key || '';
             document.getElementById('crm_api_key').value = data.crm_api_key || '';
             document.getElementById('payment_provider').value = data.payment_provider || 'stripe';
-            document.getElementById('stripe_secret_key').value = data.stripe_secret_key || '';
+            loadedStripeSecretKeyRaw = String(data.stripe_secret_key || '').trim();
+            document.getElementById('stripe_secret_key').value = isStripeLiveKey(loadedStripeSecretKeyRaw) ? loadedStripeSecretKeyRaw : '';
+            document.getElementById('stripe_test_secret_key').value = String(data.stripe_test_secret_key || '').trim() || (isStripeTestKey(loadedStripeSecretKeyRaw) ? loadedStripeSecretKeyRaw : '');
+            document.getElementById('service_area_type').value = data.service_area_type || 'radius';
+            serviceAreaRulesState = createNormalizedServiceAreaRuleState(data.service_area_rules || {});
+            renderServiceAreaRuleLists();
+            updateServiceAreaTypeUI();
             document.getElementById('square_application_id').value = data.square_application_id || '';
             document.getElementById('square_access_token').value = data.square_access_token || '';
             document.getElementById('square_location_id').value = data.square_location_id || '';
@@ -1227,7 +1541,7 @@ async function loadFromBackend() {
 
             setFleetPlanMessage(data.plan_name || 'starter');
             setBrandingPlanMessage(data.plan_name || 'starter');
-            const fleetCount = Math.max((data.fleet || []).length, getEffectiveFleetLimit() > 0 ? Math.min(getEffectiveFleetLimit(), Math.max(1, data.entitlements?.included_fleet_count || 1)) : getIncludedFleetCount());
+            const fleetCount = Math.max((data.fleet || []).length, Math.min(getEffectiveFleetLimit(), getIncludedFleetCount()));
             renderFleet(fleetCount, data.fleet || []);
             
             if (data.fixed_rates) data.fixed_rates.forEach(r => addRouteRow(r));
@@ -1247,6 +1561,7 @@ async function loadFromBackend() {
             await ensureGoogleMapsLoaded(data.maps_api_key || '');
             initServiceMap(data.service_lat || 34.0522, data.service_lng || -118.2437, data.service_radius || 90);
         } else {
+            loadedStripeSecretKeyRaw = '';
             setFleetPlanMessage(planOverride || 'starter');
             currentEntitlements = {
                 ...currentEntitlements,
@@ -1261,11 +1576,15 @@ async function loadFromBackend() {
             setBrandingPlanMessage(planOverride || 'starter');
             renderFleet(getIncludedFleetCount(), []);
             updatePaymentProviderUI();
+            serviceAreaRulesState = createNormalizedServiceAreaRuleState({});
+            renderServiceAreaRuleLists();
+            updateServiceAreaTypeUI();
             await ensureGoogleMapsLoaded(document.getElementById('maps_key').value || '');
             initServiceMap();
         }
     } catch (e) {
         console.error(e);
+        loadedStripeSecretKeyRaw = '';
         setFleetPlanMessage(planOverride || 'starter');
         currentEntitlements = {
             ...currentEntitlements,
@@ -1280,6 +1599,9 @@ async function loadFromBackend() {
         setBrandingPlanMessage(planOverride || 'starter');
         renderFleet(getIncludedFleetCount(), []);
         updatePaymentProviderUI();
+        serviceAreaRulesState = createNormalizedServiceAreaRuleState({});
+        renderServiceAreaRuleLists();
+        updateServiceAreaTypeUI();
         try {
             await ensureGoogleMapsLoaded(document.getElementById('maps_key').value || '');
             initServiceMap();
@@ -1293,6 +1615,9 @@ async function saveToBackend() {
     const mapsKey = document.getElementById('maps_key').value;
     const paymentProvider = document.getElementById('payment_provider').value;
     const stripeSecretKey = document.getElementById('stripe_secret_key').value;
+    const stripeTestSecretKey = document.getElementById('stripe_test_secret_key').value;
+    const serviceAreaType = document.getElementById('service_area_type').value;
+    const serviceAreaRules = getServiceAreaRulesPayload();
     const squareApplicationId = document.getElementById('square_application_id').value;
     const squareAccessToken = document.getElementById('square_access_token').value;
     const squareLocationId = document.getElementById('square_location_id').value;
@@ -1317,7 +1642,7 @@ async function saveToBackend() {
     }
 
     if (paymentProvider === 'stripe' && !stripeSecretKey.trim()) {
-        showNotification("A Stripe secret key is required when Stripe is selected.", false);
+        showNotification("A Stripe live secret key is required when Stripe is selected.", false);
         return;
     }
 
@@ -1336,6 +1661,11 @@ async function saveToBackend() {
         return;
     }
 
+    if (serviceAreaType === 'city_county_zip' && !serviceAreaRules.cities.length && !serviceAreaRules.counties.length && !serviceAreaRules.zips.length) {
+        showNotification("Add at least one city, county, or ZIP code for this service area mode.", false);
+        return;
+    }
+
     const payload = {
         id: location_id,
         location_id,
@@ -1351,6 +1681,9 @@ async function saveToBackend() {
         crm_api_key: crmApiKey.trim(),
         payment_provider: paymentProvider,
         stripe_secret_key: stripeSecretKey.trim(),
+        stripe_test_secret_key: stripeTestSecretKey.trim() || (isStripeTestKey(loadedStripeSecretKeyRaw) ? loadedStripeSecretKeyRaw : ''),
+        service_area_type: serviceAreaType,
+        service_area_rules: serviceAreaRules,
         square_application_id: squareApplicationId.trim(),
         square_access_token: squareAccessToken.trim(),
         square_location_id: squareLocationId.trim(),
@@ -1369,7 +1702,7 @@ async function saveToBackend() {
         service_radius: parseFloat(document.getElementById('svc_radius').value),
         
         fleet: Array.from(fleetRows).slice(0, getEffectiveFleetLimit()).map(tr => ({
-            vehicle_slot_id: tr.cells[0].innerText.trim(), 
+            vehicle_slot_id: tr.dataset.vehicleSlotId || tr.querySelector('.fleet-slot-pill')?.textContent.trim() || '', 
             vehicle_type: tr.querySelector('.v-type').value,
             vehicle_image: tr.querySelector('.v-image-data')?.value || '',
             vehicle_year: tr.querySelector('.v-year')?.value.trim() || '',
@@ -1449,7 +1782,8 @@ async function saveToBackend() {
         }
 
         if (res && res.ok) {
-            showNotification("Snowden Luxury Profile Locked & Synced!");
+            loadedStripeSecretKeyRaw = stripeSecretKey.trim();
+            showNotification("Profile Locked & Synced!");
         } else {
             console.error("Save sync failed:", lastError);
             showNotification(`Save failed: ${lastError || 'Verify backend alignment.'}`, false);
@@ -1464,6 +1798,9 @@ function collectWizardPayload() {
     const mapsKey = document.getElementById('maps_key').value;
     const paymentProvider = document.getElementById('payment_provider').value;
     const stripeSecretKey = document.getElementById('stripe_secret_key').value;
+    const stripeTestSecretKey = document.getElementById('stripe_test_secret_key').value;
+    const serviceAreaType = document.getElementById('service_area_type').value;
+    const serviceAreaRules = getServiceAreaRulesPayload();
     const squareApplicationId = document.getElementById('square_application_id').value;
     const squareAccessToken = document.getElementById('square_access_token').value;
     const squareLocationId = document.getElementById('square_location_id').value;
@@ -1487,7 +1824,7 @@ function collectWizardPayload() {
     }
 
     if (paymentProvider === 'stripe' && !stripeSecretKey.trim()) {
-        throw new Error("A Stripe secret key is required when Stripe is selected.");
+        throw new Error("A Stripe live secret key is required when Stripe is selected.");
     }
 
     if (paymentProvider === 'square' && (!squareAccessToken.trim() || !squareLocationId.trim())) {
@@ -1500,6 +1837,10 @@ function collectWizardPayload() {
 
     if (paymentProvider === 'authorize_net' && (!authorizeApiLoginId.trim() || !authorizeTransactionKey.trim())) {
         throw new Error("Authorize.Net API Login ID and transaction key are required when Authorize.Net is selected.");
+    }
+
+    if (serviceAreaType === 'city_county_zip' && !serviceAreaRules.cities.length && !serviceAreaRules.counties.length && !serviceAreaRules.zips.length) {
+        throw new Error("Add at least one city, county, or ZIP code for this service area mode.");
     }
 
     return {
@@ -1517,6 +1858,9 @@ function collectWizardPayload() {
         crm_api_key: crmApiKey.trim(),
         payment_provider: paymentProvider,
         stripe_secret_key: stripeSecretKey.trim(),
+        stripe_test_secret_key: stripeTestSecretKey.trim() || (isStripeTestKey(loadedStripeSecretKeyRaw) ? loadedStripeSecretKeyRaw : ''),
+        service_area_type: serviceAreaType,
+        service_area_rules: serviceAreaRules,
         square_application_id: squareApplicationId.trim(),
         square_access_token: squareAccessToken.trim(),
         square_location_id: squareLocationId.trim(),
@@ -1534,7 +1878,7 @@ function collectWizardPayload() {
         service_lng: parseFloat(document.getElementById('svc_lng').value),
         service_radius: parseFloat(document.getElementById('svc_radius').value),
         fleet: Array.from(fleetRows).slice(0, getEffectiveFleetLimit()).map(tr => ({
-            vehicle_slot_id: tr.cells[0].innerText.trim(),
+            vehicle_slot_id: tr.dataset.vehicleSlotId || tr.querySelector('.fleet-slot-pill')?.textContent.trim() || '',
             vehicle_type: tr.querySelector('.v-type').value,
             vehicle_image: tr.querySelector('.v-image-data')?.value || '',
             vehicle_year: tr.querySelector('.v-year')?.value.trim() || '',
@@ -1664,10 +2008,14 @@ function queueReloadMapFromEnteredKey() {
 }
 
 document.getElementById('payment_provider')?.addEventListener('change', updatePaymentProviderUI);
+document.getElementById('service_area_type')?.addEventListener('change', updateServiceAreaTypeUI);
 document.getElementById('maps_key')?.addEventListener('change', tryReloadMapFromEnteredKey);
 document.getElementById('maps_key')?.addEventListener('blur', tryReloadMapFromEnteredKey);
 document.getElementById('maps_key')?.addEventListener('input', queueReloadMapFromEnteredKey);
 document.getElementById('load-map-btn')?.addEventListener('click', tryReloadMapFromEnteredKey);
+bindServiceAreaRuleButtons();
+renderServiceAreaRuleLists();
+updateServiceAreaTypeUI();
 
 window.onload = loadFromBackend;
 </script>

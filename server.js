@@ -80,6 +80,7 @@ let profileCrmApiKeyColumnReady = null;
 let profilePricingColumnsReady = null;
 let profileEntitlementColumnsReady = null;
 let profilePaymentProviderColumnsReady = null;
+let profileServiceAreaColumnsReady = null;
 let saasAddonPurchasesTableReady = null;
 let dispatchTablesReady = null;
 let tripTrackingTablesReady = null;
@@ -604,6 +605,7 @@ function createTrackingToken(prefix) {
 async function ensureProfilePaymentProviderColumns() {
   if (!profilePaymentProviderColumnsReady) {
     profilePaymentProviderColumnsReady = (async () => {
+      await pool.query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS stripe_test_secret_key TEXT`);
       await pool.query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS paypal_client_id TEXT`);
       await pool.query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS paypal_client_secret TEXT`);
       await pool.query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS paypal_environment TEXT`);
@@ -619,6 +621,49 @@ async function ensureProfilePaymentProviderColumns() {
   return profilePaymentProviderColumnsReady;
 }
 
+function isStripeTestSecretKey(value) {
+  return String(value || "").trim().startsWith("sk_test_");
+}
+
+function isStripeLiveSecretKey(value) {
+  return String(value || "").trim().startsWith("sk_live_");
+}
+
+function normalizeServiceAreaType(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (normalized === "city_county_zip" || normalized === "custom_zones") return normalized;
+  return "radius";
+}
+
+function normalizeServiceAreaList(values = []) {
+  const seen = new Set();
+  return (Array.isArray(values) ? values : [])
+    .map((value) => String(value || "").trim())
+    .filter(Boolean)
+    .filter((value) => {
+      const key = value.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
+function normalizeServiceAreaRules(value) {
+  const parsed = safeParseJson(value, {});
+  return {
+    cities: normalizeServiceAreaList(parsed?.cities),
+    counties: normalizeServiceAreaList(parsed?.counties),
+    zips: normalizeServiceAreaList(parsed?.zips),
+  };
+}
+
+function normalizeAreaKey(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+}
+
 async function ensureProfilePricingColumns() {
   if (!profilePricingColumnsReady) {
     profilePricingColumnsReady = (async () => {
@@ -630,6 +675,19 @@ async function ensureProfilePricingColumns() {
     });
   }
   return profilePricingColumnsReady;
+}
+
+async function ensureProfileServiceAreaColumns() {
+  if (!profileServiceAreaColumnsReady) {
+    profileServiceAreaColumnsReady = (async () => {
+      await pool.query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS service_area_type TEXT`);
+      await pool.query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS service_area_rules JSONB`);
+    })().catch((err) => {
+      profileServiceAreaColumnsReady = null;
+      throw err;
+    });
+  }
+  return profileServiceAreaColumnsReady;
 }
 
 function normalizeDriverName(value) {
@@ -2014,10 +2072,12 @@ function getAdditionalTrafficBufferMinutes({
   return extraBuffer;
 }
 
-async function getPaymentProfileForLocation(locationId) {
+async function getPaymentProfileForLocation(locationId, options = {}) {
+  const useTestMode = options.useTestMode === true;
   const fallback = {
     provider: "stripe",
     stripeSecretKey: envStripeSecretKey,
+    stripeTestSecretKey: "",
     squareApplicationId: "",
     squareAccessToken: "",
     squareLocationId: "",
@@ -2036,7 +2096,7 @@ async function getPaymentProfileForLocation(locationId) {
     await ensureProfilePaymentProviderColumns();
     const profileIdColumn = await getProfileIdColumn();
     const result = await pool.query(
-      `SELECT payment_provider, stripe_secret_key, square_application_id, square_access_token, square_location_id,
+      `SELECT payment_provider, stripe_secret_key, stripe_test_secret_key, square_application_id, square_access_token, square_location_id,
               paypal_client_id, paypal_client_secret, paypal_environment,
               authorize_api_login_id, authorize_transaction_key, authorize_client_key, authorize_environment
        FROM profiles
@@ -2045,9 +2105,19 @@ async function getPaymentProfileForLocation(locationId) {
       [locationId]
     );
     const row = result.rows[0] || {};
+    const liveStripeSecretKey = normalizeStripeSecretKey(row.stripe_secret_key || "");
+    const explicitTestStripeSecretKey = normalizeStripeSecretKey(row.stripe_test_secret_key || "");
+    const fallbackTestStripeSecretKey = !explicitTestStripeSecretKey && isStripeTestSecretKey(liveStripeSecretKey)
+      ? liveStripeSecretKey
+      : "";
+    const resolvedTestStripeSecretKey = explicitTestStripeSecretKey || fallbackTestStripeSecretKey;
+    const resolvedLiveStripeSecretKey = isStripeLiveSecretKey(liveStripeSecretKey)
+      ? liveStripeSecretKey
+      : (useTestMode ? "" : liveStripeSecretKey);
     return {
       provider: normalizePaymentProvider(row.payment_provider),
-      stripeSecretKey: normalizeStripeSecretKey(row.stripe_secret_key || "") || envStripeSecretKey,
+      stripeSecretKey: (useTestMode ? resolvedTestStripeSecretKey : resolvedLiveStripeSecretKey) || envStripeSecretKey,
+      stripeTestSecretKey: resolvedTestStripeSecretKey,
       squareApplicationId: String(row.square_application_id || "").trim(),
       squareAccessToken: String(row.square_access_token || "").trim(),
       squareLocationId: String(row.square_location_id || "").trim(),
@@ -2813,6 +2883,7 @@ async function saveConfigHandler(req, res) {
       crm_api_key,
       payment_provider,
       stripe_secret_key,
+      stripe_test_secret_key,
       square_application_id,
       square_access_token,
       square_location_id,
@@ -2826,6 +2897,8 @@ async function saveConfigHandler(req, res) {
       tax_rate,
       service_fee_type,
       service_fee_value,
+      service_area_type,
+      service_area_rules,
       service_lat,
       service_lng,
       service_radius,
@@ -2842,6 +2915,7 @@ async function saveConfigHandler(req, res) {
     await ensureProfilePricingColumns();
     await ensureProfileEntitlementColumns();
     await ensureProfilePaymentProviderColumns();
+    await ensureProfileServiceAreaColumns();
     const profileColumns = await getTableColumns("profiles");
     const profileIdColumn = profileColumns.has("location_id") ? "location_id" : "id";
     const existingProfileRes = await client.query(
@@ -2886,6 +2960,7 @@ async function saveConfigHandler(req, res) {
     pushProfileField("crm_api_key", crm_api_key || null);
     pushProfileField("payment_provider", normalizePaymentProvider(payment_provider));
     pushProfileField("stripe_secret_key", stripe_secret_key || null);
+    pushProfileField("stripe_test_secret_key", stripe_test_secret_key || null);
     pushProfileField("square_application_id", square_application_id || null);
     pushProfileField("square_access_token", square_access_token || null);
     pushProfileField("square_location_id", square_location_id || null);
@@ -2899,6 +2974,8 @@ async function saveConfigHandler(req, res) {
     pushProfileField("tax_rate", parseOptionalRate(tax_rate));
     pushProfileField("service_fee_type", normalizeServiceFeeType(service_fee_type) || null);
     pushProfileField("service_fee_value", parseOptionalRate(service_fee_value));
+    pushProfileField("service_area_type", normalizeServiceAreaType(service_area_type));
+    pushProfileField("service_area_rules", JSON.stringify(normalizeServiceAreaRules(service_area_rules)), "::jsonb");
     pushProfileField("service_lat", service_lat);
     pushProfileField("service_lng", service_lng);
     pushProfileField("service_radius", service_radius);
@@ -3639,6 +3716,10 @@ async function geocodeAddress(address, mapsApiKey) {
       formattedAddress,
       lat: null,
       lng: null,
+      addressComponents: [],
+      city: "",
+      county: "",
+      postalCode: "",
     };
   }
 
@@ -3648,10 +3729,25 @@ async function geocodeAddress(address, mapsApiKey) {
     const data = await response.json();
     const result = data?.results?.[0];
     const location = result?.geometry?.location;
+    const addressComponents = Array.isArray(result?.address_components) ? result.address_components : [];
+    const getComponent = (...types) => {
+      const match = addressComponents.find((component) => types.every((type) => component.types?.includes(type)));
+      return String(match?.long_name || "").trim();
+    };
+    const city = getComponent("locality")
+      || getComponent("postal_town")
+      || getComponent("administrative_area_level_3")
+      || "";
+    const county = getComponent("administrative_area_level_2");
+    const postalCode = getComponent("postal_code");
     return {
       formattedAddress: result?.formatted_address || formattedAddress,
       lat: Number.isFinite(Number(location?.lat)) ? Number(location.lat) : null,
       lng: Number.isFinite(Number(location?.lng)) ? Number(location.lng) : null,
+      addressComponents,
+      city,
+      county,
+      postalCode,
     };
   } catch (err) {
     console.warn("Geocode lookup failed:", err.message);
@@ -3659,6 +3755,10 @@ async function geocodeAddress(address, mapsApiKey) {
       formattedAddress,
       lat: null,
       lng: null,
+      addressComponents: [],
+      city: "",
+      county: "",
+      postalCode: "",
     };
   }
 }
@@ -7653,7 +7753,7 @@ app.post("/api/test-run/create-checkout-session", async (req, res) => {
       return res.status(400).json({ error: "Please accept the test run terms before continuing." });
     }
 
-    const paymentProfile = await getPaymentProfileForLocation(locationId);
+    const paymentProfile = await getPaymentProfileForLocation(locationId, { useTestMode: true });
     const paymentProvider = normalizePaymentProvider(paymentProfile.provider);
     if (!canGenerateHostedPaymentLink(paymentProfile)) {
       return res.status(400).json({ error: "The selected payment provider is not fully configured for this account." });
@@ -8301,6 +8401,7 @@ app.get("/api/get-profile/:location_id", requireWizardToken, async (req, res) =>
   try {
     await ensureProfileEntitlementColumns();
     await ensureProfilePaymentProviderColumns();
+    await ensureProfileServiceAreaColumns();
     client = await pool.connect();
     await ensureProfilePricingColumns();
     const profileIdColumn = await getProfileIdColumn();
@@ -8343,6 +8444,8 @@ const sanitizedBranding = sanitizeBrandingByEntitlements({
   entitlements,
 });
 const sanitizedFleet = sanitizeFleetByEntitlements(safeParseJson(profile.fleet), entitlements);
+const normalizedServiceAreaType = normalizeServiceAreaType(profile.service_area_type);
+const normalizedServiceAreaRules = normalizeServiceAreaRules(profile.service_area_rules);
 
 res.json({
   location_id: profile.location_id || profile.id,
@@ -8359,6 +8462,7 @@ res.json({
   crm_api_key: profile.crm_api_key || "",
   payment_provider: normalizePaymentProvider(profile.payment_provider),
   stripe_secret_key: profile.stripe_secret_key || "",
+  stripe_test_secret_key: profile.stripe_test_secret_key || "",
   square_application_id: profile.square_application_id || "",
   square_access_token: profile.square_access_token || "",
   square_location_id: profile.square_location_id || "",
@@ -8423,7 +8527,9 @@ res.json({
 
   service_lat: profile.service_lat,
   service_lng: profile.service_lng,
-  service_radius: profile.service_radius
+  service_radius: profile.service_radius,
+  service_area_type: normalizedServiceAreaType,
+  service_area_rules: normalizedServiceAreaRules
 });
   } catch (err) {
     console.error("❌ Profile Route Error:", err.message);
@@ -8438,24 +8544,47 @@ app.post("/api/pricing/quote", async (req, res) => {
   const { location_id, pickup, dropoff, departureISO, pickupLat, pickupLng } = req.body;
 
   try {
-    // A. Geofence Check: Ensure pickup is within the service radius
+    await ensureProfileServiceAreaColumns();
+    // A. Geofence Check: Ensure pickup is within the configured service area
     const profileRes = await pool.query(
-        "SELECT service_lat, service_lng, service_radius_miles FROM profiles WHERE location_id = $1", 
+        "SELECT service_lat, service_lng, service_radius_miles, maps_api_key, service_area_type, service_area_rules FROM profiles WHERE location_id = $1", 
         [location_id]
     );
     if (profileRes.rows.length === 0) return res.status(404).json({ error: "Location Profile not found" });
     
     const profile = profileRes.rows[0];
-    const distanceToCenter = turf.distance(
-      turf.point([pickupLng, pickupLat]), 
-      turf.point([Number(profile.service_lng), Number(profile.service_lat)]), 
-      { units: 'miles' }
-    );
+    const serviceAreaType = normalizeServiceAreaType(profile.service_area_type);
+    const serviceAreaRules = normalizeServiceAreaRules(profile.service_area_rules);
+    if (serviceAreaType === "city_county_zip") {
+      const hasAnyBoundaryRules = serviceAreaRules.cities.length > 0 || serviceAreaRules.counties.length > 0 || serviceAreaRules.zips.length > 0;
+      if (hasAnyBoundaryRules) {
+        const pickupGeo = await geocodeAddress(pickup, profile.maps_api_key || "");
+        const pickupCity = normalizeAreaKey(pickupGeo.city);
+        const pickupCounty = normalizeAreaKey(pickupGeo.county);
+        const pickupZip = normalizeAreaKey(pickupGeo.postalCode);
+        const matchesBoundary =
+          serviceAreaRules.cities.some((city) => normalizeAreaKey(city) === pickupCity) ||
+          serviceAreaRules.counties.some((county) => normalizeAreaKey(county) === pickupCounty) ||
+          serviceAreaRules.zips.some((zip) => normalizeAreaKey(zip) === pickupZip);
 
-    if (distanceToCenter > profile.service_radius_miles) {
-      return res.status(400).json({ 
+        if (!matchesBoundary) {
+          return res.status(400).json({
+            error: "Pickup is outside this operator's configured city, county, or ZIP service boundary."
+          });
+        }
+      }
+    } else {
+      const distanceToCenter = turf.distance(
+        turf.point([pickupLng, pickupLat]),
+        turf.point([Number(profile.service_lng), Number(profile.service_lat)]),
+        { units: 'miles' }
+      );
+
+      if (distanceToCenter > profile.service_radius_miles) {
+        return res.status(400).json({
           error: "Pickup is outside this operator's service boundary. If fixed destination is chosen, use the standard selection."
-      });
+        });
+      }
     }
 
     // B. Event Check: Override rates for specific dates
@@ -8532,6 +8661,7 @@ app.get("/api/get-profile-widget/:location_id", async (req, res) => {
     const { location_id } = req.params;
     await ensureProfileEntitlementColumns();
     await ensureProfilePaymentProviderColumns();
+    await ensureProfileServiceAreaColumns();
     const profileIdColumn = await getProfileIdColumn();
 
     // Fetch profile (the source of truth)
@@ -8592,9 +8722,11 @@ app.get("/api/get-profile-widget/:location_id", async (req, res) => {
         maps_key: p.maps_api_key,
         payment_provider: normalizePaymentProvider(p.payment_provider),
         tax_rate: p.tax_rate != null ? parseFloat(p.tax_rate) : null,
-        service_fee_type: normalizeServiceFeeType(p.service_fee_type),
-        service_fee_value: p.service_fee_value != null ? parseFloat(p.service_fee_value) : null,
-        fleet: sanitizedFleet,
+      service_fee_type: normalizeServiceFeeType(p.service_fee_type),
+      service_fee_value: p.service_fee_value != null ? parseFloat(p.service_fee_value) : null,
+      service_area_type: normalizeServiceAreaType(p.service_area_type),
+      service_area_rules: normalizeServiceAreaRules(p.service_area_rules),
+      fleet: sanitizedFleet,
         general_buffer_min: sanitizedFleet[0]?.outbound_buffer_min ?? BOOKING_BUFFER_MINUTES,
         fixed_rates: fixedRates,
         peak_windows: safeParseJson(p.peak_windows),
