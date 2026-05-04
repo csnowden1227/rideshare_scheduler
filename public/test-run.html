@@ -195,13 +195,24 @@
     function renderVehicleOptions() {
       const select = document.getElementById("vehicle-slot");
       select.innerHTML = "";
+      const placeholder = document.createElement("option");
+      placeholder.value = "";
+      placeholder.textContent = "Select vehicle";
+      select.appendChild(placeholder);
+
       (state.config?.fleet || []).forEach((vehicle) => {
         const option = document.createElement("option");
         option.value = vehicle.vehicle_slot_id;
-        const displayName = [vehicle.vehicle_year, vehicle.vehicle_make, vehicle.vehicle_model].filter(Boolean).join(" ") || vehicle.vehicle_type || "Vehicle";
+        const displayName = [vehicle.vehicle_year, vehicle.vehicle_make, vehicle.vehicle_model].filter(Boolean).join(" ")
+          || vehicle.vehicle_type
+          || vehicle.vehicle_slot_id
+          || "Vehicle";
         option.textContent = `${displayName}${vehicle.vehicle_license_plate ? ` (${vehicle.vehicle_license_plate})` : ""}`;
         select.appendChild(option);
       });
+      if ((state.config?.fleet || []).length) {
+        select.value = state.config.fleet[0].vehicle_slot_id || "";
+      }
       updateVehiclePreview();
     }
 

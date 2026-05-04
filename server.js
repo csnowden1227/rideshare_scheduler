@@ -7881,6 +7881,7 @@ app.post("/api/test-run/create-checkout-session", async (req, res) => {
   let bookingId = null;
   try {
     await ensureProfilePricingColumns();
+    const profileIdColumn = await getProfileIdColumn();
 
     const locationId = String(req.body.location_id || "").trim();
     const vehicleSlotId = String(req.body.vehicle_slot_id || "").trim();
@@ -7910,7 +7911,7 @@ app.post("/api/test-run/create-checkout-session", async (req, res) => {
     const profileLookup = await pool.query(
       `SELECT business_name, maps_api_key, tax_rate, service_fee_type, service_fee_value, fleet
        FROM profiles
-       WHERE location_id = $1
+       WHERE ${profileIdColumn} = $1
        LIMIT 1`,
       [locationId]
     );
