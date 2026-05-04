@@ -1382,7 +1382,37 @@ function buildPublicBrandingFromProfile(profile = {}) {
 
 function sanitizeFleetByEntitlements(fleet = [], entitlements = {}) {
   const allowed = Math.max(1, Number(entitlements?.allowed_fleet_count || 1));
-  return (Array.isArray(fleet) ? fleet : []).slice(0, allowed);
+  return normalizeFleetRecords((Array.isArray(fleet) ? fleet : []).slice(0, allowed));
+}
+
+function normalizeFleetRecords(fleet = []) {
+  return (Array.isArray(fleet) ? fleet : []).map((row = {}, index) => {
+    const existingSlotId = String(row?.vehicle_slot_id || "").trim();
+    if (existingSlotId) {
+      return {
+        ...row,
+        vehicle_slot_id: existingSlotId,
+      };
+    }
+
+    const slugSource = [
+      row?.vehicle_year,
+      row?.vehicle_make,
+      row?.vehicle_model,
+      row?.vehicle_type,
+      index + 1,
+    ]
+      .filter(Boolean)
+      .join("_")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "_")
+      .replace(/^_+|_+$/g, "");
+
+    return {
+      ...row,
+      vehicle_slot_id: slugSource || `vehicle_${index + 1}`,
+    };
+  });
 }
 
 function clampPartnerFleetRows(fleet = []) {
@@ -5796,7 +5826,7 @@ app.get("/api/test-run/config/:location_id", async (req, res) => {
       addonTrackingUnlocked: profile.addon_tracking_unlocked,
       addonExtraVehicleCount: profile.addon_extra_vehicle_count,
     });
-    const sanitizedFleet = sanitizeFleetByEntitlements(safeParseJson(profile.fleet), entitlements);
+      const sanitizedFleet = sanitizeFleetByEntitlements(safeParseJson(profile.fleet), entitlements);
 
     return res.json({
       success: true,
@@ -7326,8 +7356,8 @@ async function createBookingRecord(input, { paymentLink = null, triggerWebhook =
   }
 
   if (!fleetVehicle) {
-    const profileFleet = safeParseJson(profile.fleet);
-    fleetVehicle = (Array.isArray(profileFleet) ? profileFleet : []).find(
+    const profileFleet = normalizeFleetRecords(safeParseJson(profile.fleet));
+    fleetVehicle = profileFleet.find(
       (vehicle) => String(vehicle.vehicle_slot_id || "") === String(vehicle_slot_id)
     ) || null;
   }
@@ -7651,8 +7681,8 @@ app.post("/api/create-checkout-session", async (req, res) => {
     }
 
     if (!fleetVehicle) {
-      const profileFleet = safeParseJson(profile.fleet);
-      fleetVehicle = (Array.isArray(profileFleet) ? profileFleet : []).find(
+      const profileFleet = normalizeFleetRecords(safeParseJson(profile.fleet));
+      fleetVehicle = profileFleet.find(
         (vehicle) => String(vehicle.vehicle_slot_id || "") === String(vehicleSlotId)
       ) || null;
     }
@@ -7889,8 +7919,8 @@ app.post("/api/test-run/create-checkout-session", async (req, res) => {
       return res.status(404).json({ error: "Profile not found." });
     }
 
-    const fleet = Array.isArray(profile.fleet) ? profile.fleet : safeParseJson(profile.fleet);
-    const vehicle = (Array.isArray(fleet) ? fleet : []).find((item) => String(item?.vehicle_slot_id || "").trim() === vehicleSlotId);
+    const fleet = normalizeFleetRecords(Array.isArray(profile.fleet) ? profile.fleet : safeParseJson(profile.fleet));
+    const vehicle = fleet.find((item) => String(item?.vehicle_slot_id || "").trim() === vehicleSlotId);
     if (!vehicle) {
       return res.status(404).json({ error: "Vehicle slot not found on this account." });
     }
