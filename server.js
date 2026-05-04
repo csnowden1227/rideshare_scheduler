@@ -664,6 +664,35 @@ function normalizeAreaKey(value) {
     .replace(/\s+/g, " ");
 }
 
+function parseNamedAreaRule(value) {
+  const raw = String(value || "").trim();
+  if (!raw) {
+    return { raw: "", name: "", state: "" };
+  }
+  const parts = raw.split(",").map((part) => part.trim()).filter(Boolean);
+  if (parts.length <= 1) {
+    return {
+      raw,
+      name: normalizeAreaKey(raw),
+      state: "",
+    };
+  }
+  return {
+    raw,
+    name: normalizeAreaKey(parts[0]),
+    state: normalizeAreaKey(parts[parts.length - 1]),
+  };
+}
+
+function areaRuleMatches(ruleValue, actualName, actualStateName = "", actualStateCode = "") {
+  const parsedRule = parseNamedAreaRule(ruleValue);
+  if (!parsedRule.name || parsedRule.name !== normalizeAreaKey(actualName)) return false;
+  if (!parsedRule.state) return true;
+  const stateName = normalizeAreaKey(actualStateName);
+  const stateCode = normalizeAreaKey(actualStateCode);
+  return parsedRule.state === stateName || parsedRule.state === stateCode;
+}
+
 async function ensureProfilePricingColumns() {
   if (!profilePricingColumnsReady) {
     profilePricingColumnsReady = (async () => {
@@ -1610,11 +1639,6 @@ async function refreshCrmAccessToken(refreshToken) {
 }
 
 async function getCrmAccessTokenForLocation(locationId) {
-  const profileToken = await getProfileCrmApiKey(locationId);
-  if (profileToken) {
-    return profileToken;
-  }
-
   const storedToken = await getStoredCrmToken(locationId);
   if (storedToken?.access_token) {
     const expiresAt = storedToken.expires_at ? new Date(storedToken.expires_at) : null;
@@ -1636,6 +1660,11 @@ async function getCrmAccessTokenForLocation(locationId) {
       });
       return refreshed.access_token;
     }
+  }
+
+  const profileToken = await getProfileCrmApiKey(locationId);
+  if (profileToken) {
+    return profileToken;
   }
 
   return CRM_ONESOURCE_API_KEY || null;
@@ -3720,6 +3749,8 @@ async function geocodeAddress(address, mapsApiKey) {
       city: "",
       county: "",
       postalCode: "",
+      state: "",
+      stateCode: "",
     };
   }
 
@@ -3740,6 +3771,10 @@ async function geocodeAddress(address, mapsApiKey) {
       || "";
     const county = getComponent("administrative_area_level_2");
     const postalCode = getComponent("postal_code");
+    const state = getComponent("administrative_area_level_1");
+    const stateCode = String(
+      addressComponents.find((component) => component.types?.includes("administrative_area_level_1"))?.short_name || ""
+    ).trim();
     return {
       formattedAddress: result?.formatted_address || formattedAddress,
       lat: Number.isFinite(Number(location?.lat)) ? Number(location.lat) : null,
@@ -3748,6 +3783,8 @@ async function geocodeAddress(address, mapsApiKey) {
       city,
       county,
       postalCode,
+      state,
+      stateCode,
     };
   } catch (err) {
     console.warn("Geocode lookup failed:", err.message);
@@ -3759,6 +3796,8 @@ async function geocodeAddress(address, mapsApiKey) {
       city: "",
       county: "",
       postalCode: "",
+      state: "",
+      stateCode: "",
     };
   }
 }
@@ -8559,12 +8598,12 @@ app.post("/api/pricing/quote", async (req, res) => {
       const hasAnyBoundaryRules = serviceAreaRules.cities.length > 0 || serviceAreaRules.counties.length > 0 || serviceAreaRules.zips.length > 0;
       if (hasAnyBoundaryRules) {
         const pickupGeo = await geocodeAddress(pickup, profile.maps_api_key || "");
-        const pickupCity = normalizeAreaKey(pickupGeo.city);
-        const pickupCounty = normalizeAreaKey(pickupGeo.county);
+        const pickupCity = pickupGeo.city;
+        const pickupCounty = pickupGeo.county;
         const pickupZip = normalizeAreaKey(pickupGeo.postalCode);
         const matchesBoundary =
-          serviceAreaRules.cities.some((city) => normalizeAreaKey(city) === pickupCity) ||
-          serviceAreaRules.counties.some((county) => normalizeAreaKey(county) === pickupCounty) ||
+          serviceAreaRules.cities.some((city) => areaRuleMatches(city, pickupCity, pickupGeo.state, pickupGeo.stateCode)) ||
+          serviceAreaRules.counties.some((county) => areaRuleMatches(county, pickupCounty, pickupGeo.state, pickupGeo.stateCode)) ||
           serviceAreaRules.zips.some((zip) => normalizeAreaKey(zip) === pickupZip);
 
         if (!matchesBoundary) {

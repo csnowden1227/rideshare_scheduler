@@ -117,7 +117,7 @@
       <p style="margin: 0 0 10px 0; font-size: 12px; text-transform: uppercase; letter-spacing: 1.4px; opacity: 0.9;">CRM_One_Source Client Onboarding</p>
       <h1 style="margin: 0 0 14px 0; font-size: 38px; line-height: 1.1;">Complete Your Booking System Setup</h1>
       <p style="margin: 0; max-width: 820px; font-size: 16px; line-height: 1.8;">
-        Follow each setup box in order. This guide covers Google Maps, CRM webhook setup, CRM private token creation, vehicle calendars, wizard sync, and the final workflow payload refresh step.
+        Follow each setup box in order. This guide covers Google Maps, CRM webhook setup, one-click CRM connection, vehicle calendars, wizard sync, and the final workflow payload refresh step.
       </p>
       <div style="margin-top: 24px;">
         <a id="open-setup-wizard-link" href="https://app.crmonesource.com/v2/location/LOCATION_ID/custom-menu-link/b78791fe-72c5-46da-9a17-49bc3b08061d" target="_top" rel="noopener" style="display: inline-block; background: #ffffff; color: #5b21b6; text-decoration: none; padding: 14px 22px; border-radius: 12px; font-weight: 700;">
@@ -136,7 +136,7 @@
     <div style="margin-top: 22px; background: #ffffff; border: 1px solid #ddd6fe; border-radius: 20px; padding: 22px;">
       <h2 style="margin: 0 0 10px 0; color: #4c1d95; font-size: 25px;">Important Before You Begin</h2>
       <p style="margin: 0; color: #4b5563; line-height: 1.8;">
-        Log in to your CRM_One_Source account first. Then use the custom setup wizard link from the menu bar on the left side of your screen. Keep your setup wizard open in one tab. In separate tabs, gather your Google Maps key, CRM webhook URL, CRM private integration token, payment credentials, and vehicle calendar IDs. Your app already handles booking buffers, so you should <strong>not</strong> add extra calendar buffers in CRM calendar setup unless you have a special business reason.
+        Log in to your CRM_One_Source account first. Then use the custom setup wizard link from the menu bar on the left side of your screen. Keep your setup wizard open in one tab. In separate tabs, gather your Google Maps key, CRM webhook URL, payment credentials, and vehicle calendar IDs. You will connect CRM directly from inside the setup wizard. Your app already handles booking buffers, so you should <strong>not</strong> add extra calendar buffers in CRM calendar setup unless you have a special business reason.
       </p>
     </div>
 
@@ -255,24 +255,18 @@
         </ol>
       </div>
 
-      <div class="cos-card">
-        <div style="font-size: 13px; color: #5b21b6; font-weight: 700; text-transform: uppercase; margin-bottom: 10px;">Step 9</div>
-        <h3 style="margin: 0 0 10px 0; color: #5b21b6;">Create Your CRM Private Integration Token</h3>
-        <ol>
-          <li>Go to <strong>Settings</strong>.</li>
-          <li>Open <strong>Private Integrations</strong>.</li>
-          <li>Click <strong>Create Private Integration</strong>.</li>
-          <li>Name it <strong>Booking Scheduler Integration</strong>.</li>
-          <li>Turn on permissions for:
-            <br><strong>Contacts</strong>
-            <br><strong>Calendars/Appointments</strong>
-            <br><strong>Locations/Businesses</strong> if shown
-          </li>
-          <li>Click <strong>Create</strong>.</li>
-          <li>Copy the token immediately.</li>
-          <li>Paste it into <strong>CRM Private Integration Token</strong> in the wizard.</li>
-        </ol>
-      </div>
+        <div class="cos-card">
+          <div style="font-size: 13px; color: #5b21b6; font-weight: 700; text-transform: uppercase; margin-bottom: 10px;">Step 9</div>
+          <h3 style="margin: 0 0 10px 0; color: #5b21b6;">Connect CRM Directly From the Wizard</h3>
+          <ol>
+            <li>Return to the setup wizard.</li>
+            <li>Find the <strong>CRM Connection</strong> card.</li>
+            <li>Click <strong>Connect CRM</strong>.</li>
+            <li>Sign in to the CRM account for this location if prompted.</li>
+            <li>Approve calendar and contact access.</li>
+            <li>Wait for the wizard to return and show that CRM is connected.</li>
+          </ol>
+        </div>
 
       <div class="cos-card cos-card-teal">
         <div style="font-size: 13px; color: #0f766e; font-weight: 700; text-transform: uppercase; margin-bottom: 10px;">Step 10</div>
@@ -372,10 +366,10 @@
     <div style="margin-top: 24px; background: #ffffff; border: 1px solid #ddd6fe; border-radius: 20px; padding: 22px;">
       <h2 style="margin: 0 0 10px 0; color: #4c1d95; font-size: 25px;">Important Notes</h2>
       <ul style="margin: 0; padding-left: 20px; color: #4b5563; line-height: 1.9;">
-        <li>Create a separate CRM calendar for each vehicle type you want to schedule independently.</li>
-        <li>Use clear names like <strong>Luxury Sedan</strong>, <strong>Standard Sedan</strong>, and <strong>Luxury SUV</strong>.</li>
-        <li>Set true operating availability in CRM calendars, but do <strong>not</strong> add extra buffers there if your app already handles buffering.</li>
-        <li>After every important wizard sync, refresh the webhook sample payload in the workflow and click <strong>Save</strong>.</li>
+          <li>Create a separate CRM calendar for each vehicle type you want to schedule independently.</li>
+          <li>Use clear names like <strong>Luxury Sedan</strong>, <strong>Standard Sedan</strong>, and <strong>Luxury SUV</strong>.</li>
+          <li>Set true operating availability in CRM calendars, but do <strong>not</strong> add extra buffers there if your app already handles buffering.</li>
+          <li>After every important wizard sync, refresh the webhook sample payload in the workflow and click <strong>Save</strong>.</li>
       </ul>
     </div>
 
@@ -397,12 +391,12 @@
           </p>
         </div>
 
-        <div style="padding: 16px; background: #f5f3ff; border-radius: 14px;">
-          <strong style="color: #5b21b6;">What does the CRM private integration token do?</strong>
-          <p style="margin: 8px 0 0 0; color: #4b5563; line-height: 1.8;">
-            It gives the booking system permission to check calendars, create appointments, remove cancelled events, and sync contacts inside your CRM account.
-          </p>
-        </div>
+          <div style="padding: 16px; background: #f5f3ff; border-radius: 14px;">
+            <strong style="color: #5b21b6;">Do I need to create a CRM private integration token?</strong>
+            <p style="margin: 8px 0 0 0; color: #4b5563; line-height: 1.8;">
+              Usually no. The recommended flow is to click <strong>Connect CRM</strong> in the wizard so the account authorizes calendars and contacts automatically. A private integration token should only be used as an advanced fallback.
+            </p>
+          </div>
 
         <div style="padding: 16px; background: #f0fdfa; border-radius: 14px;">
           <strong style="color: #0f766e;">Why do I need to refresh the webhook payload after clicking Sync?</strong>
