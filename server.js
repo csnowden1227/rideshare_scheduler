@@ -2772,7 +2772,7 @@ app.get("/pay/balance/:bookingId", async (req, res) => {
         booking_id: bookingId,
         location_id: bookingRow.location_id,
         provider,
-      });
+      }, { rawKeys: ["session_id"] });
       const balanceDueDeadline = bookingRow.start_time
         ? new Date(new Date(bookingRow.start_time).getTime() - (48 * 60 * 60 * 1000)).toISOString()
         : null;
@@ -2918,7 +2918,7 @@ app.get("/pay/test-run/:bookingId", async (req, res) => {
     if (provider === "stripe") {
       const successUrl = appendQueryParams(successUrlBase, {
         session_id: "{CHECKOUT_SESSION_ID}",
-      });
+      }, { rawKeys: ["session_id"] });
       const session = await createStripeCheckoutSessionForAmount({
         apiKey: paymentProfile.stripeSecretKey,
         amount: totalPrice,
@@ -4164,13 +4164,25 @@ app.post("/api/create-payment-intent", async (req, res) => {
   }
 });
 
-function appendQueryParams(urlString, params = {}) {
+function appendQueryParams(urlString, params = {}, options = {}) {
   const url = new URL(urlString);
+  const rawKeys = new Set(Array.isArray(options.rawKeys) ? options.rawKeys : []);
+  const rawValueSentinels = [];
   Object.entries(params).forEach(([key, value]) => {
     if (value == null || value === "") return;
+    if (rawKeys.has(key)) {
+      const sentinel = `__RAW_QUERY_VALUE_${key}_${rawValueSentinels.length}__`;
+      rawValueSentinels.push({ sentinel, value: String(value) });
+      url.searchParams.set(key, sentinel);
+      return;
+    }
     url.searchParams.set(key, String(value));
   });
-  return url.toString();
+  let output = url.toString();
+  rawValueSentinels.forEach(({ sentinel, value }) => {
+    output = output.replace(encodeURIComponent(sentinel), value);
+  });
+  return output;
 }
 
 function sanitizeReturnUrl(rawUrl, req) {
@@ -4918,7 +4930,7 @@ app.post("/api/create-addon-checkout-session", async (req, res) => {
       addon_checkout: "success",
       session_id: "{CHECKOUT_SESSION_ID}",
       location_id: locationId,
-    });
+    }, { rawKeys: ["session_id"] });
     const cancelUrl = appendQueryParams(returnUrl, {
       addon_checkout: "cancel",
       location_id: locationId,
@@ -7825,7 +7837,7 @@ app.post("/api/create-checkout-session", async (req, res) => {
       session_id: "{CHECKOUT_SESSION_ID}",
       booking_id: bookingId,
       practice: practiceMode ? "1" : "0",
-    });
+    }, { rawKeys: ["session_id"] });
     const cancelUrl = appendQueryParams(returnUrl, {
       checkout: "cancel",
       booking_id: bookingId,
