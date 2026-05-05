@@ -1057,6 +1057,7 @@ function buildTrackingStatusWebhookPayload({ req, session, status }) {
 
   return {
     webhook_type: "webhook_tracking_status",
+    webhook_event: status,
     event: status,
     location_id: session.location_id,
     booking_id: session.booking_id,
