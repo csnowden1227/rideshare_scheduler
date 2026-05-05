@@ -95,6 +95,10 @@
     return raw;
   }
 
+  function wait(ms) {
+    return new Promise((resolve) => window.setTimeout(resolve, ms));
+  }
+
   function money(value) {
     return `$${Number(value || 0).toFixed(2)}`;
   }
@@ -1229,12 +1233,13 @@
       let tracking = null;
       let practiceTextNotice = "";
       if (isPracticeMode() && (data.booking?.booking_id || bookingId)) {
+        const practiceBookingId = Number(data.booking?.booking_id || bookingId);
         const reseedResponse = await fetch(`${BACKEND_URL}/api/crm-webhook/reseed`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             location_id: locationId,
-            booking_id: Number(data.booking?.booking_id || bookingId),
+            booking_id: practiceBookingId,
           }),
         });
         const reseedData = await reseedResponse.json().catch(() => ({}));
@@ -1247,7 +1252,7 @@
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            booking_id: Number(data.booking?.booking_id || bookingId),
+            booking_id: practiceBookingId,
             location_id: locationId,
           }),
         }).then(async (trackingResponse) => {
@@ -1258,16 +1263,30 @@
           return trackingData;
         });
 
-        const notifyResponse = await fetch(`${BACKEND_URL}/api/tracking/session/practice-notify`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            tracking_session_id: tracking.tracking_session_id,
-            booking_id: Number(data.booking?.booking_id || bookingId),
-          }),
-        });
-        const notifyData = await notifyResponse.json().catch(() => ({}));
-        if (!notifyResponse.ok || notifyData.success === false) {
+        await wait(1500);
+
+        let notifySucceeded = false;
+        let notifyData = {};
+        for (let attempt = 0; attempt < 3; attempt += 1) {
+          if (attempt > 0) {
+            await wait(1500);
+          }
+          const notifyResponse = await fetch(`${BACKEND_URL}/api/tracking/session/practice-notify`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              tracking_session_id: tracking.tracking_session_id,
+              booking_id: practiceBookingId,
+            }),
+          });
+          notifyData = await notifyResponse.json().catch(() => ({}));
+          if (notifyResponse.ok && notifyData.success !== false) {
+            notifySucceeded = true;
+            break;
+          }
+        }
+
+        if (!notifySucceeded) {
           practiceTextNotice += `${practiceTextNotice ? " " : ""}Tracking links are ready, but the practice SMS trigger still needs attention.`;
           console.warn("Practice SMS trigger failed:", notifyData);
         }
