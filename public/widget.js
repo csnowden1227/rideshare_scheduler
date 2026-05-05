@@ -31,6 +31,70 @@
     return widgetMode === "practice";
   }
 
+  function checkoutStartTimeStorageKey() {
+    return `chauffeur_widget_start_time_${locationId}_${widgetMode}`;
+  }
+
+  function rememberCheckoutStartTime(startTime) {
+    try {
+      if (!startTime) return;
+      window.sessionStorage.setItem(checkoutStartTimeStorageKey(), String(startTime));
+    } catch {
+      // Ignore storage failures and fall back to server values.
+    }
+  }
+
+  function consumeCheckoutStartTime() {
+    try {
+      const key = checkoutStartTimeStorageKey();
+      const value = window.sessionStorage.getItem(key);
+      if (value) window.sessionStorage.removeItem(key);
+      return value || "";
+    } catch {
+      return "";
+    }
+  }
+
+  function formatPickupDateTime(value) {
+    const raw = String(value || "").trim();
+    if (!raw) return "";
+
+    const localDateTimeMatch = raw.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?$/);
+    if (localDateTimeMatch) {
+      const [, year, month, day, hour, minute, second = "00"] = localDateTimeMatch;
+      const localDate = new Date(
+        Number(year),
+        Number(month) - 1,
+        Number(day),
+        Number(hour),
+        Number(minute),
+        Number(second)
+      );
+      if (!Number.isNaN(localDate.getTime())) {
+        return localDate.toLocaleString([], {
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+          hour: "numeric",
+          minute: "2-digit",
+        });
+      }
+    }
+
+    const parsed = new Date(raw);
+    if (!Number.isNaN(parsed.getTime())) {
+      return parsed.toLocaleString([], {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "numeric",
+        minute: "2-digit",
+      });
+    }
+
+    return raw;
+  }
+
   function money(value) {
     return `$${Number(value || 0).toFixed(2)}`;
   }
@@ -966,7 +1030,7 @@
             <div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.14em;color:${escapeHtml(colors.secondary)};">Reservation Snapshot</div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:14px;font-size:14px;color:#475569;">
               <div><strong style="display:block;color:#0f172a;margin-bottom:4px;">Confirmation ID</strong>#${escapeHtml(bookingId || "Pending")}</div>
-              <div><strong style="display:block;color:#0f172a;margin-bottom:4px;">Pickup Time</strong>${escapeHtml(new Date(payload.start_time).toLocaleString())}</div>
+              <div><strong style="display:block;color:#0f172a;margin-bottom:4px;">Pickup Time</strong>${escapeHtml(formatPickupDateTime(payload.start_time))}</div>
               <div><strong style="display:block;color:#0f172a;margin-bottom:4px;">Pickup</strong>${escapeHtml(payload.pickup_address)}</div>
               <div><strong style="display:block;color:#0f172a;margin-bottom:4px;">Dropoff</strong>${escapeHtml(payload.dropoff_address)}</div>
             </div>
@@ -1013,7 +1077,7 @@
             <div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.14em;color:${escapeHtml(colors.secondary)};">Reservation Snapshot</div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:14px;font-size:14px;color:#475569;">
               <div><strong style="display:block;color:#0f172a;margin-bottom:4px;">Request ID</strong>#${escapeHtml(bookingId || "Pending")}</div>
-              <div><strong style="display:block;color:#0f172a;margin-bottom:4px;">Pickup Time</strong>${escapeHtml(new Date(payload.start_time).toLocaleString())}</div>
+              <div><strong style="display:block;color:#0f172a;margin-bottom:4px;">Pickup Time</strong>${escapeHtml(formatPickupDateTime(payload.start_time))}</div>
               <div><strong style="display:block;color:#0f172a;margin-bottom:4px;">Pickup</strong>${escapeHtml(payload.pickup_address)}</div>
               <div><strong style="display:block;color:#0f172a;margin-bottom:4px;">Dropoff</strong>${escapeHtml(payload.dropoff_address)}</div>
             </div>
@@ -1120,6 +1184,7 @@
       }
       if (!data.checkout_url) throw new Error("Checkout link was not returned.");
 
+      rememberCheckoutStartTime(payload.start_time);
       window.location.href = data.checkout_url;
     } catch (error) {
       showError(error.message || "Checkout failed.");
@@ -1144,6 +1209,7 @@
     }
 
     if (checkoutState === "success" && sessionId) {
+      const rememberedStartTime = consumeCheckoutStartTime();
       const root = getRoot();
       if (root) {
         root.innerHTML = `
@@ -1163,6 +1229,20 @@
       let tracking = null;
       let practiceTextNotice = "";
       if (isPracticeMode() && (data.booking?.booking_id || bookingId)) {
+        const reseedResponse = await fetch(`${BACKEND_URL}/api/crm-webhook/reseed`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            location_id: locationId,
+            booking_id: Number(data.booking?.booking_id || bookingId),
+          }),
+        });
+        const reseedData = await reseedResponse.json().catch(() => ({}));
+        if (!reseedResponse.ok || reseedData.success === false) {
+          practiceTextNotice = " Booking confirmation completed, but the CRM reseed path still needs attention.";
+          console.warn("Practice CRM reseed failed:", reseedData);
+        }
+
         tracking = await fetch(`${BACKEND_URL}/api/tracking/session/create`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -1188,7 +1268,7 @@
         });
         const notifyData = await notifyResponse.json().catch(() => ({}));
         if (!notifyResponse.ok || notifyData.success === false) {
-          practiceTextNotice = " Tracking links are ready, but the practice SMS trigger still needs attention.";
+          practiceTextNotice += `${practiceTextNotice ? " " : ""}Tracking links are ready, but the practice SMS trigger still needs attention.`;
           console.warn("Practice SMS trigger failed:", notifyData);
         }
       }
@@ -1197,7 +1277,7 @@
         first_name: data.reservation?.first_name || "Your",
         pickup_address: data.reservation?.pickup_address || "Payment received",
         dropoff_address: data.reservation?.dropoff_address || "Reservation confirmed",
-        start_time: data.reservation?.start_time || new Date().toISOString(),
+        start_time: rememberedStartTime || data.reservation?.start_time || new Date().toISOString(),
       }, isPracticeMode() ? {
         title: "Practice Booking Confirmed",
         message: `${data.reservation?.first_name || "Your"} practice reservation is confirmed and the tracking workflow is ready to rehearse.${practiceTextNotice}`,
