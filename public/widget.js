@@ -2,6 +2,7 @@
   const scriptTag = document.currentScript;
   const params = new URL(scriptTag.src).searchParams;
   const locationId = params.get("loc");
+  const widgetMode = String(params.get("mode") || "live").toLowerCase() === "practice" ? "practice" : "live";
   const BACKEND_URL = scriptTag.src.split("/widget.js")[0];
   const rootId = "chauffeur-booking-widget";
 
@@ -24,6 +25,10 @@
     } catch {
       return window.location.href;
     }
+  }
+
+  function isPracticeMode() {
+    return widgetMode === "practice";
   }
 
   function money(value) {
@@ -465,7 +470,10 @@
           <div id="cd_hero_panel" style="background:${escapeHtml(colors.heroPanel)};${proPlan ? "backdrop-filter:blur(8px);" : ""}border:1px solid ${escapeHtml(colors.heroBorder)};border-radius:24px;padding:26px;color:${escapeHtml(colors.heroText)};">
             <div id="cd_hero_header" style="display:flex;align-items:flex-start;justify-content:space-between;gap:18px;">
               <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;min-height:150px;">
-                <div style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.18em;opacity:.85;">Premium Booking Console</div>
+                <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:10px;">
+                  <div style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.18em;opacity:.85;">Premium Booking Console</div>
+                  ${isPracticeMode() ? `<div style="padding:6px 12px;border-radius:999px;background:${proPlan ? "rgba(255,255,255,.16)" : "#ffffff"};border:1px solid ${escapeHtml(colors.heroBorder)};font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:.16em;">Practice Mode</div>` : ``}
+                </div>
                 <h2 style="margin:6px 0 0;font-size:32px;line-height:1.1;font-weight:900;">${escapeHtml(state.config?.business_name || "Luxury Ride Reservations")}</h2>
                 <p style="margin:18px 0 0;font-size:15px;line-height:1.6;max-width:580px;color:${escapeHtml(colors.heroMuted)};">
                 ${escapeHtml(tagline)}
@@ -866,7 +874,14 @@
     const depositRadio = document.querySelector('input[name="cd_payment_choice"][value="deposit"]');
     const fullRadio = document.querySelector('input[name="cd_payment_choice"][value="full"]');
     if (paymentOptions && paymentNotice && depositRadio && fullRadio) {
-      if (!providerSupportsDirectCheckout()) {
+      if (isPracticeMode()) {
+        paymentOptions.style.display = "block";
+        depositRadio.disabled = true;
+        fullRadio.disabled = false;
+        fullRadio.checked = true;
+        depositRadio.checked = false;
+        paymentNotice.textContent = `Practice mode uses your Stripe test key and still runs the full booking confirmation workflow. No live customer charge will be created.`;
+      } else if (!providerSupportsDirectCheckout()) {
         paymentOptions.style.display = "block";
         depositRadio.disabled = true;
         fullRadio.disabled = true;
@@ -927,19 +942,23 @@
     }
   }
 
-  function renderSuccess(bookingId, payload) {
+  function renderSuccess(bookingId, payload, options = {}) {
     const root = getRoot();
     const businessName = state.config?.business_name || "Our Team";
     const colors = getBrandColors();
     const proPlan = isProPlan();
+    const successTitle = options.title || "Booking Confirmed";
+    const successMessage = escapeHtml(options.message || `${payload.first_name} your reservation has been synced successfully and routed to ${businessName}.`);
+    const tracking = options.tracking || null;
 
     root.innerHTML = `
       <div style="max-width:920px;margin:0 auto;background:#fff;border:1px solid #dbe4f0;border-radius:28px;overflow:hidden;box-shadow:0 30px 60px rgba(15,23,42,.12);font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;">
         <div style="padding:48px;background:${proPlan ? `linear-gradient(135deg,${escapeHtml(colors.primary)} 0%,${escapeHtml(colors.secondary)} 100%)` : escapeHtml(colors.heroBackground)};color:${escapeHtml(colors.heroText)};text-align:center;">
+          ${isPracticeMode() ? `<div style="display:inline-flex;align-items:center;gap:8px;padding:8px 14px;border-radius:999px;background:${proPlan ? "rgba(255,255,255,.18)" : "#ffffff"};border:1px solid ${escapeHtml(colors.heroBorder)};font-size:11px;font-weight:900;letter-spacing:.16em;text-transform:uppercase;margin-bottom:16px;">Practice Mode</div>` : ``}
           <div style="width:86px;height:86px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:${proPlan ? "rgba(255,255,255,.16)" : "#ffffff"};margin:0 auto 18px;font-size:38px;border:1px solid ${escapeHtml(colors.heroBorder)};">OK</div>
-          <h2 style="margin:0;font-size:34px;font-weight:900;">Booking Confirmed</h2>
+          <h2 style="margin:0;font-size:34px;font-weight:900;">${escapeHtml(successTitle)}</h2>
           <p style="margin:12px auto 0;max-width:580px;color:${escapeHtml(colors.heroMuted)};font-size:16px;line-height:1.6;">
-            ${escapeHtml(payload.first_name)} your reservation has been synced successfully and routed to ${escapeHtml(businessName)}.
+            ${successMessage}
           </p>
         </div>
         <div style="padding:30px;display:grid;gap:16px;background:#f8fafc;">
@@ -952,8 +971,19 @@
               <div><strong style="display:block;color:#0f172a;margin-bottom:4px;">Dropoff</strong>${escapeHtml(payload.dropoff_address)}</div>
             </div>
           </div>
+          ${tracking ? `
+          <div style="background:#fff;border:1px solid #dbe4f0;border-radius:22px;padding:22px;">
+            <div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.14em;color:${escapeHtml(colors.secondary)};">Tracking Links Ready</div>
+            <div style="margin-top:12px;font-size:14px;color:#475569;line-height:1.7;">Open the driver link first, then use the customer link to confirm the same end-to-end tracking experience your workflow will deliver.</div>
+            <div style="display:grid;gap:10px;margin-top:14px;">
+              <a href="${escapeHtml(tracking.driver_url || "#")}" target="_blank" rel="noopener" style="display:block;padding:14px 16px;border-radius:16px;background:${escapeHtml(colors.primary)};color:#fff;text-decoration:none;font-weight:800;">Open Driver Tracking</a>
+              <a href="${escapeHtml(tracking.customer_url || "#")}" target="_blank" rel="noopener" style="display:block;padding:14px 16px;border-radius:16px;background:${escapeHtml(colors.secondary)};color:#fff;text-decoration:none;font-weight:800;">Open Customer Tracking</a>
+            </div>
+          </div>` : ``}
           <div style="font-size:13px;color:#64748b;text-align:center;">
-            Confirmation messaging and CRM follow-up are now queued from the synced backend workflow.
+            ${isPracticeMode()
+              ? "Practice booking confirmation is complete. Calendar sync and tracking creation used the same live workflow path."
+              : "Confirmation messaging and CRM follow-up are now queued from the synced backend workflow."}
           </div>
           ${proPlan ? "" : `<div style="font-size:12px;color:#475569;text-align:center;font-weight:700;">Powered by CRM ONE SOURCE - Your all-in-one digital solution for any business.</div>`}
         </div>
@@ -1065,6 +1095,7 @@
       route_distance_miles: Number(state.quote.miles || state.route.miles || 0),
       route_duration_minutes: Number(state.route.durationMinutes || 0),
       return_url: currentPageUrl(),
+      practice_mode: isPracticeMode(),
     });
 
     const button = document.getElementById("cd_btn_book");
@@ -1124,17 +1155,39 @@
         `;
       }
 
-      const response = await fetch(`${BACKEND_URL}/api/checkout-session-status?session_id=${encodeURIComponent(sessionId)}&location_id=${encodeURIComponent(locationId)}`);
+      const response = await fetch(`${BACKEND_URL}/api/checkout-session-status?session_id=${encodeURIComponent(sessionId)}&location_id=${encodeURIComponent(locationId)}&practice_mode=${isPracticeMode() ? "1" : "0"}`);
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Unable to verify the checkout session.");
       if (!data.paid) throw new Error("Payment has not been completed yet.");
+
+      let tracking = null;
+      if (isPracticeMode() && (data.booking?.booking_id || bookingId)) {
+        tracking = await fetch(`${BACKEND_URL}/api/tracking/session/create`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            booking_id: Number(data.booking?.booking_id || bookingId),
+            location_id: locationId,
+          }),
+        }).then(async (trackingResponse) => {
+          const trackingData = await trackingResponse.json().catch(() => ({}));
+          if (!trackingResponse.ok) {
+            throw new Error(trackingData.error || "Payment succeeded, but tracking could not be created yet.");
+          }
+          return trackingData;
+        });
+      }
 
       renderSuccess(data.booking?.booking_id || bookingId, {
         first_name: data.reservation?.first_name || "Your",
         pickup_address: data.reservation?.pickup_address || "Payment received",
         dropoff_address: data.reservation?.dropoff_address || "Reservation confirmed",
         start_time: data.reservation?.start_time || new Date().toISOString(),
-      });
+      }, isPracticeMode() ? {
+        title: "Practice Booking Confirmed",
+        message: `${data.reservation?.first_name || "Your"} practice reservation is confirmed and the tracking workflow is ready to rehearse.`,
+        tracking,
+      } : {});
       window.history.replaceState({}, document.title, currentPageUrl());
       return true;
     }

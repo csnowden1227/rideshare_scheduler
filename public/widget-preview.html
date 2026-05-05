@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Widget Preview</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 24px;
+      background: #f8fafc;
+      font-family: Arial, Helvetica, sans-serif;
+      color: #0f172a;
+    }
+    .preview-shell {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    .preview-note {
+      margin: 0 0 16px;
+      font-size: 14px;
+      line-height: 1.6;
+      color: #475569;
+    }
+    #chauffeur-booking-widget {
+      min-height: 480px;
+    }
+  </style>
+</head>
+<body>
+  <div class="preview-shell">
+    <p class="preview-note" id="preview-note">Loading widget preview...</p>
+    <div id="chauffeur-booking-widget"></div>
+  </div>
+
+  <script>
+    (function () {
+      const query = new URLSearchParams(window.location.search);
+      const locationId = (query.get("location_id") || "").trim();
+      const mode = String(query.get("mode") || "live").toLowerCase() === "practice" ? "practice" : "live";
+      const token = (query.get("token") || "").trim();
+      const backendUrl = window.location.origin;
+      const note = document.getElementById("preview-note");
+
+      note.textContent = mode === "practice"
+        ? `Practice widget preview for location ${locationId}. This uses the same booking widget flow in practice mode.`
+        : `Live widget preview for location ${locationId}. This uses your current customer-facing booking widget.`;
+
+      if (!locationId) {
+        note.textContent = "Missing location_id for widget preview.";
+        note.style.color = "#991b1b";
+        return;
+      }
+
+      const script = document.createElement("script");
+      const params = new URLSearchParams({ loc: locationId, mode });
+      if (token) params.set("token", token);
+      script.src = `${backendUrl}/widget.js?${params.toString()}`;
+      document.body.appendChild(script);
+    })();
+  </script>
+</body>
+</html>

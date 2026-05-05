@@ -1778,8 +1778,8 @@ async function getProfileIdColumn() {
   throw new Error("Profiles table is missing both location_id and id columns.");
 }
 
-async function getStripeSecretKeyForLocation(locationId) {
-  const paymentProfile = await getPaymentProfileForLocation(locationId);
+async function getStripeSecretKeyForLocation(locationId, options = {}) {
+  const paymentProfile = await getPaymentProfileForLocation(locationId, options);
   return paymentProfile.stripeSecretKey || envStripeSecretKey;
 }
 
@@ -7615,10 +7615,21 @@ async function createBookingRecord(input, { paymentLink = null, triggerWebhook =
 app.post("/api/create-checkout-session", async (req, res) => {
   let bookingId = null;
   try {
-    const paymentProfile = await getPaymentProfileForLocation(req.body.location_id);
-    const paymentProvider = paymentProfile.provider;
     const locationId = req.body.location_id;
     const vehicleSlotId = req.body.vehicle_slot_id;
+    const practiceMode = req.body.practice_mode === true || String(req.body.practice_mode || "").trim() === "1";
+    const livePaymentProfile = await getPaymentProfileForLocation(locationId);
+    const testStripeProfile = practiceMode
+      ? await getPaymentProfileForLocation(locationId, { useTestMode: true })
+      : null;
+    const paymentProfile = practiceMode
+      ? {
+          ...livePaymentProfile,
+          provider: "stripe",
+          stripeSecretKey: testStripeProfile?.stripeSecretKey || "",
+        }
+      : livePaymentProfile;
+    const paymentProvider = paymentProfile.provider;
 
     const returnUrl = sanitizeReturnUrl(req.body.return_url, req);
     const totalPrice = Number(req.body.total_price || 0);
@@ -7641,6 +7652,10 @@ app.post("/api/create-checkout-session", async (req, res) => {
 
     if (!req.body.accepted_terms) {
       return res.status(400).json({ error: "Cancellation and payment terms must be accepted before checkout." });
+    }
+
+    if (practiceMode && !paymentProfile.stripeSecretKey) {
+      return res.status(400).json({ error: "Practice mode requires a Stripe test secret key in the setup wizard." });
     }
 
     const profileLookup = await pool.query(
@@ -7739,6 +7754,7 @@ app.post("/api/create-checkout-session", async (req, res) => {
       const bookingResult = await createBookingRecord(
         {
           ...req.body,
+          booking_mode: practiceMode ? "practice_widget" : (req.body.booking_mode || "standard"),
           booking_confirmed: false,
           payment_status: "unpaid",
           payment_paid: false,
@@ -7781,6 +7797,7 @@ app.post("/api/create-checkout-session", async (req, res) => {
     const bookingResult = await createBookingRecord(
       {
         ...req.body,
+        booking_mode: practiceMode ? "practice_widget" : (req.body.booking_mode || "standard"),
         booking_confirmed: false,
         payment_status: "unpaid",
         payment_paid: false,
@@ -7807,10 +7824,12 @@ app.post("/api/create-checkout-session", async (req, res) => {
       checkout: "success",
       session_id: "{CHECKOUT_SESSION_ID}",
       booking_id: bookingId,
+      practice: practiceMode ? "1" : "0",
     });
     const cancelUrl = appendQueryParams(returnUrl, {
       checkout: "cancel",
       booking_id: bookingId,
+      practice: practiceMode ? "1" : "0",
     });
 
     const checkoutTitle = payInFull
@@ -7847,6 +7866,7 @@ app.post("/api/create-checkout-session", async (req, res) => {
       balance_due: Number((totalPrice - confirmedDepositAmount).toFixed(2)),
       balance_due_deadline: balanceDueDeadline,
       payment_provider: paymentProvider,
+      practice_mode: practiceMode,
       booking: bookingResult.booking,
     });
   } catch (err) {
@@ -8140,7 +8160,8 @@ app.get("/api/checkout-session-status", async (req, res) => {
 
     const sessionId = String(req.query.session_id || "").trim();
     const locationId = String(req.query.location_id || "").trim() || null;
-    const stripeSecretKey = await getStripeSecretKeyForLocation(locationId);
+    const practiceMode = req.query.practice_mode === "1" || req.query.practice === "1";
+    const stripeSecretKey = await getStripeSecretKeyForLocation(locationId, { useTestMode: practiceMode });
     if (!stripeSecretKey) {
       return res.status(500).json({ error: "Stripe is not configured on the backend." });
     }
