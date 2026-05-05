@@ -487,6 +487,7 @@ async function ensureTripTrackingTables() {
       await pool.query(`ALTER TABLE trip_tracking_sessions ADD COLUMN IF NOT EXISTS driver_profile_id TEXT`);
       await pool.query(`ALTER TABLE trip_tracking_sessions ADD COLUMN IF NOT EXISTS driver_display_name TEXT`);
       await pool.query(`ALTER TABLE trip_tracking_sessions ADD COLUMN IF NOT EXISTS driver_phone TEXT`);
+      await pool.query(`ALTER TABLE trip_tracking_sessions ADD COLUMN IF NOT EXISTS driver_email TEXT`);
       await pool.query(`ALTER TABLE trip_tracking_sessions ADD COLUMN IF NOT EXISTS driver_photo_data TEXT`);
 
       await pool.query(`
@@ -524,6 +525,7 @@ async function ensureTripTrackingTables() {
           vehicle_slot_id TEXT NOT NULL,
           driver_name TEXT NOT NULL,
           driver_phone TEXT,
+          driver_email TEXT,
           driver_photo_data TEXT,
           created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
           updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -532,6 +534,7 @@ async function ensureTripTrackingTables() {
       await pool.query(`CREATE INDEX IF NOT EXISTS idx_driver_profiles_location_vehicle ON driver_profiles(location_id, vehicle_slot_id)`);
       await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_driver_profiles_location_vehicle_name ON driver_profiles(location_id, vehicle_slot_id, LOWER(driver_name))`);
       await pool.query(`ALTER TABLE driver_profiles ADD COLUMN IF NOT EXISTS driver_phone TEXT`);
+      await pool.query(`ALTER TABLE driver_profiles ADD COLUMN IF NOT EXISTS driver_email TEXT`);
       await pool.query(`
         WITH ranked AS (
           SELECT
@@ -727,6 +730,10 @@ function normalizeDriverPhone(value) {
   return String(value || "").trim().replace(/\s+/g, " ").slice(0, 40);
 }
 
+function normalizeDriverEmail(value) {
+  return String(value || "").trim().toLowerCase().slice(0, 160);
+}
+
 function normalizeImageDataUrl(value, maxLength = 2_500_000) {
   const normalized = String(value || "").trim();
   if (!normalized) return "";
@@ -765,6 +772,7 @@ function buildDriverProfileShape(profile) {
     id: profile.id,
     driver_name: profile.driver_name || "",
     driver_phone: profile.driver_phone || "",
+    driver_email: profile.driver_email || "",
     driver_photo_data: profile.driver_photo_data || "",
     vehicle_slot_id: profile.vehicle_slot_id || "",
     location_id: profile.location_id || "",
@@ -956,6 +964,7 @@ function buildTrackingResponsePayload(session, { includeDriverToken = false } = 
       id: session.driver_profile_id || null,
       name: session.driver_display_name || "",
       phone: session.driver_phone || "",
+      email: session.driver_email || "",
       photo_data: session.driver_photo_data || "",
     },
     vehicle: {
@@ -1025,6 +1034,7 @@ function buildTrackingSessionClientShape(session) {
     driver_profile_id: session.driver_profile_id || null,
     driver_name: session.driver_display_name || "",
     driver_phone: session.driver_phone || "",
+    driver_email: session.driver_email || "",
     driver_photo_data: session.driver_photo_data || "",
     business_name: session.business_name || "Chauffeur Deluxe",
     maps_api_key: session.maps_api_key || "",
@@ -1059,6 +1069,7 @@ function buildTrackingStatusWebhookPayload({ req, session, status }) {
           : "tracking_status_changed",
     send_customer_tracking_sms: status === "en_route_to_pickup",
     send_driver_tracking_sms: status === "en_route_to_pickup" && Boolean(String(session.driver_phone || "").trim()),
+    send_driver_tracking_email: status === "en_route_to_pickup" && Boolean(String(session.driver_email || "").trim()),
     send_post_ride_followup_sms: status === "completed",
     business_name: session.business_name || "Chauffeur Deluxe",
     customer: {
@@ -1104,6 +1115,7 @@ function buildTrackingStatusWebhookPayload({ req, session, status }) {
       id: session.driver_profile_id || null,
       name: session.driver_display_name || null,
       phone: session.driver_phone || null,
+      email: session.driver_email || null,
       photo_data: session.driver_photo_data || null,
     },
     vehicle: {
@@ -1122,7 +1134,7 @@ function buildTrackingStatusWebhookPayload({ req, session, status }) {
 
 async function listDriverProfiles(locationId) {
   const result = await pool.query(
-    `SELECT id, location_id, vehicle_slot_id, driver_name, driver_phone, driver_photo_data, created_at, updated_at
+    `SELECT id, location_id, vehicle_slot_id, driver_name, driver_phone, driver_email, driver_photo_data, created_at, updated_at
      FROM driver_profiles
      WHERE location_id = $1
      ORDER BY LOWER(driver_name) ASC, created_at ASC`,
@@ -3300,6 +3312,7 @@ function buildWizardSyncPayload({
         calendar_id: row.calendar_id || "",
         driver_name: row.driver_name || "",
         driver_phone: row.driver_phone || "",
+        driver_email: row.driver_email || "",
         base_rate: Number(row.base_rate || 0),
         mile_rate: Number(row.mile_rate || 0),
         outbound_buffer_min: Number(row.outbound_buffer_min || 0)
@@ -3401,6 +3414,11 @@ function buildWizardSampleBookingPayload({
   addons
 }) {
   const primaryVehicle = Array.isArray(fleet) && fleet.length ? fleet[0] : {};
+  const primaryDriver = {
+    name: String(primaryVehicle?.driver_name || "").trim() || null,
+    phone: normalizeDriverPhone(primaryVehicle?.driver_phone || "") || null,
+    email: normalizeDriverEmail(primaryVehicle?.driver_email || "") || null,
+  };
   const routeDistanceMiles = Math.max(
     12,
     Math.min(24, Number(serviceRadius || 0) > 0 ? Number(serviceRadius || 0) / 2 : 18)
@@ -3472,6 +3490,7 @@ function buildWizardSampleBookingPayload({
       vehicle_category: primaryVehicle?.vehicle_category || null,
       calendar_id: primaryVehicle?.calendar_id || null
     },
+    assignedDriver: primaryDriver,
     financials: {
       quoted_price: quotedPrice,
       addon_total: addonTotal,
@@ -5547,12 +5566,13 @@ app.post("/api/tracking/session/create", async (req, res) => {
     ) || null;
     const defaultDriverName = String(defaultVehicleDriver?.driver_name || "").trim() || null;
     const defaultDriverPhone = normalizeDriverPhone(defaultVehicleDriver?.driver_phone || "") || null;
+    const defaultDriverEmail = normalizeDriverEmail(defaultVehicleDriver?.driver_email || "") || null;
 
     await pool.query(
       `INSERT INTO trip_tracking_sessions (
-        id, booking_id, location_id, driver_token, customer_token, status, driver_display_name, driver_phone, created_at, updated_at
-      ) VALUES ($1,$2,$3,$4,$5,'driver_assigned',$6,$7,NOW(),NOW())`,
-      [id, bookingId, locationId, driverToken, customerToken, defaultDriverName, defaultDriverPhone]
+        id, booking_id, location_id, driver_token, customer_token, status, driver_display_name, driver_phone, driver_email, created_at, updated_at
+      ) VALUES ($1,$2,$3,$4,$5,'driver_assigned',$6,$7,$8,NOW(),NOW())`,
+      [id, bookingId, locationId, driverToken, customerToken, defaultDriverName, defaultDriverPhone, defaultDriverEmail]
     );
 
     return res.json({
@@ -5866,6 +5886,9 @@ app.get("/api/test-run/config/:location_id", async (req, res) => {
         vehicle_year: vehicle.vehicle_year || "",
         vehicle_make: vehicle.vehicle_make || "",
         vehicle_model: vehicle.vehicle_model || "",
+        driver_name: vehicle.driver_name || "",
+        driver_phone: vehicle.driver_phone || "",
+        driver_email: vehicle.driver_email || "",
         vehicle_image: vehicle.vehicle_image || "",
         vehicle_license_plate: vehicle.vehicle_license_plate || "",
       })),
@@ -5899,6 +5922,7 @@ app.get("/api/tracking/driver-profiles", async (req, res) => {
         id: session.driver_profile_id,
         driver_name: session.driver_display_name,
         driver_phone: session.driver_phone,
+        driver_email: session.driver_email,
         driver_photo_data: session.driver_photo_data,
         vehicle_slot_id: session.vehicle_slot_id,
         location_id: session.location_id,
@@ -5919,6 +5943,7 @@ app.post("/api/tracking/driver-profile/select", async (req, res) => {
     const profileId = String(req.body.profile_id || "").trim();
     const driverName = normalizeDriverName(req.body.driver_name);
     const driverPhone = normalizeDriverPhone(req.body.driver_phone);
+    const driverEmail = normalizeDriverEmail(req.body.driver_email);
     const driverPhotoData = normalizeImageDataUrl(req.body.driver_photo_data);
 
     if (!token) {
@@ -5956,7 +5981,7 @@ app.post("/api/tracking/driver-profile/select", async (req, res) => {
 
     if (profileId) {
       const profileLookup = await client.query(
-        `SELECT id, location_id, vehicle_slot_id, driver_name, driver_phone, driver_photo_data, created_at, updated_at
+        `SELECT id, location_id, vehicle_slot_id, driver_name, driver_phone, driver_email, driver_photo_data, created_at, updated_at
          FROM driver_profiles
          WHERE id = $1
            AND location_id = $2
@@ -5974,20 +5999,23 @@ app.post("/api/tracking/driver-profile/select", async (req, res) => {
       if (
         String(sessionRecord.vehicle_slot_id || "") !== String(chosenProfile.vehicle_slot_id || "") ||
         driverPhone !== String(chosenProfile.driver_phone || "") ||
+        driverEmail !== String(chosenProfile.driver_email || "") ||
         (driverPhotoData && driverPhotoData !== String(chosenProfile.driver_photo_data || ""))
       ) {
         const updatedProfile = await client.query(
           `UPDATE driver_profiles
            SET vehicle_slot_id = $2,
                driver_phone = $3,
-               driver_photo_data = $4,
+               driver_email = $4,
+               driver_photo_data = $5,
                updated_at = NOW()
            WHERE id = $1
-           RETURNING id, location_id, vehicle_slot_id, driver_name, driver_phone, driver_photo_data, created_at, updated_at`,
+           RETURNING id, location_id, vehicle_slot_id, driver_name, driver_phone, driver_email, driver_photo_data, created_at, updated_at`,
           [
             chosenProfile.id,
             sessionRecord.vehicle_slot_id,
             driverPhone,
+            driverEmail || null,
             driverPhotoData || chosenProfile.driver_photo_data || null
           ]
         );
@@ -5995,7 +6023,7 @@ app.post("/api/tracking/driver-profile/select", async (req, res) => {
       }
     } else {
       const existingProfile = await client.query(
-        `SELECT id, location_id, vehicle_slot_id, driver_name, driver_phone, driver_photo_data, created_at, updated_at
+        `SELECT id, location_id, vehicle_slot_id, driver_name, driver_phone, driver_email, driver_photo_data, created_at, updated_at
          FROM driver_profiles
          WHERE location_id = $1
            AND LOWER(driver_name) = LOWER($2)
@@ -6008,20 +6036,23 @@ app.post("/api/tracking/driver-profile/select", async (req, res) => {
         if (
           String(sessionRecord.vehicle_slot_id || "") !== String(chosenProfile.vehicle_slot_id || "") ||
           driverPhone !== String(chosenProfile.driver_phone || "") ||
+          driverEmail !== String(chosenProfile.driver_email || "") ||
           (driverPhotoData && driverPhotoData !== String(chosenProfile.driver_photo_data || ""))
         ) {
           const updatedProfile = await client.query(
             `UPDATE driver_profiles
              SET vehicle_slot_id = $2,
                  driver_phone = $3,
-                 driver_photo_data = $4,
+                 driver_email = $4,
+                 driver_photo_data = $5,
                  updated_at = NOW()
              WHERE id = $1
-             RETURNING id, location_id, vehicle_slot_id, driver_name, driver_phone, driver_photo_data, created_at, updated_at`,
+             RETURNING id, location_id, vehicle_slot_id, driver_name, driver_phone, driver_email, driver_photo_data, created_at, updated_at`,
             [
               chosenProfile.id,
               sessionRecord.vehicle_slot_id,
               driverPhone,
+              driverEmail || null,
               driverPhotoData || chosenProfile.driver_photo_data || null
             ]
           );
@@ -6030,10 +6061,10 @@ app.post("/api/tracking/driver-profile/select", async (req, res) => {
       } else {
         const inserted = await client.query(
           `INSERT INTO driver_profiles (
-             id, location_id, vehicle_slot_id, driver_name, driver_phone, driver_photo_data, created_at, updated_at
-           ) VALUES ($1,$2,$3,$4,$5,$6,NOW(),NOW())
-           RETURNING id, location_id, vehicle_slot_id, driver_name, driver_phone, driver_photo_data, created_at, updated_at`,
-          [randomUUID(), sessionRecord.location_id, sessionRecord.vehicle_slot_id, driverName, driverPhone, driverPhotoData || null]
+             id, location_id, vehicle_slot_id, driver_name, driver_phone, driver_email, driver_photo_data, created_at, updated_at
+           ) VALUES ($1,$2,$3,$4,$5,$6,$7,NOW(),NOW())
+           RETURNING id, location_id, vehicle_slot_id, driver_name, driver_phone, driver_email, driver_photo_data, created_at, updated_at`,
+          [randomUUID(), sessionRecord.location_id, sessionRecord.vehicle_slot_id, driverName, driverPhone, driverEmail || null, driverPhotoData || null]
         );
         chosenProfile = inserted.rows[0];
       }
@@ -6044,7 +6075,8 @@ app.post("/api/tracking/driver-profile/select", async (req, res) => {
        SET driver_profile_id = $2,
            driver_display_name = $3,
            driver_phone = $4,
-           driver_photo_data = $5,
+           driver_email = $5,
+           driver_photo_data = $6,
            updated_at = NOW()
        WHERE id = $1`,
       [
@@ -6052,6 +6084,7 @@ app.post("/api/tracking/driver-profile/select", async (req, res) => {
         chosenProfile.id,
         chosenProfile.driver_name,
         chosenProfile.driver_phone || null,
+        chosenProfile.driver_email || null,
         chosenProfile.driver_photo_data || null,
       ]
     );
@@ -7114,6 +7147,7 @@ function buildCrmBookingPayload({
   booking,
   customer,
   vehicle,
+  assignedDriver = {},
   financials,
   meta = {},
 }) {
@@ -7206,6 +7240,11 @@ function buildCrmBookingPayload({
       vehicle_type: vehicle.vehicle_type || null,
       vehicle_category: vehicle.vehicle_category || null,
       calendar_id: vehicle.calendar_id || null,
+    },
+    assigned_driver: {
+      name: assignedDriver.name || null,
+      phone: assignedDriver.phone || null,
+      email: assignedDriver.email || null,
     },
     route: {
       distance_miles: Number.isFinite(Number(meta.route_distance_miles))
@@ -8556,10 +8595,14 @@ async function triggerCrmWebhook(location_id, booking_id) {
     const b = bookingRes.rows[0];
 
     const profileRes = await client.query(
-      "SELECT crm_webhook_url, tax_rate, business_name, payment_provider FROM profiles WHERE location_id = $1",
+      "SELECT crm_webhook_url, tax_rate, business_name, payment_provider, fleet FROM profiles WHERE location_id = $1",
       [location_id]
     );
     const p = profileRes.rows[0];
+    const profileFleet = normalizeFleetRecords(safeParseJson(p?.fleet));
+    const matchedDriver = profileFleet.find(
+      (vehicleRow) => String(vehicleRow?.vehicle_slot_id || "").trim() === String(b.vehicle_slot_id || "").trim()
+    ) || null;
 
     if (!p?.crm_webhook_url) {
       console.log(`⚠️ No CRM Webhook found for location: ${location_id}`);
@@ -8609,6 +8652,11 @@ async function triggerCrmWebhook(location_id, booking_id) {
         vehicle_slot_id: b.vehicle_slot_id,
         vehicle_type: b.vehicle_type,
         calendar_id: b.calendar_id,
+      },
+      assignedDriver: {
+        name: String(matchedDriver?.driver_name || "").trim() || null,
+        phone: normalizeDriverPhone(matchedDriver?.driver_phone || "") || null,
+        email: normalizeDriverEmail(matchedDriver?.driver_email || "") || null,
       },
       financials: {
         total_price: totalPrice,
@@ -8824,6 +8872,7 @@ res.json({
     vehicle_model: v.vehicle_model || "",
     driver_name: v.driver_name || "",
     driver_phone: v.driver_phone || "",
+    driver_email: v.driver_email || "",
     vehicle_category: v.vehicle_category || null,
     base_rate: parseFloat(v.base_rate) || 0,
     mile_rate: parseFloat(v.mile_rate) || 0,
