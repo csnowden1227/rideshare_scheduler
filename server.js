@@ -206,6 +206,7 @@ async function ensureBookingSyncColumns() {
       await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS crm_contact_id TEXT`);
       await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS crm_event_id TEXT`);
       await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS cancel_unpaid_balance_at TIMESTAMPTZ`);
+      await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS booking_mode TEXT DEFAULT 'standard'`);
     })().catch((err) => {
       bookingSyncColumnsReady = null;
       throw err;
@@ -6316,6 +6317,7 @@ app.post("/api/tracking/session/practice-notify", async (req, res) => {
   let client;
   try {
     await ensureTripTrackingTables();
+    await ensureBookingSyncColumns();
 
     const trackingSessionId = String(req.body.tracking_session_id || "").trim();
     const bookingId = Number(req.body.booking_id || 0);
