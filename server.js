@@ -3298,6 +3298,8 @@ function buildWizardSyncPayload({
         vehicle_slot_id: row.vehicle_slot_id || "",
         vehicle_type: row.vehicle_type || "",
         calendar_id: row.calendar_id || "",
+        driver_name: row.driver_name || "",
+        driver_phone: row.driver_phone || "",
         base_rate: Number(row.base_rate || 0),
         mile_rate: Number(row.mile_rate || 0),
         outbound_buffer_min: Number(row.outbound_buffer_min || 0)
@@ -5487,7 +5489,7 @@ app.post("/api/tracking/session/create", async (req, res) => {
     }
 
     const bookingLookup = await pool.query(
-      `SELECT id, location_id, pickup_address, dropoff_address, start_time, end_time, first_name, last_name, customer_email, customer_phone
+      `SELECT id, location_id, vehicle_slot_id, pickup_address, dropoff_address, start_time, end_time, first_name, last_name, customer_email, customer_phone
        FROM bookings
        WHERE id = $1
        LIMIT 1`,
@@ -5506,7 +5508,7 @@ app.post("/api/tracking/session/create", async (req, res) => {
 
     const profileIdColumn = await getProfileIdColumn();
     const profileLookup = await pool.query(
-      `SELECT plan_name, addon_branding_unlocked, addon_funnel_unlocked, addon_tracking_unlocked, addon_extra_vehicle_count
+      `SELECT plan_name, addon_branding_unlocked, addon_funnel_unlocked, addon_tracking_unlocked, addon_extra_vehicle_count, fleet
        FROM profiles
        WHERE ${profileIdColumn} = $1
        LIMIT 1`,
@@ -5539,12 +5541,18 @@ app.post("/api/tracking/session/create", async (req, res) => {
     const id = randomUUID();
     const driverToken = createTrackingToken("drv");
     const customerToken = createTrackingToken("cus");
+    const fleet = normalizeFleetRecords(safeParseJson(profileLookup.rows[0]?.fleet));
+    const defaultVehicleDriver = fleet.find(
+      (item) => String(item?.vehicle_slot_id || "").trim() === String(booking.vehicle_slot_id || "").trim()
+    ) || null;
+    const defaultDriverName = String(defaultVehicleDriver?.driver_name || "").trim() || null;
+    const defaultDriverPhone = normalizeDriverPhone(defaultVehicleDriver?.driver_phone || "") || null;
 
     await pool.query(
       `INSERT INTO trip_tracking_sessions (
-        id, booking_id, location_id, driver_token, customer_token, status, created_at, updated_at
-      ) VALUES ($1,$2,$3,$4,$5,'driver_assigned',NOW(),NOW())`,
-      [id, bookingId, locationId, driverToken, customerToken]
+        id, booking_id, location_id, driver_token, customer_token, status, driver_display_name, driver_phone, created_at, updated_at
+      ) VALUES ($1,$2,$3,$4,$5,'driver_assigned',$6,$7,NOW(),NOW())`,
+      [id, bookingId, locationId, driverToken, customerToken, defaultDriverName, defaultDriverPhone]
     );
 
     return res.json({
@@ -8814,6 +8822,8 @@ res.json({
     vehicle_year: v.vehicle_year || "",
     vehicle_make: v.vehicle_make || "",
     vehicle_model: v.vehicle_model || "",
+    driver_name: v.driver_name || "",
+    driver_phone: v.driver_phone || "",
     vehicle_category: v.vehicle_category || null,
     base_rate: parseFloat(v.base_rate) || 0,
     mile_rate: parseFloat(v.mile_rate) || 0,

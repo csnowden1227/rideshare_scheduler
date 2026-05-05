@@ -71,6 +71,8 @@
         .fleet-year-cell { width: 8%; min-width: 88px; }
         .fleet-make-cell { width: 12%; min-width: 130px; }
         .fleet-model-cell { width: 12%; min-width: 130px; }
+        .fleet-driver-name-cell { width: 12%; min-width: 140px; }
+        .fleet-driver-phone-cell { width: 12%; min-width: 140px; }
         .fleet-plate-cell { width: 10%; min-width: 120px; }
         .fleet-base-cell,
         .fleet-mile-cell { width: 7%; min-width: 72px; }
@@ -385,6 +387,8 @@
                             <th>Year</th>
                             <th>Make</th>
                             <th>Model</th>
+                            <th>Driver Name</th>
+                            <th>Driver Phone</th>
                             <th>License Plate</th>
                             <th>Base ($)</th>
                             <th>Mile ($)</th>
@@ -1590,6 +1594,8 @@ function addFleetRow(data = {}, shouldRenumber = true) {
         <td class="py-2 px-1 fleet-year-cell"><input type="text" class="v-year input-mini fleet-input-compact" placeholder="2024" value="${data.vehicle_year || ''}"></td>
         <td class="py-2 px-1 fleet-make-cell"><input type="text" class="v-make input-mini fleet-input-compact" placeholder="Cadillac" value="${data.vehicle_make || ''}"></td>
         <td class="py-2 px-1 fleet-model-cell"><input type="text" class="v-model input-mini fleet-input-compact" placeholder="Escalade" value="${data.vehicle_model || ''}"></td>
+        <td class="py-2 px-1 fleet-driver-name-cell"><input type="text" class="v-driver-name input-mini fleet-input-compact" placeholder="Driver Name" value="${data.driver_name || ''}"></td>
+        <td class="py-2 px-1 fleet-driver-phone-cell"><input type="text" class="v-driver-phone input-mini fleet-input-compact" placeholder="Driver Phone" value="${data.driver_phone || ''}"></td>
         <td class="py-2 px-1 fleet-plate-cell"><input type="text" class="v-plate input-mini fleet-input-compact" placeholder="License Plate" value="${data.vehicle_license_plate || ''}"></td>
         <td class="py-2 px-1 fleet-base-cell"><input type="number" class="v-base input-mini fleet-input-compact" value="${data.base_rate || 50}"></td>
         <td class="py-2 px-1 fleet-mile-cell"><input type="number" step="0.1" class="v-mile input-mini fleet-input-compact" value="${data.mile_rate || 3.5}"></td>
@@ -2008,6 +2014,8 @@ async function saveToBackend() {
             vehicle_year: tr.querySelector('.v-year')?.value.trim() || '',
             vehicle_make: tr.querySelector('.v-make')?.value.trim() || '',
             vehicle_model: tr.querySelector('.v-model')?.value.trim() || '',
+            driver_name: tr.querySelector('.v-driver-name')?.value.trim() || '',
+            driver_phone: tr.querySelector('.v-driver-phone')?.value.trim() || '',
             vehicle_license_plate: tr.querySelector('.v-plate')?.value.trim() || '',
             base_rate: parseFloat(tr.querySelector('.v-base').value) || 0,
             mile_rate: parseFloat(tr.querySelector('.v-mile').value) || 0,
@@ -2184,6 +2192,8 @@ function collectWizardPayload() {
             vehicle_year: tr.querySelector('.v-year')?.value.trim() || '',
             vehicle_make: tr.querySelector('.v-make')?.value.trim() || '',
             vehicle_model: tr.querySelector('.v-model')?.value.trim() || '',
+            driver_name: tr.querySelector('.v-driver-name')?.value.trim() || '',
+            driver_phone: tr.querySelector('.v-driver-phone')?.value.trim() || '',
             vehicle_license_plate: tr.querySelector('.v-plate')?.value.trim() || '',
             base_rate: parseFloat(tr.querySelector('.v-base').value) || 0,
             mile_rate: parseFloat(tr.querySelector('.v-mile').value) || 0,
