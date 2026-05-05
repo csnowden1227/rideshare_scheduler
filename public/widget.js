@@ -1161,6 +1161,7 @@
       if (!data.paid) throw new Error("Payment has not been completed yet.");
 
       let tracking = null;
+      let practiceTextNotice = "";
       if (isPracticeMode() && (data.booking?.booking_id || bookingId)) {
         tracking = await fetch(`${BACKEND_URL}/api/tracking/session/create`, {
           method: "POST",
@@ -1176,6 +1177,20 @@
           }
           return trackingData;
         });
+
+        const notifyResponse = await fetch(`${BACKEND_URL}/api/tracking/session/practice-notify`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            tracking_session_id: tracking.tracking_session_id,
+            booking_id: Number(data.booking?.booking_id || bookingId),
+          }),
+        });
+        const notifyData = await notifyResponse.json().catch(() => ({}));
+        if (!notifyResponse.ok || notifyData.success === false) {
+          practiceTextNotice = " Tracking links are ready, but the practice SMS trigger still needs attention.";
+          console.warn("Practice SMS trigger failed:", notifyData);
+        }
       }
 
       renderSuccess(data.booking?.booking_id || bookingId, {
@@ -1185,7 +1200,7 @@
         start_time: data.reservation?.start_time || new Date().toISOString(),
       }, isPracticeMode() ? {
         title: "Practice Booking Confirmed",
-        message: `${data.reservation?.first_name || "Your"} practice reservation is confirmed and the tracking workflow is ready to rehearse.`,
+        message: `${data.reservation?.first_name || "Your"} practice reservation is confirmed and the tracking workflow is ready to rehearse.${practiceTextNotice}`,
         tracking,
       } : {});
       window.history.replaceState({}, document.title, currentPageUrl());

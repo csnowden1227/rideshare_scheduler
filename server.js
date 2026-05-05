@@ -6270,6 +6270,131 @@ app.post("/api/tracking/status", async (req, res) => {
   }
 });
 
+app.post("/api/tracking/session/practice-notify", async (req, res) => {
+  let client;
+  try {
+    await ensureTripTrackingTables();
+
+    const trackingSessionId = String(req.body.tracking_session_id || "").trim();
+    const bookingId = Number(req.body.booking_id || 0);
+
+    if (!trackingSessionId && !bookingId) {
+      return res.status(400).json({ error: "tracking_session_id or booking_id is required." });
+    }
+
+    client = await pool.connect();
+    await client.query("BEGIN");
+
+    const sessionLookup = trackingSessionId
+      ? await client.query(
+          `SELECT id, booking_id, status, customer_notified_en_route_at
+           FROM trip_tracking_sessions
+           WHERE id = $1
+           LIMIT 1
+           FOR UPDATE`,
+          [trackingSessionId]
+        )
+      : await client.query(
+          `SELECT id, booking_id, status, customer_notified_en_route_at
+           FROM trip_tracking_sessions
+           WHERE booking_id = $1
+           LIMIT 1
+           FOR UPDATE`,
+          [bookingId]
+        );
+
+    if (!sessionLookup.rows.length) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: "Tracking session not found." });
+    }
+
+    const sessionRow = sessionLookup.rows[0];
+    const bookingLookup = await client.query(
+      `SELECT id, booking_mode
+       FROM bookings
+       WHERE id = $1
+       LIMIT 1`,
+      [sessionRow.booking_id]
+    );
+
+    if (!bookingLookup.rows.length) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: "Booking not found for tracking session." });
+    }
+
+    const bookingMode = String(bookingLookup.rows[0].booking_mode || "").trim();
+    if (bookingMode !== "practice_widget" && bookingMode !== "test_run") {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ error: "Practice notification is only available for practice bookings." });
+    }
+
+    const fullSession = await getTrackingSessionById(sessionRow.id);
+    assertTrackingAccess(fullSession || {});
+
+    const shouldTriggerCustomerTracking = !sessionRow.customer_notified_en_route_at;
+
+    await client.query(
+      `UPDATE trip_tracking_sessions
+       SET status = 'en_route_to_pickup',
+           started_at = COALESCE(started_at, NOW()),
+           customer_notified_en_route_at = COALESCE(customer_notified_en_route_at, NOW()),
+           updated_at = NOW()
+       WHERE id = $1`,
+      [sessionRow.id]
+    );
+
+    await client.query("COMMIT");
+
+    let statusWebhook = {
+      triggered: false,
+      skipped: true,
+      reason: "Practice tracking SMS was already sent for this session.",
+    };
+
+    if (shouldTriggerCustomerTracking) {
+      try {
+        const webhookResult = await triggerTrackingStatusWebhook({
+          req,
+          trackingSessionId: sessionRow.id,
+          status: "en_route_to_pickup",
+        });
+        statusWebhook = {
+          triggered: Boolean(webhookResult.success),
+          skipped: Boolean(webhookResult.skipped),
+          status: webhookResult.status || null,
+          reason: webhookResult.error || null,
+          customer_tracking_url: webhookResult.customer_tracking_url || null,
+          follow_up_url: webhookResult.follow_up_url || null,
+        };
+      } catch (webhookError) {
+        console.error("Practice tracking notification webhook error:", webhookError);
+        statusWebhook = {
+          triggered: false,
+          skipped: false,
+          reason: webhookError?.message || "Practice tracking notification failed.",
+        };
+      }
+    }
+
+    return res.json({
+      success: true,
+      tracking_session_id: sessionRow.id,
+      status: "en_route_to_pickup",
+      tracking_status_webhook: statusWebhook,
+    });
+  } catch (err) {
+    if (client) {
+      try {
+        await client.query("ROLLBACK");
+      } catch (_) {}
+    }
+    console.error("Practice tracking notification error:", err);
+    return res.status(err.statusCode || 500).json({ error: err.message || "Failed to send practice tracking notification." });
+  } finally {
+    if (client) client.release();
+  }
+});
+
 app.post("/api/dispatch/create", async (req, res) => {
   try {
     await ensureDispatchTables();
