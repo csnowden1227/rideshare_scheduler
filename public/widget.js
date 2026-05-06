@@ -209,6 +209,32 @@
     return selectedAddonDetails().map((addon, index) => addon.id || `addon_${index}`);
   }
 
+  function sanitizePhoneInput(value) {
+    const raw = String(value || "");
+    let result = "";
+    for (const ch of raw) {
+      if (ch >= "0" && ch <= "9") {
+        result += ch;
+      } else if (ch === "+" && result.length === 0) {
+        result += ch;
+      }
+    }
+    return result.slice(0, 16);
+  }
+
+  function formatPhoneForUi(value) {
+    const cleaned = sanitizePhoneInput(value);
+    if (!cleaned) return "";
+    if (cleaned.startsWith("+")) {
+      const digits = cleaned.slice(1).replace(/\D/g, "");
+      return digits ? `+${digits}` : "";
+    }
+    const digits = cleaned.replace(/\D/g, "");
+    if (digits.length === 10) return `+1${digits}`;
+    if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
+    return digits;
+  }
+
   function selectedPaymentChoice() {
     return document.querySelector('input[name="cd_payment_choice"]:checked')?.value || "full";
   }
@@ -681,6 +707,14 @@
       });
     });
 
+    const phoneInput = document.getElementById("cd_phone");
+    phoneInput?.addEventListener("input", () => {
+      phoneInput.value = sanitizePhoneInput(phoneInput.value);
+    });
+    phoneInput?.addEventListener("blur", () => {
+      phoneInput.value = formatPhoneForUi(phoneInput.value);
+    });
+
     updateBookingModeUI();
     initAutocomplete();
   }
@@ -715,7 +749,7 @@
       first_name: document.getElementById("cd_first_name")?.value.trim(),
       last_name: document.getElementById("cd_last_name")?.value.trim(),
       email: document.getElementById("cd_email")?.value.trim(),
-      phone: document.getElementById("cd_phone")?.value.trim(),
+        phone: formatPhoneForUi(document.getElementById("cd_phone")?.value.trim()),
       pickup_address: document.getElementById("cd_pickup")?.value.trim(),
       dropoff_address: document.getElementById("cd_dropoff")?.value.trim(),
       start_time: document.getElementById("cd_start_time")?.value,

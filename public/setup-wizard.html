@@ -1533,6 +1533,13 @@ function fileToDataUrl(file) {
 }
 
 function bindFleetRow(row) {
+    const driverPhoneInput = row.querySelector('.v-driver-phone');
+    driverPhoneInput?.addEventListener('input', () => {
+        driverPhoneInput.value = sanitizePhoneInput(driverPhoneInput.value);
+    });
+    driverPhoneInput?.addEventListener('blur', () => {
+        driverPhoneInput.value = formatPhoneForUi(driverPhoneInput.value);
+    });
     row.querySelector('.v-type')?.addEventListener('change', renumberFleetRows);
     row.querySelector('.fleet-remove')?.addEventListener('click', () => {
         row.remove();
@@ -1557,6 +1564,32 @@ function bindFleetRow(row) {
             event.target.value = '';
         }
     });
+}
+
+function sanitizePhoneInput(value) {
+    const raw = String(value || '');
+    let result = '';
+    for (const ch of raw) {
+        if (ch >= '0' && ch <= '9') {
+            result += ch;
+        } else if (ch === '+' && result.length === 0) {
+            result += ch;
+        }
+    }
+    return result.slice(0, 16);
+}
+
+function formatPhoneForUi(value) {
+    const cleaned = sanitizePhoneInput(value);
+    if (!cleaned) return '';
+    if (cleaned.startsWith('+')) {
+        const digits = cleaned.slice(1).replace(/\D/g, '');
+        return digits ? `+${digits}` : '';
+    }
+    const digits = cleaned.replace(/\D/g, '');
+    if (digits.length === 10) return `+1${digits}`;
+    if (digits.length === 11 && digits.startsWith('1')) return `+${digits}`;
+    return digits;
 }
 
 function renderFleet(count, savedFleet = []) {
@@ -2018,7 +2051,7 @@ async function saveToBackend() {
             vehicle_make: tr.querySelector('.v-make')?.value.trim() || '',
             vehicle_model: tr.querySelector('.v-model')?.value.trim() || '',
             driver_name: tr.querySelector('.v-driver-name')?.value.trim() || '',
-            driver_phone: tr.querySelector('.v-driver-phone')?.value.trim() || '',
+            driver_phone: formatPhoneForUi(tr.querySelector('.v-driver-phone')?.value.trim() || ''),
             driver_email: tr.querySelector('.v-driver-email')?.value.trim() || '',
             vehicle_license_plate: tr.querySelector('.v-plate')?.value.trim() || '',
             base_rate: parseFloat(tr.querySelector('.v-base').value) || 0,
@@ -2197,7 +2230,7 @@ function collectWizardPayload() {
             vehicle_make: tr.querySelector('.v-make')?.value.trim() || '',
             vehicle_model: tr.querySelector('.v-model')?.value.trim() || '',
             driver_name: tr.querySelector('.v-driver-name')?.value.trim() || '',
-            driver_phone: tr.querySelector('.v-driver-phone')?.value.trim() || '',
+            driver_phone: formatPhoneForUi(tr.querySelector('.v-driver-phone')?.value.trim() || ''),
             driver_email: tr.querySelector('.v-driver-email')?.value.trim() || '',
             vehicle_license_plate: tr.querySelector('.v-plate')?.value.trim() || '',
             base_rate: parseFloat(tr.querySelector('.v-base').value) || 0,
