@@ -937,21 +937,32 @@
     }
     document.getElementById("cd_meta").textContent = metaParts.join(" ");
 
-    const paymentOptions = document.getElementById("cd_payment_options");
-    const paymentNotice = document.getElementById("cd_payment_notice");
-    const depositRadio = document.querySelector('input[name="cd_payment_choice"][value="deposit"]');
-    const fullRadio = document.querySelector('input[name="cd_payment_choice"][value="full"]');
-    if (paymentOptions && paymentNotice && depositRadio && fullRadio) {
-      if (isPracticeMode()) {
-        paymentOptions.style.display = "block";
-        depositRadio.disabled = true;
-        fullRadio.disabled = false;
-        fullRadio.checked = true;
-        depositRadio.checked = false;
-        paymentNotice.textContent = `Practice mode uses your Stripe test key and still runs the full booking confirmation workflow. No live customer charge will be created.`;
-      } else if (!providerSupportsDirectCheckout()) {
-        paymentOptions.style.display = "block";
-        depositRadio.disabled = true;
+      const paymentOptions = document.getElementById("cd_payment_options");
+      const paymentNotice = document.getElementById("cd_payment_notice");
+      const depositRadio = document.querySelector('input[name="cd_payment_choice"][value="deposit"]');
+      const fullRadio = document.querySelector('input[name="cd_payment_choice"][value="full"]');
+      if (paymentOptions && paymentNotice && depositRadio && fullRadio) {
+        if (isPracticeMode()) {
+          paymentOptions.style.display = "block";
+          if (state.quote.deposit_eligible) {
+            depositRadio.disabled = false;
+            fullRadio.disabled = false;
+            if (state.quote.payment_choice === "deposit") {
+              depositRadio.checked = true;
+            } else {
+              fullRadio.checked = true;
+            }
+            paymentNotice.textContent = `Practice mode uses your Stripe test key and mirrors live checkout behavior. Pay in full remains the default, and deposit is available because this ride is more than 72 hours away.`;
+          } else {
+            fullRadio.checked = true;
+            depositRadio.checked = false;
+            depositRadio.disabled = true;
+            fullRadio.disabled = true;
+            paymentNotice.textContent = `Practice mode uses your Stripe test key. This ride is less than 72 hours away, so full payment is required to match live checkout behavior.`;
+          }
+        } else if (!providerSupportsDirectCheckout()) {
+          paymentOptions.style.display = "block";
+          depositRadio.disabled = true;
         fullRadio.disabled = true;
         if (state.quote.deposit_eligible) {
           depositRadio.checked = true;

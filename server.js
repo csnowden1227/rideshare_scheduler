@@ -207,6 +207,9 @@ async function ensureBookingSyncColumns() {
       await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS crm_event_id TEXT`);
       await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS cancel_unpaid_balance_at TIMESTAMPTZ`);
       await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS booking_mode TEXT DEFAULT 'standard'`);
+      await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS vehicle_slot_id TEXT`);
+      await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS vehicle_type TEXT`);
+      await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS calendar_id TEXT`);
     })().catch((err) => {
       bookingSyncColumnsReady = null;
       throw err;
@@ -830,6 +833,7 @@ function normalizeFeedbackText(value) {
 }
 
 async function getTrackingSessionByToken({ token, role = "customer" }) {
+  await ensureBookingSyncColumns();
   const tokenColumn = role === "driver" ? "driver_token" : "customer_token";
   const profileIdColumn = await getProfileIdColumn();
   const result = await pool.query(
@@ -874,6 +878,7 @@ async function getTrackingSessionByToken({ token, role = "customer" }) {
 }
 
 async function getTrackingSessionById(sessionId) {
+  await ensureBookingSyncColumns();
   const profileIdColumn = await getProfileIdColumn();
   const result = await pool.query(
     `SELECT
