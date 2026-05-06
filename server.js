@@ -730,8 +730,27 @@ function normalizeDriverName(value) {
   return String(value || "").trim().replace(/\s+/g, " ").slice(0, 120);
 }
 
+function normalizePhoneNumber(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+
+  const cleaned = raw.replace(/[^\d+]/g, "");
+  if (!cleaned) return "";
+
+  if (cleaned.startsWith("+")) {
+    const digits = cleaned.slice(1).replace(/\D/g, "");
+    return digits ? `+${digits}`.slice(0, 40) : "";
+  }
+
+  const digits = cleaned.replace(/\D/g, "");
+  if (!digits) return "";
+  if (digits.length === 10) return `+1${digits}`;
+  if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
+  return digits.slice(0, 40);
+}
+
 function normalizeDriverPhone(value) {
-  return String(value || "").trim().replace(/\s+/g, " ").slice(0, 40);
+  return normalizePhoneNumber(value);
 }
 
 function normalizeDriverEmail(value) {
@@ -950,10 +969,10 @@ function buildTrackingResponsePayload(session, { includeDriverToken = false } = 
       accuracy: session.accuracy,
       last_location_at: session.last_location_at,
     },
-    booking: {
-      customer_name: [session.first_name, session.last_name].filter(Boolean).join(" ").trim(),
-      customer_email: session.customer_email || "",
-      customer_phone: session.customer_phone || "",
+      booking: {
+        customer_name: [session.first_name, session.last_name].filter(Boolean).join(" ").trim(),
+        customer_email: session.customer_email || "",
+        customer_phone: normalizePhoneNumber(session.customer_phone || ""),
       pickup_address: session.pickup_address || "",
       dropoff_address: session.dropoff_address || "",
       pickup_lat: session.pickup_lat,
@@ -966,11 +985,11 @@ function buildTrackingResponsePayload(session, { includeDriverToken = false } = 
       vehicle_slot_id: session.vehicle_slot_id || "",
       booking_status: session.booking_status || "",
     },
-    assigned_driver: {
-      id: session.driver_profile_id || null,
-      name: session.driver_display_name || "",
-      phone: session.driver_phone || "",
-      email: session.driver_email || "",
+      assigned_driver: {
+        id: session.driver_profile_id || null,
+        name: session.driver_display_name || "",
+        phone: normalizeDriverPhone(session.driver_phone || ""),
+        email: session.driver_email || "",
       photo_data: session.driver_photo_data || "",
     },
     vehicle: {
@@ -1018,7 +1037,7 @@ function buildTrackingSessionClientShape(session) {
     ended_at: session.ended_at,
     customer_name: customerName,
     customer_email: session.customer_email || "",
-    customer_phone: session.customer_phone || "",
+      customer_phone: normalizePhoneNumber(session.customer_phone || ""),
     pickup_address: session.pickup_address || "",
     dropoff_address: session.dropoff_address || "",
     pickup_lat: session.pickup_lat,
@@ -1039,7 +1058,7 @@ function buildTrackingSessionClientShape(session) {
     booking_status: session.booking_status || "",
     driver_profile_id: session.driver_profile_id || null,
     driver_name: session.driver_display_name || "",
-    driver_phone: session.driver_phone || "",
+      driver_phone: normalizeDriverPhone(session.driver_phone || ""),
     driver_email: session.driver_email || "",
     driver_photo_data: session.driver_photo_data || "",
     business_name: session.business_name || "Chauffeur Deluxe",
@@ -1079,12 +1098,12 @@ function buildTrackingStatusWebhookPayload({ req, session, status }) {
     send_driver_tracking_email: status === "en_route_to_pickup" && Boolean(String(session.driver_email || "").trim()),
     send_post_ride_followup_sms: status === "completed",
     business_name: session.business_name || "Chauffeur Deluxe",
-    customer: {
-      first_name: session.first_name || null,
-      last_name: session.last_name || null,
-      full_name: customerName || null,
-      email: session.customer_email || null,
-      phone: session.customer_phone || null,
+      customer: {
+        first_name: session.first_name || null,
+        last_name: session.last_name || null,
+        full_name: customerName || null,
+        email: session.customer_email || null,
+        phone: normalizePhoneNumber(session.customer_phone || "") || null,
     },
     booking: {
       status: session.booking_status || null,
@@ -1118,13 +1137,13 @@ function buildTrackingStatusWebhookPayload({ req, session, status }) {
       tip_enabled: normalizePaymentProvider(session.payment_provider || "stripe") === "stripe",
       suggested_tip_amounts: [5, 10, 20],
     },
-    assigned_driver: {
-      id: session.driver_profile_id || null,
-      name: session.driver_display_name || null,
-      phone: session.driver_phone || null,
-      email: session.driver_email || null,
-      photo_data: session.driver_photo_data || null,
-    },
+      assigned_driver: {
+        id: session.driver_profile_id || null,
+        name: session.driver_display_name || null,
+        phone: normalizeDriverPhone(session.driver_phone || "") || null,
+        email: session.driver_email || null,
+        photo_data: session.driver_photo_data || null,
+      },
     vehicle: {
       slot_id: session.vehicle_slot_id || null,
       type: vehicleRecord?.vehicle_type || null,
@@ -1988,16 +2007,16 @@ async function upsertCrmContact({
       Accept: "application/json",
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({
-      locationId: String(locationId),
-      firstName: firstName || "",
-      lastName: lastName || "",
-      name: [firstName, lastName].filter(Boolean).join(" ").trim() || undefined,
-      email: email || undefined,
-      phone: phone || undefined,
-      source: "rideshare-scheduler",
-    }),
-  });
+      body: JSON.stringify({
+        locationId: String(locationId),
+        firstName: firstName || "",
+        lastName: lastName || "",
+        name: [firstName, lastName].filter(Boolean).join(" ").trim() || undefined,
+        email: email || undefined,
+        phone: normalizePhoneNumber(phone) || undefined,
+        source: "rideshare-scheduler",
+      }),
+    });
 
   if (!response) return null;
 
@@ -7600,6 +7619,7 @@ async function createBookingRecord(input, { paymentLink = null, triggerWebhook =
     paymentPaid: paymentState.paymentPaid,
   });
   const bookingStatus = isBookingConfirmed ? "confirmed" : "pending";
+  const normalizedCustomerPhone = normalizePhoneNumber(phone);
 
   const result = await pool.query(
     `INSERT INTO bookings (
@@ -7631,10 +7651,10 @@ async function createBookingRecord(input, { paymentLink = null, triggerWebhook =
       location_id,
       vehicle_slot_id,
       first_name,
-      last_name,
-      email,
-      phone,
-      pickup_address,
+        last_name,
+        email,
+        normalizedCustomerPhone,
+        pickup_address,
       dropoff_address,
       pickup_lat,
       pickup_lng,
@@ -7697,12 +7717,12 @@ async function createBookingRecord(input, { paymentLink = null, triggerWebhook =
         selected_fixed_destination,
         selected_addons,
       },
-      customer: {
-        first_name,
-        last_name,
-        email,
-        phone,
-      },
+        customer: {
+          first_name,
+          last_name,
+          email,
+          phone: normalizedCustomerPhone,
+        },
       vehicle: {
         vehicle_slot_id,
         vehicle_type,
