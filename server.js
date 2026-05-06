@@ -870,10 +870,11 @@ async function getTrackingSessionByToken({ token, role = "customer" }) {
       b.dropoff_lng,
       b.start_time,
       b.end_time,
-      b.total_price,
-      b.vehicle_slot_id,
-      b.status AS booking_status,
-      p.business_name,
+        b.total_price,
+        b.vehicle_slot_id,
+        b.crm_contact_id,
+        b.status AS booking_status,
+        p.business_name,
       p.maps_api_key,
       p.plan_name,
       p.addon_branding_unlocked,
@@ -914,10 +915,11 @@ async function getTrackingSessionById(sessionId) {
       b.dropoff_lng,
       b.start_time,
       b.end_time,
-      b.total_price,
-      b.vehicle_slot_id,
-      b.status AS booking_status,
-      p.business_name,
+        b.total_price,
+        b.vehicle_slot_id,
+        b.crm_contact_id,
+        b.status AS booking_status,
+        p.business_name,
       p.maps_api_key,
       p.crm_webhook_url,
       p.plan_name,
@@ -1104,7 +1106,8 @@ function buildTrackingStatusWebhookPayload({ req, session, status }) {
         full_name: customerName || null,
         email: session.customer_email || null,
         phone: normalizePhoneNumber(session.customer_phone || "") || null,
-    },
+        crm_contact_id: session.crm_contact_id || null,
+      },
     booking: {
       status: session.booking_status || null,
       pickup_address: session.pickup_address || null,
@@ -7175,6 +7178,7 @@ function buildCrmBookingPayload({
   customer,
   vehicle,
   assignedDriver = {},
+  crmContactId = null,
   financials,
   meta = {},
 }) {
@@ -7255,13 +7259,14 @@ function buildCrmBookingPayload({
       selected_fixed_destination: booking.selected_fixed_destination || null,
       selected_addons: Array.isArray(booking.selected_addons) ? booking.selected_addons : [],
     },
-    customer: {
-      first_name: customer.first_name || null,
-      last_name: customer.last_name || null,
-      full_name: [customer.first_name, customer.last_name].filter(Boolean).join(" ") || null,
-      email: customer.email || null,
-      phone: customer.phone || null,
-    },
+      customer: {
+        first_name: customer.first_name || null,
+        last_name: customer.last_name || null,
+        full_name: [customer.first_name, customer.last_name].filter(Boolean).join(" ") || null,
+        email: customer.email || null,
+        phone: customer.phone || null,
+        crm_contact_id: crmContactId || null,
+      },
     vehicle: {
       vehicle_slot_id: vehicle.vehicle_slot_id || null,
       vehicle_type: vehicle.vehicle_type || null,
@@ -7639,22 +7644,24 @@ async function createBookingRecord(input, { paymentLink = null, triggerWebhook =
       end_time,
       total_price,
       calendar_id,
+      vehicle_type,
       deposit_amount,
       deposit_percent,
       balance_due,
-      status
+      status,
+      booking_mode
     ) VALUES (
-      $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20
+      $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22
     )
-    RETURNING id`,
+    RETURNING id, booking_mode`,
     [
       location_id,
       vehicle_slot_id,
       first_name,
-        last_name,
-        email,
-        normalizedCustomerPhone,
-        pickup_address,
+      last_name,
+      email,
+      normalizedCustomerPhone,
+      pickup_address,
       dropoff_address,
       pickup_lat,
       pickup_lng,
@@ -7664,14 +7671,17 @@ async function createBookingRecord(input, { paymentLink = null, triggerWebhook =
       end_time,
       numericTotalPrice,
       calendar_id,
+      vehicle_type,
       numericDepositAmount,
       numericDepositPercent,
       balance_due,
-      bookingStatus
+      bookingStatus,
+      booking_mode
     ]
   );
 
   const booking_id = result.rows[0]?.id || null;
+  const savedBookingMode = String(result.rows[0]?.booking_mode || booking_mode || "standard").trim() || "standard";
   let calendarSync = null;
 
   if (isBookingConfirmed && booking_id) {
@@ -7700,7 +7710,7 @@ async function createBookingRecord(input, { paymentLink = null, triggerWebhook =
       booking: {
         booking_id,
         status: bookingStatus,
-        booking_mode,
+        booking_mode: savedBookingMode,
         pickup_address,
         dropoff_address,
         pickup_lat,
@@ -7717,12 +7727,12 @@ async function createBookingRecord(input, { paymentLink = null, triggerWebhook =
         selected_fixed_destination,
         selected_addons,
       },
-        customer: {
-          first_name,
-          last_name,
-          email,
-          phone: normalizedCustomerPhone,
-        },
+      customer: {
+        first_name,
+        last_name,
+        email,
+        phone: normalizedCustomerPhone,
+      },
       vehicle: {
         vehicle_slot_id,
         vehicle_type,
@@ -8659,7 +8669,7 @@ async function triggerCrmWebhook(location_id, booking_id) {
       booking: {
         booking_id: b.id,
         status: b.status || "confirmed",
-        booking_mode: "standard",
+        booking_mode: String(b.booking_mode || "").trim() || "standard",
         pickup_address: b.pickup_address,
         dropoff_address: b.dropoff_address,
         pickup_lat: b.pickup_lat,
@@ -8676,6 +8686,7 @@ async function triggerCrmWebhook(location_id, booking_id) {
         email: b.customer_email,
         phone: b.customer_phone,
       },
+      crmContactId: b.crm_contact_id || null,
       vehicle: {
         vehicle_slot_id: b.vehicle_slot_id,
         vehicle_type: b.vehicle_type,
