@@ -8619,6 +8619,7 @@ async function triggerCrmWebhook(location_id, booking_id) {
       return { success: false, status: 400, error: "location_id and booking_id are required." };
     }
 
+    await ensureBookingSyncColumns();
     client = await pool.connect();
 
     const bookingRes = await client.query(
@@ -8631,6 +8632,23 @@ async function triggerCrmWebhook(location_id, booking_id) {
     }
 
     const b = bookingRes.rows[0];
+    const resolvedCrmContactId = b.crm_contact_id || await upsertCrmContact({
+      locationId: location_id,
+      firstName: b.first_name,
+      lastName: b.last_name,
+      email: b.customer_email,
+      phone: b.customer_phone,
+    });
+
+    if (resolvedCrmContactId && String(resolvedCrmContactId) !== String(b.crm_contact_id || "")) {
+      await client.query(
+        `UPDATE bookings
+         SET crm_contact_id = $1
+         WHERE id = $2`,
+        [resolvedCrmContactId, booking_id]
+      );
+      b.crm_contact_id = resolvedCrmContactId;
+    }
 
     const profileRes = await client.query(
       "SELECT crm_webhook_url, tax_rate, business_name, payment_provider, fleet FROM profiles WHERE location_id = $1",
@@ -8686,7 +8704,7 @@ async function triggerCrmWebhook(location_id, booking_id) {
         email: b.customer_email,
         phone: b.customer_phone,
       },
-      crmContactId: b.crm_contact_id || null,
+      crmContactId: resolvedCrmContactId || b.crm_contact_id || null,
       vehicle: {
         vehicle_slot_id: b.vehicle_slot_id,
         vehicle_type: b.vehicle_type,
