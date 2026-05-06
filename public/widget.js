@@ -1275,87 +1275,35 @@
       if (!response.ok) throw new Error(data.error || "Unable to verify the checkout session.");
       if (!data.paid) throw new Error("Payment has not been completed yet.");
 
-      let tracking = null;
-      let practiceTextNotice = "";
-      if (isPracticeMode() && (data.booking?.booking_id || bookingId)) {
-        const practiceBookingId = Number(data.booking?.booking_id || bookingId);
-        try {
-          const reseedResponse = await fetch(`${BACKEND_URL}/api/crm-webhook/reseed`, {
+        let tracking = null;
+        if (isPracticeMode() && (data.booking?.booking_id || bookingId)) {
+          const practiceBookingId = Number(data.booking?.booking_id || bookingId);
+          tracking = await fetch(`${BACKEND_URL}/api/tracking/session/create`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              location_id: locationId,
               booking_id: practiceBookingId,
-            }),
-          });
-          const reseedData = await reseedResponse.json().catch(() => ({}));
-          if (!reseedResponse.ok || reseedData.success === false) {
-            practiceTextNotice = " Booking confirmation completed, but the CRM reseed path still needs attention.";
-            console.warn("Practice CRM reseed failed:", reseedData);
-          }
-        } catch (reseedError) {
-          practiceTextNotice = " Booking confirmation completed, but the CRM reseed path still needs attention.";
-          console.warn("Practice CRM reseed request failed:", reseedError);
-        }
-
-        tracking = await fetch(`${BACKEND_URL}/api/tracking/session/create`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            booking_id: practiceBookingId,
             location_id: locationId,
           }),
         }).then(async (trackingResponse) => {
           const trackingData = await trackingResponse.json().catch(() => ({}));
-          if (!trackingResponse.ok) {
-            throw new Error(trackingData.error || "Payment succeeded, but tracking could not be created yet.");
-          }
-          return trackingData;
-        });
-
-        await wait(1500);
-
-        let notifySucceeded = false;
-        let notifyData = {};
-        try {
-          for (let attempt = 0; attempt < 3; attempt += 1) {
-            if (attempt > 0) {
-              await wait(1500);
+            if (!trackingResponse.ok) {
+              throw new Error(trackingData.error || "Payment succeeded, but tracking could not be created yet.");
             }
-            const notifyResponse = await fetch(`${BACKEND_URL}/api/tracking/session/practice-notify`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                tracking_session_id: tracking.tracking_session_id,
-                booking_id: practiceBookingId,
-              }),
-            });
-            notifyData = await notifyResponse.json().catch(() => ({}));
-            if (notifyResponse.ok && notifyData.success !== false) {
-              notifySucceeded = true;
-              break;
-            }
-          }
-        } catch (notifyError) {
-          notifyData = { error: notifyError?.message || "Practice SMS trigger request failed." };
+            return trackingData;
+          });
         }
-
-        if (!notifySucceeded) {
-          practiceTextNotice += `${practiceTextNotice ? " " : ""}Tracking links are ready, but the practice SMS trigger still needs attention.`;
-          console.warn("Practice SMS trigger failed:", notifyData);
-        }
-      }
 
       renderSuccess(data.booking?.booking_id || bookingId, {
         first_name: data.reservation?.first_name || "Your",
         pickup_address: data.reservation?.pickup_address || "Payment received",
         dropoff_address: data.reservation?.dropoff_address || "Reservation confirmed",
         start_time: rememberedStartTime || data.reservation?.start_time || new Date().toISOString(),
-      }, isPracticeMode() ? {
-        title: "Practice Booking Confirmed",
-        message: `${data.reservation?.first_name || "Your"} practice reservation is confirmed and the tracking workflow is ready to rehearse.${practiceTextNotice}`,
-        tracking,
-      } : {});
+        }, isPracticeMode() ? {
+          title: "Practice Booking Confirmed",
+          message: `${data.reservation?.first_name || "Your"} practice reservation is confirmed. The booking used the same confirmation path as your live workflow, and tracking links are ready to rehearse the ride steps.`,
+          tracking,
+        } : {});
       window.history.replaceState({}, document.title, currentPageUrl());
       return true;
     }
