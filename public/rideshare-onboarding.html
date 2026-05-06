@@ -218,15 +218,26 @@
 
       <div class="cos-card cos-card-teal">
         <div style="font-size: 13px; color: #0f766e; font-weight: 700; text-transform: uppercase; margin-bottom: 10px;">Step 6</div>
-        <h3 style="margin: 0 0 10px 0; color: #0f766e;">Set Calendar Availability</h3>
+        <h3 style="margin: 0 0 10px 0; color: #0f766e;">Set Calendar Availability and Instant Booking Rules</h3>
         <ol>
           <li>Open one of your new vehicle calendars.</li>
           <li>Go to <strong>Availability</strong> or <strong>Calendar Settings</strong>.</li>
-          <li>Set the days and hours that vehicle can actually be booked.</li>
+          <li>Set the days and hours that vehicle can actually be booked in CRM.</li>
           <li>Remove days when that vehicle is unavailable.</li>
           <li><strong>Do not add extra buffers</strong> here if your app already handles buffers.</li>
           <li>Save the availability settings.</li>
+          <li>Back in the setup wizard fleet row for that vehicle, decide whether <strong>Instant Booking</strong> should be turned on or off.</li>
+          <li>If Instant Booking is <strong>On</strong>, set the <strong>Instant Start</strong> and <strong>Instant End</strong> hours for that vehicle.</li>
+          <li>Set <strong>Notice (hrs)</strong> for the minimum lead time that vehicle requires before pickup.</li>
         </ol>
+        <div style="margin-top: 14px; padding: 14px 16px; border-radius: 14px; background: #ecfeff; border: 1px solid #99f6e4; color: #115e59; line-height: 1.8;">
+          <strong>How the app uses these rules:</strong>
+          <ul style="margin: 8px 0 0 18px; padding: 0;">
+            <li>If <strong>Instant Booking is On</strong>, the pickup must fall inside the Instant Start and Instant End window for that vehicle.</li>
+            <li>If <strong>Instant Booking is Off</strong>, the booking must be made at least <strong>4 hours in advance</strong>, or more if you set a higher Notice value.</li>
+            <li>Calendar availability still applies either way, so the vehicle must be open and conflict-free before the booking can confirm.</li>
+          </ul>
+        </div>
       </div>
 
       <div class="cos-card">
@@ -375,6 +386,8 @@
           <li>Create a separate CRM calendar for each vehicle type you want to schedule independently.</li>
           <li>Use clear names like <strong>Luxury Sedan</strong>, <strong>Standard Sedan</strong>, and <strong>Luxury SUV</strong>.</li>
           <li>Set true operating availability in CRM calendars, but do <strong>not</strong> add extra buffers there if your app already handles buffering.</li>
+          <li>Use CRM calendar availability to control when a vehicle is generally open, then use the setup wizard <strong>Instant Booking</strong> settings to control whether those open hours can be booked instantly.</li>
+          <li>If Instant Booking is turned off for a vehicle, the app requires at least <strong>4 hours notice</strong> unless you choose an even higher notice requirement.</li>
           <li>After every important wizard sync, refresh the webhook sample payload in the workflow and click <strong>Save</strong>.</li>
       </ul>
     </div>
@@ -394,6 +407,20 @@
           <strong style="color: #0f766e;">Should I add buffers inside the CRM calendar setup?</strong>
           <p style="margin: 8px 0 0 0; color: #4b5563; line-height: 1.8;">
             Usually no. The app already has built-in buffer handling. Adding extra calendar buffers in CRM may block more time than you want and reduce availability too much.
+          </p>
+        </div>
+
+        <div style="padding: 16px; background: #f5f3ff; border-radius: 14px;">
+          <strong style="color: #5b21b6;">What is the difference between calendar availability and instant booking?</strong>
+          <p style="margin: 8px 0 0 0; color: #4b5563; line-height: 1.8;">
+            Calendar availability controls when a vehicle is generally open to work. Instant booking controls whether the app can confirm that ride immediately. A vehicle can be available on the calendar but still require extra notice or manual review if Instant Booking is turned off.
+          </p>
+        </div>
+
+        <div style="padding: 16px; background: #f0fdfa; border-radius: 14px;">
+          <strong style="color: #0f766e;">How should I set Instant Start, Instant End, and Notice hours?</strong>
+          <p style="margin: 8px 0 0 0; color: #4b5563; line-height: 1.8;">
+            Set Instant Start and Instant End to the daily time range when that vehicle can accept immediate bookings. Set Notice to the minimum lead time the vehicle needs before pickup. If Instant Booking is turned off, the app will require at least 4 hours notice, or more if your Notice setting is higher.
           </p>
         </div>
 
