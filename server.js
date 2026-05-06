@@ -212,6 +212,8 @@ async function ensureBookingSyncColumns() {
       await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS calendar_id TEXT`);
       await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS driver_assignment_sms_sent_at TIMESTAMPTZ`);
       await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS driver_paid_in_full_sms_sent_at TIMESTAMPTZ`);
+      await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS driver_sms_last_attempt_at TIMESTAMPTZ`);
+      await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS driver_sms_last_error TEXT`);
     })().catch((err) => {
       bookingSyncColumnsReady = null;
       throw err;
@@ -7680,6 +7682,13 @@ async function updateBookingConfirmation({
         locationId: result.rows[0].location_id,
         paymentState: "paid_deposit",
       });
+      await pool.query(
+        `UPDATE bookings
+         SET driver_sms_last_attempt_at = NOW(),
+             driver_sms_last_error = $2
+         WHERE id = $1`,
+        [bookingId, driverSmsResult?.success ? null : String(driverSmsResult?.error || driverSmsResult?.reason || "Driver SMS failed.").slice(0, 1000)]
+      );
       if (driverSmsResult?.success) {
         await pool.query(
           `UPDATE bookings
@@ -7699,6 +7708,13 @@ async function updateBookingConfirmation({
         locationId: result.rows[0].location_id,
         paymentState: "paid_in_full_balance_cleared",
       });
+      await pool.query(
+        `UPDATE bookings
+         SET driver_sms_last_attempt_at = NOW(),
+             driver_sms_last_error = $2
+         WHERE id = $1`,
+        [bookingId, driverSmsResult?.success ? null : String(driverSmsResult?.error || driverSmsResult?.reason || "Driver SMS failed.").slice(0, 1000)]
+      );
       if (driverSmsResult?.success) {
         await pool.query(
           `UPDATE bookings
@@ -7713,6 +7729,13 @@ async function updateBookingConfirmation({
         locationId: result.rows[0].location_id,
         paymentState: "paid_in_full",
       });
+      await pool.query(
+        `UPDATE bookings
+         SET driver_sms_last_attempt_at = NOW(),
+             driver_sms_last_error = $2
+         WHERE id = $1`,
+        [bookingId, driverSmsResult?.success ? null : String(driverSmsResult?.error || driverSmsResult?.reason || "Driver SMS failed.").slice(0, 1000)]
+      );
       if (driverSmsResult?.success) {
         await pool.query(
           `UPDATE bookings
