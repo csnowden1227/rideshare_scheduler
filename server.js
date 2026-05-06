@@ -210,6 +210,8 @@ async function ensureBookingSyncColumns() {
       await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS vehicle_slot_id TEXT`);
       await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS vehicle_type TEXT`);
       await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS calendar_id TEXT`);
+      await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS driver_assignment_sms_sent_at TIMESTAMPTZ`);
+      await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS driver_paid_in_full_sms_sent_at TIMESTAMPTZ`);
     })().catch((err) => {
       bookingSyncColumnsReady = null;
       throw err;
@@ -849,6 +851,100 @@ function normalizeFeedbackRating(value) {
 
 function normalizeFeedbackText(value) {
   return String(value || "").trim().replace(/\s+/g, " ").slice(0, 2000);
+}
+
+async function ensureTrackingSessionForBookingInternal({ bookingId, locationId, req = null }) {
+  if (!bookingId) {
+    throw new Error("bookingId is required to ensure a tracking session.");
+  }
+
+  await ensureTripTrackingTables();
+
+  const bookingLookup = await pool.query(
+    `SELECT id, location_id, vehicle_slot_id
+     FROM bookings
+     WHERE id = $1
+     LIMIT 1`,
+    [bookingId]
+  );
+
+  if (!bookingLookup.rows.length) {
+    throw new Error("Booking not found.");
+  }
+
+  const booking = bookingLookup.rows[0];
+  const resolvedLocationId = String(locationId || booking.location_id || "").trim();
+  if (!resolvedLocationId) {
+    throw new Error("location_id is required for tracking.");
+  }
+
+  const profileIdColumn = await getProfileIdColumn();
+  const profileLookup = await pool.query(
+    `SELECT plan_name, addon_branding_unlocked, addon_funnel_unlocked, addon_tracking_unlocked, addon_extra_vehicle_count, fleet
+     FROM profiles
+     WHERE ${profileIdColumn} = $1
+     LIMIT 1`,
+    [resolvedLocationId]
+  );
+  if (!profileLookup.rows.length) {
+    throw new Error("Profile not found for tracking.");
+  }
+  assertTrackingAccess(profileLookup.rows[0]);
+
+  const existing = await pool.query(
+    `SELECT *
+     FROM trip_tracking_sessions
+     WHERE booking_id = $1
+     LIMIT 1`,
+    [bookingId]
+  );
+
+  if (existing.rows.length) {
+    const session = existing.rows[0];
+    return {
+      session,
+      tracking_session_id: session.id,
+      driver_token: session.driver_token,
+      customer_token: session.customer_token,
+      ...buildTrackingUrls(req, session.driver_token, session.customer_token),
+    };
+  }
+
+  const id = randomUUID();
+  const driverToken = createTrackingToken("drv");
+  const customerToken = createTrackingToken("cus");
+  const fleet = normalizeFleetRecords(safeParseJson(profileLookup.rows[0]?.fleet));
+  const defaultVehicleDriver = fleet.find(
+    (item) => String(item?.vehicle_slot_id || "").trim() === String(booking.vehicle_slot_id || "").trim()
+  ) || null;
+  const defaultDriverName = String(defaultVehicleDriver?.driver_name || "").trim() || null;
+  const defaultDriverPhone = normalizeDriverPhone(defaultVehicleDriver?.driver_phone || "") || null;
+  const defaultDriverEmail = normalizeDriverEmail(defaultVehicleDriver?.driver_email || "") || null;
+
+  await pool.query(
+    `INSERT INTO trip_tracking_sessions (
+      id, booking_id, location_id, driver_token, customer_token, status, driver_display_name, driver_phone, driver_email, created_at, updated_at
+    ) VALUES ($1,$2,$3,$4,$5,'driver_assigned',$6,$7,$8,NOW(),NOW())`,
+    [id, bookingId, resolvedLocationId, driverToken, customerToken, defaultDriverName, defaultDriverPhone, defaultDriverEmail]
+  );
+
+  return {
+    session: {
+      id,
+      booking_id: bookingId,
+      location_id: resolvedLocationId,
+      driver_token: driverToken,
+      customer_token: customerToken,
+      status: "driver_assigned",
+      driver_display_name: defaultDriverName,
+      driver_phone: defaultDriverPhone,
+      driver_email: defaultDriverEmail,
+    },
+    tracking_session_id: id,
+    driver_token: driverToken,
+    customer_token: customerToken,
+    ...buildTrackingUrls(req, driverToken, customerToken),
+  };
 }
 
 async function getTrackingSessionByToken({ token, role = "customer" }) {
@@ -2034,6 +2130,188 @@ async function upsertCrmContact({
 
   const data = bodyText ? JSON.parse(bodyText) : {};
   return extractCrmContactId(data);
+}
+
+async function sendCrmSmsToContact({
+  locationId,
+  contactId,
+  message,
+}) {
+  if (!locationId || !contactId || !String(message || "").trim()) {
+    return { success: false, status: 400, error: "locationId, contactId, and message are required." };
+  }
+
+  const requestBodies = [
+    {
+      type: "SMS",
+      locationId: String(locationId),
+      contactId: String(contactId),
+      message: String(message).trim(),
+    },
+    {
+      messageType: "SMS",
+      locationId: String(locationId),
+      contactId: String(contactId),
+      message: String(message).trim(),
+    },
+    {
+      type: "SMS",
+      contactId: String(contactId),
+      message: String(message).trim(),
+    },
+  ];
+
+  let lastFailure = null;
+  for (const bodyPayload of requestBodies) {
+    const { response, bodyText, tokenSource, attemptedSources } = await fetchCrmWithFallback(
+      locationId,
+      new URL("/conversations/messages", CRM_API_BASE_URL),
+      {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(bodyPayload),
+      },
+      [400, 401, 403]
+    );
+
+    if (response?.ok) {
+      return {
+        success: true,
+        status: response.status,
+        tokenSource,
+        attemptedSources,
+      };
+    }
+
+    lastFailure = {
+      success: false,
+      status: response?.status || 500,
+      tokenSource,
+      attemptedSources,
+      error: bodyText ? bodyText.slice(0, 300) : "CRM driver SMS send failed.",
+    };
+
+    if (!response || ![400].includes(response.status)) {
+      break;
+    }
+  }
+
+  return lastFailure || {
+    success: false,
+    status: 500,
+    error: "CRM driver SMS send failed.",
+  };
+}
+
+function buildDriverBookingSmsMessage({
+  booking,
+  paymentState,
+  trackingUrl,
+}) {
+  const customerName = [booking.first_name, booking.last_name].filter(Boolean).join(" ").trim() || "Customer";
+  const lines = [];
+
+  if (paymentState === "paid_deposit") {
+    lines.push("Ride confirmed on deposit.");
+    if (Number(booking.balance_due || 0) > 0) {
+      lines.push(`Balance due: $${Number(booking.balance_due || 0).toFixed(2)}.`);
+    }
+  } else if (paymentState === "paid_in_full_balance_cleared") {
+    lines.push("Ride is now fully paid.");
+  } else {
+    lines.push("Ride confirmed and paid in full.");
+  }
+
+  lines.push(`Customer: ${customerName}`);
+  if (booking.customer_phone) {
+    lines.push(`Customer Phone: ${normalizePhoneNumber(booking.customer_phone) || booking.customer_phone}`);
+  }
+  if (booking.pickup_address) {
+    lines.push(`Pickup: ${booking.pickup_address}`);
+  }
+  if (booking.dropoff_address) {
+    lines.push(`Dropoff: ${booking.dropoff_address}`);
+  }
+  if (booking.start_time) {
+    lines.push(`Pickup Time: ${formatDisplayDateTime(booking.start_time) || booking.start_time}`);
+  }
+  if (trackingUrl) {
+    lines.push(`Driver Tracking: ${trackingUrl}`);
+  }
+
+  return lines.join("\n");
+}
+
+async function sendDriverAssignmentSmsForBooking({ bookingId, locationId, paymentState, req = null }) {
+  if (!bookingId || !locationId || !paymentState) {
+    return { success: false, skipped: true, reason: "bookingId, locationId, and paymentState are required." };
+  }
+
+  await ensureBookingSyncColumns();
+  const bookingLookup = await pool.query(
+    `SELECT *
+     FROM bookings
+     WHERE id = $1
+     LIMIT 1`,
+    [bookingId]
+  );
+  if (!bookingLookup.rows.length) {
+    return { success: false, skipped: true, reason: "Booking not found." };
+  }
+
+  const booking = bookingLookup.rows[0];
+  const profileLookup = await pool.query(
+    `SELECT fleet
+     FROM profiles
+     WHERE location_id = $1
+     LIMIT 1`,
+    [locationId]
+  );
+  const profileFleet = normalizeFleetRecords(safeParseJson(profileLookup.rows[0]?.fleet));
+  const matchedDriver = profileFleet.find(
+    (vehicleRow) => String(vehicleRow?.vehicle_slot_id || "").trim() === String(booking.vehicle_slot_id || "").trim()
+  ) || null;
+
+  const driverName = String(matchedDriver?.driver_name || "").trim();
+  const driverPhone = normalizeDriverPhone(matchedDriver?.driver_phone || "");
+  const driverEmail = normalizeDriverEmail(matchedDriver?.driver_email || "");
+
+  if (!driverName || !driverPhone) {
+    return { success: false, skipped: true, reason: "Driver name or phone is missing." };
+  }
+
+  const tracking = await ensureTrackingSessionForBookingInternal({
+    bookingId,
+    locationId,
+    req,
+  });
+
+  const driverContactId = await upsertCrmContact({
+    locationId,
+    firstName: driverName,
+    lastName: "",
+    email: driverEmail || undefined,
+    phone: driverPhone,
+  });
+
+  if (!driverContactId) {
+    return { success: false, skipped: true, reason: "Unable to resolve driver CRM contact." };
+  }
+
+  const message = buildDriverBookingSmsMessage({
+    booking,
+    paymentState,
+    trackingUrl: tracking.driver_url || null,
+  });
+
+  return sendCrmSmsToContact({
+    locationId,
+    contactId: driverContactId,
+    message,
+  });
 }
 
 async function createCrmAppointment({
@@ -5527,89 +5805,26 @@ app.post("/api/partner-split-agreements", async (req, res) => {
 
 app.post("/api/tracking/session/create", async (req, res) => {
   try {
-    await ensureTripTrackingTables();
-
     const bookingId = Number(req.body.booking_id || 0);
     const explicitLocationId = String(req.body.location_id || "").trim();
-
     if (!bookingId) {
       return res.status(400).json({ error: "booking_id is required." });
     }
 
-    const bookingLookup = await pool.query(
-      `SELECT id, location_id, vehicle_slot_id, pickup_address, dropoff_address, start_time, end_time, first_name, last_name, customer_email, customer_phone
-       FROM bookings
-       WHERE id = $1
-       LIMIT 1`,
-      [bookingId]
-    );
-
-    if (!bookingLookup.rows.length) {
-      return res.status(404).json({ error: "Booking not found." });
-    }
-
-    const booking = bookingLookup.rows[0];
-    const locationId = explicitLocationId || String(booking.location_id || "").trim();
-    if (!locationId) {
-      return res.status(400).json({ error: "location_id is required for tracking." });
-    }
-
-    const profileIdColumn = await getProfileIdColumn();
-    const profileLookup = await pool.query(
-      `SELECT plan_name, addon_branding_unlocked, addon_funnel_unlocked, addon_tracking_unlocked, addon_extra_vehicle_count, fleet
-       FROM profiles
-       WHERE ${profileIdColumn} = $1
-       LIMIT 1`,
-      [locationId]
-    );
-    if (!profileLookup.rows.length) {
-      return res.status(404).json({ error: "Profile not found for tracking." });
-    }
-    assertTrackingAccess(profileLookup.rows[0]);
-
-    const existing = await pool.query(
-      `SELECT *
-       FROM trip_tracking_sessions
-       WHERE booking_id = $1
-       LIMIT 1`,
-      [bookingId]
-    );
-
-    if (existing.rows.length) {
-      const session = existing.rows[0];
-      return res.json({
-        success: true,
-        tracking_session_id: session.id,
-        driver_token: session.driver_token,
-        customer_token: session.customer_token,
-        ...buildTrackingUrls(req, session.driver_token, session.customer_token),
-      });
-    }
-
-    const id = randomUUID();
-    const driverToken = createTrackingToken("drv");
-    const customerToken = createTrackingToken("cus");
-    const fleet = normalizeFleetRecords(safeParseJson(profileLookup.rows[0]?.fleet));
-    const defaultVehicleDriver = fleet.find(
-      (item) => String(item?.vehicle_slot_id || "").trim() === String(booking.vehicle_slot_id || "").trim()
-    ) || null;
-    const defaultDriverName = String(defaultVehicleDriver?.driver_name || "").trim() || null;
-    const defaultDriverPhone = normalizeDriverPhone(defaultVehicleDriver?.driver_phone || "") || null;
-    const defaultDriverEmail = normalizeDriverEmail(defaultVehicleDriver?.driver_email || "") || null;
-
-    await pool.query(
-      `INSERT INTO trip_tracking_sessions (
-        id, booking_id, location_id, driver_token, customer_token, status, driver_display_name, driver_phone, driver_email, created_at, updated_at
-      ) VALUES ($1,$2,$3,$4,$5,'driver_assigned',$6,$7,$8,NOW(),NOW())`,
-      [id, bookingId, locationId, driverToken, customerToken, defaultDriverName, defaultDriverPhone, defaultDriverEmail]
-    );
+    const tracking = await ensureTrackingSessionForBookingInternal({
+      bookingId,
+      locationId: explicitLocationId,
+      req,
+    });
 
     return res.json({
       success: true,
-      tracking_session_id: id,
-      driver_token: driverToken,
-      customer_token: customerToken,
-      ...buildTrackingUrls(req, driverToken, customerToken),
+      tracking_session_id: tracking.tracking_session_id,
+      driver_token: tracking.driver_token,
+      customer_token: tracking.customer_token,
+      driver_url: tracking.driver_url,
+      customer_url: tracking.customer_url,
+      follow_up_url: tracking.follow_up_url,
     });
   } catch (err) {
     console.error("Create tracking session error:", err);
@@ -7416,6 +7631,16 @@ async function updateBookingConfirmation({
   const numericDepositAmount = Number(depositAmount || 0);
   const numericDepositPercent = Number(depositPercent || 0);
   const balanceDue = Number((numericTotalPrice - numericDepositAmount).toFixed(2));
+  await ensureBookingSyncColumns();
+
+  const existingBookingResult = await pool.query(
+    `SELECT id, location_id, balance_due, driver_assignment_sms_sent_at, driver_paid_in_full_sms_sent_at
+     FROM bookings
+     WHERE id = $1
+     LIMIT 1`,
+    [bookingId]
+  );
+  const existingBooking = existingBookingResult.rows[0] || null;
 
   const result = await pool.query(
     `UPDATE bookings
@@ -7447,6 +7672,60 @@ async function updateBookingConfirmation({
   }
 
   await triggerCrmWebhook(result.rows[0].location_id, result.rows[0].id);
+
+  try {
+    if (paymentStatus === "paid_deposit" && !existingBooking?.driver_assignment_sms_sent_at) {
+      const driverSmsResult = await sendDriverAssignmentSmsForBooking({
+        bookingId,
+        locationId: result.rows[0].location_id,
+        paymentState: "paid_deposit",
+      });
+      if (driverSmsResult?.success) {
+        await pool.query(
+          `UPDATE bookings
+           SET driver_assignment_sms_sent_at = COALESCE(driver_assignment_sms_sent_at, NOW())
+           WHERE id = $1`,
+          [bookingId]
+        );
+      }
+    } else if (
+      paymentStatus === "paid_in_full" &&
+      existingBooking?.driver_assignment_sms_sent_at &&
+      !existingBooking?.driver_paid_in_full_sms_sent_at &&
+      Number(existingBooking?.balance_due || 0) > 0
+    ) {
+      const driverSmsResult = await sendDriverAssignmentSmsForBooking({
+        bookingId,
+        locationId: result.rows[0].location_id,
+        paymentState: "paid_in_full_balance_cleared",
+      });
+      if (driverSmsResult?.success) {
+        await pool.query(
+          `UPDATE bookings
+           SET driver_paid_in_full_sms_sent_at = COALESCE(driver_paid_in_full_sms_sent_at, NOW())
+           WHERE id = $1`,
+          [bookingId]
+        );
+      }
+    } else if (paymentStatus === "paid_in_full" && !existingBooking?.driver_assignment_sms_sent_at) {
+      const driverSmsResult = await sendDriverAssignmentSmsForBooking({
+        bookingId,
+        locationId: result.rows[0].location_id,
+        paymentState: "paid_in_full",
+      });
+      if (driverSmsResult?.success) {
+        await pool.query(
+          `UPDATE bookings
+           SET driver_assignment_sms_sent_at = COALESCE(driver_assignment_sms_sent_at, NOW()),
+               driver_paid_in_full_sms_sent_at = COALESCE(driver_paid_in_full_sms_sent_at, NOW())
+           WHERE id = $1`,
+          [bookingId]
+        );
+      }
+    }
+  } catch (driverSmsErr) {
+    console.error("Driver assignment SMS error after confirmation:", driverSmsErr);
+  }
 
   return {
     booking_id: result.rows[0].id,
