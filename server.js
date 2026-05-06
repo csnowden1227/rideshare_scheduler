@@ -598,9 +598,131 @@ const TRACKING_STATUS_VALUES = new Set([
   "completed",
 ]);
 
+const DEFAULT_INSTANT_BOOKING_START_TIME = "06:00";
+const DEFAULT_INSTANT_BOOKING_END_TIME = "22:00";
+const DEFAULT_NON_INSTANT_NOTICE_HOURS = 4;
+
 function normalizeTrackingStatus(value) {
   const normalized = String(value || "").trim().toLowerCase();
   return TRACKING_STATUS_VALUES.has(normalized) ? normalized : "driver_assigned";
+}
+
+function normalizeBooleanish(value, fallback = false) {
+  if (typeof value === "boolean") return value;
+  if (value === null || value === undefined || value === "") return fallback;
+  const normalized = String(value).trim().toLowerCase();
+  if (["true", "1", "yes", "on"].includes(normalized)) return true;
+  if (["false", "0", "no", "off"].includes(normalized)) return false;
+  return fallback;
+}
+
+function normalizeTimeOfDay(value, fallback) {
+  const raw = String(value || "").trim();
+  const match = raw.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+  if (!match) return fallback;
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (!Number.isInteger(hours) || !Number.isInteger(minutes) || hours < 0 || hours > 23 || minutes < 0 || minutes > 59) {
+    return fallback;
+  }
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+}
+
+function parseTimeOfDayToMinutes(value) {
+  const normalized = normalizeTimeOfDay(value, null);
+  if (!normalized) return null;
+  const [hours, minutes] = normalized.split(":").map((part) => Number(part));
+  return (hours * 60) + minutes;
+}
+
+function extractStartTimeMinutes(startTime) {
+  const raw = String(startTime || "").trim();
+  const localMatch = raw.match(/T(\d{2}):(\d{2})/);
+  if (localMatch) {
+    return (Number(localMatch[1]) * 60) + Number(localMatch[2]);
+  }
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return (parsed.getHours() * 60) + parsed.getMinutes();
+}
+
+function isMinutesWithinWindow(minutes, startMinutes, endMinutes) {
+  if (![minutes, startMinutes, endMinutes].every(Number.isFinite)) return true;
+  if (startMinutes === endMinutes) return true;
+  if (startMinutes < endMinutes) {
+    return minutes >= startMinutes && minutes <= endMinutes;
+  }
+  return minutes >= startMinutes || minutes <= endMinutes;
+}
+
+function formatTimeLabel(value, fallback = "") {
+  const normalized = normalizeTimeOfDay(value, "");
+  if (!normalized) return fallback;
+  const [hoursText, minutesText] = normalized.split(":");
+  const hours = Number(hoursText);
+  const minutes = Number(minutesText);
+  const meridiem = hours >= 12 ? "PM" : "AM";
+  const displayHour = hours % 12 || 12;
+  return `${displayHour}:${String(minutes).padStart(2, "0")} ${meridiem}`;
+}
+
+function normalizeFleetBookingPolicy(slot = {}, profileDefaults = {}) {
+  const configuredNoticeMin = Number.parseInt(slot?.min_notice_min, 10);
+  const fallbackNoticeMin = DEFAULT_NON_INSTANT_NOTICE_HOURS * 60;
+  const normalizedNoticeMin = Number.isFinite(configuredNoticeMin)
+    ? Math.max(0, configuredNoticeMin)
+    : fallbackNoticeMin;
+
+  return {
+    instant_booking_enabled: normalizeBooleanish(slot?.instant_booking_enabled, true),
+    instant_booking_start_time: normalizeTimeOfDay(
+      slot?.instant_booking_start_time,
+      normalizeTimeOfDay(profileDefaults?.open_time, DEFAULT_INSTANT_BOOKING_START_TIME)
+    ),
+    instant_booking_end_time: normalizeTimeOfDay(
+      slot?.instant_booking_end_time,
+      normalizeTimeOfDay(profileDefaults?.close_time, DEFAULT_INSTANT_BOOKING_END_TIME)
+    ),
+    min_notice_min: normalizedNoticeMin,
+  };
+}
+
+function validateBookingTimingRules({ slot = {}, startTime, profileDefaults = {} }) {
+  const policy = normalizeFleetBookingPolicy(slot, profileDefaults);
+  const hoursUntilRide = getHoursUntilRide(startTime);
+  const configuredNoticeHours = Math.max(0, Number(policy.min_notice_min || 0) / 60);
+  const minimumNoticeHours = policy.instant_booking_enabled
+    ? configuredNoticeHours
+    : Math.max(DEFAULT_NON_INSTANT_NOTICE_HOURS, configuredNoticeHours || 0);
+
+  if (hoursUntilRide < minimumNoticeHours) {
+    const roundedNotice = Number.isInteger(minimumNoticeHours)
+      ? String(minimumNoticeHours)
+      : minimumNoticeHours.toFixed(1);
+    return {
+      ok: false,
+      error: `This vehicle requires at least ${roundedNotice} hours notice before pickup.`,
+      policy,
+    };
+  }
+
+  if (policy.instant_booking_enabled) {
+    const pickupMinutes = extractStartTimeMinutes(startTime);
+    const startMinutes = parseTimeOfDayToMinutes(policy.instant_booking_start_time);
+    const endMinutes = parseTimeOfDayToMinutes(policy.instant_booking_end_time);
+    if (!isMinutesWithinWindow(pickupMinutes, startMinutes, endMinutes)) {
+      return {
+        ok: false,
+        error: `Instant booking for this vehicle is available only for pickups between ${formatTimeLabel(policy.instant_booking_start_time)} and ${formatTimeLabel(policy.instant_booking_end_time)}.`,
+        policy,
+      };
+    }
+  }
+
+  return {
+    ok: true,
+    policy,
+  };
 }
 
 function parseOptionalNumber(value) {
@@ -1527,9 +1649,17 @@ function sanitizeFleetByEntitlements(fleet = [], entitlements = {}) {
 function normalizeFleetRecords(fleet = []) {
   return (Array.isArray(fleet) ? fleet : []).map((row = {}, index) => {
     const existingSlotId = String(row?.vehicle_slot_id || "").trim();
+    const policy = normalizeFleetBookingPolicy(row);
+    const normalizedRow = {
+      ...row,
+      instant_booking_enabled: policy.instant_booking_enabled,
+      instant_booking_start_time: policy.instant_booking_start_time,
+      instant_booking_end_time: policy.instant_booking_end_time,
+      min_notice_min: policy.min_notice_min,
+    };
     if (existingSlotId) {
       return {
-        ...row,
+        ...normalizedRow,
         vehicle_slot_id: existingSlotId,
       };
     }
@@ -1548,7 +1678,7 @@ function normalizeFleetRecords(fleet = []) {
       .replace(/^_+|_+$/g, "");
 
     return {
-      ...row,
+      ...normalizedRow,
       vehicle_slot_id: slugSource || `vehicle_${index + 1}`,
     };
   });
@@ -2885,11 +3015,13 @@ async function syncFixedRates(client, location_id, fixed_rates = []) {
 
 async function syncFleetSettings(client, location_id, fleet = []) {
   if (!(await tableExists("fleet_settings"))) return;
+  await ensureFleetSettingsBookingPolicyColumns(client);
 
   const columns = await getTableColumns("fleet_settings");
   await client.query("DELETE FROM fleet_settings WHERE location_id = $1", [location_id]);
 
   for (const slot of fleet || []) {
+    const policy = normalizeFleetBookingPolicy(slot);
     const fields = [];
     const values = [];
     const placeholders = [];
@@ -2916,7 +3048,10 @@ async function syncFleetSettings(client, location_id, fleet = []) {
     push("duration_min", parseInt(slot.duration_min, 10) || 105);
     push("inbound_buffer_min", parseInt(slot.inbound_buffer_min, 10) || 0);
     push("outbound_buffer_min", parseInt(slot.outbound_buffer_min, 10) || BOOKING_BUFFER_MINUTES);
-    push("min_notice_min", parseInt(slot.min_notice_min, 10) || 120);
+    push("min_notice_min", policy.min_notice_min);
+    push("instant_booking_enabled", policy.instant_booking_enabled);
+    push("instant_booking_start_time", policy.instant_booking_start_time);
+    push("instant_booking_end_time", policy.instant_booking_end_time);
 
     if (!fields.length) continue;
 
@@ -3708,6 +3843,14 @@ async function sendWizardSyncWebhook({
   }
 
   return result;
+}
+
+async function ensureFleetSettingsBookingPolicyColumns(db = pool) {
+  if (!(await tableExists("fleet_settings"))) return;
+  await db.query(`ALTER TABLE fleet_settings ADD COLUMN IF NOT EXISTS min_notice_min INTEGER`);
+  await db.query(`ALTER TABLE fleet_settings ADD COLUMN IF NOT EXISTS instant_booking_enabled BOOLEAN`);
+  await db.query(`ALTER TABLE fleet_settings ADD COLUMN IF NOT EXISTS instant_booking_start_time TEXT`);
+  await db.query(`ALTER TABLE fleet_settings ADD COLUMN IF NOT EXISTS instant_booking_end_time TEXT`);
 }
 
 function buildWizardSampleBookingPayload({
@@ -7289,7 +7432,7 @@ app.post("/api/cancel-booking", async (req, res) => {
 *****************************************************/
 app.post("/api/availability", async (req, res) => {
   try {
-    const { location_id, date } = req.body;
+    const { location_id, date, vehicle_slot_id } = req.body;
 
     if (!location_id || !date) {
       return res.status(400).json({ slots: [], error: "Missing required data." });
@@ -7299,11 +7442,16 @@ app.post("/api/availability", async (req, res) => {
     
     // 1. Get Operating Hours from Profiles
     const profileRes = await pool.query(
-      "SELECT open_time, close_time, is_booking_enabled FROM profiles WHERE location_id=$1",
+      "SELECT open_time, close_time, is_booking_enabled, fleet FROM profiles WHERE location_id=$1",
       [location_id]
     );
     if (!profileRes.rows.length) return res.json({ slots: [], error: "Profile not found" });
     const { open_time, close_time, is_booking_enabled } = profileRes.rows[0];
+    const profileFleet = normalizeFleetRecords(safeParseJson(profileRes.rows[0].fleet));
+    const selectedVehicle = vehicle_slot_id
+      ? profileFleet.find((item) => String(item?.vehicle_slot_id || "").trim() === String(vehicle_slot_id || "").trim())
+      : null;
+    const bookingPolicy = normalizeFleetBookingPolicy(selectedVehicle || {}, { open_time, close_time });
 
     // 2. Get Duration from Fleet Settings
     const fleetRes = await pool.query(
@@ -7322,8 +7470,12 @@ app.post("/api/availability", async (req, res) => {
     // --- NEW: DEFINE YOUR VARIABLES ---
     const dayStart = new Date(`${date}T${open_time || '08:00:00'}`);
     const dayEnd = new Date(`${date}T${close_time || '20:00:00'}`);
-    const minNotice = 120; // 2 hour buffer
+    const minNotice = bookingPolicy.instant_booking_enabled
+      ? Math.max(0, Number(bookingPolicy.min_notice_min || 0))
+      : Math.max(DEFAULT_NON_INSTANT_NOTICE_HOURS * 60, Number(bookingPolicy.min_notice_min || 0));
     const earliestAllowed = new Date(Date.now() + minNotice * 60000);
+    const instantStartMinutes = parseTimeOfDayToMinutes(bookingPolicy.instant_booking_start_time);
+    const instantEndMinutes = parseTimeOfDayToMinutes(bookingPolicy.instant_booking_end_time);
 
     const slots = [];
 
@@ -7333,6 +7485,10 @@ app.post("/api/availability", async (req, res) => {
       const slotEnd = new Date(t.getTime() + durationMin * 60000);
 
       if (slotStart < earliestAllowed) continue;
+      if (bookingPolicy.instant_booking_enabled) {
+        const slotMinutes = (slotStart.getHours() * 60) + slotStart.getMinutes();
+        if (!isMinutesWithinWindow(slotMinutes, instantStartMinutes, instantEndMinutes)) continue;
+      }
 
       const isBlocked = existingBookings.some(booking => {
         const bookedStart = new Date(booking.start_time);
@@ -7827,7 +7983,7 @@ async function createBookingRecord(input, { paymentLink = null, triggerWebhook =
   }
 
   const profileLookup = await pool.query(
-    `SELECT crm_webhook_url, business_name, maps_api_key, fleet, payment_provider, peak_windows
+    `SELECT crm_webhook_url, business_name, maps_api_key, fleet, payment_provider, peak_windows, open_time, close_time
      FROM profiles
      WHERE location_id = $1`,
     [location_id]
@@ -7842,7 +7998,11 @@ async function createBookingRecord(input, { paymentLink = null, triggerWebhook =
            calendar_id,
            name AS vehicle_type,
            NULL AS vehicle_category,
-           outbound_buffer_min
+           outbound_buffer_min,
+           NULL AS min_notice_min,
+           NULL AS instant_booking_enabled,
+           NULL AS instant_booking_start_time,
+           NULL AS instant_booking_end_time
          FROM fleet_slots
        WHERE vehicle_slot_id = $1 AND location_id = $2
        LIMIT 1`,
@@ -7851,6 +8011,7 @@ async function createBookingRecord(input, { paymentLink = null, triggerWebhook =
     fleetVehicle = fleetLookup.rows[0] || null;
   }
 
+  await ensureFleetSettingsBookingPolicyColumns();
   if (!fleetVehicle && await tableExists("fleet_settings")) {
     const fleetSettingsLookup = await pool.query(
         `SELECT
@@ -7859,7 +8020,11 @@ async function createBookingRecord(input, { paymentLink = null, triggerWebhook =
            base_rate,
            per_mile_rate,
            NULL AS vehicle_category,
-           outbound_buffer_min
+           outbound_buffer_min,
+           min_notice_min,
+           instant_booking_enabled,
+           instant_booking_start_time,
+           instant_booking_end_time
         FROM fleet_settings
        WHERE vehicle_slot_id = $1 AND location_id = $2
        LIMIT 1`,
@@ -7878,6 +8043,18 @@ async function createBookingRecord(input, { paymentLink = null, triggerWebhook =
     fleetVehicle = profileFleet.find(
       (vehicle) => String(vehicle.vehicle_slot_id || "") === String(vehicle_slot_id)
     ) || null;
+  }
+
+  const bookingTimingValidation = validateBookingTimingRules({
+    slot: fleetVehicle || {},
+    startTime: start_time,
+    profileDefaults: {
+      open_time: profile.open_time,
+      close_time: profile.close_time,
+    },
+  });
+  if (!bookingTimingValidation.ok) {
+    throw new Error(bookingTimingValidation.error);
   }
 
   const webhookUrl = profile.crm_webhook_url || null;
@@ -8183,7 +8360,7 @@ app.post("/api/create-checkout-session", async (req, res) => {
     }
 
     const profileLookup = await pool.query(
-      `SELECT maps_api_key, fleet, peak_windows
+      `SELECT maps_api_key, fleet, peak_windows, open_time, close_time
        FROM profiles
        WHERE location_id = $1
        LIMIT 1`,
@@ -8194,7 +8371,8 @@ app.post("/api/create-checkout-session", async (req, res) => {
     let fleetVehicle = null;
     if (await tableExists("fleet_slots")) {
       const fleetLookup = await pool.query(
-        `SELECT calendar_id, name AS vehicle_type, NULL AS vehicle_category, outbound_buffer_min
+        `SELECT calendar_id, name AS vehicle_type, NULL AS vehicle_category, outbound_buffer_min,
+                NULL AS min_notice_min, NULL AS instant_booking_enabled, NULL AS instant_booking_start_time, NULL AS instant_booking_end_time
          FROM fleet_slots
          WHERE vehicle_slot_id = $1 AND location_id = $2
          LIMIT 1`,
@@ -8203,9 +8381,11 @@ app.post("/api/create-checkout-session", async (req, res) => {
       fleetVehicle = fleetLookup.rows[0] || null;
     }
 
+    await ensureFleetSettingsBookingPolicyColumns();
     if (!fleetVehicle && await tableExists("fleet_settings")) {
       const fleetSettingsLookup = await pool.query(
-        `SELECT calendar_id, vehicle_slot_id, base_rate, per_mile_rate, NULL AS vehicle_category, outbound_buffer_min
+        `SELECT calendar_id, vehicle_slot_id, base_rate, per_mile_rate, NULL AS vehicle_category, outbound_buffer_min,
+                min_notice_min, instant_booking_enabled, instant_booking_start_time, instant_booking_end_time
          FROM fleet_settings
          WHERE vehicle_slot_id = $1 AND location_id = $2
          LIMIT 1`,
@@ -8224,6 +8404,21 @@ app.post("/api/create-checkout-session", async (req, res) => {
       fleetVehicle = profileFleet.find(
         (vehicle) => String(vehicle.vehicle_slot_id || "") === String(vehicleSlotId)
       ) || null;
+    }
+
+    const bookingTimingValidation = validateBookingTimingRules({
+      slot: fleetVehicle || {},
+      startTime: req.body.start_time,
+      profileDefaults: {
+        open_time: profile.open_time,
+        close_time: profile.close_time,
+      },
+    });
+    if (!bookingTimingValidation.ok) {
+      return res.status(409).json({
+        error: bookingTimingValidation.error,
+        instant_booking_policy: bookingTimingValidation.policy,
+      });
     }
 
     const routeMetrics = await getRouteMetrics({
@@ -9199,6 +9394,8 @@ res.json({
   tax_rate: profile.tax_rate != null ? parseFloat(profile.tax_rate) : null,
   service_fee_type: normalizeServiceFeeType(profile.service_fee_type),
   service_fee_value: profile.service_fee_value != null ? parseFloat(profile.service_fee_value) : null,
+  open_time: profile.open_time || null,
+  close_time: profile.close_time || null,
 
   financials: {
     tax_rate: profile.tax_rate != null ? parseFloat(profile.tax_rate) : null,
@@ -9239,6 +9436,12 @@ res.json({
     deposit_flat_cents: parseInt(v.deposit_flat_cents) || 0,
     calendar_id: v.calendar_id || null,
     outbound_buffer_min: parseInt(v.outbound_buffer_min, 10) || BOOKING_BUFFER_MINUTES,
+    instant_booking_enabled: normalizeBooleanish(v.instant_booking_enabled, true),
+    instant_booking_start_time: normalizeTimeOfDay(v.instant_booking_start_time, DEFAULT_INSTANT_BOOKING_START_TIME),
+    instant_booking_end_time: normalizeTimeOfDay(v.instant_booking_end_time, DEFAULT_INSTANT_BOOKING_END_TIME),
+    min_notice_min: Number.isFinite(parseInt(v.min_notice_min, 10))
+      ? parseInt(v.min_notice_min, 10)
+      : (DEFAULT_NON_INSTANT_NOTICE_HOURS * 60),
     vehicle_image: v.vehicle_image || "",
     vehicle_license_plate: v.vehicle_license_plate || ""
   })),

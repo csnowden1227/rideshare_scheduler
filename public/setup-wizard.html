@@ -42,7 +42,7 @@
             overflow-wrap: anywhere;
             word-break: break-word;
         }
-        .fleet-rows-scroll table { min-width: 1120px; }
+        .fleet-rows-scroll table { min-width: 1520px; }
         .fleet-config-table { table-layout: fixed; }
         .fleet-config-table th { vertical-align: bottom; }
         .fleet-slot-cell {
@@ -74,6 +74,9 @@
         .fleet-driver-name-cell { width: 11%; min-width: 140px; }
         .fleet-driver-phone-cell { width: 11%; min-width: 140px; }
         .fleet-driver-email-cell { width: 13%; min-width: 170px; }
+        .fleet-instant-toggle-cell { width: 8%; min-width: 92px; }
+        .fleet-instant-time-cell { width: 10%; min-width: 120px; }
+        .fleet-notice-cell { width: 8%; min-width: 92px; }
         .fleet-plate-cell { width: 10%; min-width: 120px; }
         .fleet-base-cell,
         .fleet-mile-cell { width: 7%; min-width: 72px; }
@@ -141,7 +144,7 @@
             #logo-upload-wrap { flex-direction: column; align-items: flex-start; }
             .sticky { position: static !important; top: auto !important; }
             .wizard-table-scroll table { min-width: 680px; }
-            .fleet-rows-scroll table { min-width: 1040px; }
+            .fleet-rows-scroll table { min-width: 1440px; }
             .fleet-slot-pill { font-size: 0.65rem; }
         }
     </style>
@@ -391,6 +394,10 @@
                             <th>Driver Name</th>
                             <th>Driver Phone</th>
                             <th>Driver Email</th>
+                            <th>Instant On</th>
+                            <th>Instant Start</th>
+                            <th>Instant End</th>
+                            <th>Notice (hrs)</th>
                             <th>License Plate</th>
                             <th>Base ($)</th>
                             <th>Mile ($)</th>
@@ -1592,6 +1599,18 @@ function formatPhoneForUi(value) {
     return digits;
 }
 
+function normalizeWizardTime(value, fallback = '06:00') {
+    const raw = String(value || '').trim();
+    const match = raw.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+    if (!match) return fallback;
+    const hours = Number(match[1]);
+    const minutes = Number(match[2]);
+    if (!Number.isInteger(hours) || !Number.isInteger(minutes) || hours < 0 || hours > 23 || minutes < 0 || minutes > 59) {
+        return fallback;
+    }
+    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+}
+
 function renderFleet(count, savedFleet = []) {
     const tbody = document.getElementById('fleet-body');
     tbody.innerHTML = "";
@@ -1632,6 +1651,10 @@ function addFleetRow(data = {}, shouldRenumber = true) {
         <td class="py-2 px-1 fleet-driver-name-cell"><input type="text" class="v-driver-name input-mini fleet-input-compact" placeholder="Driver Name" value="${data.driver_name || ''}"></td>
         <td class="py-2 px-1 fleet-driver-phone-cell"><input type="text" class="v-driver-phone input-mini fleet-input-compact" placeholder="Driver Phone" value="${data.driver_phone || ''}"></td>
         <td class="py-2 px-1 fleet-driver-email-cell"><input type="email" class="v-driver-email input-mini fleet-input-compact" placeholder="Driver Email" value="${data.driver_email || ''}"></td>
+        <td class="py-2 px-1 fleet-instant-toggle-cell"><label class="flex items-center justify-center gap-2 text-xs font-semibold text-slate-600"><input type="checkbox" class="v-instant-enabled" ${String(data.instant_booking_enabled ?? 'true').toLowerCase() === 'false' ? '' : 'checked'}> On</label></td>
+        <td class="py-2 px-1 fleet-instant-time-cell"><input type="time" class="v-instant-start input-mini fleet-input-compact" value="${normalizeWizardTime(data.instant_booking_start_time, '06:00')}"></td>
+        <td class="py-2 px-1 fleet-instant-time-cell"><input type="time" class="v-instant-end input-mini fleet-input-compact" value="${normalizeWizardTime(data.instant_booking_end_time, '22:00')}"></td>
+        <td class="py-2 px-1 fleet-notice-cell"><input type="number" min="0" step="0.5" class="v-notice input-mini fleet-input-compact" value="${Number.isFinite(Number(data.min_notice_min)) ? (Number(data.min_notice_min) / 60) : 4}"></td>
         <td class="py-2 px-1 fleet-plate-cell"><input type="text" class="v-plate input-mini fleet-input-compact" placeholder="License Plate" value="${data.vehicle_license_plate || ''}"></td>
         <td class="py-2 px-1 fleet-base-cell"><input type="number" class="v-base input-mini fleet-input-compact" value="${data.base_rate || 50}"></td>
         <td class="py-2 px-1 fleet-mile-cell"><input type="number" step="0.1" class="v-mile input-mini fleet-input-compact" value="${data.mile_rate || 3.5}"></td>
@@ -2053,6 +2076,10 @@ async function saveToBackend() {
             driver_name: tr.querySelector('.v-driver-name')?.value.trim() || '',
             driver_phone: formatPhoneForUi(tr.querySelector('.v-driver-phone')?.value.trim() || ''),
             driver_email: tr.querySelector('.v-driver-email')?.value.trim() || '',
+            instant_booking_enabled: !!tr.querySelector('.v-instant-enabled')?.checked,
+            instant_booking_start_time: normalizeWizardTime(tr.querySelector('.v-instant-start')?.value || '06:00', '06:00'),
+            instant_booking_end_time: normalizeWizardTime(tr.querySelector('.v-instant-end')?.value || '22:00', '22:00'),
+            min_notice_min: Math.max(0, Math.round((parseFloat(tr.querySelector('.v-notice')?.value) || 4) * 60)),
             vehicle_license_plate: tr.querySelector('.v-plate')?.value.trim() || '',
             base_rate: parseFloat(tr.querySelector('.v-base').value) || 0,
             mile_rate: parseFloat(tr.querySelector('.v-mile').value) || 0,
@@ -2232,6 +2259,10 @@ function collectWizardPayload() {
             driver_name: tr.querySelector('.v-driver-name')?.value.trim() || '',
             driver_phone: formatPhoneForUi(tr.querySelector('.v-driver-phone')?.value.trim() || ''),
             driver_email: tr.querySelector('.v-driver-email')?.value.trim() || '',
+            instant_booking_enabled: !!tr.querySelector('.v-instant-enabled')?.checked,
+            instant_booking_start_time: normalizeWizardTime(tr.querySelector('.v-instant-start')?.value || '06:00', '06:00'),
+            instant_booking_end_time: normalizeWizardTime(tr.querySelector('.v-instant-end')?.value || '22:00', '22:00'),
+            min_notice_min: Math.max(0, Math.round((parseFloat(tr.querySelector('.v-notice')?.value) || 4) * 60)),
             vehicle_license_plate: tr.querySelector('.v-plate')?.value.trim() || '',
             base_rate: parseFloat(tr.querySelector('.v-base').value) || 0,
             mile_rate: parseFloat(tr.querySelector('.v-mile').value) || 0,

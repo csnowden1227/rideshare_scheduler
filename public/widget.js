@@ -198,6 +198,96 @@
     return (state.config?.fleet || []).find((vehicle) => vehicle.vehicle_slot_id === slotId) || null;
   }
 
+  function normalizeBooleanish(value, fallback = false) {
+    if (typeof value === "boolean") return value;
+    if (value === null || value === undefined || value === "") return fallback;
+    const normalized = String(value).trim().toLowerCase();
+    if (["true", "1", "yes", "on"].includes(normalized)) return true;
+    if (["false", "0", "no", "off"].includes(normalized)) return false;
+    return fallback;
+  }
+
+  function normalizeTimeOfDay(value, fallback) {
+    const raw = String(value || "").trim();
+    const match = raw.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+    if (!match) return fallback;
+    const hours = Number(match[1]);
+    const minutes = Number(match[2]);
+    if (!Number.isInteger(hours) || !Number.isInteger(minutes) || hours < 0 || hours > 23 || minutes < 0 || minutes > 59) {
+      return fallback;
+    }
+    return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+  }
+
+  function parseTimeOfDayToMinutes(value) {
+    const normalized = normalizeTimeOfDay(value, "");
+    if (!normalized) return null;
+    const [hours, minutes] = normalized.split(":").map((part) => Number(part));
+    return (hours * 60) + minutes;
+  }
+
+  function isMinutesWithinWindow(minutes, startMinutes, endMinutes) {
+    if (![minutes, startMinutes, endMinutes].every(Number.isFinite)) return true;
+    if (startMinutes === endMinutes) return true;
+    if (startMinutes < endMinutes) {
+      return minutes >= startMinutes && minutes <= endMinutes;
+    }
+    return minutes >= startMinutes || minutes <= endMinutes;
+  }
+
+  function formatTimeLabel(value) {
+    const normalized = normalizeTimeOfDay(value, "");
+    if (!normalized) return "";
+    const [hoursText, minutesText] = normalized.split(":");
+    const hours = Number(hoursText);
+    const minutes = Number(minutesText);
+    const meridiem = hours >= 12 ? "PM" : "AM";
+    const displayHour = hours % 12 || 12;
+    return `${displayHour}:${String(minutes).padStart(2, "0")} ${meridiem}`;
+  }
+
+  function getVehicleBookingPolicy(vehicle = {}) {
+    const profileOpen = state.config?.open_time || "06:00";
+    const profileClose = state.config?.close_time || "22:00";
+    const configuredNoticeMin = parseInt(vehicle?.min_notice_min, 10);
+    return {
+      instant_booking_enabled: normalizeBooleanish(vehicle?.instant_booking_enabled, true),
+      instant_booking_start_time: normalizeTimeOfDay(vehicle?.instant_booking_start_time, normalizeTimeOfDay(profileOpen, "06:00")),
+      instant_booking_end_time: normalizeTimeOfDay(vehicle?.instant_booking_end_time, normalizeTimeOfDay(profileClose, "22:00")),
+      min_notice_min: Number.isFinite(configuredNoticeMin) ? Math.max(0, configuredNoticeMin) : 240,
+    };
+  }
+
+  function validateVehicleBookingPolicy(vehicle, startDate, rawStartTime) {
+    const policy = getVehicleBookingPolicy(vehicle);
+    const hoursUntilRide = (startDate.getTime() - Date.now()) / (1000 * 60 * 60);
+    const configuredNoticeHours = Math.max(0, Number(policy.min_notice_min || 0) / 60);
+    const minimumNoticeHours = policy.instant_booking_enabled
+      ? configuredNoticeHours
+      : Math.max(4, configuredNoticeHours || 0);
+
+    if (hoursUntilRide < minimumNoticeHours) {
+      const noticeText = Number.isInteger(minimumNoticeHours)
+        ? `${minimumNoticeHours}`
+        : minimumNoticeHours.toFixed(1);
+      throw new Error(`This vehicle requires at least ${noticeText} hours notice before pickup.`);
+    }
+
+    if (policy.instant_booking_enabled) {
+      const localMatch = String(rawStartTime || "").match(/T(\d{2}):(\d{2})/);
+      const pickupMinutes = localMatch
+        ? (Number(localMatch[1]) * 60) + Number(localMatch[2])
+        : ((startDate.getHours() * 60) + startDate.getMinutes());
+      const startMinutes = parseTimeOfDayToMinutes(policy.instant_booking_start_time);
+      const endMinutes = parseTimeOfDayToMinutes(policy.instant_booking_end_time);
+      if (!isMinutesWithinWindow(pickupMinutes, startMinutes, endMinutes)) {
+        throw new Error(`Instant booking for this vehicle is available only for pickups between ${formatTimeLabel(policy.instant_booking_start_time)} and ${formatTimeLabel(policy.instant_booking_end_time)}.`);
+      }
+    }
+
+    return policy;
+  }
+
   function selectedAddonDetails() {
     const selectedIds = Array.from(document.querySelectorAll('input[name="cd_addons"]:checked'))
       .map((input) => input.value);
@@ -865,6 +955,7 @@
 
     const startDate = new Date(payload.start_time);
     if (Number.isNaN(startDate.getTime())) throw new Error("Choose a valid pickup date and time.");
+    const bookingPolicy = validateVehicleBookingPolicy(vehicle, startDate, payload.start_time);
 
     const eventConfig = payload.booking_mode === "event" ? eventByName(payload.selected_event_name) : null;
     const selectedFixedName = payload.booking_mode === "fixed" ? String(payload.selected_fixed_destination || "").trim() : "";
@@ -939,6 +1030,7 @@
       balance_due: balanceDue,
       balance_due_deadline: paymentPolicy.balanceDueDeadline,
       hours_until_ride: paymentPolicy.hoursUntilRide,
+      booking_policy: bookingPolicy,
       miles: route.miles,
       pricing_label: pricingLabel,
       fixed_rate_name: fixedRate?.location_name || null,
@@ -964,6 +1056,15 @@
     const bookWrap = document.getElementById("cd_book_wrap");
     if (bookWrap) bookWrap.style.display = "grid";
     const metaParts = [`${state.quote.miles.toFixed(2)} miles estimated.`, `${state.quote.pricing_label}.`];
+    const bookingPolicy = state.quote.booking_policy || null;
+    if (bookingPolicy?.instant_booking_enabled) {
+      metaParts.push(`Instant booking window: ${formatTimeLabel(bookingPolicy.instant_booking_start_time)} to ${formatTimeLabel(bookingPolicy.instant_booking_end_time)}.`);
+    } else {
+      metaParts.push("Instant booking is off for this vehicle.");
+    }
+    if (bookingPolicy) {
+      metaParts.push(`Minimum notice: ${(Number(bookingPolicy.min_notice_min || 0) / 60).toFixed(1).replace(/\.0$/, "")} hours.`);
+    }
     if (state.quote.balance_due > 0 && state.quote.balance_due_deadline) {
       metaParts.push(`Balance invoice due by ${new Date(state.quote.balance_due_deadline).toLocaleString()}.`);
     } else {
