@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Chauffeur Deluxe Ride Follow-Up</title>
+  <style>
+    :root {
+      --brand-primary: #0A0A0A;
+      --brand-secondary: #41424C;
+      --brand-accent: #DAA520;
+      --brand-line: rgba(218, 165, 32, 0.24);
+      --brand-muted: #5f6470;
+      --brand-card-shadow: rgba(10, 10, 10, 0.18);
+    }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+      background:
+        radial-gradient(circle at top left, rgba(212, 175, 55, 0.12), transparent 24%),
+        radial-gradient(circle at top right, rgba(65, 66, 76, 0.16), transparent 28%),
+        linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
+      color: #0f172a;
+      -webkit-text-size-adjust: 100%;
+    }
+    .wrap {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 24px 16px 40px;
+    }
+    .hero {
+      background: linear-gradient(135deg, var(--brand-primary) 0%, var(--brand-secondary) 100%);
+      color: #fff;
+      border-radius: 24px;
+      padding: 28px 22px;
+      box-shadow: 0 18px 40px var(--brand-card-shadow);
+    }
+    .hero-top {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: flex-start;
+      flex-wrap: wrap;
+      margin-bottom: 14px;
+    }
+    .brand-lockup {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      min-width: 0;
+    }
+    .brand-logo {
+      width: 54px;
+      height: 54px;
+      border-radius: 18px;
+      object-fit: cover;
+      background: rgba(255,255,255,0.12);
+      border: 1px solid rgba(255,255,255,0.18);
+      padding: 6px;
+    }
+    .brand-logo.hidden {
+      display: none;
+    }
+    .brand-name {
+      margin: 0 0 6px;
+      font-size: 20px;
+      font-weight: 900;
+      letter-spacing: -0.03em;
+      color: #fff;
+    }
+    .eyebrow {
+      margin: 0;
+      font-size: 12px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+      color: rgba(255,255,255,0.82);
+    }
+    .hero-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .hero-button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 42px;
+      padding: 10px 14px;
+      border-radius: 14px;
+      text-decoration: none;
+      font-size: 13px;
+      font-weight: 800;
+      background: rgba(255,255,255,0.12);
+      color: #fff;
+      border: 1px solid rgba(255,255,255,0.18);
+    }
+    .hero h1 {
+      margin: 0 0 10px;
+      font-size: 34px;
+      line-height: 1.08;
+    }
+    .hero p {
+      margin: 0;
+      line-height: 1.8;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 18px;
+      margin-top: 20px;
+    }
+    .card {
+      background: #fff;
+      border: 1px solid var(--brand-line);
+      border-radius: 22px;
+      padding: 22px;
+      box-shadow: 0 10px 26px rgba(15, 23, 42, 0.05);
+    }
+    .label {
+      display: block;
+      font-size: 12px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--brand-muted);
+      margin-bottom: 6px;
+    }
+    .value {
+      font-size: 15px;
+      line-height: 1.7;
+      color: #111827;
+      overflow-wrap: anywhere;
+    }
+    .media {
+      display: grid;
+      grid-template-columns: 96px 1fr;
+      gap: 14px;
+      align-items: start;
+    }
+    .avatar, .vehicle-photo {
+      width: 96px;
+      height: 96px;
+      object-fit: cover;
+      border-radius: 18px;
+      background: #e2e8f0;
+      border: 1px solid #cbd5e1;
+    }
+    .vehicle-photo {
+      width: 100%;
+      max-width: 280px;
+      height: 170px;
+      margin-top: 14px;
+    }
+    .hidden { display: none; }
+    .stars {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 12px;
+    }
+    .star-btn, .tip-btn, .btn {
+      border: 1px solid var(--brand-line);
+      background: #fff;
+      color: #1f2937;
+      border-radius: 14px;
+      cursor: pointer;
+      font-weight: 700;
+      min-height: 52px;
+      padding: 12px 16px;
+      transition: transform 0.18s ease, filter 0.18s ease, background 0.18s ease;
+    }
+    .star-btn:hover, .tip-btn:hover, .btn:hover {
+      transform: translateY(-1px);
+      filter: brightness(0.99);
+    }
+    .star-btn.active, .tip-btn.active {
+      background: linear-gradient(135deg, var(--brand-primary) 0%, var(--brand-secondary) 100%);
+      color: #fff;
+      border-color: transparent;
+    }
+    textarea, input[type="number"] {
+      width: 100%;
+      box-sizing: border-box;
+      border: 1px solid #cbd5e1;
+      border-radius: 16px;
+      padding: 14px;
+      font-size: 16px;
+      color: #0f172a;
+      background: #fff;
+    }
+    textarea {
+      min-height: 140px;
+      resize: vertical;
+      line-height: 1.7;
+    }
+    .tip-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 12px;
+    }
+    .tip-custom { margin-top: 12px; }
+    .btn-primary {
+      background: linear-gradient(135deg, var(--brand-primary) 0%, var(--brand-secondary) 100%);
+      color: #fff;
+      border: 0;
+    }
+    .btn-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 16px;
+    }
+    .status {
+      margin-top: 14px;
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--brand-secondary);
+    }
+    .status.error { color: #dc2626; }
+    .muted {
+      color: var(--brand-muted);
+      font-size: 14px;
+      line-height: 1.7;
+    }
+    @media (max-width: 900px) {
+      .grid { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 640px) {
+      .wrap { padding: 16px 12px 32px; }
+      .hero, .card { border-radius: 20px; }
+      .hero { padding: 22px 18px; }
+      .card { padding: 18px; }
+      .hero h1 { font-size: 28px; }
+      .media { grid-template-columns: 1fr; }
+      .vehicle-photo { max-width: 100%; }
+      .tip-grid { grid-template-columns: 1fr; }
+      .hero-button { width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="hero">
+      <div class="hero-top">
+        <div class="brand-lockup">
+          <img id="followup-brand-logo" class="brand-logo hidden" alt="Business logo" />
+          <div>
+            <p class="brand-name" id="followup-brand-name">Chauffeur Deluxe</p>
+          <p class="eyebrow" id="followup-eyebrow">Chauffeur Deluxe Client Portal</p>
+          </div>
+        </div>
+        <div class="hero-actions">
+          <a id="followup-home-link" class="hero-button" href="customer-portal-app-home.html">Ride Hub</a>
+          <a id="followup-inbox-link" class="hero-button" href="customer-portal-app-notifications.html">Ride Inbox</a>
+        </div>
+      </div>
+      <h1>How Was Your Ride?</h1>
+      <p>Thank you for riding with us. You can rate your experience, leave a quick note for the team, and leave a tip for your chauffeur if you would like.</p>
+    </section>
+
+    <div class="grid">
+      <section class="card">
+        <span class="label">Completed Reservation</span>
+        <div class="value" id="trip-summary">Loading your ride details...</div>
+
+        <div class="media" style="margin-top:18px;">
+          <img id="driver-photo" class="avatar hidden" alt="Driver photo" />
+          <div>
+            <span class="label">Your Driver</span>
+            <div class="value" id="driver-name">We are loading your driver details.</div>
+            <div class="value" id="vehicle-name" style="margin-top:8px;">Vehicle details are loading.</div>
+            <div class="value" id="vehicle-plate" style="margin-top:8px;">License plate details are loading.</div>
+          </div>
+        </div>
+        <img id="vehicle-photo" class="vehicle-photo hidden" alt="Vehicle photo" />
+
+        <div class="status" id="tip-status"></div>
+      </section>
+
+      <section class="card">
+        <span class="label">Rate Your Experience</span>
+        <div class="muted">Choose a star rating, then leave any note you want the team to see.</div>
+
+        <div class="stars" id="stars"></div>
+
+        <div style="margin-top:16px;">
+          <textarea id="feedback-text" placeholder="Tell us how the ride went, what stood out, or anything we should improve."></textarea>
+        </div>
+
+        <div class="btn-row">
+          <button id="save-feedback-btn" class="btn btn-primary" type="button">Save Rating</button>
+        </div>
+        <div class="status" id="feedback-status"></div>
+      </section>
+    </div>
+
+    <section class="card" style="margin-top:20px;">
+      <span class="label">Leave a Tip</span>
+      <div class="muted" id="tip-help">If tipping is enabled for this account, choose a quick amount or enter your own.</div>
+
+      <div class="tip-grid" id="tip-buttons"></div>
+
+      <div class="tip-custom">
+        <label class="label" for="custom-tip">Custom Tip Amount (USD)</label>
+        <input id="custom-tip" type="number" min="1" step="0.01" placeholder="25.00" />
+      </div>
+
+      <div class="btn-row">
+        <button id="custom-tip-btn" class="btn btn-primary" type="button">Leave Custom Tip</button>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const query = new URLSearchParams(window.location.search);
+    const token = (query.get("token") || "").trim();
+    const locationId = (query.get("location_id") || "").trim();
+    const portalUrl = (query.get("portal_url") || query.get("client_portal_url") || "").trim();
+    const tipResult = (query.get("tip") || "").trim();
+    const tipSessionId = (query.get("session_id") || "").trim();
+    const DEFAULT_BRAND = {
+      name: "Chauffeur Deluxe",
+      primary: "#0A0A0A",
+      secondary: "#41424C",
+      accent: "#DAA520"
+    };
+    const state = {
+      rating: 0,
+      suggestedTips: [5, 10, 20],
+      tipEnabled: false
+    };
+
+    function setText(id, value) {
+      const el = document.getElementById(id);
+      if (el) el.textContent = value || "";
+    }
+
+    function setStatus(id, message, isError = false) {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.textContent = message || "";
+      el.classList.toggle("error", Boolean(isError));
+    }
+
+    function setImage(id, value, altText) {
+      const el = document.getElementById(id);
+      if (!el) return;
+      if (value) {
+        el.src = value;
+        el.alt = altText || "Image";
+        el.classList.remove("hidden");
+      } else {
+        el.removeAttribute("src");
+        el.classList.add("hidden");
+      }
+    }
+
+    function applyBranding(branding = {}, businessName = "") {
+      const root = document.documentElement;
+      root.style.setProperty("--brand-primary", branding.brand_color_primary || DEFAULT_BRAND.primary);
+      root.style.setProperty("--brand-secondary", branding.brand_color_secondary || DEFAULT_BRAND.secondary);
+      root.style.setProperty("--brand-accent", branding.brand_color_accent || DEFAULT_BRAND.accent);
+      document.title = `Rate ${businessName || DEFAULT_BRAND.name}`;
+      setText("followup-brand-name", businessName || DEFAULT_BRAND.name);
+      if (branding.business_logo) {
+        const logo = document.getElementById("followup-brand-logo");
+        if (logo) {
+          logo.src = branding.business_logo;
+          logo.classList.remove("hidden");
+        }
+      }
+    }
+
+    function updateHubLinks() {
+      const params = new URLSearchParams();
+      if (locationId) params.set("location_id", locationId);
+      if (portalUrl) params.set("portal_url", portalUrl);
+      if (token) params.set("token", token);
+      const suffix = params.toString() ? `?${params.toString()}` : "";
+      const homeLink = document.getElementById("followup-home-link");
+      const inboxLink = document.getElementById("followup-inbox-link");
+      if (homeLink) {
+        homeLink.href = `customer-portal-app-home.html${suffix}`;
+      }
+      if (inboxLink) {
+        inboxLink.href = `customer-portal-app-notifications.html${suffix}`;
+      }
+    }
+
+    async function requestJson(url, options = {}) {
+      const response = await fetch(url, options);
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.error || "Request failed.");
+      }
+      return data;
+    }
+
+    function renderStars() {
+      const wrap = document.getElementById("stars");
+      wrap.innerHTML = "";
+      [1, 2, 3, 4, 5].forEach((value) => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = `star-btn${state.rating === value ? " active" : ""}`;
+        btn.textContent = `${value} Star${value === 1 ? "" : "s"}`;
+        btn.addEventListener("click", () => {
+          state.rating = value;
+          renderStars();
+        });
+        wrap.appendChild(btn);
+      });
+    }
+
+    function renderTipButtons() {
+      const wrap = document.getElementById("tip-buttons");
+      wrap.innerHTML = "";
+      if (!state.tipEnabled) {
+        setText("tip-help", "Tipping is not enabled for this account yet, but your rating and feedback can still be submitted.");
+        return;
+      }
+      setText("tip-help", "Choose a quick amount or enter your own custom amount below.");
+      state.suggestedTips.forEach((amount) => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "tip-btn";
+        btn.textContent = `$${amount.toFixed(2)}`;
+        btn.addEventListener("click", () => startTipCheckout(amount));
+        wrap.appendChild(btn);
+      });
+    }
+
+    function fillTripSummary(session) {
+      const pieces = [
+        session?.start_time ? `Pickup time: ${new Date(session.start_time).toLocaleString()}` : "",
+        session?.pickup_address ? `Pickup: ${session.pickup_address}` : "",
+        session?.dropoff_address ? `Dropoff: ${session.dropoff_address}` : ""
+      ].filter(Boolean);
+      setText("trip-summary", pieces.join(" | ") || "Completed ride details are loading.");
+      setText("driver-name", session?.driver_name || "Driver details will appear after the ride is started.");
+      setText("vehicle-name", session?.vehicle_display_name || session?.vehicle_type || "Vehicle details unavailable.");
+      setText("vehicle-plate", session?.vehicle_license_plate ? `Plate: ${session.vehicle_license_plate}` : "License plate not available.");
+      setImage("driver-photo", session?.driver_photo_data || "", "Driver photo");
+      setImage("vehicle-photo", session?.vehicle_image || "", "Vehicle photo");
+    }
+
+    async function loadPage() {
+      if (!token) {
+        setStatus("feedback-status", "Missing follow-up token.", true);
+        return;
+      }
+
+      updateHubLinks();
+      const data = await requestJson(`/api/tracking/follow-up?token=${encodeURIComponent(token)}`);
+      const planName = data?.session?.branding?.plan_name || "starter";
+      if (!(planName === "premium" || planName === "pro")) {
+        setStatus("feedback-status", "Premium or Pro upgrade required for the customer client portal follow-up experience.", true);
+        return;
+      }
+      fillTripSummary(data.session || {});
+      applyBranding(data.session?.branding || {}, data.session?.business_name || "");
+      state.tipEnabled = Boolean(data.tip_enabled);
+      state.suggestedTips = Array.isArray(data.suggested_tip_amounts) && data.suggested_tip_amounts.length
+        ? data.suggested_tip_amounts
+        : state.suggestedTips;
+      renderTipButtons();
+
+      if (data.feedback) {
+        state.rating = Number(data.feedback.rating || 0);
+        document.getElementById("feedback-text").value = data.feedback.feedback_text || "";
+        renderStars();
+        if (data.feedback.tipped_at) {
+          setStatus("tip-status", `Thank you. Your tip of $${Number(data.feedback.tip_amount || 0).toFixed(2)} has been received.`);
+        }
+      } else {
+        renderStars();
+      }
+
+      if (tipResult === "success" && tipSessionId) {
+        const tipStatus = await requestJson(`/api/tracking/tip-checkout-status?token=${encodeURIComponent(token)}&session_id=${encodeURIComponent(tipSessionId)}`);
+        if (tipStatus.paid) {
+          setStatus("tip-status", `Thank you. Your tip of $${Number(tipStatus.tip_amount || 0).toFixed(2)} has been received.`);
+        } else {
+          setStatus("tip-status", "Your tip checkout has not been marked paid yet.", true);
+        }
+      } else if (tipResult === "cancelled") {
+        setStatus("tip-status", "Tip checkout was cancelled. You can try again any time.", true);
+      }
+    }
+
+    async function saveFeedback() {
+      try {
+        if (!state.rating) {
+          throw new Error("Please choose a star rating first.");
+        }
+        const feedbackText = document.getElementById("feedback-text").value.trim();
+        const result = await requestJson("/api/tracking/feedback", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            token,
+            rating: state.rating,
+            feedback_text: feedbackText
+          })
+        });
+        setStatus("feedback-status", `Thanks. Your ${result.rating}-star rating has been saved.`);
+      } catch (err) {
+        setStatus("feedback-status", err.message || "Unable to save your rating right now.", true);
+      }
+    }
+
+    async function startTipCheckout(amount) {
+      try {
+        const numericAmount = Number(amount || 0);
+        if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
+          throw new Error("Please choose a valid tip amount.");
+        }
+        const result = await requestJson("/api/tracking/tip-checkout", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            token,
+            tip_amount: numericAmount
+          })
+        });
+        if (!result.checkout_url) {
+          throw new Error("Tip checkout URL was not returned.");
+        }
+        window.location.href = result.checkout_url;
+      } catch (err) {
+        setStatus("tip-status", err.message || "Unable to start tip checkout right now.", true);
+      }
+    }
+
+    document.getElementById("save-feedback-btn").addEventListener("click", saveFeedback);
+    document.getElementById("custom-tip-btn").addEventListener("click", () => {
+      const customValue = Number(document.getElementById("custom-tip").value);
+      startTipCheckout(customValue);
+    });
+
+    window.addEventListener("load", loadPage);
+  </script>
+</body>
+</html>

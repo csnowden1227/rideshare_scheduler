@@ -1,0 +1,784 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Customer Ride Hub</title>
+  <style>
+    :root {
+      --ink: #0f172a;
+      --muted: #526277;
+      --line: rgba(148, 163, 184, 0.24);
+      --violet: #172554;
+      --teal: #334155;
+      --gold: #cbd5e1;
+      --panel: rgba(255, 255, 255, 0.94);
+      --shadow: 0 28px 68px rgba(15, 23, 42, 0.14);
+      --phone-shadow: 0 22px 50px rgba(30, 41, 59, 0.2);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top left, rgba(148, 163, 184, 0.18), transparent 24%),
+        radial-gradient(circle at top right, rgba(51, 65, 85, 0.14), transparent 28%),
+        linear-gradient(180deg, #f8fafc 0%, #ffffff 42%, #eef2f7 100%);
+      -webkit-text-size-adjust: 100%;
+    }
+
+    .page-shell {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 28px 18px 54px;
+    }
+
+    .hero {
+      position: relative;
+      overflow: hidden;
+      border-radius: 34px;
+      padding: 30px;
+      background:
+        radial-gradient(circle at top right, rgba(255, 255, 255, 0.2), transparent 30%),
+        linear-gradient(140deg, #172554 0%, #1e293b 42%, #334155 100%);
+      color: #fff;
+      box-shadow: var(--shadow);
+    }
+
+    .brand-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+    }
+
+    .brand-lockup {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      min-width: 0;
+    }
+
+    .brand-logo {
+      width: 56px;
+      height: 56px;
+      border-radius: 18px;
+      object-fit: cover;
+      background: rgba(255,255,255,0.12);
+      border: 1px solid rgba(255,255,255,0.16);
+      padding: 6px;
+    }
+
+    .brand-logo.hidden {
+      display: none;
+    }
+
+    .brand-copy {
+      min-width: 0;
+    }
+
+    .brand-name {
+      margin: 0;
+      font-size: 20px;
+      font-weight: 900;
+      letter-spacing: -0.03em;
+    }
+
+    .brand-tagline {
+      margin: 6px 0 0;
+      font-size: 13px;
+      color: rgba(255,255,255,0.78);
+      line-height: 1.6;
+    }
+
+    .hero-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.15fr) minmax(280px, 360px);
+      gap: 24px;
+      align-items: stretch;
+    }
+
+    .eyebrow {
+      margin: 0 0 10px;
+      font-size: 12px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.18em;
+      opacity: 0.82;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(36px, 5vw, 58px);
+      line-height: 0.98;
+      letter-spacing: -0.04em;
+    }
+
+    .hero-copy {
+      margin: 18px 0 0;
+      max-width: 620px;
+      font-size: 16px;
+      line-height: 1.85;
+      color: rgba(255, 255, 255, 0.88);
+    }
+
+    .hero-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 24px;
+    }
+
+    .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 52px;
+      padding: 14px 18px;
+      border-radius: 18px;
+      border: 1px solid transparent;
+      text-decoration: none;
+      font-size: 14px;
+      font-weight: 800;
+      letter-spacing: 0.02em;
+      transition: transform 0.18s ease, box-shadow 0.18s ease, filter 0.18s ease;
+      cursor: pointer;
+    }
+
+    .button:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 16px 28px rgba(15, 23, 42, 0.12);
+      filter: brightness(0.99);
+    }
+
+    .button-primary {
+      background: linear-gradient(135deg, #e2e8f0 0%, #cbd5e1 100%);
+      color: #1c1917;
+    }
+
+    .button-secondary {
+      background: rgba(255, 255, 255, 0.12);
+      border-color: rgba(255, 255, 255, 0.18);
+      color: #fff;
+    }
+
+    .button-dark {
+      background: #0f172a;
+      color: #fff;
+    }
+
+    .badge-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 22px;
+    }
+
+    .badge {
+      padding: 10px 14px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.12);
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      color: rgba(255, 255, 255, 0.9);
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .phone-stage {
+      display: grid;
+      place-items: center;
+    }
+
+    .phone-frame {
+      width: min(100%, 320px);
+      min-height: 620px;
+      border-radius: 34px;
+      padding: 14px;
+      background: linear-gradient(180deg, rgba(8, 15, 32, 0.95), rgba(15, 23, 42, 0.92));
+      box-shadow: var(--phone-shadow);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .phone-screen {
+      height: 100%;
+      border-radius: 24px;
+      padding: 18px;
+      background:
+        radial-gradient(circle at top right, rgba(51, 65, 85, 0.12), transparent 24%),
+        linear-gradient(180deg, #f8fafc 0%, #ffffff 46%, #eef2f7 100%);
+      color: var(--ink);
+    }
+
+    .phone-topline {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #6b7280;
+    }
+
+    .phone-hero {
+      margin-top: 18px;
+      padding: 18px;
+      border-radius: 24px;
+      background: linear-gradient(135deg, #172554 0%, #1e293b 62%, #334155 100%);
+      color: #fff;
+    }
+
+    .phone-hero h2 {
+      margin: 0;
+      font-size: 24px;
+      line-height: 1.06;
+      letter-spacing: -0.04em;
+    }
+
+    .phone-hero p {
+      margin: 10px 0 0;
+      font-size: 13px;
+      line-height: 1.65;
+      opacity: 0.9;
+    }
+
+    .phone-card {
+      margin-top: 14px;
+      padding: 16px;
+      border-radius: 20px;
+      background: rgba(255, 255, 255, 0.92);
+      border: 1px solid rgba(148, 163, 184, 0.18);
+      box-shadow: 0 14px 24px rgba(15, 23, 42, 0.06);
+    }
+
+    .phone-card h3 {
+      margin: 0 0 8px;
+      font-size: 15px;
+      color: #172554;
+    }
+
+    .mini-list {
+      display: grid;
+      gap: 10px;
+      margin-top: 10px;
+    }
+
+    .mini-item {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      font-size: 13px;
+      color: #334155;
+    }
+
+    .section-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+      gap: 20px;
+      margin-top: 22px;
+    }
+
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 28px;
+      padding: 24px;
+      box-shadow: 0 16px 36px rgba(15, 23, 42, 0.06);
+    }
+
+    .card h2 {
+      margin: 0;
+      font-size: 26px;
+      letter-spacing: -0.03em;
+      color: #172554;
+    }
+
+    .card p {
+      margin: 10px 0 0;
+      color: #475569;
+      line-height: 1.8;
+    }
+
+    .quick-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 18px;
+    }
+
+    .quick-card {
+      padding: 18px;
+      border-radius: 22px;
+      background: linear-gradient(180deg, rgba(255,255,255,0.98), rgba(248,250,252,0.98));
+      border: 1px solid rgba(148, 163, 184, 0.18);
+    }
+
+    .quick-card h3 {
+      margin: 0 0 6px;
+      font-size: 18px;
+      letter-spacing: -0.02em;
+      color: var(--ink);
+    }
+
+    .quick-card p {
+      margin: 0;
+      font-size: 14px;
+    }
+
+    .widget-card {
+      margin-top: 22px;
+      border-radius: 28px;
+      background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+      border: 1px solid var(--line);
+      padding: 22px;
+      box-shadow: 0 18px 40px rgba(15, 23, 42, 0.06);
+    }
+
+    .widget-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 18px;
+      align-items: flex-start;
+      margin-bottom: 18px;
+    }
+
+    .widget-head h2 {
+      margin: 0;
+      font-size: 30px;
+      letter-spacing: -0.04em;
+      color: #172554;
+    }
+
+    .widget-head p {
+      margin: 10px 0 0;
+      color: #526277;
+      line-height: 1.8;
+    }
+
+    .widget-meta {
+      display: inline-flex;
+      padding: 12px 14px;
+      border-radius: 18px;
+      background: #eef2ff;
+      color: #3730a3;
+      font-size: 13px;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    #chauffeur-booking-widget {
+      min-height: 540px;
+    }
+
+    @media (max-width: 960px) {
+      .hero-grid,
+      .section-grid {
+        grid-template-columns: 1fr;
+      }
+      .phone-stage {
+        order: -1;
+      }
+      .widget-head {
+        flex-direction: column;
+      }
+    }
+
+    @media (max-width: 640px) {
+      .page-shell {
+        padding: 14px 12px 36px;
+      }
+      .hero,
+      .card,
+      .widget-card {
+        border-radius: 24px;
+      }
+      .hero {
+        padding: 22px 18px;
+      }
+      .button {
+        width: 100%;
+      }
+      .hero-actions,
+      .badge-row,
+      .quick-grid {
+        display: grid;
+      }
+      .phone-frame {
+        width: 100%;
+        min-height: auto;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="page-shell">
+    <section class="hero">
+      <div class="hero-grid">
+        <div>
+          <div class="brand-bar">
+            <div class="brand-lockup">
+              <img id="brand-logo" class="brand-logo hidden" alt="Business logo" />
+              <div class="brand-copy">
+                <p class="brand-name" id="brand-name">Chauffeur Deluxe</p>
+                <p class="brand-tagline" id="brand-tagline">Private ride updates, booking, and tracking in one premium portal experience.</p>
+              </div>
+            </div>
+          </div>
+          <p class="eyebrow" id="eyebrow-text">Chauffeur Deluxe Client Portal</p>
+          <h1 id="hero-title">Everything about your ride in one place.</h1>
+          <p class="hero-copy" id="hero-copy">
+            This customer-facing portal hub lets riders book a new trip, check upcoming ride details, open the ride inbox, and jump into live driver tracking without leaving the branded experience.
+          </p>
+          <div class="hero-actions">
+            <a id="portal-link" class="button button-primary" href="#">Open Client Portal Login</a>
+            <a id="notification-link" class="button button-dark" href="customer-portal-app-notifications.html">Open Ride Inbox</a>
+            <a id="tracking-link" class="button button-secondary" href="customer-tracking.html">Track Current Ride</a>
+          </div>
+          <div class="badge-row">
+            <div class="badge">Booking + updates</div>
+            <div class="badge">Customer tracking handoff</div>
+            <div class="badge">Balance and follow-up ready</div>
+          </div>
+        </div>
+
+        <div class="phone-stage">
+          <div class="phone-frame">
+            <div class="phone-screen">
+              <div class="phone-topline">
+                <span id="phone-brand">Ride Hub</span>
+                <span>Customer View</span>
+              </div>
+              <div class="phone-hero">
+                <h2 id="phone-hero-title">Book, track, and follow up.</h2>
+                <p id="phone-hero-copy">The rider signs in once, then stays inside one mobile-style experience for the full trip lifecycle.</p>
+              </div>
+              <div class="phone-card">
+                <h3>Current ride</h3>
+                <div class="mini-list">
+                  <div class="mini-item"><span>Status</span><strong id="status-text">Ready for booking</strong></div>
+                  <div class="mini-item"><span>Notifications</span><strong>Ride inbox</strong></div>
+                  <div class="mini-item"><span>Tracking</span><strong>Open when driver is en route</strong></div>
+                </div>
+              </div>
+              <div class="phone-card">
+                <h3>Quick access</h3>
+                <div class="mini-list">
+                  <div class="mini-item"><span>New reservation</span><strong>Book a ride</strong></div>
+                  <div class="mini-item"><span>Balance due</span><strong>Payment link opens</strong></div>
+                  <div class="mini-item"><span>Trip complete</span><strong>Review and tip</strong></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section-grid">
+      <article class="card">
+        <h2>What the customer can do here</h2>
+        <p>This home page is the app-like front door for the rider after portal login. It keeps the important next steps obvious and easy to tap on a phone.</p>
+        <div class="quick-grid">
+          <div class="quick-card">
+            <h3>Book a ride</h3>
+            <p>Launch the embedded booking flow and reserve a new trip without leaving the hub.</p>
+          </div>
+          <div class="quick-card">
+            <h3>Open ride inbox</h3>
+            <p>See booking confirmation, balance reminders, en-route updates, and completed-trip follow-up.</p>
+          </div>
+          <div class="quick-card">
+            <h3>Track the chauffeur</h3>
+            <p>Open the secure customer tracking page when the driver is on the way.</p>
+          </div>
+          <div class="quick-card">
+            <h3>Handle follow-up</h3>
+            <p>Pay a remaining balance, leave a review, or tip the chauffeur from a single branded flow.</p>
+          </div>
+        </div>
+      </article>
+
+      <article class="card">
+        <h2>Suggested trip timeline</h2>
+        <p>The rider can move through this same hub before, during, and after the reservation.</p>
+        <div class="quick-grid">
+          <div class="quick-card">
+            <h3>1. Confirmed</h3>
+            <p>Booking details appear in the ride inbox with the right payment status.</p>
+          </div>
+          <div class="quick-card">
+            <h3>2. Balance due</h3>
+            <p>If the booking used a deposit, the payment reminder opens the balance link here.</p>
+          </div>
+          <div class="quick-card">
+            <h3>3. En route</h3>
+            <p>The customer tracking view becomes the live handoff when the chauffeur heads out.</p>
+          </div>
+          <div class="quick-card">
+            <h3>4. Completed</h3>
+            <p>Review, tip, and book again from the follow-up page once the trip is over.</p>
+          </div>
+        </div>
+      </article>
+    </section>
+
+    <section class="widget-card">
+      <div class="widget-head">
+        <div>
+          <h2>Book a Ride</h2>
+          <p id="widget-copy">This booking area is ready to live inside the customer-facing portal hub so the rider can quote and confirm a trip inside the same mobile-style experience.</p>
+        </div>
+        <div class="widget-meta" id="widget-mode-pill">Customer Portal Booking Flow</div>
+      </div>
+      <div id="chauffeur-booking-widget"></div>
+    </section>
+  </div>
+
+  <script>
+    (function () {
+      const query = new URLSearchParams(window.location.search);
+      const locationId = (query.get("location_id") || "").trim();
+      const token = (query.get("token") || "").trim();
+      const mode = String(query.get("mode") || "live").toLowerCase() === "practice" ? "practice" : "live";
+      const backendUrl = window.location.origin;
+      const DEFAULT_BRAND = {
+        name: "Chauffeur Deluxe",
+        tagline: "Private ride updates, booking, and tracking in one customer portal experience.",
+        primary: "#172554",
+        secondary: "#334155",
+        accent: "#cbd5e1"
+      };
+      const PRO_FALLBACK_BRAND = {
+        primary: "#0A0A0A",
+        secondary: "#41424C",
+        accent: "#DAA520"
+      };
+      let activePortalUrl = (query.get("portal_url") || query.get("client_portal_url") || "").trim();
+      let activeTrackingUrl = (query.get("tracking_url") || "").trim();
+      let activeFollowUpUrl = (query.get("follow_up_url") || "").trim();
+      let activeCustomerName = (query.get("customer_name") || "").trim();
+
+      function textValue(key, fallback) {
+        const value = (query.get(key) || "").trim();
+        return value || fallback;
+      }
+
+      function setText(id, value) {
+        const el = document.getElementById(id);
+        if (el) el.textContent = value;
+      }
+
+      function requestJson(url) {
+        return fetch(url).then(async (response) => {
+          const data = await response.json().catch(() => ({}));
+          if (!response.ok) {
+            throw new Error(data.error || "Request failed.");
+          }
+          return data;
+        });
+      }
+
+      function isPremiumPortalPlan(planName) {
+        return String(planName || "").trim().toLowerCase() === "premium"
+          || String(planName || "").trim().toLowerCase() === "pro";
+      }
+
+      function isProPlan(planName) {
+        return String(planName || "").trim().toLowerCase() === "pro";
+      }
+
+      function buildSharedParams() {
+        const params = new URLSearchParams();
+        if (locationId) params.set("location_id", locationId);
+        if (activePortalUrl) params.set("portal_url", activePortalUrl);
+        if (token) params.set("token", token);
+        if (activeTrackingUrl) params.set("tracking_url", activeTrackingUrl);
+        if (activeFollowUpUrl) params.set("follow_up_url", activeFollowUpUrl);
+        if (activeCustomerName) params.set("customer_name", activeCustomerName);
+        return params;
+      }
+
+      function applyBranding({
+        businessName = "",
+        businessLogo = "",
+        brandPrimary = "",
+        brandSecondary = "",
+        brandAccent = "",
+        widgetTagline = "",
+        planName = ""
+      } = {}) {
+        const root = document.documentElement;
+        const proPlan = isProPlan(planName);
+        const effectivePrimary = proPlan ? (brandPrimary || PRO_FALLBACK_BRAND.primary) : DEFAULT_BRAND.primary;
+        const effectiveSecondary = proPlan ? (brandSecondary || PRO_FALLBACK_BRAND.secondary) : DEFAULT_BRAND.secondary;
+        const effectiveAccent = proPlan ? (brandAccent || PRO_FALLBACK_BRAND.accent) : DEFAULT_BRAND.accent;
+        root.style.setProperty("--violet", effectivePrimary);
+        root.style.setProperty("--teal", effectiveSecondary);
+        root.style.setProperty("--gold", effectiveAccent);
+
+        const finalName = businessName || DEFAULT_BRAND.name;
+        const finalTagline = widgetTagline || DEFAULT_BRAND.tagline;
+        document.title = `${finalName} Client Portal`;
+        setText("brand-name", finalName);
+        setText("brand-tagline", finalTagline);
+        setText("phone-brand", finalName);
+
+        const brandLogoEl = document.getElementById("brand-logo");
+        if (brandLogoEl) {
+          if (businessLogo && isPremiumPortalPlan(planName)) {
+            brandLogoEl.src = businessLogo;
+            brandLogoEl.classList.remove("hidden");
+          } else {
+            brandLogoEl.removeAttribute("src");
+            brandLogoEl.classList.add("hidden");
+          }
+        }
+      }
+
+      function updateLinks() {
+        const sharedParams = buildSharedParams();
+        const suffix = sharedParams.toString() ? `?${sharedParams.toString()}` : "";
+
+        const portalLink = document.getElementById("portal-link");
+        if (portalLink) {
+          portalLink.href = activePortalUrl || "#";
+        }
+
+        const notificationLink = document.getElementById("notification-link");
+        if (notificationLink) {
+          notificationLink.href = `customer-portal-app-notifications.html${suffix}`;
+        }
+
+        const trackingLink = document.getElementById("tracking-link");
+        if (trackingLink) {
+          trackingLink.href = activeTrackingUrl || `customer-tracking.html${suffix}`;
+        }
+      }
+
+      function showUpgradeRequired(planName = "starter") {
+        setText("hero-title", "Premium and Pro unlock the client portal experience.");
+        setText("hero-copy", "This branded customer portal flow is reserved for Premium and Pro SaaS accounts. Upgrade the account to unlock the dedicated client portal, rider inbox, tracking handoff, and follow-up pages.");
+        setText("phone-hero-title", "Premium or Pro required.");
+        setText("phone-hero-copy", "Upgrade this account to turn on the branded rider portal experience for bookings, notifications, tracking, and follow-up.");
+        setText("status-text", `Current plan: ${planName || "starter"}`);
+        setText("widget-copy", "Upgrade to Premium or Pro to place the booking widget inside the dedicated customer portal experience.");
+        setText("widget-mode-pill", "Premium or Pro Upgrade Required");
+        document.getElementById("chauffeur-booking-widget").innerHTML = `
+          <div style="padding:18px;border:1px solid rgba(245,158,11,.26);background:#fffbeb;border-radius:20px;color:#92400e;font-weight:700;line-height:1.7;">
+            Premium and Pro SaaS accounts only. Upgrade this account to unlock the branded customer client portal experience.
+          </div>
+        `;
+      }
+
+      async function loadSessionContext() {
+        if (!token) return null;
+        const data = await requestJson(`${backendUrl}/api/tracking/session/customer?token=${encodeURIComponent(token)}`);
+        const session = data.session || {};
+        activeTrackingUrl = `${backendUrl}/customer-tracking.html?token=${encodeURIComponent(token)}`;
+        activeFollowUpUrl = session.follow_up_url || activeFollowUpUrl;
+        activeCustomerName = session.customer_name || activeCustomerName;
+        setText("status-text", session.status || "Ride in progress");
+            setText("phone-hero-copy", session.customer_name
+            ? `Welcome back, ${session.customer_name}. Open your inbox, check tracking, and stay on top of your reservation from one premium portal flow.`
+            : textValue("phone_copy", "The rider signs in once, then stays inside one mobile-style experience for the full trip lifecycle."));
+        if (session.pickup_address || session.dropoff_address) {
+          setText("widget-copy", `Book a new trip or manage the current one. Pickup: ${session.pickup_address || "Not set yet"}. Dropoff: ${session.dropoff_address || "Not set yet"}.`);
+        }
+        if (session.branding || session.business_name) {
+            applyBranding({
+              businessName: session.business_name || DEFAULT_BRAND.name,
+              businessLogo: session.branding?.business_logo || "",
+              brandPrimary: session.branding?.brand_color_primary || "",
+              brandSecondary: session.branding?.brand_color_secondary || "",
+              brandAccent: session.branding?.brand_color_accent || "",
+              widgetTagline: session.branding?.widget_tagline || "",
+              planName: session.branding?.plan_name || profile?.plan_name || profile?.entitlements?.plan_name || ""
+            });
+          }
+        return session;
+      }
+
+      async function loadProfileContext() {
+        if (!locationId) return null;
+        const data = await requestJson(`${backendUrl}/api/get-profile-widget/${encodeURIComponent(locationId)}`);
+          applyBranding({
+            businessName: data.business_name || DEFAULT_BRAND.name,
+            businessLogo: data.business_logo || "",
+            brandPrimary: data.brand_color_primary || "",
+            brandSecondary: data.brand_color_secondary || "",
+            brandAccent: data.brand_color_accent || "",
+            widgetTagline: data.widget_tagline || "",
+            planName: data.plan_name || data.entitlements?.plan_name || ""
+          });
+        return data;
+      }
+
+      async function startWidgetIfAllowed() {
+        const script = document.createElement("script");
+        const params = new URLSearchParams({ loc: locationId, mode });
+        script.src = `${backendUrl}/widget.js?${params.toString()}`;
+        document.body.appendChild(script);
+      }
+
+      async function init() {
+        setText("eyebrow-text", textValue("eyebrow", "Chauffeur Deluxe Client Portal"));
+        setText("hero-title", textValue("title", "Everything about your ride in one place."));
+        setText("hero-copy", textValue("hero_copy", "This customer-facing portal hub lets riders book a new trip, check upcoming ride details, open the ride inbox, and jump into live driver tracking without leaving the branded experience."));
+        setText("phone-hero-title", textValue("phone_title", "Book, track, and follow up."));
+        setText("phone-hero-copy", textValue("phone_copy", "The rider signs in once, then stays inside one mobile-style experience for the full trip lifecycle."));
+        setText("status-text", textValue("status_text", "Ready for booking"));
+        setText("widget-copy", textValue("widget_copy", "This booking area is ready to live inside the customer-facing portal hub so the rider can quote and confirm a trip inside the same mobile-style experience."));
+        setText("widget-mode-pill", mode === "practice" ? "Practice Customer Booking Flow" : "Customer Portal Booking Flow");
+        applyBranding();
+
+        if (!locationId) {
+          document.getElementById("chauffeur-booking-widget").innerHTML = `
+            <div style="padding:18px;border:1px solid rgba(239,68,68,.22);background:#fef2f2;border-radius:20px;color:#991b1b;font-weight:700;">
+              Missing location_id. Add <code>?location_id=YOUR_LOCATION_ID</code> to load the live customer portal booking flow.
+            </div>
+          `;
+          updateLinks();
+          return;
+        }
+
+        let profile = null;
+        let session = null;
+        try {
+          profile = await loadProfileContext();
+        } catch (error) {
+          document.getElementById("chauffeur-booking-widget").innerHTML = `
+            <div style="padding:18px;border:1px solid rgba(239,68,68,.22);background:#fef2f2;border-radius:20px;color:#991b1b;font-weight:700;line-height:1.7;">
+              Unable to load the client portal profile right now. ${error.message}
+            </div>
+          `;
+          updateLinks();
+          return;
+        }
+
+        try {
+          session = await loadSessionContext();
+        } catch (error) {
+          console.warn("Customer portal session lookup failed:", error.message);
+        }
+
+        const effectivePlan = session?.branding?.plan_name || profile?.plan_name || profile?.entitlements?.plan_name || "starter";
+        updateLinks();
+
+        if (!isPremiumPortalPlan(effectivePlan)) {
+          showUpgradeRequired(effectivePlan);
+          return;
+        }
+
+        await startWidgetIfAllowed();
+      }
+
+      init();
+    })();
+  </script>
+</body>
+</html>

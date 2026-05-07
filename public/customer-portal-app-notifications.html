@@ -1,0 +1,729 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Customer Ride Inbox</title>
+  <style>
+    :root {
+      --ink: #0f172a;
+      --muted: #5a6a7f;
+      --line: rgba(148, 163, 184, 0.22);
+      --violet: #172554;
+      --teal: #334155;
+      --panel: rgba(255, 255, 255, 0.94);
+      --bg: linear-gradient(180deg, #f8fafc 0%, #ffffff 44%, #eef2f7 100%);
+      --shadow: 0 24px 48px rgba(15, 23, 42, 0.08);
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top right, rgba(51, 65, 85, 0.12), transparent 24%),
+        radial-gradient(circle at top left, rgba(100, 116, 139, 0.12), transparent 26%),
+        var(--bg);
+      -webkit-text-size-adjust: 100%;
+    }
+    .page-shell {
+      max-width: 980px;
+      margin: 0 auto;
+      padding: 24px 16px 42px;
+    }
+    .hero {
+      border-radius: 30px;
+      padding: 24px 22px;
+      color: #fff;
+      background: linear-gradient(135deg, #172554 0%, #1e293b 48%, #334155 100%);
+      box-shadow: var(--shadow);
+    }
+
+    .brand-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+      margin-bottom: 16px;
+    }
+
+    .brand-lockup {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      min-width: 0;
+    }
+
+    .brand-logo {
+      width: 54px;
+      height: 54px;
+      border-radius: 18px;
+      object-fit: cover;
+      background: rgba(255,255,255,0.12);
+      border: 1px solid rgba(255,255,255,0.16);
+      padding: 6px;
+    }
+
+    .brand-logo.hidden {
+      display: none;
+    }
+
+    .brand-copy {
+      min-width: 0;
+    }
+
+    .brand-name {
+      margin: 0;
+      font-size: 20px;
+      font-weight: 900;
+      letter-spacing: -0.03em;
+    }
+
+    .brand-tagline {
+      margin: 6px 0 0;
+      font-size: 13px;
+      color: rgba(255,255,255,0.78);
+      line-height: 1.6;
+    }
+    .eyebrow {
+      margin: 0 0 8px;
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      opacity: 0.84;
+    }
+    h1 {
+      margin: 0;
+      font-size: clamp(30px, 4vw, 46px);
+      letter-spacing: -0.04em;
+      line-height: 1.02;
+    }
+    .hero p {
+      margin: 14px 0 0;
+      max-width: 680px;
+      line-height: 1.8;
+      color: rgba(255,255,255,0.88);
+    }
+    .top-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 18px;
+    }
+    .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 48px;
+      padding: 12px 16px;
+      border-radius: 16px;
+      text-decoration: none;
+      font-size: 14px;
+      font-weight: 800;
+      border: 1px solid transparent;
+      transition: transform 0.18s ease, box-shadow 0.18s ease;
+    }
+    .button:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 16px 30px rgba(15, 23, 42, 0.12);
+    }
+    .button-primary { background: #fff; color: #172554; }
+    .button-secondary {
+      background: rgba(255,255,255,0.12);
+      border-color: rgba(255,255,255,0.16);
+      color: #fff;
+    }
+    .content-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.15fr) minmax(280px, 0.85fr);
+      gap: 20px;
+      margin-top: 22px;
+    }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 26px;
+      padding: 22px;
+      box-shadow: 0 18px 36px rgba(15, 23, 42, 0.06);
+    }
+    .panel h2 {
+      margin: 0;
+      font-size: 24px;
+      letter-spacing: -0.03em;
+      color: #172554;
+    }
+    .panel p {
+      margin: 10px 0 0;
+      color: #475569;
+      line-height: 1.8;
+    }
+    .notification-list {
+      display: grid;
+      gap: 14px;
+      margin-top: 18px;
+    }
+    .notification-card {
+      border-radius: 22px;
+      padding: 18px;
+      background: linear-gradient(180deg, rgba(255,255,255,0.98), rgba(248,250,252,0.98));
+      border: 1px solid rgba(148, 163, 184, 0.18);
+      transition: border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+    }
+    .notification-card.is-active {
+      border-color: rgba(15, 118, 110, 0.38);
+      background: linear-gradient(180deg, rgba(240, 253, 250, 0.96), rgba(255,255,255,0.98));
+      box-shadow: 0 18px 32px rgba(15, 118, 110, 0.12);
+    }
+    .notification-card.is-complete {
+      border-color: rgba(14, 165, 233, 0.3);
+      background: linear-gradient(180deg, rgba(239, 246, 255, 0.96), rgba(255,255,255,0.98));
+    }
+    .notification-card.is-upcoming {
+      opacity: 0.9;
+    }
+    .notification-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+    }
+    .notification-badge {
+      display: inline-flex;
+      padding: 8px 10px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+    }
+    .badge-booking { background: rgba(76, 29, 149, 0.12); color: #5b21b6; }
+    .badge-payment { background: rgba(245, 158, 11, 0.14); color: #b45309; }
+    .badge-tracking { background: rgba(51, 65, 85, 0.14); color: #334155; }
+    .badge-followup { background: rgba(14, 165, 233, 0.14); color: #0369a1; }
+    .notification-time {
+      font-size: 12px;
+      font-weight: 700;
+      color: #64748b;
+    }
+    .notification-card h3 {
+      margin: 10px 0 6px;
+      font-size: 19px;
+      letter-spacing: -0.02em;
+      color: var(--ink);
+    }
+    .notification-card p {
+      margin: 0;
+      font-size: 14px;
+      line-height: 1.75;
+      color: #475569;
+    }
+    .notification-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 14px;
+    }
+    .mini-button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 42px;
+      padding: 10px 14px;
+      border-radius: 14px;
+      text-decoration: none;
+      font-size: 13px;
+      font-weight: 800;
+      background: #0f172a;
+      color: #fff;
+    }
+    .mini-button.light { background: #eef2ff; color: #3730a3; }
+    .mini-button.disabled {
+      pointer-events: none;
+      background: #e2e8f0;
+      color: #64748b;
+    }
+    .stage-state {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 12px;
+      padding: 8px 10px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    .stage-state.active {
+      background: rgba(15, 118, 110, 0.12);
+      color: #334155;
+    }
+    .stage-state.complete {
+      background: rgba(14, 165, 233, 0.12);
+      color: #0369a1;
+    }
+    .stage-state.upcoming {
+      background: rgba(148, 163, 184, 0.16);
+      color: #475569;
+    }
+    .detail-stack {
+      display: grid;
+      gap: 14px;
+      margin-top: 18px;
+    }
+    .detail-card {
+      border-radius: 20px;
+      padding: 18px;
+      background: linear-gradient(180deg, rgba(240, 249, 255, 0.95), rgba(255,255,255,0.95));
+      border: 1px solid rgba(125, 211, 252, 0.28);
+    }
+    .detail-card h3 {
+      margin: 0 0 8px;
+      font-size: 17px;
+      color: #172554;
+    }
+    .detail-grid {
+      display: grid;
+      gap: 10px;
+      margin-top: 12px;
+    }
+    .detail-item {
+      display: grid;
+      gap: 4px;
+    }
+    .detail-label {
+      font-size: 12px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #64748b;
+    }
+    .detail-value {
+      color: #334155;
+      line-height: 1.7;
+      font-size: 14px;
+    }
+    .hidden { display: none !important; }
+    @media (max-width: 920px) {
+      .content-grid { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 640px) {
+      .page-shell { padding: 14px 12px 28px; }
+      .hero, .panel { border-radius: 22px; }
+      .button, .mini-button { width: 100%; }
+      .top-actions, .notification-actions { display: grid; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page-shell">
+    <section class="hero">
+      <div class="brand-bar">
+        <div class="brand-lockup">
+          <img id="brand-logo" class="brand-logo hidden" alt="Business logo" />
+          <div class="brand-copy">
+            <p class="brand-name" id="brand-name">Chauffeur Deluxe</p>
+            <p class="brand-tagline" id="brand-tagline">Branded notifications, tracking, and follow-up in one premium customer feed.</p>
+          </div>
+        </div>
+      </div>
+      <p class="eyebrow" id="eyebrow-text">Chauffeur Deluxe Client Portal</p>
+      <h1 id="hero-title">Your ride at a glance.</h1>
+      <p id="hero-copy">Check what is complete, what needs your attention, and what comes next in your ride journey.</p>
+      <div class="top-actions">
+        <a id="home-link" class="button button-primary" href="customer-portal-app-home.html">Back to Ride Hub</a>
+        <a id="portal-link" class="button button-secondary hidden" href="#" target="_blank" rel="noopener noreferrer">Open Client Portal</a>
+      </div>
+    </section>
+
+    <section class="content-grid">
+      <article class="panel">
+        <h2>Trip progress</h2>
+        <p>Your ride moves through each stage here so you can quickly see the current status and open the next action when it is ready.</p>
+        <div class="notification-list">
+          <div class="notification-card" id="stage-booking">
+            <div class="notification-head">
+              <span class="notification-badge badge-booking">Booking</span>
+              <span class="notification-time" id="booking-time">Confirmed</span>
+            </div>
+            <h3>Ride confirmed</h3>
+            <p id="booking-copy">Your reservation is saved and your trip details are ready to review.</p>
+            <div class="stage-state complete" id="booking-state">Complete</div>
+            <div class="notification-actions">
+              <a id="booking-home-link" class="mini-button light" href="customer-portal-app-home.html">View ride home</a>
+            </div>
+          </div>
+
+          <div class="notification-card" id="stage-payment">
+            <div class="notification-head">
+              <span class="notification-badge badge-payment">Payment</span>
+              <span class="notification-time" id="payment-time">If needed</span>
+            </div>
+            <h3>Balance reminder</h3>
+            <p id="payment-copy">If you booked with a deposit, your remaining balance will appear here when payment is still due.</p>
+            <div class="stage-state upcoming" id="payment-state">Waiting</div>
+            <div class="notification-actions">
+              <a id="balance-link" class="mini-button hidden" href="#" target="_blank" rel="noopener noreferrer">Pay remaining balance</a>
+              <span id="balance-disabled" class="mini-button disabled">No payment due</span>
+            </div>
+          </div>
+
+          <div class="notification-card" id="stage-tracking">
+            <div class="notification-head">
+              <span class="notification-badge badge-tracking">Tracking</span>
+              <span class="notification-time" id="tracking-time">Up next</span>
+            </div>
+            <h3>Driver on the way</h3>
+            <p id="tracking-copy">Live tracking opens here as soon as your chauffeur is en route to pickup.</p>
+            <div class="stage-state upcoming" id="tracking-state">Waiting</div>
+            <div class="notification-actions">
+              <a id="tracking-link" class="mini-button hidden" href="#" target="_blank" rel="noopener noreferrer">Open live tracking</a>
+              <span id="tracking-disabled" class="mini-button disabled">Tracking not live yet</span>
+            </div>
+          </div>
+
+          <div class="notification-card" id="stage-followup">
+            <div class="notification-head">
+              <span class="notification-badge badge-followup">Follow-up</span>
+              <span class="notification-time" id="followup-time">After your ride</span>
+            </div>
+            <h3>Review and tip</h3>
+            <p id="followup-copy">Once the trip is complete, you can leave a review and tip your chauffeur here.</p>
+            <div class="stage-state upcoming" id="followup-state">Waiting</div>
+            <div class="notification-actions">
+              <a id="follow-up-link" class="mini-button hidden" href="#" target="_blank" rel="noopener noreferrer">Open follow-up</a>
+              <span id="followup-disabled" class="mini-button disabled">Available after the trip</span>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <aside class="panel">
+        <h2>Ride snapshot</h2>
+        <p>Keep an eye on your reservation details and current stage without digging through separate messages.</p>
+        <div class="detail-stack">
+          <div class="detail-card">
+            <h3>Trip details</h3>
+            <div class="detail-grid">
+              <div class="detail-item">
+                <span class="detail-label">Customer</span>
+                <div class="detail-value" id="customer-name">Customer name will appear here.</div>
+              </div>
+              <div class="detail-item">
+                <span class="detail-label">Pickup</span>
+                <div class="detail-value" id="pickup-text">Pickup address will appear here.</div>
+              </div>
+              <div class="detail-item">
+                <span class="detail-label">Dropoff</span>
+                <div class="detail-value" id="dropoff-text">Dropoff address will appear here.</div>
+              </div>
+              <div class="detail-item">
+                <span class="detail-label">Pickup time</span>
+                <div class="detail-value" id="ride-time-text">Ride time will appear here.</div>
+              </div>
+            </div>
+          </div>
+          <div class="detail-card">
+            <h3>Current status</h3>
+            <div class="detail-grid">
+              <div class="detail-item">
+                <span class="detail-label">Where you are now</span>
+                <div class="detail-value" id="current-stage-text">Your current ride stage will appear here.</div>
+              </div>
+              <div class="detail-item">
+                <span class="detail-label">Next action</span>
+                <div class="detail-value" id="next-action-text">Your next available action will appear here.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </aside>
+    </section>
+  </div>
+
+  <script>
+    (function () {
+      const query = new URLSearchParams(window.location.search);
+      const locationId = (query.get("location_id") || "").trim();
+      const token = (query.get("token") || "").trim();
+      const backendUrl = window.location.origin;
+      const DEFAULT_BRAND = {
+        name: "Chauffeur Deluxe",
+        tagline: "Notifications, tracking, and follow-up in one customer portal feed.",
+        primary: "#172554",
+        secondary: "#334155"
+      };
+      const PRO_FALLBACK_BRAND = {
+        primary: "#0A0A0A",
+        secondary: "#41424C"
+      };
+      let activePortalUrl = (query.get("portal_url") || query.get("client_portal_url") || "").trim();
+      let activeTrackingUrl = (query.get("tracking_url") || "").trim();
+      let activeFollowUpUrl = (query.get("follow_up_url") || "").trim();
+      let activeBalanceLink = (query.get("balance_payment_link") || "").trim();
+
+      function textValue(key, fallback) {
+        const value = (query.get(key) || "").trim();
+        return value || fallback;
+      }
+
+      function setText(id, value) {
+        const el = document.getElementById(id);
+        if (el) el.textContent = value || "";
+      }
+
+      function setLink(id, url) {
+        const el = document.getElementById(id);
+        if (!el) return;
+        if (url) {
+          el.href = url;
+          el.classList.remove("hidden");
+        } else {
+          el.classList.add("hidden");
+        }
+      }
+
+      function setStageState(stageKey, state, label) {
+        const card = document.getElementById(`stage-${stageKey}`);
+        const stateEl = document.getElementById(`${stageKey}-state`);
+        if (card) {
+          card.classList.remove("is-active", "is-complete", "is-upcoming");
+          card.classList.add(`is-${state}`);
+        }
+        if (stateEl) {
+          stateEl.className = `stage-state ${state}`;
+          stateEl.textContent = label;
+        }
+      }
+
+      function toggleDisabledAction(id, show) {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.classList.toggle("hidden", !show);
+      }
+
+      function requestJson(url) {
+        return fetch(url).then(async (response) => {
+          const data = await response.json().catch(() => ({}));
+          if (!response.ok) {
+            throw new Error(data.error || "Request failed.");
+          }
+          return data;
+        });
+      }
+
+      function isPremiumPortalPlan(planName) {
+        return String(planName || "").trim().toLowerCase() === "premium"
+          || String(planName || "").trim().toLowerCase() === "pro";
+      }
+
+      function isProPlan(planName) {
+        return String(planName || "").trim().toLowerCase() === "pro";
+      }
+
+      function buildSharedParams() {
+        const params = new URLSearchParams();
+        if (locationId) params.set("location_id", locationId);
+        if (activePortalUrl) params.set("portal_url", activePortalUrl);
+        if (token) params.set("token", token);
+        if (activeTrackingUrl) params.set("tracking_url", activeTrackingUrl);
+        if (activeFollowUpUrl) params.set("follow_up_url", activeFollowUpUrl);
+        if (activeBalanceLink) params.set("balance_payment_link", activeBalanceLink);
+        return params;
+      }
+
+      function applyBranding({
+        businessName = "",
+        businessLogo = "",
+        brandPrimary = "",
+        brandSecondary = "",
+        widgetTagline = "",
+        planName = ""
+      } = {}) {
+        const root = document.documentElement;
+        const proPlan = isProPlan(planName);
+        root.style.setProperty("--violet", proPlan ? (brandPrimary || PRO_FALLBACK_BRAND.primary) : DEFAULT_BRAND.primary);
+        root.style.setProperty("--teal", proPlan ? (brandSecondary || PRO_FALLBACK_BRAND.secondary) : DEFAULT_BRAND.secondary);
+        const finalName = businessName || DEFAULT_BRAND.name;
+        const finalTagline = widgetTagline || DEFAULT_BRAND.tagline;
+        document.title = `${finalName} Ride Inbox`;
+        setText("brand-name", finalName);
+        setText("brand-tagline", finalTagline);
+        const brandLogoEl = document.getElementById("brand-logo");
+        if (brandLogoEl) {
+          if (businessLogo && isPremiumPortalPlan(planName)) {
+            brandLogoEl.src = businessLogo;
+            brandLogoEl.classList.remove("hidden");
+          } else {
+            brandLogoEl.removeAttribute("src");
+            brandLogoEl.classList.add("hidden");
+          }
+        }
+      }
+
+      function updateLinks() {
+        const suffix = buildSharedParams().toString();
+        const homeUrl = `customer-portal-app-home.html${suffix ? `?${suffix}` : ""}`;
+        const homeLink = document.getElementById("home-link");
+        const bookingHomeLink = document.getElementById("booking-home-link");
+        if (homeLink) homeLink.href = homeUrl;
+        if (bookingHomeLink) bookingHomeLink.href = homeUrl;
+        setLink("portal-link", activePortalUrl);
+        setLink("tracking-link", activeTrackingUrl);
+        setLink("follow-up-link", activeFollowUpUrl);
+        setLink("balance-link", activeBalanceLink);
+        toggleDisabledAction("balance-disabled", !activeBalanceLink);
+        toggleDisabledAction("tracking-disabled", !activeTrackingUrl);
+        toggleDisabledAction("followup-disabled", !activeFollowUpUrl);
+      }
+
+      function showUpgradeRequired(planName = "starter") {
+        setText("hero-title", "Portal access is not available right now.");
+        setText("hero-copy", "This ride inbox is only available on eligible accounts. If you believe this is a mistake, contact the operator for access.");
+        setText("customer-name", "Portal access unavailable.");
+        setText("pickup-text", "This customer inbox has not been enabled for the current account.");
+        setText("dropoff-text", `Current plan: ${planName || "starter"}`);
+        setText("ride-time-text", "Contact the operator if you need help with your reservation.");
+        setText("current-stage-text", "Portal access unavailable");
+        setText("next-action-text", "Contact the operator for support");
+      }
+
+      function applyRideStages(session = {}) {
+        const status = String(session.status || "").trim().toLowerCase();
+        const hasBalanceDue = Boolean(activeBalanceLink);
+        const bookingConfirmed = true;
+        const trackingLive = status === "en_route_to_pickup" || status === "completed";
+        const rideCompleted = status === "completed";
+
+        setText("booking-time", bookingConfirmed ? "Confirmed" : "Pending");
+        setText("booking-copy", bookingConfirmed
+          ? "Your reservation is confirmed and your trip details are ready to review."
+          : "Your reservation details will appear here once the booking is confirmed.");
+        setStageState("booking", bookingConfirmed ? "complete" : "upcoming", bookingConfirmed ? "Complete" : "Waiting");
+
+        if (hasBalanceDue) {
+          setText("payment-time", "Balance due");
+          setText("payment-copy", "A remaining balance is still due for this reservation. Use the payment button below when you are ready.");
+          setStageState("payment", "active", "Action needed");
+        } else {
+          setText("payment-time", "Paid");
+          setText("payment-copy", "No additional payment is due right now.");
+          setStageState("payment", "complete", "Complete");
+        }
+
+        if (rideCompleted) {
+          setText("tracking-time", "Trip finished");
+          setText("tracking-copy", "Your chauffeur completed the trip. You can still reopen tracking details if needed.");
+          setStageState("tracking", "complete", "Complete");
+        } else if (trackingLive) {
+          setText("tracking-time", "Live now");
+          setText("tracking-copy", "Your chauffeur is en route. Open live tracking to follow the ride.");
+          setStageState("tracking", "active", "Live");
+        } else {
+          setText("tracking-time", "Up next");
+          setText("tracking-copy", "Live tracking will appear here when your chauffeur is on the way.");
+          setStageState("tracking", "upcoming", "Waiting");
+        }
+
+        if (rideCompleted) {
+          setText("followup-time", "Ready now");
+          setText("followup-copy", "Your trip is complete. You can leave a review or tip your chauffeur here.");
+          setStageState("followup", "active", "Ready");
+          setText("current-stage-text", "Trip completed");
+          setText("next-action-text", activeFollowUpUrl ? "Leave a review or tip your chauffeur" : "Follow-up will appear here shortly");
+        } else if (trackingLive) {
+          setText("current-stage-text", "Driver on the way");
+          setText("next-action-text", activeTrackingUrl ? "Open live tracking" : "Tracking will be available as soon as it is ready");
+        } else if (hasBalanceDue) {
+          setText("current-stage-text", "Booking confirmed");
+          setText("next-action-text", "Pay your remaining balance");
+        } else {
+          setText("current-stage-text", "Booking confirmed");
+          setText("next-action-text", "Wait for your driver update");
+        }
+      }
+
+      async function loadProfileContext() {
+        if (!locationId) return null;
+        return requestJson(`${backendUrl}/api/get-profile-widget/${encodeURIComponent(locationId)}`);
+      }
+
+      async function loadSessionContext() {
+        if (!token) return null;
+        return requestJson(`${backendUrl}/api/tracking/session/customer?token=${encodeURIComponent(token)}`);
+      }
+
+      async function init() {
+        setText("eyebrow-text", textValue("eyebrow", "Chauffeur Deluxe Client Portal"));
+        setText("hero-title", textValue("title", "Your ride at a glance."));
+        setText("hero-copy", textValue("hero_copy", "Check what is complete, what needs your attention, and what comes next in your ride journey."));
+        setText("brand-name", textValue("brand_name", DEFAULT_BRAND.name));
+        setText("brand-tagline", textValue("brand_tagline", DEFAULT_BRAND.tagline));
+        setText("customer-name", textValue("customer_name", "Customer name will appear here."));
+        setText("pickup-text", textValue("pickup_address", "Pickup address will appear here."));
+        setText("dropoff-text", textValue("dropoff_address", "Dropoff address will appear here."));
+        setText("ride-time-text", textValue("ride_time", "Ride time will appear here."));
+        setText("current-stage-text", "Your current ride stage will appear here.");
+        setText("next-action-text", "Your next available action will appear here.");
+        applyBranding();
+
+        let profile = null;
+        let sessionPayload = null;
+        if (locationId) {
+          try {
+            profile = await loadProfileContext();
+              applyBranding({
+                businessName: profile.business_name || DEFAULT_BRAND.name,
+                businessLogo: profile.business_logo || "",
+                brandPrimary: profile.brand_color_primary || "",
+                brandSecondary: profile.brand_color_secondary || "",
+                widgetTagline: profile.widget_tagline || "",
+                planName: profile.plan_name || profile.entitlements?.plan_name || ""
+              });
+          } catch (error) {
+            console.warn("Notification profile lookup failed:", error.message);
+          }
+        }
+
+        if (token) {
+          try {
+            sessionPayload = await loadSessionContext();
+            const session = sessionPayload.session || {};
+            activeTrackingUrl = `${backendUrl}/customer-tracking.html?token=${encodeURIComponent(token)}`;
+            activeFollowUpUrl = session.follow_up_url || activeFollowUpUrl;
+            setText("customer-name", session.customer_name || "Customer name will appear here.");
+            setText("pickup-text", session.pickup_address || "Pickup address will appear here.");
+            setText("dropoff-text", session.dropoff_address || "Dropoff address will appear here.");
+            setText("ride-time-text", session.start_time ? new Date(session.start_time).toLocaleString() : "Ride time will appear here.");
+              activeBalanceLink = activeBalanceLink || session.balance_payment_link || session.follow_up?.balance_payment_link || "";
+              applyBranding({
+                businessName: session.business_name || profile?.business_name || DEFAULT_BRAND.name,
+                businessLogo: session.branding?.business_logo || profile?.business_logo || "",
+                brandPrimary: session.branding?.brand_color_primary || profile?.brand_color_primary || "",
+                brandSecondary: session.branding?.brand_color_secondary || profile?.brand_color_secondary || "",
+                widgetTagline: session.branding?.widget_tagline || profile?.widget_tagline || "",
+                planName: session.branding?.plan_name || profile?.plan_name || profile?.entitlements?.plan_name || ""
+              });
+          } catch (error) {
+            console.warn("Notification session lookup failed:", error.message);
+          }
+        }
+
+        const effectivePlan = sessionPayload?.session?.branding?.plan_name || profile?.plan_name || profile?.entitlements?.plan_name || "starter";
+        updateLinks();
+        if (!isPremiumPortalPlan(effectivePlan)) {
+          showUpgradeRequired(effectivePlan);
+          return;
+        }
+
+        applyRideStages(sessionPayload?.session || {});
+      }
+
+      init();
+    })();
+  </script>
+</body>
+</html>

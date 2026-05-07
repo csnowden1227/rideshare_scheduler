@@ -965,6 +965,18 @@ function buildTrackingUrls(req, driverToken, customerToken) {
   };
 }
 
+function buildCustomerPortalUrls(req, locationId, customerToken) {
+  const baseUrl = getPublicAppUrl(req);
+  const params = new URLSearchParams();
+  if (locationId) params.set("location_id", String(locationId || "").trim());
+  if (customerToken) params.set("token", String(customerToken || "").trim());
+  const suffix = params.toString() ? `?${params.toString()}` : "";
+  return {
+    ride_hub_url: `${baseUrl}/customer-portal-app-home.html${suffix}`,
+    ride_inbox_url: `${baseUrl}/customer-portal-app-notifications.html${suffix}`,
+  };
+}
+
 function normalizeFeedbackRating(value) {
   const rating = Number(value);
   if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
@@ -1092,6 +1104,7 @@ async function getTrackingSessionByToken({ token, role = "customer" }) {
       b.end_time,
         b.total_price,
         b.vehicle_slot_id,
+        b.booking_mode,
         b.crm_contact_id,
         b.status AS booking_status,
         p.business_name,
@@ -1137,6 +1150,7 @@ async function getTrackingSessionById(sessionId) {
       b.end_time,
         b.total_price,
         b.vehicle_slot_id,
+        b.booking_mode,
         b.crm_contact_id,
         b.status AS booking_status,
         p.business_name,
@@ -1298,14 +1312,21 @@ function buildTrackingSessionClientShape(session) {
 
 function buildTrackingStatusWebhookPayload({ req, session, status }) {
   const trackingUrls = buildTrackingUrls(req, session.driver_token, session.customer_token);
+  const portalUrls = buildCustomerPortalUrls(req, session.location_id, session.customer_token);
   const customerName = [session.first_name, session.last_name].filter(Boolean).join(" ").trim();
   const vehicleRecord = getVehicleRecordForSession(session);
   const vehicleDisplayName = buildVehicleDisplayName(vehicleRecord, session.vehicle_slot_id || "");
+  const normalizedPlanName = normalizePlanName(session.plan_name || "starter");
+  const premiumClientPortalEnabled = normalizedPlanName === "premium" || normalizedPlanName === "pro";
+  const proMobileAppEnabled = normalizedPlanName === "pro";
 
   return {
     webhook_type: "webhook_tracking_status",
     webhook_event: status,
     event: status,
+    plan_name: normalizedPlanName,
+    premium_client_portal_enabled: premiumClientPortalEnabled,
+    pro_mobile_app_enabled: proMobileAppEnabled,
     location_id: session.location_id,
     booking_id: session.booking_id,
     tracking_session_id: session.id,
@@ -1359,6 +1380,26 @@ function buildTrackingStatusWebhookPayload({ req, session, status }) {
       review_and_tip_url: trackingUrls.follow_up_url,
       tip_enabled: normalizePaymentProvider(session.payment_provider || "stripe") === "stripe",
       suggested_tip_amounts: [5, 10, 20],
+    },
+    portal: {
+      ride_hub_url: portalUrls.ride_hub_url,
+      ride_inbox_url: portalUrls.ride_inbox_url,
+      premium_client_portal_enabled: premiumClientPortalEnabled,
+      pro_mobile_app_enabled: proMobileAppEnabled,
+    },
+    custom: {
+      plan_name: normalizedPlanName,
+      premium_client_portal_enabled: premiumClientPortalEnabled,
+      pro_mobile_app_enabled: proMobileAppEnabled,
+      crm_contact_id: session.crm_contact_id || null,
+      booking_mode: session.booking_mode || session.booking_status || null,
+      ride_hub_url: portalUrls.ride_hub_url,
+      ride_inbox_url: portalUrls.ride_inbox_url,
+      customer_tracking_url: trackingUrls.customer_url,
+      driver_tracking_url: trackingUrls.driver_url,
+      follow_up_url: trackingUrls.follow_up_url,
+      review_and_tip_url: trackingUrls.follow_up_url,
+      webhook_event: status,
     },
       assigned_driver: {
         id: session.driver_profile_id || null,
@@ -7552,6 +7593,8 @@ function buildCrmBookingPayload({
   vehicle,
   assignedDriver = {},
   crmContactId = null,
+  tracking = {},
+  portal = {},
   financials,
   meta = {},
 }) {
@@ -7585,6 +7628,9 @@ function buildCrmBookingPayload({
     ? new Date(new Date(booking.start_time).getTime() - (5 * 24 * 60 * 60 * 1000)).toISOString()
     : null;
   const paymentProvider = normalizePaymentProvider(financials.payment_provider || meta.payment_provider || "stripe");
+  const normalizedPlanName = normalizePlanName(meta.plan_name || "starter");
+  const premiumClientPortalEnabled = normalizedPlanName === "premium" || normalizedPlanName === "pro";
+  const proMobileAppEnabled = normalizedPlanName === "pro";
   const calendarTitle = `${businessName || "Chauffeur Deluxe"} Reservation #${booking.booking_id}`;
   const calendarDescription = [
     customer.first_name || customer.last_name ? `Reservation for ${[customer.first_name, customer.last_name].filter(Boolean).join(" ")}` : null,
@@ -7603,6 +7649,9 @@ function buildCrmBookingPayload({
 
   return {
     webhook_type: webhookType,
+    plan_name: normalizedPlanName,
+    premium_client_portal_enabled: premiumClientPortalEnabled,
+    pro_mobile_app_enabled: proMobileAppEnabled,
     location_id: locationId,
     business_name: businessName || null,
     source: meta.source || "booking_widget",
@@ -7650,6 +7699,35 @@ function buildCrmBookingPayload({
       name: assignedDriver.name || null,
       phone: assignedDriver.phone || null,
       email: assignedDriver.email || null,
+    },
+    tracking: {
+      tracking_session_id: tracking.tracking_session_id || null,
+      customer_tracking_token: tracking.customer_tracking_token || null,
+      customer_tracking_url: tracking.customer_tracking_url || null,
+      driver_tracking_token: tracking.driver_tracking_token || null,
+      driver_tracking_url: tracking.driver_tracking_url || null,
+      follow_up_url: tracking.follow_up_url || null,
+    },
+    portal: {
+      ride_hub_url: portal.ride_hub_url || null,
+      ride_inbox_url: portal.ride_inbox_url || null,
+      premium_client_portal_enabled: premiumClientPortalEnabled,
+      pro_mobile_app_enabled: proMobileAppEnabled,
+    },
+    custom: {
+      plan_name: normalizedPlanName,
+      premium_client_portal_enabled: premiumClientPortalEnabled,
+      pro_mobile_app_enabled: proMobileAppEnabled,
+      crm_contact_id: crmContactId || null,
+      booking_mode: booking.booking_mode || "standard",
+      ride_hub_url: portal.ride_hub_url || null,
+      ride_inbox_url: portal.ride_inbox_url || null,
+      customer_tracking_url: tracking.customer_tracking_url || null,
+      driver_tracking_url: tracking.driver_tracking_url || null,
+      follow_up_url: tracking.follow_up_url || null,
+      review_and_tip_url: tracking.follow_up_url || null,
+      payment_status: paymentStatus,
+      balance_payment_link: financials.balance_payment_link || null,
     },
     route: {
       distance_miles: Number.isFinite(Number(meta.route_distance_miles))
@@ -7703,6 +7781,8 @@ function buildCrmBookingPayload({
       payment_provider: paymentProvider,
     },
     follow_up: {
+      send_premium_portal_invite: premiumClientPortalEnabled,
+      send_pro_mobile_app_invite: proMobileAppEnabled,
       send_payment_sms: paymentRequired,
       send_payment_email: paymentRequired,
       reminder_reason: paymentRequired ? "complete_booking_payment" : null,
@@ -9148,7 +9228,7 @@ async function triggerCrmWebhook(location_id, booking_id) {
     }
 
     const profileRes = await client.query(
-      "SELECT crm_webhook_url, tax_rate, business_name, payment_provider, fleet FROM profiles WHERE location_id = $1",
+      "SELECT crm_webhook_url, tax_rate, business_name, payment_provider, fleet, plan_name, addon_branding_unlocked, addon_funnel_unlocked, addon_tracking_unlocked, addon_extra_vehicle_count FROM profiles WHERE location_id = $1",
       [location_id]
     );
     const p = profileRes.rows[0];
@@ -9165,6 +9245,16 @@ async function triggerCrmWebhook(location_id, booking_id) {
     const totalPrice = Number(b.total_price || 0);
     const depositAmount = Number(b.deposit_amount || 0);
     const balanceDue = Number((totalPrice - depositAmount).toFixed(2));
+    const trackingSession = await ensureTrackingSessionForBookingInternal({ bookingId: b.id, locationId: location_id });
+    const trackingUrls = buildTrackingUrls(null, trackingSession.driver_token, trackingSession.customer_token);
+    const portalUrls = buildCustomerPortalUrls(null, location_id, trackingSession.customer_token);
+    const entitlements = buildPlanEntitlements({
+      planName: p.plan_name || "starter",
+      addonBrandingUnlocked: p.addon_branding_unlocked,
+      addonFunnelUnlocked: p.addon_funnel_unlocked,
+      addonTrackingUnlocked: p.addon_tracking_unlocked,
+      addonExtraVehicleCount: p.addon_extra_vehicle_count,
+    });
 
     let balancePaymentLink = null;
     try {
@@ -9212,6 +9302,18 @@ async function triggerCrmWebhook(location_id, booking_id) {
         phone: normalizeDriverPhone(matchedDriver?.driver_phone || "") || null,
         email: normalizeDriverEmail(matchedDriver?.driver_email || "") || null,
       },
+      tracking: {
+        tracking_session_id: trackingSession.tracking_session_id,
+        customer_tracking_token: trackingSession.customer_token,
+        customer_tracking_url: trackingUrls.customer_url,
+        driver_tracking_token: trackingSession.driver_token,
+        driver_tracking_url: trackingUrls.driver_url,
+        follow_up_url: trackingUrls.follow_up_url,
+      },
+      portal: {
+        ride_hub_url: portalUrls.ride_hub_url,
+        ride_inbox_url: portalUrls.ride_inbox_url,
+      },
       financials: {
         total_price: totalPrice,
         deposit_amount: depositAmount,
@@ -9231,6 +9333,7 @@ async function triggerCrmWebhook(location_id, booking_id) {
         source: "database_listener",
         payment_provider: normalizePaymentProvider(p.payment_provider || "stripe"),
         seeded_from_database: true,
+        plan_name: entitlements.plan_name,
       },
     });
 
