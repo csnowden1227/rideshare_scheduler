@@ -2002,6 +2002,11 @@ async function saveToBackend() {
     const generalBufferMin = parseInt(document.getElementById('general_buffer_min').value, 10) || 0;
     const fleetRows = document.querySelectorAll('#fleet-body tr');
 
+    if (!wizardToken) {
+        showNotification("This setup page is missing its secure sync token. Reopen the wizard from your CRM setup link.", false);
+        return;
+    }
+
     if (!mapsKey || !webhookUrl || fleetRows.length === 0) {
         showNotification("Credentials and at least one fleet slot are required.", false);
         return;
@@ -2150,7 +2155,9 @@ async function saveToBackend() {
                 const errorBody = await res.json();
                 lastError = errorBody?.detail || errorBody?.error || `${endpoint} returned ${res.status}`;
             } catch {
-                lastError = `${endpoint} returned ${res.status}`;
+                lastError = res.status === 403
+                    ? 'Your secure setup token is missing or expired. Reopen the wizard from your CRM setup link.'
+                    : `${endpoint} returned ${res.status}`;
             }
         }
 
