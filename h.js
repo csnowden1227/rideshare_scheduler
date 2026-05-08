@@ -135,7 +135,12 @@ function normalizeFleet(profile) {
     deposit_percent: toNumber(slot.deposit_percent, 20),
     duration_min: toNumber(slot.duration_min, 105),
     slot_interval_min: toNumber(slot.slot_interval_min, 30),
-    min_notice_min: toNumber(slot.min_notice_min, 120)
+    instant_booking_enabled: slot.instant_booking_enabled !== false,
+    instant_booking_start_time: String(slot.instant_booking_start_time || '06:00'),
+    instant_booking_end_time: String(slot.instant_booking_end_time || '22:00'),
+    min_notice_min: Number.isFinite(Number(slot.min_notice_min))
+      ? Math.max(0, Number(slot.min_notice_min))
+      : ((slot.instant_booking_enabled !== false) ? 0 : 120)
   })).filter((slot) => slot.vehicle_slot_id);
 }
 
@@ -318,7 +323,12 @@ async function syncFleetSettings(location_id, fleet) {
     push('deposit_percent', toNumber(slot.deposit_percent, 20));
     push('duration_min', toNumber(slot.duration_min, 105));
     push('slot_interval_min', toNumber(slot.slot_interval_min, 30));
-    push('min_notice_min', toNumber(slot.min_notice_min, 120));
+    push('min_notice_min', Number.isFinite(Number(slot.min_notice_min))
+      ? Math.max(0, Number(slot.min_notice_min))
+      : ((slot.instant_booking_enabled !== false) ? 0 : 120));
+    push('instant_booking_enabled', slot.instant_booking_enabled !== false);
+    push('instant_booking_start_time', String(slot.instant_booking_start_time || '06:00'));
+    push('instant_booking_end_time', String(slot.instant_booking_end_time || '22:00'));
     push('is_active', true);
 
     if (!fields.length) continue;
@@ -368,7 +378,12 @@ async function saveConfigHandler(req, res) {
     deposit_percent: toNumber(slot.deposit_percent, 20),
     duration_min: toNumber(slot.duration_min, 105),
     slot_interval_min: toNumber(slot.slot_interval_min, 30),
-    min_notice_min: toNumber(slot.min_notice_min, 120)
+    instant_booking_enabled: slot.instant_booking_enabled !== false,
+    instant_booking_start_time: String(slot.instant_booking_start_time || '06:00'),
+    instant_booking_end_time: String(slot.instant_booking_end_time || '22:00'),
+    min_notice_min: Number.isFinite(Number(slot.min_notice_min))
+      ? Math.max(0, Number(slot.min_notice_min))
+      : ((slot.instant_booking_enabled !== false) ? 0 : 120)
   })).filter((slot) => slot.vehicle_slot_id);
 
   const fixed_rates = (body.fixed_rates || []).map(r => ({

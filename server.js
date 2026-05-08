@@ -667,14 +667,15 @@ function formatTimeLabel(value, fallback = "") {
 }
 
 function normalizeFleetBookingPolicy(slot = {}, profileDefaults = {}) {
+  const instantBookingEnabled = normalizeBooleanish(slot?.instant_booking_enabled, true);
   const configuredNoticeMin = Number.parseInt(slot?.min_notice_min, 10);
-  const fallbackNoticeMin = DEFAULT_NON_INSTANT_NOTICE_HOURS * 60;
+  const fallbackNoticeMin = instantBookingEnabled ? 0 : (DEFAULT_NON_INSTANT_NOTICE_HOURS * 60);
   const normalizedNoticeMin = Number.isFinite(configuredNoticeMin)
     ? Math.max(0, configuredNoticeMin)
     : fallbackNoticeMin;
 
   return {
-    instant_booking_enabled: normalizeBooleanish(slot?.instant_booking_enabled, true),
+    instant_booking_enabled: instantBookingEnabled,
     instant_booking_start_time: normalizeTimeOfDay(
       slot?.instant_booking_start_time,
       normalizeTimeOfDay(profileDefaults?.open_time, DEFAULT_INSTANT_BOOKING_START_TIME)
@@ -8075,16 +8076,19 @@ async function createBookingRecord(input, { paymentLink = null, triggerWebhook =
   if (await tableExists("fleet_slots")) {
     const fleetLookup = await pool.query(
         `SELECT
-           calendar_id,
-           name AS vehicle_type,
+           fs.calendar_id,
+           fs.name AS vehicle_type,
            NULL AS vehicle_category,
-           outbound_buffer_min,
-           NULL AS min_notice_min,
-           NULL AS instant_booking_enabled,
-           NULL AS instant_booking_start_time,
-           NULL AS instant_booking_end_time
-         FROM fleet_slots
-       WHERE vehicle_slot_id = $1 AND location_id = $2
+           fs.outbound_buffer_min,
+           cfg.min_notice_min AS min_notice_min,
+           cfg.instant_booking_enabled AS instant_booking_enabled,
+           cfg.instant_booking_start_time AS instant_booking_start_time,
+           cfg.instant_booking_end_time AS instant_booking_end_time
+         FROM fleet_slots fs
+         LEFT JOIN fleet_settings cfg
+           ON cfg.vehicle_slot_id = fs.vehicle_slot_id
+          AND cfg.location_id = fs.location_id
+       WHERE fs.vehicle_slot_id = $1 AND fs.location_id = $2
        LIMIT 1`,
       [vehicle_slot_id, location_id]
     );
@@ -8451,10 +8455,20 @@ app.post("/api/create-checkout-session", async (req, res) => {
     let fleetVehicle = null;
     if (await tableExists("fleet_slots")) {
       const fleetLookup = await pool.query(
-        `SELECT calendar_id, name AS vehicle_type, NULL AS vehicle_category, outbound_buffer_min,
-                NULL AS min_notice_min, NULL AS instant_booking_enabled, NULL AS instant_booking_start_time, NULL AS instant_booking_end_time
-         FROM fleet_slots
-         WHERE vehicle_slot_id = $1 AND location_id = $2
+        `SELECT
+                fs.calendar_id,
+                fs.name AS vehicle_type,
+                NULL AS vehicle_category,
+                fs.outbound_buffer_min,
+                cfg.min_notice_min AS min_notice_min,
+                cfg.instant_booking_enabled AS instant_booking_enabled,
+                cfg.instant_booking_start_time AS instant_booking_start_time,
+                cfg.instant_booking_end_time AS instant_booking_end_time
+         FROM fleet_slots fs
+         LEFT JOIN fleet_settings cfg
+           ON cfg.vehicle_slot_id = fs.vehicle_slot_id
+          AND cfg.location_id = fs.location_id
+         WHERE fs.vehicle_slot_id = $1 AND fs.location_id = $2
          LIMIT 1`,
         [vehicleSlotId, locationId]
       );
@@ -9543,8 +9557,8 @@ res.json({
     instant_booking_start_time: normalizeTimeOfDay(v.instant_booking_start_time, DEFAULT_INSTANT_BOOKING_START_TIME),
     instant_booking_end_time: normalizeTimeOfDay(v.instant_booking_end_time, DEFAULT_INSTANT_BOOKING_END_TIME),
     min_notice_min: Number.isFinite(parseInt(v.min_notice_min, 10))
-      ? parseInt(v.min_notice_min, 10)
-      : (DEFAULT_NON_INSTANT_NOTICE_HOURS * 60),
+      ? Math.max(0, parseInt(v.min_notice_min, 10))
+      : (normalizeBooleanish(v.instant_booking_enabled, true) ? 0 : (DEFAULT_NON_INSTANT_NOTICE_HOURS * 60)),
     vehicle_image: v.vehicle_image || "",
     vehicle_license_plate: v.vehicle_license_plate || ""
   })),
