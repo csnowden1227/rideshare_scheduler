@@ -7855,7 +7855,11 @@ function buildCrmBookingPayload({
 function getHoursUntilRide(startTime) {
   const rideDate = new Date(startTime);
   if (Number.isNaN(rideDate.getTime())) return 0;
-  return (rideDate.getTime() - Date.now()) / (1000 * 60 * 60);
+  const diffMs = rideDate.getTime() - Date.now();
+  // The booking form captures time to the minute, so a same-minute pickup can
+  // look a few seconds "late" by the time checkout is submitted.
+  if (diffMs >= -60000) return 0;
+  return diffMs / (1000 * 60 * 60);
 }
 
 function getPaymentBooleans({

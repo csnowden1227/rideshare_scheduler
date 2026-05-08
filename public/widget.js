@@ -261,9 +261,19 @@
     };
   }
 
+  function getHoursUntilStart(startDate) {
+    const diffMs = startDate.getTime() - Date.now();
+    // The widget captures pickup time to the minute, so a same-minute booking
+    // can be a few seconds "late" by the time the customer presses confirm.
+    if (diffMs >= -60000) {
+      return 0;
+    }
+    return diffMs / (1000 * 60 * 60);
+  }
+
   function validateVehicleBookingPolicy(vehicle, startDate, rawStartTime) {
     const policy = getVehicleBookingPolicy(vehicle);
-    const hoursUntilRide = (startDate.getTime() - Date.now()) / (1000 * 60 * 60);
+    const hoursUntilRide = getHoursUntilStart(startDate);
     const configuredNoticeHours = Math.max(0, Number(policy.min_notice_min || 0) / 60);
     const minimumNoticeHours = policy.instant_booking_enabled
       ? configuredNoticeHours
@@ -915,7 +925,7 @@
   }
 
   function computePaymentPolicy(startDate, total, depositAmount) {
-    const hoursUntilRide = (startDate.getTime() - Date.now()) / (1000 * 60 * 60);
+    const hoursUntilRide = getHoursUntilStart(startDate);
     const depositEligible = hoursUntilRide >= 72 && depositAmount > 0 && depositAmount < total;
     const balanceDueDeadline = new Date(startDate.getTime() - (48 * 60 * 60 * 1000));
     return {
