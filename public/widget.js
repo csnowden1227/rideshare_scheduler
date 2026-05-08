@@ -279,7 +279,7 @@
       ? configuredNoticeHours
       : Math.max(4, configuredNoticeHours || 0);
 
-    if (hoursUntilRide < minimumNoticeHours) {
+    if (minimumNoticeHours > 0 && hoursUntilRide < minimumNoticeHours) {
       const noticeText = Number.isInteger(minimumNoticeHours)
         ? `${minimumNoticeHours}`
         : minimumNoticeHours.toFixed(1);

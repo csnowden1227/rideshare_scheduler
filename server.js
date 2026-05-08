@@ -718,7 +718,7 @@ function validateBookingTimingRules({ slot = {}, startTime, profileDefaults = {}
     ? configuredNoticeHours
     : Math.max(DEFAULT_NON_INSTANT_NOTICE_HOURS, configuredNoticeHours || 0);
 
-  if (hoursUntilRide < minimumNoticeHours) {
+  if (minimumNoticeHours > 0 && hoursUntilRide < minimumNoticeHours) {
     const roundedNotice = Number.isInteger(minimumNoticeHours)
       ? String(minimumNoticeHours)
       : minimumNoticeHours.toFixed(1);
