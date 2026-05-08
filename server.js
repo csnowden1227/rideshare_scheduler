@@ -3486,6 +3486,13 @@ app.get("/pay/test-run/:bookingId", async (req, res) => {
     return res.status(500).send(err.message || "Unable to open the practice checkout.");
   }
 });
+app.get("/widget.js", (req, res) => {
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  res.setHeader("Pragma", "no-cache");
+  res.setHeader("Expires", "0");
+  return res.sendFile(path.join(__dirname, "public", "widget.js"));
+});
+
 app.use(express.static(path.join(__dirname, "public")));
 
 // --- IFRAME & SECURITY POLICY ---

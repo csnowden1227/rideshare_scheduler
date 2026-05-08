@@ -1926,7 +1926,8 @@ async function startCrmOauthConnection() {
 async function loadFromBackend() {
     document.getElementById('display-loc-id').innerText = location_id;
     const wizardSuffix = wizardToken ? `&token=${wizardToken}` : '';
-    document.getElementById('embed-box').innerText = `<div id="chauffeur-booking-widget"></div>\n<script src="${BACKEND_URL}/widget.js?loc=${location_id}${wizardSuffix}"><\/script>`;
+    const cacheBuster = `&v=${Date.now()}`;
+    document.getElementById('embed-box').innerText = `<div id="chauffeur-booking-widget"></div>\n<script src="${BACKEND_URL}/widget.js?loc=${location_id}${wizardSuffix}${cacheBuster}"><\/script>`;
     
     try {
         const profileUrl = wizardToken
