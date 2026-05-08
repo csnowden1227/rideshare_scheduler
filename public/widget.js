@@ -249,12 +249,15 @@
   function getVehicleBookingPolicy(vehicle = {}) {
     const profileOpen = state.config?.open_time || "06:00";
     const profileClose = state.config?.close_time || "22:00";
+    const instantBookingEnabled = normalizeBooleanish(vehicle?.instant_booking_enabled, true);
     const configuredNoticeMin = parseInt(vehicle?.min_notice_min, 10);
     return {
-      instant_booking_enabled: normalizeBooleanish(vehicle?.instant_booking_enabled, true),
+      instant_booking_enabled: instantBookingEnabled,
       instant_booking_start_time: normalizeTimeOfDay(vehicle?.instant_booking_start_time, normalizeTimeOfDay(profileOpen, "06:00")),
       instant_booking_end_time: normalizeTimeOfDay(vehicle?.instant_booking_end_time, normalizeTimeOfDay(profileClose, "22:00")),
-      min_notice_min: Number.isFinite(configuredNoticeMin) ? Math.max(0, configuredNoticeMin) : 240,
+      min_notice_min: Number.isFinite(configuredNoticeMin)
+        ? Math.max(0, configuredNoticeMin)
+        : (instantBookingEnabled ? 0 : 240),
     };
   }
 
