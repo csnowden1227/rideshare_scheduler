@@ -688,6 +688,28 @@ function normalizeFleetBookingPolicy(slot = {}, profileDefaults = {}) {
   };
 }
 
+async function getProfilesColumns() {
+  return getTableColumns("profiles");
+}
+
+async function getBookingProfileRow(locationId, fields = []) {
+  const profileColumns = await getProfilesColumns();
+  const selectedFields = fields.filter((field) => profileColumns.has(field));
+  if (!selectedFields.length) {
+    return {};
+  }
+
+  const result = await pool.query(
+    `SELECT ${selectedFields.join(", ")}
+     FROM profiles
+     WHERE location_id = $1
+     LIMIT 1`,
+    [locationId]
+  );
+
+  return result.rows[0] || {};
+}
+
 function validateBookingTimingRules({ slot = {}, startTime, profileDefaults = {} }) {
   const policy = normalizeFleetBookingPolicy(slot, profileDefaults);
   const hoursUntilRide = getHoursUntilRide(startTime);
@@ -7490,13 +7512,15 @@ app.post("/api/availability", async (req, res) => {
     // --- NEW: YOU NEED THESE THREE LOOKUPS FIRST ---
     
     // 1. Get Operating Hours from Profiles
-    const profileRes = await pool.query(
-      "SELECT open_time, close_time, is_booking_enabled, fleet FROM profiles WHERE location_id=$1",
-      [location_id]
-    );
-    if (!profileRes.rows.length) return res.json({ slots: [], error: "Profile not found" });
-    const { open_time, close_time, is_booking_enabled } = profileRes.rows[0];
-    const profileFleet = normalizeFleetRecords(safeParseJson(profileRes.rows[0].fleet));
+    const profileRow = await getBookingProfileRow(location_id, [
+      "open_time",
+      "close_time",
+      "is_booking_enabled",
+      "fleet",
+    ]);
+    if (!Object.keys(profileRow).length) return res.json({ slots: [], error: "Profile not found" });
+    const { open_time, close_time, is_booking_enabled } = profileRow;
+    const profileFleet = normalizeFleetRecords(safeParseJson(profileRow.fleet));
     const selectedVehicle = vehicle_slot_id
       ? profileFleet.find((item) => String(item?.vehicle_slot_id || "").trim() === String(vehicle_slot_id || "").trim())
       : null;
@@ -8070,13 +8094,16 @@ async function createBookingRecord(input, { paymentLink = null, triggerWebhook =
     throw new Error("Missing required booking fields.");
   }
 
-  const profileLookup = await pool.query(
-    `SELECT crm_webhook_url, business_name, maps_api_key, fleet, payment_provider, peak_windows, open_time, close_time
-     FROM profiles
-     WHERE location_id = $1`,
-    [location_id]
-  );
-  const profile = profileLookup.rows[0] || {};
+    const profile = await getBookingProfileRow(location_id, [
+      "crm_webhook_url",
+      "business_name",
+      "maps_api_key",
+      "fleet",
+      "payment_provider",
+      "peak_windows",
+      "open_time",
+      "close_time",
+    ]);
   const resolvedPaymentProvider = normalizePaymentProvider(payment_provider || profile.payment_provider);
 
   let fleetVehicle = null;
@@ -8276,7 +8303,7 @@ async function createBookingRecord(input, { paymentLink = null, triggerWebhook =
     const crmPayload = buildCrmBookingPayload({
       webhookType: "webhook_bookings",
       locationId: location_id,
-      businessName: profileLookup.rows[0]?.business_name || null,
+      businessName: profile.business_name || null,
       booking: {
         booking_id,
         status: bookingStatus,
@@ -8450,14 +8477,13 @@ app.post("/api/create-checkout-session", async (req, res) => {
       return res.status(400).json({ error: "Practice mode requires a Stripe test secret key in the setup wizard." });
     }
 
-    const profileLookup = await pool.query(
-      `SELECT maps_api_key, fleet, peak_windows, open_time, close_time
-       FROM profiles
-       WHERE location_id = $1
-       LIMIT 1`,
-      [locationId]
-    );
-    const profile = profileLookup.rows[0] || {};
+    const profile = await getBookingProfileRow(locationId, [
+      "maps_api_key",
+      "fleet",
+      "peak_windows",
+      "open_time",
+      "close_time",
+    ]);
 
     let fleetVehicle = null;
     if (await tableExists("fleet_slots")) {
