@@ -377,9 +377,21 @@
       if (distanceMiles <= 0.10) return 17;
       if (distanceMiles <= 0.25) return 16;
       if (distanceMiles <= 0.50) return 15;
-      if (distanceMiles <= 1.00) return 14;
-      if (distanceMiles <= 2.00) return 13;
-      return 12;
+      if (distanceMiles <= 1.00) return 14.5;
+      if (distanceMiles <= 2.00) return 14;
+      if (distanceMiles <= 4.00) return 13;
+      if (distanceMiles <= 8.00) return 12.5;
+      if (distanceMiles <= 15.00) return 12;
+      return 11;
+    }
+
+    function getRouteFocusCenter(driverPosition, targetPosition) {
+      if (!driverPosition) return targetPosition || null;
+      if (!targetPosition) return driverPosition;
+      return {
+        lat: (driverPosition.lat * 0.55) + (targetPosition.lat * 0.45),
+        lng: (driverPosition.lng * 0.55) + (targetPosition.lng * 0.45),
+      };
     }
 
     function focusMapForDriverProximity(map, driverPosition, tripStatus) {
@@ -390,16 +402,16 @@
       }
 
       const distanceMiles = calculateDistanceMiles(driverPosition, targetPosition);
-      if (!Number.isFinite(distanceMiles) || distanceMiles > 3) {
+      if (!Number.isFinite(distanceMiles)) {
+        fitMapToPoints(map, [driverPosition, targetPosition]);
+        return;
+      }
+      if (distanceMiles > 20) {
         fitMapToPoints(map, [driverPosition, targetPosition]);
         return;
       }
 
-      const midpoint = {
-        lat: (driverPosition.lat + targetPosition.lat) / 2,
-        lng: (driverPosition.lng + targetPosition.lng) / 2,
-      };
-      map.setCenter(midpoint);
+      map.setCenter(getRouteFocusCenter(driverPosition, targetPosition));
       map.setZoom(getProximityZoom(distanceMiles));
     }
 
