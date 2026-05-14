@@ -1007,9 +1007,9 @@ function normalizePublicAppUrl(value) {
 function buildTrackingUrls(req, driverToken, customerToken, publicAppUrl = null) {
   const baseUrl = normalizePublicAppUrl(publicAppUrl) || getPublicAppUrl(req);
   return {
-    driver_url: `${baseUrl}/driver-tracking.html?token=${encodeURIComponent(driverToken)}`,
-    customer_url: `${baseUrl}/customer-tracking.html?token=${encodeURIComponent(customerToken)}`,
-    follow_up_url: `${baseUrl}/ride-follow-up.html?token=${encodeURIComponent(customerToken)}`,
+    driver_url: `${baseUrl}/driver-tracking?token=${encodeURIComponent(driverToken)}`,
+    customer_url: `${baseUrl}/customer-tracking?token=${encodeURIComponent(customerToken)}`,
+    follow_up_url: `${baseUrl}/customer-follow-up?token=${encodeURIComponent(customerToken)}`,
   };
 }
 
@@ -1020,8 +1020,8 @@ function buildCustomerPortalUrls(req, locationId, customerToken, publicAppUrl = 
   if (customerToken) params.set("token", String(customerToken || "").trim());
   const suffix = params.toString() ? `?${params.toString()}` : "";
   return {
-    ride_hub_url: `${baseUrl}/customer-portal-app-home.html${suffix}`,
-    ride_inbox_url: `${baseUrl}/customer-portal-app-notifications.html${suffix}`,
+    ride_hub_url: `${baseUrl}/ride-hub-portal${suffix}`,
+    ride_inbox_url: `${baseUrl}/ride-hub-inbox${suffix}`,
   };
 }
 
@@ -3264,11 +3264,26 @@ app.get("/addons.html", (req, res) => {
 app.get("/driver-tracking.html", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "driver-tracking.html"));
 });
+app.get("/driver-tracking", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "driver-tracking.html"));
+});
 app.get("/customer-tracking.html", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "customer-tracking.html"));
+});
+app.get("/customer-tracking", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "customer-tracking.html"));
 });
 app.get("/ride-follow-up.html", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "ride-follow-up.html"));
+});
+app.get("/customer-follow-up", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "ride-follow-up.html"));
+});
+app.get("/ride-hub-portal", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "customer-portal-app-home.html"));
+});
+app.get("/ride-hub-inbox", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "customer-portal-app-notifications.html"));
 });
 app.get("/page-directory.html", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "page-directory.html"));
