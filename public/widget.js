@@ -846,6 +846,12 @@
   }
 
   function formPayload() {
+    const rawStartTime = document.getElementById("cd_start_time")?.value;
+    const startTimeValue = rawStartTime ? new Date(rawStartTime) : null;
+    const normalizedStartTime = startTimeValue && !Number.isNaN(startTimeValue.getTime())
+      ? startTimeValue.toISOString()
+      : "";
+
     return {
       location_id: locationId,
       vehicle_slot_id: document.getElementById("cd_vehicle_slot_id")?.value,
@@ -855,7 +861,7 @@
         phone: formatPhoneForUi(document.getElementById("cd_phone")?.value.trim()),
       pickup_address: document.getElementById("cd_pickup")?.value.trim(),
       dropoff_address: document.getElementById("cd_dropoff")?.value.trim(),
-      start_time: document.getElementById("cd_start_time")?.value,
+      start_time: normalizedStartTime,
       booking_mode: selectedBookingMode(),
       payment_choice: selectedPaymentChoice(),
       passenger_count: toNumber(document.getElementById("cd_passenger_count")?.value, 1),
