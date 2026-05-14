@@ -77,6 +77,7 @@ const pool = new Pool({
 let bookingSyncColumnsReady = null;
 let crmLocationTokenColumnsReady = null;
 let profileCrmApiKeyColumnReady = null;
+let profilePublicAppUrlColumnReady = null;
 let profilePricingColumnsReady = null;
 let profileEntitlementColumnsReady = null;
 let profilePaymentProviderColumnsReady = null;
@@ -255,6 +256,18 @@ async function ensureProfileCrmApiKeyColumn() {
     });
   }
   return profileCrmApiKeyColumnReady;
+}
+
+async function ensureProfilePublicAppUrlColumn() {
+  if (!profilePublicAppUrlColumnReady) {
+    profilePublicAppUrlColumnReady = (async () => {
+      await pool.query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS public_app_url TEXT`);
+    })().catch((err) => {
+      profilePublicAppUrlColumnReady = null;
+      throw err;
+    });
+  }
+  return profilePublicAppUrlColumnReady;
 }
 
 async function ensureProfileEntitlementColumns() {
@@ -979,8 +992,20 @@ function calculateServiceFeeAmount({ subtotal = 0, feeType = "", feeValue = 0 })
   return 0;
 }
 
-function buildTrackingUrls(req, driverToken, customerToken) {
-  const baseUrl = getPublicAppUrl(req);
+function normalizePublicAppUrl(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const withProtocol = /^[a-z]+:\/\//i.test(raw) ? raw : `https://${raw}`;
+  try {
+    const url = new URL(withProtocol);
+    return url.toString().replace(/\/+$/, "");
+  } catch {
+    return "";
+  }
+}
+
+function buildTrackingUrls(req, driverToken, customerToken, publicAppUrl = null) {
+  const baseUrl = normalizePublicAppUrl(publicAppUrl) || getPublicAppUrl(req);
   return {
     driver_url: `${baseUrl}/driver-tracking.html?token=${encodeURIComponent(driverToken)}`,
     customer_url: `${baseUrl}/customer-tracking.html?token=${encodeURIComponent(customerToken)}`,
@@ -988,8 +1013,8 @@ function buildTrackingUrls(req, driverToken, customerToken) {
   };
 }
 
-function buildCustomerPortalUrls(req, locationId, customerToken) {
-  const baseUrl = getPublicAppUrl(req);
+function buildCustomerPortalUrls(req, locationId, customerToken, publicAppUrl = null) {
+  const baseUrl = normalizePublicAppUrl(publicAppUrl) || getPublicAppUrl(req);
   const params = new URLSearchParams();
   if (locationId) params.set("location_id", String(locationId || "").trim());
   if (customerToken) params.set("token", String(customerToken || "").trim());
@@ -1039,7 +1064,7 @@ async function ensureTrackingSessionForBookingInternal({ bookingId, locationId, 
 
   const profileIdColumn = await getProfileIdColumn();
   const profileLookup = await pool.query(
-    `SELECT plan_name, addon_branding_unlocked, addon_funnel_unlocked, addon_tracking_unlocked, addon_extra_vehicle_count, fleet
+    `SELECT plan_name, addon_branding_unlocked, addon_funnel_unlocked, addon_tracking_unlocked, addon_extra_vehicle_count, fleet, public_app_url
      FROM profiles
      WHERE ${profileIdColumn} = $1
      LIMIT 1`,
@@ -1065,7 +1090,7 @@ async function ensureTrackingSessionForBookingInternal({ bookingId, locationId, 
       tracking_session_id: session.id,
       driver_token: session.driver_token,
       customer_token: session.customer_token,
-      ...buildTrackingUrls(req, session.driver_token, session.customer_token),
+      ...buildTrackingUrls(req, session.driver_token, session.customer_token, profileLookup.rows[0]?.public_app_url),
     };
   }
 
@@ -1098,11 +1123,12 @@ async function ensureTrackingSessionForBookingInternal({ bookingId, locationId, 
       driver_display_name: defaultDriverName,
       driver_phone: defaultDriverPhone,
       driver_email: defaultDriverEmail,
+      public_app_url: profileLookup.rows[0]?.public_app_url || null,
     },
     tracking_session_id: id,
     driver_token: driverToken,
     customer_token: customerToken,
-    ...buildTrackingUrls(req, driverToken, customerToken),
+    ...buildTrackingUrls(req, driverToken, customerToken, profileLookup.rows[0]?.public_app_url),
   };
 }
 
@@ -1130,8 +1156,9 @@ async function getTrackingSessionByToken({ token, role = "customer" }) {
         b.booking_mode,
         b.crm_contact_id,
         b.status AS booking_status,
-        p.business_name,
+      p.business_name,
       p.maps_api_key,
+      p.public_app_url,
       p.plan_name,
       p.addon_branding_unlocked,
       p.addon_funnel_unlocked,
@@ -1178,6 +1205,7 @@ async function getTrackingSessionById(sessionId) {
         b.status AS booking_status,
         p.business_name,
       p.maps_api_key,
+      p.public_app_url,
       p.crm_webhook_url,
       p.plan_name,
       p.addon_branding_unlocked,
@@ -1214,7 +1242,7 @@ async function getTrackingFeedbackBySessionId(trackingSessionId) {
 function buildTrackingResponsePayload(session, { includeDriverToken = false } = {}) {
   const vehicleRecord = getVehicleRecordForSession(session);
   const vehicleDisplayName = buildVehicleDisplayName(vehicleRecord, session.vehicle_slot_id || "");
-  const trackingUrls = buildTrackingUrls(null, session.driver_token, session.customer_token);
+  const trackingUrls = buildTrackingUrls(null, session.driver_token, session.customer_token, session.public_app_url);
   const payload = {
     tracking_session_id: session.id,
     booking_id: session.booking_id,
@@ -1278,7 +1306,7 @@ function buildTrackingSessionClientShape(session) {
   const customerName = [session.first_name, session.last_name].filter(Boolean).join(" ").trim();
   const vehicleRecord = getVehicleRecordForSession(session);
   const vehicleDisplayName = buildVehicleDisplayName(vehicleRecord, session.vehicle_slot_id || "");
-  const trackingUrls = buildTrackingUrls(null, session.driver_token, session.customer_token);
+  const trackingUrls = buildTrackingUrls(null, session.driver_token, session.customer_token, session.public_app_url);
   const branding = buildPublicBrandingFromProfile(session);
   return {
     id: session.id,
@@ -1334,8 +1362,8 @@ function buildTrackingSessionClientShape(session) {
 }
 
 function buildTrackingStatusWebhookPayload({ req, session, status }) {
-  const trackingUrls = buildTrackingUrls(req, session.driver_token, session.customer_token);
-  const portalUrls = buildCustomerPortalUrls(req, session.location_id, session.customer_token);
+  const trackingUrls = buildTrackingUrls(req, session.driver_token, session.customer_token, session.public_app_url);
+  const portalUrls = buildCustomerPortalUrls(req, session.location_id, session.customer_token, session.public_app_url);
   const customerName = [session.first_name, session.last_name].filter(Boolean).join(" ").trim();
   const vehicleRecord = getVehicleRecordForSession(session);
   const vehicleDisplayName = buildVehicleDisplayName(vehicleRecord, session.vehicle_slot_id || "");
@@ -3593,6 +3621,7 @@ async function saveConfigHandler(req, res) {
 
     await client.query("BEGIN");
     await ensureProfileCrmApiKeyColumn();
+    await ensureProfilePublicAppUrlColumn();
     await ensureProfilePricingColumns();
     await ensureProfileEntitlementColumns();
     await ensureProfilePaymentProviderColumns();
@@ -3636,6 +3665,7 @@ async function saveConfigHandler(req, res) {
     pushProfileField("brand_color_accent", sanitizedBranding.brand_color_accent || DEFAULT_BRAND_COLORS.accent);
     pushProfileField("widget_tagline", sanitizedBranding.widget_tagline || null);
     pushProfileField("plan_name", normalizedPlanName);
+    pushProfileField("public_app_url", normalizePublicAppUrl(req.body.public_app_url || null) || null);
     pushProfileField("crm_webhook_url", crm_webhook_url);
     pushProfileField("maps_api_key", maps_api_key);
     pushProfileField("crm_api_key", crm_api_key || null);
@@ -4604,6 +4634,7 @@ app.post('/api/update-profile-full-legacy', async (req, res) => {
     const {
         location_id,
         business_name,
+        public_app_url,
         crm_webhook_url, 
         maps_api_key,
         tax_rate,
@@ -4622,15 +4653,17 @@ app.post('/api/update-profile-full-legacy', async (req, res) => {
     try {
         client = await pool.connect();
         await client.query('BEGIN');
+        await ensureProfilePublicAppUrlColumn();
 
         // 1. UPSERT THE MAIN PROFILE
         await client.query(
             `INSERT INTO profiles (
-                location_id, business_name, crm_webhook_url, maps_api_key, tax_rate, service_lat, service_lng, service_radius, fleet, fixed_rates, events, peak_windows, addons
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+                location_id, business_name, public_app_url, crm_webhook_url, maps_api_key, tax_rate, service_lat, service_lng, service_radius, fleet, fixed_rates, events, peak_windows, addons
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
             ON CONFLICT (location_id) 
             DO UPDATE SET 
                 business_name = EXCLUDED.business_name,
+                public_app_url = EXCLUDED.public_app_url,
                 crm_webhook_url = EXCLUDED.crm_webhook_url,
                 maps_api_key = EXCLUDED.maps_api_key,
                 tax_rate = EXCLUDED.tax_rate,
@@ -4645,6 +4678,7 @@ app.post('/api/update-profile-full-legacy', async (req, res) => {
             [
                 location_id,
                 business_name || null,
+                normalizePublicAppUrl(public_app_url || null) || null,
                 crm_webhook_url,
                 maps_api_key,
                 tax_rate || 0,
@@ -4655,7 +4689,7 @@ app.post('/api/update-profile-full-legacy', async (req, res) => {
                 JSON.stringify(fixed_rates || []),
                 JSON.stringify(events || []),
                 JSON.stringify(peak_windows || []),
-                JSON.stringify(addons || [])
+                JSON.stringify(addons || []),
             ]
         );
 
@@ -6115,7 +6149,7 @@ app.get("/api/tracking/session/driver", async (req, res) => {
       success: true,
       session: buildTrackingSessionClientShape(session),
       tracking: buildTrackingResponsePayload(session, { includeDriverToken: true }),
-      ...buildTrackingUrls(req, session.driver_token, session.customer_token),
+      ...buildTrackingUrls(req, session.driver_token, session.customer_token, session.public_app_url),
     });
   } catch (err) {
     console.error("Driver tracking session lookup error:", err);
@@ -6142,7 +6176,7 @@ app.get("/api/tracking/session/customer", async (req, res) => {
       success: true,
       session: buildTrackingSessionClientShape(session),
       tracking: buildTrackingResponsePayload(session),
-      customer_url: buildTrackingUrls(req, session.driver_token, session.customer_token).customer_url,
+      customer_url: buildTrackingUrls(req, session.driver_token, session.customer_token, session.public_app_url).customer_url,
     });
   } catch (err) {
     console.error("Customer tracking session lookup error:", err);
@@ -6180,7 +6214,7 @@ app.get("/api/tracking/follow-up", async (req, res) => {
         : null,
       tip_enabled: normalizePaymentProvider(session.payment_provider || "stripe") === "stripe",
       suggested_tip_amounts: [5, 10, 20],
-      follow_up_url: buildTrackingUrls(req, session.driver_token, session.customer_token).follow_up_url,
+      follow_up_url: buildTrackingUrls(req, session.driver_token, session.customer_token, session.public_app_url).follow_up_url,
     });
   } catch (err) {
     console.error("Tracking follow-up lookup error:", err);
@@ -6609,7 +6643,7 @@ app.post("/api/tracking/driver-profile/select", async (req, res) => {
       profiles,
       session: refreshedSession ? buildTrackingSessionClientShape(refreshedSession) : null,
       tracking: refreshedSession ? buildTrackingResponsePayload(refreshedSession, { includeDriverToken: true }) : null,
-      ...buildTrackingUrls(req, token, refreshedSession?.customer_token || ""),
+      ...buildTrackingUrls(req, token, refreshedSession?.customer_token || "", refreshedSession?.public_app_url || ""),
     });
   } catch (err) {
     if (client) {
@@ -8271,6 +8305,7 @@ async function createBookingRecord(input, { paymentLink = null, triggerWebhook =
       "crm_webhook_url",
       "business_name",
       "maps_api_key",
+      "public_app_url",
       "fleet",
       "payment_provider",
       "peak_windows",
@@ -8473,6 +8508,9 @@ async function createBookingRecord(input, { paymentLink = null, triggerWebhook =
   }
 
   if (triggerWebhook && webhookUrl && webhookUrl.startsWith("http")) {
+    const trackingSession = await ensureTrackingSessionForBookingInternal({ bookingId, locationId: location_id, req });
+    const trackingUrls = buildTrackingUrls(req, trackingSession.driver_token, trackingSession.customer_token, profile.public_app_url);
+    const portalUrls = buildCustomerPortalUrls(req, location_id, trackingSession.customer_token, profile.public_app_url);
     const crmPayload = buildCrmBookingPayload({
       webhookType: "webhook_bookings",
       locationId: location_id,
@@ -8508,6 +8546,18 @@ async function createBookingRecord(input, { paymentLink = null, triggerWebhook =
         vehicle_type,
         vehicle_category,
         calendar_id: calendar_id ? String(calendar_id) : null,
+      },
+      tracking: {
+        tracking_session_id: trackingSession.tracking_session_id || trackingSession.id || null,
+        customer_tracking_token: trackingSession.customer_token || null,
+        customer_tracking_url: trackingUrls.customer_url || null,
+        driver_tracking_token: trackingSession.driver_token || null,
+        driver_tracking_url: trackingUrls.driver_url || null,
+        follow_up_url: trackingUrls.follow_up_url || null,
+      },
+      portal: {
+        ride_hub_url: portalUrls.ride_hub_url || null,
+        ride_inbox_url: portalUrls.ride_inbox_url || null,
       },
       financials: {
         quoted_price: Number(quoted_price || 0),
@@ -9448,7 +9498,7 @@ async function triggerCrmWebhook(location_id, booking_id) {
     }
 
     const profileRes = await client.query(
-      "SELECT crm_webhook_url, tax_rate, business_name, payment_provider, fleet, plan_name, addon_branding_unlocked, addon_funnel_unlocked, addon_tracking_unlocked, addon_extra_vehicle_count FROM profiles WHERE location_id = $1",
+      "SELECT crm_webhook_url, tax_rate, business_name, payment_provider, public_app_url, fleet, plan_name, addon_branding_unlocked, addon_funnel_unlocked, addon_tracking_unlocked, addon_extra_vehicle_count FROM profiles WHERE location_id = $1",
       [location_id]
     );
     const p = profileRes.rows[0];
@@ -9466,8 +9516,8 @@ async function triggerCrmWebhook(location_id, booking_id) {
     const depositAmount = Number(b.deposit_amount || 0);
     const balanceDue = Number((totalPrice - depositAmount).toFixed(2));
     const trackingSession = await ensureTrackingSessionForBookingInternal({ bookingId: b.id, locationId: location_id });
-    const trackingUrls = buildTrackingUrls(null, trackingSession.driver_token, trackingSession.customer_token);
-    const portalUrls = buildCustomerPortalUrls(null, location_id, trackingSession.customer_token);
+    const trackingUrls = buildTrackingUrls(null, trackingSession.driver_token, trackingSession.customer_token, p?.public_app_url);
+    const portalUrls = buildCustomerPortalUrls(null, location_id, trackingSession.customer_token, p?.public_app_url);
     const entitlements = buildPlanEntitlements({
       planName: p.plan_name || "starter",
       addonBrandingUnlocked: p.addon_branding_unlocked,

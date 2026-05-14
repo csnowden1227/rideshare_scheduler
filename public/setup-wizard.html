@@ -168,6 +168,11 @@
                     <div>
                         <label class="block text-[10px] font-bold mb-2 uppercase text-slate-400">Business Name</label>
                         <input type="text" id="business_name" class="input-mini" placeholder="e.g. Your Luxury Transportation Brand">
+                        <div class="mt-4">
+                            <label class="block text-[10px] font-bold mb-2 uppercase text-slate-400">Public App URL</label>
+                            <input type="text" id="public_app_url" class="input-mini" placeholder="e.g. https://chauffeur.crmonesource.com">
+                            <p class="text-[11px] text-slate-500 mt-2 leading-relaxed">Use the branded public domain customers and drivers should see for booking, tracking, Ride Hub, and follow-up links. Admin login stays on app.crmonesource.com.</p>
+                        </div>
                     </div>
                     <div>
                         <label class="block text-[10px] font-bold mb-2 uppercase text-slate-400">Business Logo</label>
@@ -1768,6 +1773,7 @@ function applyProfileToWizard(data = {}, { allowSensitive = true } = {}) {
     if (planOverride) data.plan_name = planOverride;
     currentEntitlements = data.entitlements || currentEntitlements;
     document.getElementById('business_name').value = data.business_name || '';
+    document.getElementById('public_app_url').value = data.public_app_url || '';
     logoBase64 = data.business_logo || '';
     if (logoBase64) {
         const preview = document.getElementById('logo-preview');
@@ -2042,6 +2048,7 @@ async function saveToBackend() {
         location_id,
         plan_name: currentPlanName,
         business_name: document.getElementById('business_name').value.trim(),
+        public_app_url: document.getElementById('public_app_url').value.trim(),
         business_logo: currentEntitlements.logo_enabled ? (logoBase64 || '') : '',
         brand_color_primary: currentEntitlements.branding_enabled ? document.getElementById('brand_color_primary').value.trim() : '#082f49',
         brand_color_secondary: currentEntitlements.branding_enabled ? document.getElementById('brand_color_secondary').value.trim() : '#0f766e',
@@ -2228,6 +2235,7 @@ function collectWizardPayload() {
         location_id,
         plan_name: currentPlanName,
         business_name: document.getElementById('business_name').value.trim(),
+        public_app_url: document.getElementById('public_app_url').value.trim(),
         business_logo: currentEntitlements.logo_enabled ? (logoBase64 || '') : '',
         brand_color_primary: currentEntitlements.branding_enabled ? document.getElementById('brand_color_primary').value.trim() : '#082f49',
         brand_color_secondary: currentEntitlements.branding_enabled ? document.getElementById('brand_color_secondary').value.trim() : '#0f766e',
