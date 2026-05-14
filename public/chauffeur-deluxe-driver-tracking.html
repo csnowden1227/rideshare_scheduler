@@ -296,6 +296,11 @@
             <button class="btn btn-secondary" data-status="completed">Complete Trip</button>
           </div>
 
+          <div class="actions">
+            <button id="farm-out-booking-btn" class="btn btn-secondary" type="button">Farm Out Booking</button>
+            <button id="open-dispatch-manager-btn" class="btn btn-primary" type="button">Open Dispatch Manager</button>
+          </div>
+
           <div class="status" id="driver-status-message">Loading tracking session...</div>
         </div>
 
@@ -353,6 +358,16 @@
 
     function getSessionData(payload) {
       return payload?.session || payload?.tracking || {};
+    }
+
+    function buildDispatchManagerUrl(dispatchRequestId = "") {
+      if (!currentSession?.location_id) return "";
+      const url = new URL(`${window.location.origin}/dispatch-network-manager.html`);
+      url.searchParams.set("location_id", String(currentSession.location_id || "").trim());
+      if (dispatchRequestId) {
+        url.searchParams.set("dispatch_request_id", String(dispatchRequestId || "").trim());
+      }
+      return url.toString();
     }
 
     async function requestJson(url, options = {}) {
@@ -820,6 +835,64 @@
       }
     }
 
+    async function createDispatchRequestFromTracking() {
+      if (!currentSession?.booking_id || !currentSession?.location_id) {
+        throw new Error("This tracking session is missing the booking or location needed for dispatch.");
+      }
+
+      const button = document.getElementById("farm-out-booking-btn");
+      const originalText = button?.textContent || "Farm Out Booking";
+      if (button) {
+        button.disabled = true;
+        button.textContent = "Creating Dispatch...";
+      }
+
+      try {
+        const data = await requestJson(`${apiBase}/api/dispatch/create`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            booking_id: currentSession.booking_id,
+            owner_location_id: currentSession.location_id,
+            dispatch_request_id: currentSession.dispatch_request_id || "",
+            requested_vehicle_type: currentSession.vehicle_slot_id || "",
+            notes: `Created from driver tracking for booking ${currentSession.booking_id}.`,
+            broadcast_mode: "manual",
+          })
+        });
+
+        currentSession = {
+          ...currentSession,
+          dispatch_request_id: data.dispatch_request_id || currentSession.dispatch_request_id || "",
+        };
+        setText(
+          "driver-status-message",
+          data.already_exists
+            ? "Dispatch request is already open. Opening Dispatch Manager now."
+            : "Dispatch request created. Opening Dispatch Manager now."
+        );
+
+        const managerUrl = data.manager_url || buildDispatchManagerUrl(currentSession.dispatch_request_id);
+        if (managerUrl) {
+          window.open(managerUrl, "_blank", "noopener,noreferrer");
+        }
+      } finally {
+        if (button) {
+          button.disabled = false;
+          button.textContent = originalText;
+        }
+      }
+    }
+
+    function openDispatchManagerFromTracking() {
+      const managerUrl = buildDispatchManagerUrl(currentSession?.dispatch_request_id || "");
+      if (!managerUrl) {
+        setText("driver-status-message", "Dispatch Manager is not available until this booking and location are loaded.");
+        return;
+      }
+      window.open(managerUrl, "_blank", "noopener,noreferrer");
+    }
+
     document.getElementById("saved-driver-select")?.addEventListener("change", (event) => {
       const selectedId = String(event.target.value || "").trim();
       const profile = savedDriverProfiles.find((item) => item.id === selectedId) || null;
@@ -845,6 +918,18 @@
       } catch (error) {
         setText("driver-status-message", error.message || "Unable to save the selected driver.");
       }
+    });
+
+    document.getElementById("farm-out-booking-btn")?.addEventListener("click", async () => {
+      try {
+        await createDispatchRequestFromTracking();
+      } catch (error) {
+        setText("driver-status-message", error.message || "Unable to create the dispatch request.");
+      }
+    });
+
+    document.getElementById("open-dispatch-manager-btn")?.addEventListener("click", () => {
+      openDispatchManagerFromTracking();
     });
 
     document.querySelectorAll("[data-status]").forEach((button) => {

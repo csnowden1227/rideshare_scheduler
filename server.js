@@ -6967,6 +6967,37 @@ app.post("/api/dispatch/create", async (req, res) => {
       return res.status(404).json({ error: "Booking not found." });
     }
     const booking = bookingResult.rows[0];
+    const baseUrl = getPublicAppUrl(req);
+    const existingDispatchRequestId = String(req.body.dispatch_request_id || "").trim()
+      || String((await pool.query(
+        `SELECT dispatch_request_id
+         FROM bookings
+         WHERE id = $1
+         LIMIT 1`,
+        [bookingId]
+      )).rows[0]?.dispatch_request_id || "").trim();
+
+    if (existingDispatchRequestId) {
+      const existingDispatchLookup = await pool.query(
+        `SELECT id, status
+         FROM dispatch_requests
+         WHERE id = $1
+         LIMIT 1`,
+        [existingDispatchRequestId]
+      );
+      if (existingDispatchLookup.rows.length && String(existingDispatchLookup.rows[0].status || "").trim().toLowerCase() !== "cancelled") {
+        return res.json({
+          success: true,
+          dispatch_request_id: existingDispatchRequestId,
+          status: String(existingDispatchLookup.rows[0].status || "open").trim() || "open",
+          manager_url: appendQueryParams(buildDispatchManagerUrl(baseUrl, ownerLocationId), {
+            dispatch_request_id: existingDispatchRequestId,
+          }),
+          already_exists: true,
+        });
+      }
+    }
+
     const dispatchRequestId = randomUUID();
 
     await pool.query(
@@ -7000,6 +7031,9 @@ app.post("/api/dispatch/create", async (req, res) => {
       success: true,
       dispatch_request_id: dispatchRequestId,
       status: "open",
+      manager_url: appendQueryParams(buildDispatchManagerUrl(baseUrl, ownerLocationId), {
+        dispatch_request_id: dispatchRequestId,
+      }),
     });
   } catch (err) {
     console.error("Create dispatch request error:", err);
