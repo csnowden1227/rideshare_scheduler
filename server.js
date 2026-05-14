@@ -599,7 +599,7 @@ const TRACKING_STATUS_VALUES = new Set([
 ]);
 
 const DEFAULT_INSTANT_BOOKING_START_TIME = "06:00";
-const DEFAULT_INSTANT_BOOKING_END_TIME = "23:59";
+const DEFAULT_INSTANT_BOOKING_END_TIME = "22:00";
 const DEFAULT_NON_INSTANT_NOTICE_HOURS = 4;
 
 function normalizeTrackingStatus(value) {
@@ -1410,21 +1410,7 @@ function buildTrackingStatusWebhookPayload({ req, session, status }) {
       premium_client_portal_enabled: premiumClientPortalEnabled,
       pro_mobile_app_enabled: proMobileAppEnabled,
     },
-    custom: {
-      plan_name: normalizedPlanName,
-      premium_client_portal_enabled: premiumClientPortalEnabled,
-      pro_mobile_app_enabled: proMobileAppEnabled,
-      crm_contact_id: session.crm_contact_id || null,
-      booking_mode: session.booking_mode || session.booking_status || null,
-      ride_hub_url: portalUrls.ride_hub_url,
-      ride_inbox_url: portalUrls.ride_inbox_url,
-      customer_tracking_url: trackingUrls.customer_url,
-      driver_tracking_url: trackingUrls.driver_url,
-      follow_up_url: trackingUrls.follow_up_url,
-      review_and_tip_url: trackingUrls.follow_up_url,
-      webhook_event: status,
-    },
-      assigned_driver: {
+    assigned_driver: {
         id: session.driver_profile_id || null,
         name: session.driver_display_name || null,
         phone: normalizeDriverPhone(session.driver_phone || "") || null,
@@ -7153,6 +7139,14 @@ app.post("/api/dispatch/:dispatch_request_id/assign", async (req, res) => {
 
     const assignmentId = randomUUID();
     const bookingId = requestLookup.rows[0].booking_id || null;
+    const partnerLookup = await client.query(
+      `SELECT business_name, contact_name, email, phone
+       FROM partners
+       WHERE id = $1
+       LIMIT 1`,
+      [partnerId]
+    );
+    const partnerRecord = partnerLookup.rows[0] || null;
 
     await client.query("BEGIN");
     await client.query(
@@ -7185,6 +7179,31 @@ app.post("/api/dispatch/:dispatch_request_id/assign", async (req, res) => {
          WHERE id = $1`,
         [bookingId, partnerId, dispatchRequestId]
       );
+
+      if (partnerRecord) {
+        const reassignedDriverName = String(
+          partnerRecord.contact_name || partnerRecord.business_name || ""
+        ).trim() || null;
+        const reassignedDriverPhone = normalizeDriverPhone(partnerRecord.phone || "") || null;
+        const reassignedDriverEmail = normalizeDriverEmail(partnerRecord.email || "") || null;
+
+        await client.query(
+          `UPDATE trip_tracking_sessions
+           SET driver_profile_id = NULL,
+               driver_display_name = $2,
+               driver_phone = $3,
+               driver_email = $4,
+               driver_photo_data = NULL,
+               updated_at = NOW()
+           WHERE booking_id = $1`,
+          [
+            bookingId,
+            reassignedDriverName,
+            reassignedDriverPhone,
+            reassignedDriverEmail,
+          ]
+        );
+      }
     }
 
     const offer = acceptedOffer.rows[0];
@@ -7262,10 +7281,10 @@ app.post("/api/dispatch/:dispatch_request_id/assign", async (req, res) => {
         [dispatchRequestId]
       );
 
-      const partnerRecord = partnerResult.rows[0] || null;
+      const crmPartnerRecord = partnerResult.rows[0] || null;
       const dispatchRecord = dispatchResult.rows[0] || null;
 
-      if (!partnerRecord) {
+      if (!crmPartnerRecord) {
         throw new Error("Assigned partner record not found.");
       }
       if (!dispatchRecord) {
@@ -7305,7 +7324,7 @@ app.post("/api/dispatch/:dispatch_request_id/assign", async (req, res) => {
         },
       };
 
-      const syncResult = await pushDispatchIntoPartnerCrmSafe(partnerRecord, dispatchData);
+      const syncResult = await pushDispatchIntoPartnerCrmSafe(crmPartnerRecord, dispatchData);
       crmSync = {
         attempted: true,
         success: true,
@@ -7808,50 +7827,6 @@ function buildCrmBookingPayload({
       ride_inbox_url: portal.ride_inbox_url || null,
       premium_client_portal_enabled: premiumClientPortalEnabled,
       pro_mobile_app_enabled: proMobileAppEnabled,
-    },
-    custom: {
-      plan_name: normalizedPlanName,
-      premium_client_portal_enabled: premiumClientPortalEnabled,
-      pro_mobile_app_enabled: proMobileAppEnabled,
-      crm_contact_id: crmContactId || null,
-      booking_mode: booking.booking_mode || "standard",
-      booking_id: booking.booking_id || null,
-      booking_status: normalizedStatus,
-      pickup_address: booking.pickup_address || null,
-      dropoff_address: booking.dropoff_address || null,
-      pickup_lat: booking.pickup_lat ?? null,
-      pickup_lng: booking.pickup_lng ?? null,
-      dropoff_lat: booking.dropoff_lat ?? null,
-      dropoff_lng: booking.dropoff_lng ?? null,
-      start_time: booking.start_time || null,
-      start_time_display: booking.start_time ? formatDisplayDateTime(booking.start_time) : null,
-      end_time: booking.end_time || null,
-      end_time_display: booking.end_time ? formatDisplayDateTime(booking.end_time) : null,
-      customer_first_name: customer.first_name || null,
-      customer_last_name: customer.last_name || null,
-      customer_full_name: [customer.first_name, customer.last_name].filter(Boolean).join(" ") || null,
-      customer_email: customer.email || null,
-      customer_phone: customer.phone || null,
-      vehicle_slot_id: vehicle.vehicle_slot_id || null,
-      vehicle_type: vehicle.vehicle_type || null,
-      assigned_driver_name: assignedDriver.name || null,
-      assigned_driver_phone: assignedDriver.phone || null,
-      assigned_driver_email: assignedDriver.email || null,
-      ride_hub_url: portal.ride_hub_url || null,
-      ride_inbox_url: portal.ride_inbox_url || null,
-      customer_tracking_url: tracking.customer_tracking_url || null,
-      driver_tracking_url: tracking.driver_tracking_url || null,
-      follow_up_url: tracking.follow_up_url || null,
-      review_and_tip_url: tracking.follow_up_url || null,
-      payment_status: paymentStatus,
-      total_price: Number(financials.total_price || 0),
-      deposit_percent: Number(financials.deposit_percent || 0),
-      deposit_amount: Number(financials.deposit_amount || 0),
-      balance_due: Number(financials.balance_due || 0),
-      amount_due_now: Number(financials.amount_due_now || 0),
-      payment_choice: financials.payment_choice || null,
-      payment_link: financials.payment_link || null,
-      balance_payment_link: financials.balance_payment_link || null,
     },
     route: {
       distance_miles: Number.isFinite(Number(meta.route_distance_miles))
