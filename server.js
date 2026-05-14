@@ -599,7 +599,7 @@ const TRACKING_STATUS_VALUES = new Set([
 ]);
 
 const DEFAULT_INSTANT_BOOKING_START_TIME = "06:00";
-const DEFAULT_INSTANT_BOOKING_END_TIME = "22:00";
+const DEFAULT_INSTANT_BOOKING_END_TIME = "23:59";
 const DEFAULT_NON_INSTANT_NOTICE_HOURS = 4;
 
 function normalizeTrackingStatus(value) {
@@ -2485,7 +2485,7 @@ async function sendDriverAssignmentSmsForBooking({ bookingId, locationId, paymen
     req,
   });
 
-  const driverContactId = await upsertCrmContact({
+  let driverContactId = await upsertCrmContact({
     locationId,
     firstName: driverName,
     lastName: "",
@@ -2503,11 +2503,41 @@ async function sendDriverAssignmentSmsForBooking({ bookingId, locationId, paymen
     trackingUrl: tracking.driver_url || null,
   });
 
-  return sendCrmSmsToContact({
+  let sendResult = await sendCrmSmsToContact({
     locationId,
     contactId: driverContactId,
     message,
   });
+
+  if (
+    !sendResult?.success &&
+    /missing phone number/i.test(String(sendResult?.error || "")) &&
+    driverPhone
+  ) {
+    driverContactId = await upsertCrmContact({
+      locationId,
+      firstName: driverName,
+      lastName: "",
+      email: undefined,
+      phone: driverPhone,
+    });
+
+    if (!driverContactId) {
+      return {
+        success: false,
+        skipped: true,
+        reason: "Unable to resolve driver CRM contact on phone-only retry.",
+      };
+    }
+
+    sendResult = await sendCrmSmsToContact({
+      locationId,
+      contactId: driverContactId,
+      message,
+    });
+  }
+
+  return sendResult;
 }
 
 async function createCrmAppointment({
@@ -4503,6 +4533,9 @@ app.post('/api/crm-webhook/reseed', async (req, res) => {
   try {
     const location_id = String(req.body.location_id || req.query.location_id || '').trim();
     const booking_id = Number(req.body.booking_id || req.query.booking_id || 0);
+    const replayDriverSms = normalizeBooleanish(req.body.replay_driver_sms ?? req.query.replay_driver_sms, false);
+    const forceDriverSmsReplay = normalizeBooleanish(req.body.force_driver_sms_replay ?? req.query.force_driver_sms_replay, false);
+    const explicitPaymentStatus = String(req.body.payment_status || req.query.payment_status || "").trim().toLowerCase();
 
     if (!location_id || !booking_id) {
       return res.status(400).json({
@@ -4512,6 +4545,35 @@ app.post('/api/crm-webhook/reseed', async (req, res) => {
     }
 
     const result = await triggerCrmWebhook(location_id, booking_id);
+    if (result?.success && replayDriverSms) {
+      const bookingLookup = await pool.query(
+        `SELECT id, location_id, total_price, deposit_amount, balance_due,
+                driver_assignment_sms_sent_at, driver_paid_in_full_sms_sent_at
+         FROM bookings
+         WHERE id = $1
+         LIMIT 1`,
+        [booking_id]
+      );
+      const bookingRow = bookingLookup.rows[0] || null;
+      let paymentStatus = explicitPaymentStatus;
+
+      if (!paymentStatus && bookingRow) {
+        const totalPrice = Number(bookingRow.total_price || 0);
+        const depositAmount = Number(bookingRow.deposit_amount || 0);
+        const balanceDue = Number(bookingRow.balance_due || 0);
+        paymentStatus = depositAmount > 0 && balanceDue > 0
+          ? "paid_deposit"
+          : (totalPrice > 0 ? "paid_in_full" : "");
+      }
+
+      result.driver_sms = await maybeSendDriverAssignmentSmsAfterConfirmation({
+        bookingId: booking_id,
+        locationId: location_id,
+        paymentStatus,
+        existingBooking: bookingRow,
+        forceReplay: forceDriverSmsReplay,
+      });
+    }
     return res.status(result?.status || (result?.success ? 200 : 500)).json(result);
   } catch (err) {
     return res.status(500).json({
@@ -6421,11 +6483,12 @@ app.post("/api/tracking/driver-profile/select", async (req, res) => {
     await client.query("BEGIN");
 
     const sessionLookup = await client.query(
-      `SELECT id, location_id, vehicle_slot_id
-       FROM trip_tracking_sessions
-       WHERE driver_token = $1
+      `SELECT s.id, s.location_id, b.vehicle_slot_id
+       FROM trip_tracking_sessions s
+       INNER JOIN bookings b ON b.id = s.booking_id
+       WHERE s.driver_token = $1
        LIMIT 1
-       FOR UPDATE`,
+       FOR UPDATE OF s`,
       [token]
     );
 
@@ -7752,6 +7815,28 @@ function buildCrmBookingPayload({
       pro_mobile_app_enabled: proMobileAppEnabled,
       crm_contact_id: crmContactId || null,
       booking_mode: booking.booking_mode || "standard",
+      booking_id: booking.booking_id || null,
+      booking_status: normalizedStatus,
+      pickup_address: booking.pickup_address || null,
+      dropoff_address: booking.dropoff_address || null,
+      pickup_lat: booking.pickup_lat ?? null,
+      pickup_lng: booking.pickup_lng ?? null,
+      dropoff_lat: booking.dropoff_lat ?? null,
+      dropoff_lng: booking.dropoff_lng ?? null,
+      start_time: booking.start_time || null,
+      start_time_display: booking.start_time ? formatDisplayDateTime(booking.start_time) : null,
+      end_time: booking.end_time || null,
+      end_time_display: booking.end_time ? formatDisplayDateTime(booking.end_time) : null,
+      customer_first_name: customer.first_name || null,
+      customer_last_name: customer.last_name || null,
+      customer_full_name: [customer.first_name, customer.last_name].filter(Boolean).join(" ") || null,
+      customer_email: customer.email || null,
+      customer_phone: customer.phone || null,
+      vehicle_slot_id: vehicle.vehicle_slot_id || null,
+      vehicle_type: vehicle.vehicle_type || null,
+      assigned_driver_name: assignedDriver.name || null,
+      assigned_driver_phone: assignedDriver.phone || null,
+      assigned_driver_email: assignedDriver.email || null,
       ride_hub_url: portal.ride_hub_url || null,
       ride_inbox_url: portal.ride_inbox_url || null,
       customer_tracking_url: tracking.customer_tracking_url || null,
@@ -7759,6 +7844,13 @@ function buildCrmBookingPayload({
       follow_up_url: tracking.follow_up_url || null,
       review_and_tip_url: tracking.follow_up_url || null,
       payment_status: paymentStatus,
+      total_price: Number(financials.total_price || 0),
+      deposit_percent: Number(financials.deposit_percent || 0),
+      deposit_amount: Number(financials.deposit_amount || 0),
+      balance_due: Number(financials.balance_due || 0),
+      amount_due_now: Number(financials.amount_due_now || 0),
+      payment_choice: financials.payment_choice || null,
+      payment_link: financials.payment_link || null,
       balance_payment_link: financials.balance_payment_link || null,
     },
     route: {
@@ -7948,76 +8040,12 @@ async function updateBookingConfirmation({
   await triggerCrmWebhook(result.rows[0].location_id, result.rows[0].id);
 
   try {
-    if (paymentStatus === "paid_deposit" && !existingBooking?.driver_assignment_sms_sent_at) {
-      const driverSmsResult = await sendDriverAssignmentSmsForBooking({
-        bookingId,
-        locationId: result.rows[0].location_id,
-        paymentState: "paid_deposit",
-      });
-      await pool.query(
-        `UPDATE bookings
-         SET driver_sms_last_attempt_at = NOW(),
-             driver_sms_last_error = $2
-         WHERE id = $1`,
-        [bookingId, driverSmsResult?.success ? null : String(driverSmsResult?.error || driverSmsResult?.reason || "Driver SMS failed.").slice(0, 1000)]
-      );
-      if (driverSmsResult?.success) {
-        await pool.query(
-          `UPDATE bookings
-           SET driver_assignment_sms_sent_at = COALESCE(driver_assignment_sms_sent_at, NOW())
-           WHERE id = $1`,
-          [bookingId]
-        );
-      }
-    } else if (
-      paymentStatus === "paid_in_full" &&
-      existingBooking?.driver_assignment_sms_sent_at &&
-      !existingBooking?.driver_paid_in_full_sms_sent_at &&
-      Number(existingBooking?.balance_due || 0) > 0
-    ) {
-      const driverSmsResult = await sendDriverAssignmentSmsForBooking({
-        bookingId,
-        locationId: result.rows[0].location_id,
-        paymentState: "paid_in_full_balance_cleared",
-      });
-      await pool.query(
-        `UPDATE bookings
-         SET driver_sms_last_attempt_at = NOW(),
-             driver_sms_last_error = $2
-         WHERE id = $1`,
-        [bookingId, driverSmsResult?.success ? null : String(driverSmsResult?.error || driverSmsResult?.reason || "Driver SMS failed.").slice(0, 1000)]
-      );
-      if (driverSmsResult?.success) {
-        await pool.query(
-          `UPDATE bookings
-           SET driver_paid_in_full_sms_sent_at = COALESCE(driver_paid_in_full_sms_sent_at, NOW())
-           WHERE id = $1`,
-          [bookingId]
-        );
-      }
-    } else if (paymentStatus === "paid_in_full" && !existingBooking?.driver_assignment_sms_sent_at) {
-      const driverSmsResult = await sendDriverAssignmentSmsForBooking({
-        bookingId,
-        locationId: result.rows[0].location_id,
-        paymentState: "paid_in_full",
-      });
-      await pool.query(
-        `UPDATE bookings
-         SET driver_sms_last_attempt_at = NOW(),
-             driver_sms_last_error = $2
-         WHERE id = $1`,
-        [bookingId, driverSmsResult?.success ? null : String(driverSmsResult?.error || driverSmsResult?.reason || "Driver SMS failed.").slice(0, 1000)]
-      );
-      if (driverSmsResult?.success) {
-        await pool.query(
-          `UPDATE bookings
-           SET driver_assignment_sms_sent_at = COALESCE(driver_assignment_sms_sent_at, NOW()),
-               driver_paid_in_full_sms_sent_at = COALESCE(driver_paid_in_full_sms_sent_at, NOW())
-           WHERE id = $1`,
-          [bookingId]
-        );
-      }
-    }
+    await maybeSendDriverAssignmentSmsAfterConfirmation({
+      bookingId,
+      locationId: result.rows[0].location_id,
+      paymentStatus,
+      existingBooking,
+    });
   } catch (driverSmsErr) {
     console.error("Driver assignment SMS error after confirmation:", driverSmsErr);
   }
@@ -8028,6 +8056,138 @@ async function updateBookingConfirmation({
     status: "confirmed",
     payment_status: paymentStatus,
     balance_due: balanceDue,
+  };
+}
+
+async function maybeSendDriverAssignmentSmsAfterConfirmation({
+  bookingId,
+  locationId,
+  paymentStatus,
+  existingBooking = null,
+  forceReplay = false,
+}) {
+  if (!bookingId || !locationId || !paymentStatus) {
+    return {
+      attempted: false,
+      skipped: true,
+      reason: "bookingId, locationId, and paymentStatus are required.",
+    };
+  }
+
+  await ensureBookingSyncColumns();
+
+  const bookingState = existingBooking || (
+    await pool.query(
+      `SELECT id, location_id, balance_due, driver_assignment_sms_sent_at, driver_paid_in_full_sms_sent_at
+       FROM bookings
+       WHERE id = $1
+       LIMIT 1`,
+      [bookingId]
+    )
+  ).rows[0] || null;
+
+  if (!bookingState) {
+    return {
+      attempted: false,
+      skipped: true,
+      reason: "Booking not found.",
+    };
+  }
+
+  let paymentState = null;
+  let markAssignmentSent = false;
+  let markPaidInFullSent = false;
+
+  if (paymentStatus === "paid_deposit") {
+    if (!forceReplay && bookingState.driver_assignment_sms_sent_at) {
+      return {
+        attempted: false,
+        skipped: true,
+        reason: "Driver assignment SMS already sent for this booking.",
+      };
+    }
+    paymentState = "paid_deposit";
+    markAssignmentSent = true;
+  } else if (paymentStatus === "paid_in_full") {
+    const priorBalanceDue = Number(bookingState.balance_due || 0);
+    if (
+      bookingState.driver_assignment_sms_sent_at &&
+      !bookingState.driver_paid_in_full_sms_sent_at &&
+      priorBalanceDue > 0
+    ) {
+      if (!forceReplay) {
+        paymentState = "paid_in_full_balance_cleared";
+        markPaidInFullSent = true;
+      } else {
+        paymentState = "paid_in_full_balance_cleared";
+        markPaidInFullSent = true;
+      }
+    } else {
+      if (
+        !forceReplay &&
+        bookingState.driver_assignment_sms_sent_at &&
+        bookingState.driver_paid_in_full_sms_sent_at
+      ) {
+        return {
+          attempted: false,
+          skipped: true,
+          reason: "Driver paid-in-full SMS already sent for this booking.",
+        };
+      }
+      paymentState = "paid_in_full";
+      markAssignmentSent = true;
+      markPaidInFullSent = true;
+    }
+  } else {
+    return {
+      attempted: false,
+      skipped: true,
+      reason: `Unsupported payment status: ${paymentStatus}`,
+    };
+  }
+
+  const driverSmsResult = await sendDriverAssignmentSmsForBooking({
+    bookingId,
+    locationId,
+    paymentState,
+  });
+
+  await pool.query(
+    `UPDATE bookings
+     SET driver_sms_last_attempt_at = NOW(),
+         driver_sms_last_error = $2
+     WHERE id = $1`,
+    [
+      bookingId,
+      driverSmsResult?.success
+        ? null
+        : String(driverSmsResult?.error || driverSmsResult?.reason || "Driver SMS failed.").slice(0, 1000),
+    ]
+  );
+
+  if (driverSmsResult?.success) {
+    const setClauses = [];
+    if (markAssignmentSent) {
+      setClauses.push(`driver_assignment_sms_sent_at = COALESCE(driver_assignment_sms_sent_at, NOW())`);
+    }
+    if (markPaidInFullSent) {
+      setClauses.push(`driver_paid_in_full_sms_sent_at = COALESCE(driver_paid_in_full_sms_sent_at, NOW())`);
+    }
+    if (setClauses.length) {
+      await pool.query(
+        `UPDATE bookings
+         SET ${setClauses.join(", ")}
+         WHERE id = $1`,
+        [bookingId]
+      );
+    }
+  }
+
+  return {
+    attempted: true,
+    skipped: false,
+    payment_state: paymentState,
+    ...driverSmsResult,
   };
 }
 
