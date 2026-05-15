@@ -1021,7 +1021,7 @@ function buildCustomerPortalUrls(req, locationId, customerToken, publicAppUrl = 
   const suffix = params.toString() ? `?${params.toString()}` : "";
   return {
     ride_hub_url: `${baseUrl}/ride-hub-portal${suffix}`,
-    ride_inbox_url: `${baseUrl}/ride-hub-inbox${suffix}`,
+    ride_inbox_url: `${baseUrl}/ride-hub-notifications${suffix}`,
   };
 }
 
@@ -3281,6 +3281,9 @@ app.get("/customer-follow-up", (req, res) => {
 });
 app.get("/ride-hub-portal", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "customer-portal-app-home.html"));
+});
+app.get("/ride-hub-notifications", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "customer-portal-app-notifications.html"));
 });
 app.get("/ride-hub-inbox", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "customer-portal-app-notifications.html"));
@@ -6302,8 +6305,8 @@ app.post("/api/tracking/tip-checkout", async (req, res) => {
       return res.status(400).json({ error: "Tipping is only available when Stripe is configured on this account." });
     }
 
-    const baseUrl = getPublicAppUrl(req);
-    const followUpUrl = `${baseUrl}/ride-follow-up.html?token=${encodeURIComponent(token)}`;
+    const baseUrl = normalizePublicAppUrl(session.public_app_url) || getPublicAppUrl(req);
+    const followUpUrl = `${baseUrl}/customer-follow-up?token=${encodeURIComponent(token)}`;
     const checkoutSession = await createStripeCheckoutSessionForAmount({
       apiKey: paymentProfile.stripeSecretKey,
       amount: tipAmount,

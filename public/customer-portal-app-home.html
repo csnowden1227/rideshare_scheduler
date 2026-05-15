@@ -436,8 +436,8 @@
           </p>
           <div class="hero-actions">
             <a id="portal-link" class="button button-primary" href="#">Open Client Portal Login</a>
-            <a id="notification-link" class="button button-dark" href="customer-portal-app-notifications.html">Open Ride Inbox</a>
-            <a id="tracking-link" class="button button-secondary" href="customer-tracking.html">Track Current Ride</a>
+            <a id="notification-link" class="button button-dark" href="ride-hub-notifications">Open Ride Inbox</a>
+            <a id="tracking-link" class="button button-secondary" href="customer-tracking">Track Current Ride</a>
           </div>
           <div class="badge-row">
             <div class="badge">Booking + updates</div>
@@ -651,12 +651,12 @@
 
         const notificationLink = document.getElementById("notification-link");
         if (notificationLink) {
-          notificationLink.href = `customer-portal-app-notifications.html${suffix}`;
+          notificationLink.href = `ride-hub-notifications${suffix}`;
         }
 
         const trackingLink = document.getElementById("tracking-link");
         if (trackingLink) {
-          trackingLink.href = activeTrackingUrl || `customer-tracking.html${suffix}`;
+          trackingLink.href = activeTrackingUrl || `customer-tracking${suffix}`;
         }
       }
 
@@ -679,7 +679,7 @@
         if (!token) return null;
         const data = await requestJson(`${backendUrl}/api/tracking/session/customer?token=${encodeURIComponent(token)}`);
         const session = data.session || {};
-        activeTrackingUrl = `${backendUrl}/customer-tracking.html?token=${encodeURIComponent(token)}`;
+        activeTrackingUrl = `${backendUrl}/customer-tracking?token=${encodeURIComponent(token)}`;
         activeFollowUpUrl = session.follow_up_url || activeFollowUpUrl;
         activeCustomerName = session.customer_name || activeCustomerName;
         setText("status-text", session.status || "Ride in progress");
