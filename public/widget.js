@@ -975,7 +975,11 @@
 
     const startDate = new Date(payload.start_time);
     if (Number.isNaN(startDate.getTime())) throw new Error("Choose a valid pickup date and time.");
-    const bookingPolicy = validateVehicleBookingPolicy(vehicle, startDate, payload.start_time);
+    const bookingPolicy = validateVehicleBookingPolicy(
+      vehicle,
+      startDate,
+      payload.start_time_local || payload.start_time
+    );
 
     const eventConfig = payload.booking_mode === "event" ? eventByName(payload.selected_event_name) : null;
     const selectedFixedName = payload.booking_mode === "fixed" ? String(payload.selected_fixed_destination || "").trim() : "";
