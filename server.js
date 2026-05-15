@@ -1051,6 +1051,20 @@ function getShortLinkBaseUrl(req = null) {
   return "https://go.crmonesource.com";
 }
 
+function forceDestinationToAppBase(destinationUrl, req = null) {
+  const raw = String(destinationUrl || "").trim();
+  if (!raw) return "";
+  try {
+    const url = new URL(raw);
+    const appBase = new URL(getPublicAppUrl(req));
+    url.protocol = appBase.protocol;
+    url.host = appBase.host;
+    return url.toString();
+  } catch {
+    return raw;
+  }
+}
+
 function generateShortCode(length = 6) {
   const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
   const bytes = randomBytes(Math.max(length, 6));
@@ -1071,7 +1085,7 @@ async function createShortLink({
   expiresAt = null,
 }) {
   const normalizedType = String(linkType || "").trim().toLowerCase();
-  const normalizedDestination = String(destinationUrl || "").trim();
+  const normalizedDestination = forceDestinationToAppBase(destinationUrl, req);
   if (!normalizedType || !normalizedDestination) return null;
   await ensureShortLinksTable();
   const existing = await pool.query(
