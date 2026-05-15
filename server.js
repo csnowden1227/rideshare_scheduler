@@ -3274,19 +3274,20 @@ app.get("/customer-tracking", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "customer-tracking.html"));
 });
 app.get("/ride-follow-up.html", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "ride-follow-up.html"));
+  const suffix = req.originalUrl.includes("?") ? req.originalUrl.slice(req.originalUrl.indexOf("?")) : "";
+  res.redirect(302, `/customer-follow-up${suffix}`);
 });
 app.get("/customer-follow-up", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "ride-follow-up.html"));
+  res.sendFile(path.join(__dirname, "public", "customer-follow-up.html"));
 });
 app.get("/ride-hub-portal", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "customer-portal-app-home.html"));
+  res.sendFile(path.join(__dirname, "public", "ride-hub-portal.html"));
 });
 app.get("/ride-hub-notifications", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "customer-portal-app-notifications.html"));
+  res.sendFile(path.join(__dirname, "public", "ride-hub-notifications.html"));
 });
 app.get("/ride-hub-inbox", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "customer-portal-app-notifications.html"));
+  res.sendFile(path.join(__dirname, "public", "ride-hub-notifications.html"));
 });
 app.get("/page-directory.html", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "page-directory.html"));
