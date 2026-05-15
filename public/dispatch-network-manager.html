@@ -170,13 +170,15 @@
       color: var(--danger);
     }
     .partner-list,
-    .invite-list {
+    .invite-list,
+    .request-list {
       display: grid;
       gap: 16px;
       margin-top: 18px;
     }
     .partner-card,
-    .invite-card {
+    .invite-card,
+    .request-card {
       border: 1px solid var(--line);
       border-radius: 20px;
       padding: 18px;
@@ -214,13 +216,24 @@
       color: #4338ca;
     }
     .partner-meta,
-    .invite-meta {
+    .invite-meta,
+    .request-meta {
       display: grid;
       gap: 6px;
       margin-top: 12px;
       color: var(--muted);
       font-size: 14px;
       line-height: 1.6;
+    }
+    .request-card.is-highlighted {
+      border-color: #8b5cf6;
+      box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.14);
+    }
+    .btn-row {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 12px;
     }
     .split-grid {
       display: grid;
@@ -296,6 +309,15 @@
     </section>
 
     <section class="section">
+      <h2>Farm-Out Requests</h2>
+      <p>When a dispatcher creates a farm-out request from driver tracking, it shows up here automatically for the same location so you can monitor status and partner response counts.</p>
+      <div id="request-list" class="request-list"></div>
+      <div id="request-empty" class="empty" style="display:none;">
+        No dispatch requests have been created for this location yet.
+      </div>
+    </section>
+
+    <section class="section">
       <div class="grid-2">
         <div class="panel panel-purple">
           <h2 style="font-size:24px; margin-bottom:8px;">Invite a Partner</h2>
@@ -362,11 +384,14 @@
   <script>
     const query = new URLSearchParams(window.location.search);
     const ownerLocationId = (query.get("location_id") || query.get("locationId") || "").trim();
+    const highlightedDispatchRequestId = (query.get("dispatch_request_id") || "").trim();
 
     const partnerListEl = document.getElementById("partner-list");
     const partnerEmptyEl = document.getElementById("partner-empty");
     const inviteListEl = document.getElementById("invite-list");
     const inviteEmptyEl = document.getElementById("invite-empty");
+    const requestListEl = document.getElementById("request-list");
+    const requestEmptyEl = document.getElementById("request-empty");
     const inviteForm = document.getElementById("invite-form");
     const inviteStatusEl = document.getElementById("invite-status");
     const inviteResultEl = document.getElementById("invite-result");
@@ -399,6 +424,49 @@
 
     function findAgreement(partnerId) {
       return agreementRows.find((row) => row.partner_id === partnerId) || null;
+    }
+
+    function renderRequests(requests) {
+      requestListEl.innerHTML = "";
+      requestEmptyEl.style.display = requests.length ? "none" : "block";
+
+      requests.forEach((request) => {
+        const card = document.createElement("div");
+        card.className = "request-card";
+        if (highlightedDispatchRequestId && highlightedDispatchRequestId === request.id) {
+          card.classList.add("is-highlighted");
+        }
+        const createdAt = request.created_at ? new Date(request.created_at).toLocaleString() : "Not available";
+        const pickupTime = request.start_time ? new Date(request.start_time).toLocaleString() : "Not set";
+        card.innerHTML = `
+          <div class="partner-head">
+            <div>
+              <h3>Request ${request.id}</h3>
+              <div class="request-meta">
+                <div><strong>Customer:</strong> ${[request.first_name, request.last_name].filter(Boolean).join(" ").trim() || "Not available"}</div>
+                <div><strong>Pickup:</strong> ${request.pickup_address || "Not available"}</div>
+                <div><strong>Dropoff:</strong> ${request.dropoff_address || "Not available"}</div>
+                <div><strong>Pickup Time:</strong> ${pickupTime}</div>
+                <div><strong>Vehicle Requested:</strong> ${request.requested_vehicle_type || "Not specified"}</div>
+                <div><strong>Retail Price:</strong> $${Number(request.total_price || 0).toFixed(2)}</div>
+                <div><strong>Offers Sent:</strong> ${request.offer_count || 0} total | ${request.active_offer_count || 0} active | ${request.accepted_offer_count || 0} accepted</div>
+                <div><strong>Assigned Partner:</strong> ${request.assigned_partner_business_name || "Not assigned yet"}</div>
+                <div><strong>Created:</strong> ${createdAt}</div>
+              </div>
+            </div>
+            <span class="pill ${request.status === "assigned" ? "pill-green" : "pill-muted"}">${request.status || "open"}</span>
+          </div>
+          <div class="btn-row">
+            <button type="button" class="btn btn-secondary" data-role="copy-request-id">Copy Request ID</button>
+          </div>
+        `;
+        card.querySelector('[data-role="copy-request-id"]')?.addEventListener("click", async (event) => {
+          await navigator.clipboard.writeText(request.id || "");
+          event.currentTarget.textContent = "Copied";
+          setTimeout(() => { event.currentTarget.textContent = "Copy Request ID"; }, 1500);
+        });
+        requestListEl.appendChild(card);
+      });
     }
 
     function renderInvites(invites) {
@@ -567,15 +635,16 @@
 
       locationSummaryEl.textContent = `Managing dispatch partners for location ${ownerLocationId}. Use this page as a CRM custom link tied to the source operator account.`;
 
-      const [partnersPayload, agreementsPayload, invitesPayload] = await Promise.all([
+      const [requestsPayload, partnersPayload, agreementsPayload, invitesPayload] = await Promise.all([
+        requestJson(`/api/dispatch/requests/${encodeURIComponent(ownerLocationId)}`),
         requestJson(`/api/partners/${encodeURIComponent(ownerLocationId)}`),
         requestJson(`/api/partner-split-agreements/${encodeURIComponent(ownerLocationId)}`),
         requestJson(`/api/partners/invites/${encodeURIComponent(ownerLocationId)}`)
       ]);
 
+      renderRequests(Array.isArray(requestsPayload.requests) ? requestsPayload.requests : []);
       partnerRows = Array.isArray(partnersPayload.partners) ? partnersPayload.partners : [];
       agreementRows = Array.isArray(agreementsPayload.agreements) ? agreementsPayload.agreements : [];
-
       renderInvites(Array.isArray(invitesPayload.invites) ? invitesPayload.invites : []);
       renderPartners();
     }

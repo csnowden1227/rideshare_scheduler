@@ -1372,10 +1372,11 @@ async function getTrackingSessionByToken({ token, role = "customer" }) {
       b.start_time,
       b.end_time,
         b.total_price,
-        b.vehicle_slot_id,
-        b.booking_mode,
-        b.crm_contact_id,
-        b.status AS booking_status,
+      b.vehicle_slot_id,
+      b.booking_mode,
+      b.crm_contact_id,
+      b.dispatch_request_id,
+      b.status AS booking_status,
       p.business_name,
       p.maps_api_key,
       p.public_app_url,
@@ -1422,6 +1423,7 @@ async function getTrackingSessionById(sessionId) {
         b.vehicle_slot_id,
         b.booking_mode,
         b.crm_contact_id,
+        b.dispatch_request_id,
         b.status AS booking_status,
         p.business_name,
       p.maps_api_key,
@@ -1563,6 +1565,7 @@ function buildTrackingSessionClientShape(session) {
     vehicle_image: vehicleRecord?.vehicle_image || "",
     vehicle_license_plate: vehicleRecord?.vehicle_license_plate || "",
     booking_status: session.booking_status || "",
+    dispatch_request_id: session.dispatch_request_id || null,
     driver_profile_id: session.driver_profile_id || null,
     driver_name: session.driver_display_name || "",
       driver_phone: normalizeDriverPhone(session.driver_phone || ""),
@@ -1859,6 +1862,321 @@ async function pushDispatchIntoPartnerCrmSafe(partner, dispatchData) {
     success: true,
     contactId,
     opportunityId: null,
+  };
+}
+
+async function sendDispatchSmsViaPartnerCrm({ partner, message }) {
+  if (!partner?.crm_api_key || !partner?.partner_location_id) {
+    return { success: false, skipped: true, reason: "Partner CRM credentials are missing." };
+  }
+
+  const phone = normalizePhoneNumber(partner.phone || "");
+  const email = normalizeDriverEmail(partner.email || "");
+  const name = String(partner.contact_name || partner.business_name || "Dispatch Partner").trim();
+  if (!phone) {
+    return { success: false, skipped: true, reason: "Partner phone is missing." };
+  }
+
+  const contactResponse = await ghlDispatchRequest({
+    method: "POST",
+    path: "/contacts/upsert",
+    apiKey: partner.crm_api_key,
+    body: {
+      locationId: partner.partner_location_id,
+      firstName: name,
+      lastName: "",
+      name,
+      email: email || undefined,
+      phone,
+      source: "rideshare-dispatch-network",
+    },
+  });
+
+  const contactId =
+    contactResponse?.contact?.id ||
+    contactResponse?.id ||
+    contactResponse?.contactId ||
+    null;
+  if (!contactId) {
+    return { success: false, skipped: true, reason: "Partner CRM contact ID was not returned." };
+  }
+
+  const requestBodies = [
+    {
+      type: "SMS",
+      locationId: String(partner.partner_location_id),
+      contactId: String(contactId),
+      message: String(message || "").trim(),
+    },
+    {
+      messageType: "SMS",
+      locationId: String(partner.partner_location_id),
+      contactId: String(contactId),
+      message: String(message || "").trim(),
+    },
+    {
+      type: "SMS",
+      contactId: String(contactId),
+      message: String(message || "").trim(),
+    },
+  ];
+
+  let lastError = null;
+  for (const body of requestBodies) {
+    const response = await fetch(`${CRM_API_BASE_URL}/conversations/messages`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${partner.crm_api_key}`,
+        Version: "2021-07-28",
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+    });
+    if (response.ok) {
+      return { success: true, contactId, status: response.status };
+    }
+    const bodyText = await response.text().catch(() => "");
+    lastError = bodyText || `Partner CRM SMS request failed with status ${response.status}.`;
+    if (![400].includes(response.status)) {
+      break;
+    }
+  }
+
+  return {
+    success: false,
+    contactId,
+    error: String(lastError || "Partner CRM SMS request failed.").slice(0, 400),
+  };
+}
+
+function buildDispatchOfferNotificationMessage({
+  sourceBusinessName = "",
+  booking = {},
+  dispatchRequestId = "",
+  reviewUrl = "",
+}) {
+  const lines = [];
+  lines.push(`New farm-out request from ${sourceBusinessName || "a network operator"}.`);
+  if (booking.pickup_address) lines.push(`Pickup: ${booking.pickup_address}`);
+  if (booking.dropoff_address) lines.push(`Dropoff: ${booking.dropoff_address}`);
+  if (booking.start_time) lines.push(`Pickup Time: ${formatDisplayDateTime(booking.start_time) || booking.start_time}`);
+  if (dispatchRequestId) lines.push(`Request ID: ${dispatchRequestId}`);
+  if (reviewUrl) lines.push(`Review Request: ${reviewUrl}`);
+  return lines.join("\n");
+}
+
+async function notifyPartnerOfDispatchOffer({
+  partner,
+  dispatchRequest,
+  booking,
+  reviewUrl,
+  sourceBusinessName = "",
+}) {
+  const result = {
+    partner_id: String(partner?.id || "").trim(),
+    sms_sent: false,
+    webhook_sent: false,
+    skipped: false,
+    errors: [],
+  };
+
+  const message = buildDispatchOfferNotificationMessage({
+    sourceBusinessName,
+    booking,
+    dispatchRequestId: dispatchRequest?.id || "",
+    reviewUrl,
+  });
+
+  try {
+    const smsResult = await sendDispatchSmsViaPartnerCrm({ partner, message });
+    result.sms_sent = Boolean(smsResult?.success);
+    if (!smsResult?.success && !smsResult?.skipped) {
+      result.errors.push(smsResult?.error || smsResult?.reason || "Partner SMS notification failed.");
+    }
+  } catch (err) {
+    result.errors.push(err?.message || "Partner SMS notification failed.");
+  }
+
+  const webhookUrl = String(partner?.crm_webhook_url || "").trim();
+  if (webhookUrl && webhookUrl.startsWith("http")) {
+    try {
+      const response = await fetch(webhookUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          webhook_type: "dispatch_offer_available",
+          dispatch_request_id: dispatchRequest?.id || "",
+          partner_id: String(partner?.id || "").trim(),
+          partner_business_name: partner?.business_name || "",
+          owner_location_id: dispatchRequest?.owner_location_id || "",
+          source_business_name: sourceBusinessName || "",
+          booking: {
+            booking_id: booking?.id || null,
+            pickup_address: booking?.pickup_address || "",
+            dropoff_address: booking?.dropoff_address || "",
+            start_time: booking?.start_time || null,
+            end_time: booking?.end_time || null,
+            total_price: Number(booking?.total_price || 0),
+          },
+          review_url: reviewUrl || "",
+        }),
+      });
+      result.webhook_sent = response.ok;
+      if (!response.ok) {
+        result.errors.push(`Partner webhook failed with status ${response.status}.`);
+      }
+    } catch (err) {
+      result.errors.push(err?.message || "Partner webhook notification failed.");
+    }
+  }
+
+  if (!result.sms_sent && !result.webhook_sent) {
+    result.skipped = result.errors.length === 0;
+  }
+  return result;
+}
+
+async function getEligibleDispatchPartners(ownerLocationId, requestedVehicleType = "") {
+  await ensureDispatchTables();
+  const vehicleType = String(requestedVehicleType || "").trim();
+  const result = await pool.query(
+    `SELECT
+       p.id,
+       p.owner_location_id,
+       p.partner_location_id,
+       p.business_name,
+       p.contact_name,
+       p.email,
+       p.phone,
+       p.status,
+       p.crm_webhook_url,
+       p.crm_api_key,
+       p.accepts_dispatch,
+       p.auto_accept,
+       EXISTS (
+         SELECT 1
+         FROM partner_fleet pf_match
+         WHERE pf_match.partner_id = p.id
+           AND pf_match.active = TRUE
+           AND ($2 = '' OR LOWER(TRIM(pf_match.vehicle_type)) = LOWER(TRIM($2)))
+       ) AS vehicle_match,
+       COUNT(pf.id) FILTER (WHERE pf.active = TRUE) AS active_fleet_count
+     FROM partners p
+     LEFT JOIN partner_fleet pf ON pf.partner_id = p.id
+     WHERE p.owner_location_id = $1
+       AND p.status = 'active'
+       AND p.accepts_dispatch = TRUE
+     GROUP BY p.id
+     ORDER BY p.auto_accept DESC, p.business_name ASC`,
+    [ownerLocationId, vehicleType]
+  );
+
+  const rows = result.rows || [];
+  if (!vehicleType) return rows;
+  const matching = rows.filter((row) => Boolean(row.vehicle_match));
+  return matching.length ? matching : rows;
+}
+
+async function autoBroadcastDispatchRequest({
+  req,
+  dispatchRequest,
+  booking,
+  ownerLocationId,
+}) {
+  const baseUrl = getPublicAppUrl(req);
+  const sourceBusinessNameLookup = await pool.query(
+    `SELECT business_name
+     FROM profiles
+     WHERE location_id = $1
+     LIMIT 1`,
+    [ownerLocationId]
+  );
+  const sourceBusinessName = String(sourceBusinessNameLookup.rows[0]?.business_name || "").trim();
+  const eligiblePartners = await getEligibleDispatchPartners(ownerLocationId, booking?.vehicle_slot_id || dispatchRequest?.requested_vehicle_type || "");
+  if (!eligiblePartners.length) {
+    return {
+      offers_sent: 0,
+      partners_notified: 0,
+      eligible_partners: 0,
+      notification_results: [],
+    };
+  }
+
+  const existingOffers = await pool.query(
+    `SELECT partner_id
+     FROM dispatch_offers
+     WHERE dispatch_request_id = $1
+       AND status <> 'cancelled'`,
+    [dispatchRequest.id]
+  );
+  const existingPartnerIds = new Set(existingOffers.rows.map((row) => String(row.partner_id || "").trim()));
+  const notificationResults = [];
+  let offersSent = 0;
+  let partnersNotified = 0;
+  const quotedPrice = Number(booking?.total_price || 0);
+  const reviewUrl = appendQueryParams(`${baseUrl}/dispatch-network-manager.html`, {
+    location_id: ownerLocationId,
+    dispatch_request_id: dispatchRequest.id,
+  });
+
+  for (const partner of eligiblePartners) {
+    const partnerId = String(partner.id || "").trim();
+    if (!partnerId || existingPartnerIds.has(partnerId)) continue;
+
+    const splitAgreement = await getPartnerSplitAgreement(ownerLocationId, partnerId);
+    const split = splitAgreement || buildPartnerSplitAgreementPayload(80);
+    const payoutAmounts = calculateDispatchPayoutAmounts({
+      grossAmount: quotedPrice,
+      acceptingPartnerPercent: split.accepting_partner_percent,
+      sourceOperatorPercent: split.source_operator_percent,
+      splitModel: split.split_model,
+      feeChargedTo: split.fee_charged_to,
+    });
+
+    await pool.query(
+      `INSERT INTO dispatch_offers (
+        id, dispatch_request_id, partner_id, status, sent_at, expires_at,
+        quoted_price, partner_payout_amount, platform_fee_amount, estimated_stripe_fee_amount, notes,
+        source_operator_percent, accepting_partner_percent, split_model, fee_charged_to
+      ) VALUES ($1,$2,$3,$4,NOW(),$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+      [
+        randomUUID(),
+        dispatchRequest.id,
+        partnerId,
+        "sent",
+        new Date(Date.now() + (30 * 60 * 1000)).toISOString(),
+        payoutAmounts.gross_amount,
+        payoutAmounts.partner_payout_amount,
+        payoutAmounts.platform_fee_amount,
+        payoutAmounts.estimated_stripe_fee_amount,
+        `Auto-broadcast from farm-out request ${dispatchRequest.id}.`,
+        Number(payoutAmounts.source_operator_percent),
+        Number(payoutAmounts.accepting_partner_percent),
+        String(payoutAmounts.split_model || "net_after_stripe_fee"),
+        String(payoutAmounts.fee_charged_to || "source_operator"),
+      ]
+    );
+    offersSent += 1;
+
+    const notificationResult = await notifyPartnerOfDispatchOffer({
+      partner,
+      dispatchRequest,
+      booking,
+      reviewUrl,
+      sourceBusinessName,
+    });
+    if (notificationResult.sms_sent || notificationResult.webhook_sent) {
+      partnersNotified += 1;
+    }
+    notificationResults.push(notificationResult);
+  }
+
+  return {
+    offers_sent: offersSent,
+    partners_notified: partnersNotified,
+    eligible_partners: eligiblePartners.length,
+    notification_results: notificationResults,
   };
 }
 
@@ -3504,6 +3822,9 @@ app.get("/partner-onboarding.html", (req, res) => {
 });
 app.get("/dispatch-network-manager.html", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "dispatch-network-manager.html"));
+});
+app.get("/dispatch-request.html", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "dispatch-request.html"));
 });
 app.get("/network-dispatch.html", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "network-dispatch.html"));
@@ -5381,6 +5702,12 @@ function buildDispatchManagerUrl(baseUrl, ownerLocationId, partnerId = null) {
     location_id: ownerLocationId,
     partner_id: partnerId || undefined,
     connect: partnerId ? "stripe" : undefined,
+  });
+}
+
+function buildDispatchRequestPageUrl(baseUrl, driverToken = "") {
+  return appendQueryParams(`${baseUrl}/dispatch-request.html`, {
+    token: driverToken || undefined,
   });
 }
 
@@ -7321,18 +7648,108 @@ app.post("/api/tracking/session/practice-notify", async (req, res) => {
   }
 });
 
+app.get("/api/dispatch/request-from-tracking", async (req, res) => {
+  try {
+    await ensureDispatchTables();
+    await ensureTripTrackingTables();
+
+    const token = String(req.query.token || "").trim();
+    if (!token) {
+      return res.status(400).json({ error: "token is required." });
+    }
+
+    const session = await getTrackingSessionByToken({ token, role: "driver" });
+    if (!session) {
+      return res.status(404).json({ error: "Tracking session not found." });
+    }
+    assertTrackingAccess(session);
+
+    const partners = await getEligibleDispatchPartners(session.location_id, session.vehicle_slot_id || "");
+    return res.json({
+      success: true,
+      session: buildTrackingSessionClientShape(session),
+      dispatch_request_id: String(session.dispatch_request_id || "").trim() || null,
+      eligible_partner_count: partners.length,
+      eligible_partners: partners.map((partner) => ({
+        id: partner.id,
+        business_name: partner.business_name,
+        contact_name: partner.contact_name,
+        phone: partner.phone,
+        email: partner.email,
+        auto_accept: Boolean(partner.auto_accept),
+        vehicle_match: Boolean(partner.vehicle_match),
+        active_fleet_count: Number(partner.active_fleet_count || 0),
+      })),
+      manager_url: appendQueryParams(buildDispatchManagerUrl(getPublicAppUrl(req), session.location_id), {
+        dispatch_request_id: String(session.dispatch_request_id || "").trim() || undefined,
+      }),
+    });
+  } catch (err) {
+    console.error("Dispatch request from tracking error:", err);
+    return res.status(err.statusCode || 500).json({ error: err.message || "Failed to prepare the dispatch request." });
+  }
+});
+
+app.get("/api/dispatch/requests/:owner_location_id", async (req, res) => {
+  try {
+    await ensureDispatchTables();
+    const ownerLocationId = String(req.params.owner_location_id || "").trim();
+    const result = await pool.query(
+      `SELECT
+         dr.id,
+         dr.booking_id,
+         dr.owner_location_id,
+         dr.requested_vehicle_type,
+         dr.pickup_address,
+         dr.dropoff_address,
+         dr.start_time,
+         dr.end_time,
+         dr.status,
+         dr.broadcast_mode,
+         dr.notes,
+         dr.created_at,
+         dr.updated_at,
+         b.total_price,
+         b.first_name,
+         b.last_name,
+         COUNT(doff.id) AS offer_count,
+         COUNT(doff.id) FILTER (WHERE doff.status IN ('sent','accepted','assigned')) AS active_offer_count,
+         COUNT(doff.id) FILTER (WHERE doff.status = 'accepted') AS accepted_offer_count,
+         COUNT(doff.id) FILTER (WHERE doff.status = 'assigned') AS assigned_offer_count,
+         da.partner_id AS assigned_partner_id,
+         p.business_name AS assigned_partner_business_name
+       FROM dispatch_requests dr
+       LEFT JOIN bookings b ON b.id = dr.booking_id
+       LEFT JOIN dispatch_offers doff ON doff.dispatch_request_id = dr.id
+       LEFT JOIN dispatch_assignments da ON da.dispatch_request_id = dr.id
+       LEFT JOIN partners p ON p.id = da.partner_id
+       WHERE dr.owner_location_id = $1
+       GROUP BY dr.id, b.id, da.partner_id, p.business_name
+       ORDER BY dr.created_at DESC`,
+      [ownerLocationId]
+    );
+
+    return res.json({ success: true, requests: result.rows });
+  } catch (err) {
+    console.error("List dispatch requests error:", err);
+    return res.status(500).json({ error: err.message || "Failed to load dispatch requests." });
+  }
+});
+
 app.post("/api/dispatch/create", async (req, res) => {
   try {
     await ensureDispatchTables();
     const bookingId = Number(req.body.booking_id || 0);
     const ownerLocationId = String(req.body.owner_location_id || "").trim();
+    const autoBroadcast = String(req.body.broadcast_mode || "").trim().toLowerCase() === "auto"
+      || req.body.notify_partners === true;
 
     if (!bookingId || !ownerLocationId) {
       return res.status(400).json({ error: "booking_id and owner_location_id are required." });
     }
 
     const bookingResult = await pool.query(
-      `SELECT id, pickup_address, dropoff_address, start_time, end_time, vehicle_slot_id
+      `SELECT id, pickup_address, dropoff_address, start_time, end_time, vehicle_slot_id, total_price
        FROM bookings
        WHERE id = $1
        LIMIT 1`,
@@ -7361,6 +7778,24 @@ app.post("/api/dispatch/create", async (req, res) => {
         [existingDispatchRequestId]
       );
       if (existingDispatchLookup.rows.length && String(existingDispatchLookup.rows[0].status || "").trim().toLowerCase() !== "cancelled") {
+        let broadcastSummary = {
+          offers_sent: 0,
+          partners_notified: 0,
+          eligible_partners: 0,
+          notification_results: [],
+        };
+        if (autoBroadcast) {
+          broadcastSummary = await autoBroadcastDispatchRequest({
+            req,
+            dispatchRequest: {
+              id: existingDispatchRequestId,
+              owner_location_id: ownerLocationId,
+              requested_vehicle_type: String(req.body.requested_vehicle_type || booking.vehicle_slot_id || "").trim() || null,
+            },
+            booking,
+            ownerLocationId,
+          });
+        }
         return res.json({
           success: true,
           dispatch_request_id: existingDispatchRequestId,
@@ -7369,6 +7804,7 @@ app.post("/api/dispatch/create", async (req, res) => {
             dispatch_request_id: existingDispatchRequestId,
           }),
           already_exists: true,
+          ...broadcastSummary,
         });
       }
     }
@@ -7390,7 +7826,7 @@ app.post("/api/dispatch/create", async (req, res) => {
         booking.start_time || null,
         booking.end_time || null,
         "open",
-        String(req.body.broadcast_mode || "manual").trim(),
+        autoBroadcast ? "auto" : String(req.body.broadcast_mode || "manual").trim(),
         String(req.body.notes || "").trim() || null,
       ]
     );
@@ -7402,6 +7838,24 @@ app.post("/api/dispatch/create", async (req, res) => {
       [bookingId, dispatchRequestId]
     );
 
+    const broadcastSummary = autoBroadcast
+      ? await autoBroadcastDispatchRequest({
+          req,
+          dispatchRequest: {
+            id: dispatchRequestId,
+            owner_location_id: ownerLocationId,
+            requested_vehicle_type: String(req.body.requested_vehicle_type || booking.vehicle_slot_id || "").trim() || null,
+          },
+          booking,
+          ownerLocationId,
+        })
+      : {
+          offers_sent: 0,
+          partners_notified: 0,
+          eligible_partners: 0,
+          notification_results: [],
+        };
+
     return res.json({
       success: true,
       dispatch_request_id: dispatchRequestId,
@@ -7409,6 +7863,7 @@ app.post("/api/dispatch/create", async (req, res) => {
       manager_url: appendQueryParams(buildDispatchManagerUrl(baseUrl, ownerLocationId), {
         dispatch_request_id: dispatchRequestId,
       }),
+      ...broadcastSummary,
     });
   } catch (err) {
     console.error("Create dispatch request error:", err);

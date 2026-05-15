@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Create Dispatch Request</title>
+  <style>
+    :root {
+      --ink: #0f172a;
+      --muted: #64748b;
+      --line: #d8d7ff;
+      --card: rgba(255, 255, 255, 0.94);
+      --accent: #5b21b6;
+      --accent-2: #0f766e;
+      --soft: #f6f2ff;
+      --success: #15803d;
+      --danger: #dc2626;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top left, rgba(91, 33, 182, 0.08), transparent 24%),
+        linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
+      min-height: 100vh;
+    }
+    .wrap {
+      max-width: 1080px;
+      margin: 0 auto;
+      padding: 24px 16px 48px;
+    }
+    .hero,
+    .section {
+      border-radius: 24px;
+      padding: 24px;
+      border: 1px solid var(--line);
+      background: var(--card);
+      box-shadow: 0 18px 42px rgba(15, 23, 42, 0.06);
+    }
+    .hero {
+      background: linear-gradient(135deg, #111827 0%, #5b21b6 52%, #0f766e 100%);
+      color: #fff;
+      border: 0;
+    }
+    .hero h1 {
+      margin: 0 0 12px;
+      font-size: 38px;
+      line-height: 1.05;
+    }
+    .hero p {
+      margin: 0;
+      line-height: 1.8;
+      max-width: 860px;
+    }
+    .section {
+      margin-top: 20px;
+    }
+    .section h2 {
+      margin: 0 0 10px;
+      color: var(--accent);
+      font-size: 28px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      align-items: start;
+    }
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 16px;
+      background: #fff;
+    }
+    .card.soft {
+      background: var(--soft);
+    }
+    .label {
+      display: block;
+      font-size: 12px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+    .value {
+      line-height: 1.7;
+      color: var(--ink);
+      overflow-wrap: anywhere;
+    }
+    textarea {
+      width: 100%;
+      min-height: 120px;
+      border-radius: 16px;
+      border: 1px solid #cbd5e1;
+      padding: 14px 16px;
+      font: inherit;
+      resize: vertical;
+    }
+    .btn-row {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-top: 18px;
+    }
+    .btn {
+      border: 0;
+      cursor: pointer;
+      border-radius: 14px;
+      padding: 14px 18px;
+      font-size: 14px;
+      font-weight: 700;
+      transition: transform 0.18s ease, filter 0.18s ease;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .btn:hover {
+      transform: translateY(-1px);
+      filter: brightness(0.98);
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      color: #fff;
+    }
+    .btn-secondary {
+      background: #fff;
+      color: var(--accent);
+      border: 1px solid #c4b5fd;
+    }
+    .status {
+      margin-top: 14px;
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--success);
+      line-height: 1.7;
+    }
+    .status.error {
+      color: var(--danger);
+    }
+    .partner-list {
+      display: grid;
+      gap: 12px;
+      margin-top: 16px;
+    }
+    .partner-pill {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+      padding: 14px 16px;
+      border-radius: 16px;
+      border: 1px solid var(--line);
+      background: #fff;
+    }
+    .partner-pill strong {
+      display: block;
+      margin-bottom: 4px;
+    }
+    .meta {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.6;
+    }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 7px 10px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      background: #dcfce7;
+      color: #166534;
+      white-space: nowrap;
+    }
+    .empty {
+      margin-top: 14px;
+      border: 1px dashed #cbd5e1;
+      border-radius: 18px;
+      padding: 16px;
+      background: #f8fafc;
+      color: var(--muted);
+      line-height: 1.7;
+    }
+    @media (max-width: 840px) {
+      .grid {
+        grid-template-columns: 1fr;
+      }
+      .hero h1 {
+        font-size: 32px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="hero">
+      <h1>Create a Farm-Out Request</h1>
+      <p>
+        Review the trip, create the request, and automatically notify the active dispatch partners already tied to this location. Once the request is created, it will appear inside Partner Manager for the same account.
+      </p>
+    </section>
+
+    <section class="section">
+      <h2>Trip Review</h2>
+      <div class="grid">
+        <div class="card soft">
+          <span class="label">Customer</span>
+          <div class="value" id="customer-name">Loading...</div>
+        </div>
+        <div class="card soft">
+          <span class="label">Vehicle Type</span>
+          <div class="value" id="vehicle-type">Loading...</div>
+        </div>
+        <div class="card">
+          <span class="label">Pickup</span>
+          <div class="value" id="pickup-address">Loading...</div>
+        </div>
+        <div class="card">
+          <span class="label">Dropoff</span>
+          <div class="value" id="dropoff-address">Loading...</div>
+        </div>
+        <div class="card">
+          <span class="label">Pickup Time</span>
+          <div class="value" id="pickup-time">Loading...</div>
+        </div>
+        <div class="card">
+          <span class="label">Location ID</span>
+          <div class="value" id="location-id">Loading...</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>Partner Broadcast</h2>
+      <p id="partner-summary">Loading the active partners for this location...</p>
+      <div id="partner-list" class="partner-list"></div>
+      <div id="partner-empty" class="empty" style="display:none;">
+        No active accepting partners are currently tied to this location. You can still create the request, but no partner notifications will be sent until partners finish onboarding and enable dispatch.
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>Request Notes</h2>
+      <p>Add any extra handoff details you want included with the farm-out request and partner notification.</p>
+      <textarea id="request-notes">Created from driver tracking so the assigned operator can farm this ride out to the dispatch network.</textarea>
+      <div class="btn-row">
+        <button id="create-request-btn" class="btn btn-primary" type="button">Create Request and Notify Partners</button>
+        <a id="open-manager-btn" class="btn btn-secondary" href="#" target="_blank" rel="noopener noreferrer">Open Partner Manager</a>
+      </div>
+      <div id="status-message" class="status">Preparing the dispatch request...</div>
+    </section>
+  </div>
+
+  <script>
+    (function () {
+      const query = new URLSearchParams(window.location.search);
+      const token = String(query.get("token") || "").trim();
+      const apiBase = window.location.origin;
+      let currentSession = null;
+      let managerUrl = "";
+      let dispatchRequestId = "";
+
+      function setText(id, value) {
+        const el = document.getElementById(id);
+        if (el) el.textContent = value || "";
+      }
+
+      function showStatus(message, isError = false) {
+        const el = document.getElementById("status-message");
+        if (!el) return;
+        el.textContent = message;
+        el.classList.toggle("error", isError);
+      }
+
+      async function requestJson(url, options = {}) {
+        const response = await fetch(url, options);
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(data.error || "Request failed.");
+        }
+        return data;
+      }
+
+      function renderPartners(partners) {
+        const list = document.getElementById("partner-list");
+        const empty = document.getElementById("partner-empty");
+        if (!list || !empty) return;
+        list.innerHTML = "";
+        if (!Array.isArray(partners) || !partners.length) {
+          empty.style.display = "block";
+          return;
+        }
+        empty.style.display = "none";
+        partners.forEach((partner) => {
+          const row = document.createElement("div");
+          row.className = "partner-pill";
+          row.innerHTML = `
+            <div>
+              <strong>${partner.business_name || "Dispatch Partner"}</strong>
+              <div class="meta">
+                ${partner.contact_name ? `${partner.contact_name}` : "Contact name not provided"}
+                ${partner.phone ? ` | ${partner.phone}` : ""}
+                ${partner.email ? ` | ${partner.email}` : ""}
+                <br>Active fleet rows: ${partner.active_fleet_count || 0}
+              </div>
+            </div>
+            <span class="pill">${partner.vehicle_match ? "Vehicle Match" : "Eligible"}</span>
+          `;
+          list.appendChild(row);
+        });
+      }
+
+      function updateManagerLink() {
+        const link = document.getElementById("open-manager-btn");
+        if (!link) return;
+        link.href = managerUrl || "#";
+      }
+
+      async function loadContext() {
+        if (!token) {
+          throw new Error("The farm-out request page is missing the driver tracking token.");
+        }
+        const data = await requestJson(`${apiBase}/api/dispatch/request-from-tracking?token=${encodeURIComponent(token)}`);
+        currentSession = data.session || null;
+        dispatchRequestId = data.dispatch_request_id || "";
+        managerUrl = data.manager_url || "";
+        updateManagerLink();
+
+        setText("customer-name", currentSession?.customer_name || "Assigned customer");
+        setText("vehicle-type", currentSession?.vehicle_display_name || currentSession?.vehicle_type || "Not set");
+        setText("pickup-address", currentSession?.pickup_address || "Not set");
+        setText("dropoff-address", currentSession?.dropoff_address || "Not set");
+        setText("pickup-time", currentSession?.start_time ? new Date(currentSession.start_time).toLocaleString() : "Not set");
+        setText("location-id", currentSession?.location_id || "Not set");
+        setText(
+          "partner-summary",
+          data.eligible_partner_count
+            ? `${data.eligible_partner_count} active dispatch partner${data.eligible_partner_count === 1 ? "" : "s"} will be notified from the backend as soon as you create this request.`
+            : "There are no active dispatch partners ready for this location yet."
+        );
+        renderPartners(data.eligible_partners || []);
+        showStatus(dispatchRequestId
+          ? "An open dispatch request already exists for this trip. Creating again will reuse it and notify any eligible partners that do not already have an offer."
+          : "This request will create a farm-out record and notify the active partners tied to this location.");
+      }
+
+      async function createRequest() {
+        if (!currentSession?.booking_id || !currentSession?.location_id) {
+          throw new Error("This trip is missing the booking or location needed for dispatch.");
+        }
+        const button = document.getElementById("create-request-btn");
+        const originalText = button?.textContent || "Create Request and Notify Partners";
+        if (button) {
+          button.disabled = true;
+          button.textContent = "Creating Request...";
+        }
+
+        try {
+          const data = await requestJson(`${apiBase}/api/dispatch/create`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              booking_id: currentSession.booking_id,
+              owner_location_id: currentSession.location_id,
+              dispatch_request_id: dispatchRequestId || "",
+              requested_vehicle_type: currentSession.vehicle_slot_id || "",
+              notes: String(document.getElementById("request-notes")?.value || "").trim(),
+              broadcast_mode: "auto",
+              notify_partners: true,
+            }),
+          });
+
+          dispatchRequestId = data.dispatch_request_id || dispatchRequestId;
+          managerUrl = data.manager_url || managerUrl;
+          updateManagerLink();
+          const offersSent = Number(data.offers_sent || 0);
+          const partnersNotified = Number(data.partners_notified || 0);
+          showStatus(
+            data.already_exists
+              ? `Existing dispatch request reused. ${offersSent} new offer${offersSent === 1 ? "" : "s"} created and ${partnersNotified} partner notification${partnersNotified === 1 ? "" : "s"} sent.`
+              : `Dispatch request created. ${offersSent} offer${offersSent === 1 ? "" : "s"} created and ${partnersNotified} partner notification${partnersNotified === 1 ? "" : "s"} sent.`
+          );
+        } finally {
+          if (button) {
+            button.disabled = false;
+            button.textContent = originalText;
+          }
+        }
+      }
+
+      document.getElementById("create-request-btn")?.addEventListener("click", async () => {
+        try {
+          await createRequest();
+        } catch (error) {
+          showStatus(error.message || "Unable to create the dispatch request.", true);
+        }
+      });
+
+      window.addEventListener("load", async () => {
+        try {
+          await loadContext();
+        } catch (error) {
+          showStatus(error.message || "Unable to prepare the dispatch request.", true);
+        }
+      });
+    })();
+  </script>
+</body>
+</html>

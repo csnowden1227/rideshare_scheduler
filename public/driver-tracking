@@ -294,7 +294,7 @@
           </div>
 
           <div class="actions">
-            <button id="farm-out-booking-btn" class="btn btn-secondary" type="button">Farm Out Booking</button>
+            <button id="farm-out-booking-btn" class="btn btn-secondary" type="button">Farm Out Ride</button>
             <button id="open-dispatch-manager-btn" class="btn btn-primary" type="button">Open Dispatch Manager</button>
           </div>
 
@@ -367,6 +367,13 @@
       if (dispatchRequestId) {
         url.searchParams.set("dispatch_request_id", String(dispatchRequestId || "").trim());
       }
+      return url.toString();
+    }
+
+    function buildDispatchRequestUrl() {
+      if (!token) return "";
+      const url = new URL(`${window.location.origin}/dispatch-request.html`);
+      url.searchParams.set("token", token);
       return url.toString();
     }
 
@@ -835,53 +842,15 @@
       }
     }
 
-    async function createDispatchRequestFromTracking() {
+    function openDispatchRequestFromTracking() {
       if (!currentSession?.booking_id || !currentSession?.location_id) {
         throw new Error("This tracking session is missing the booking or location needed for dispatch.");
       }
-
-      const button = document.getElementById("farm-out-booking-btn");
-      const originalText = button?.textContent || "Farm Out Booking";
-      if (button) {
-        button.disabled = true;
-        button.textContent = "Creating Dispatch...";
+      const requestUrl = buildDispatchRequestUrl();
+      if (!requestUrl) {
+        throw new Error("Dispatch request page is not available until the driver tracking token is loaded.");
       }
-
-      try {
-        const data = await requestJson(`${apiBase}/api/dispatch/create`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            booking_id: currentSession.booking_id,
-            owner_location_id: currentSession.location_id,
-            dispatch_request_id: currentSession.dispatch_request_id || "",
-            requested_vehicle_type: currentSession.vehicle_slot_id || "",
-            notes: `Created from driver tracking for booking ${currentSession.booking_id}.`,
-            broadcast_mode: "manual",
-          })
-        });
-
-        currentSession = {
-          ...currentSession,
-          dispatch_request_id: data.dispatch_request_id || currentSession.dispatch_request_id || "",
-        };
-        setText(
-          "driver-status-message",
-          data.already_exists
-            ? "Dispatch request is already open. Opening Dispatch Manager now."
-            : "Dispatch request created. Opening Dispatch Manager now."
-        );
-
-        const managerUrl = data.manager_url || buildDispatchManagerUrl(currentSession.dispatch_request_id);
-        if (managerUrl) {
-          window.open(managerUrl, "_blank", "noopener,noreferrer");
-        }
-      } finally {
-        if (button) {
-          button.disabled = false;
-          button.textContent = originalText;
-        }
-      }
+      window.open(requestUrl, "_blank", "noopener,noreferrer");
     }
 
     function openDispatchManagerFromTracking() {
@@ -922,9 +891,10 @@
 
     document.getElementById("farm-out-booking-btn")?.addEventListener("click", async () => {
       try {
-        await createDispatchRequestFromTracking();
+        openDispatchRequestFromTracking();
+        setText("driver-status-message", "Dispatch request page opened. Review the trip details, create the request, and notify your partners from there.");
       } catch (error) {
-        setText("driver-status-message", error.message || "Unable to create the dispatch request.");
+        setText("driver-status-message", error.message || "Unable to open the dispatch request page.");
       }
     });
 
