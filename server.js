@@ -648,7 +648,13 @@ function parseTimeOfDayToMinutes(value) {
   return (hours * 60) + minutes;
 }
 
-function extractStartTimeMinutes(startTime) {
+function extractStartTimeMinutes(startTime, startTimeLocal = null) {
+  const localRaw = String(startTimeLocal || "").trim();
+  const localTimeMatch = localRaw.match(/T(\d{2}):(\d{2})/);
+  if (localTimeMatch) {
+    return (Number(localTimeMatch[1]) * 60) + Number(localTimeMatch[2]);
+  }
+
   const raw = String(startTime || "").trim();
   const localMatch = raw.match(/T(\d{2}):(\d{2})/);
   if (localMatch) {
@@ -723,7 +729,7 @@ async function getBookingProfileRow(locationId, fields = []) {
   return result.rows[0] || {};
 }
 
-function validateBookingTimingRules({ slot = {}, startTime, profileDefaults = {} }) {
+function validateBookingTimingRules({ slot = {}, startTime, startTimeLocal = null, profileDefaults = {} }) {
   const policy = normalizeFleetBookingPolicy(slot, profileDefaults);
   const hoursUntilRide = getHoursUntilRide(startTime);
   const configuredNoticeHours = Math.max(0, Number(policy.min_notice_min || 0) / 60);
@@ -743,7 +749,7 @@ function validateBookingTimingRules({ slot = {}, startTime, profileDefaults = {}
   }
 
   if (policy.instant_booking_enabled) {
-    const pickupMinutes = extractStartTimeMinutes(startTime);
+    const pickupMinutes = extractStartTimeMinutes(startTime, startTimeLocal);
     const startMinutes = parseTimeOfDayToMinutes(policy.instant_booking_start_time);
     const endMinutes = parseTimeOfDayToMinutes(policy.instant_booking_end_time);
     if (!isMinutesWithinWindow(pickupMinutes, startMinutes, endMinutes)) {
@@ -8404,6 +8410,7 @@ async function createBookingRecord(input, { paymentLink = null, triggerWebhook =
   const bookingTimingValidation = validateBookingTimingRules({
     slot: fleetVehicle || {},
     startTime: start_time,
+    startTimeLocal: req.body.start_time_local,
     profileDefaults: {
       open_time: profile.open_time,
       close_time: profile.close_time,
@@ -8789,6 +8796,7 @@ app.post("/api/create-checkout-session", async (req, res) => {
     const bookingTimingValidation = validateBookingTimingRules({
       slot: fleetVehicle || {},
       startTime: req.body.start_time,
+      startTimeLocal: req.body.start_time_local,
       profileDefaults: {
         open_time: profile.open_time,
         close_time: profile.close_time,

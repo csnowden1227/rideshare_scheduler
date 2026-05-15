@@ -862,6 +862,7 @@
       pickup_address: document.getElementById("cd_pickup")?.value.trim(),
       dropoff_address: document.getElementById("cd_dropoff")?.value.trim(),
       start_time: normalizedStartTime,
+      start_time_local: rawStartTime || "",
       booking_mode: selectedBookingMode(),
       payment_choice: selectedPaymentChoice(),
       passenger_count: toNumber(document.getElementById("cd_passenger_count")?.value, 1),
