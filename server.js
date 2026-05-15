@@ -85,6 +85,7 @@ let profileServiceAreaColumnsReady = null;
 let saasAddonPurchasesTableReady = null;
 let dispatchTablesReady = null;
 let tripTrackingTablesReady = null;
+let shortLinksTableReady = null;
 
 const DEFAULT_BRAND_COLORS = {
   primary: "#082f49",
@@ -620,6 +621,31 @@ function normalizeTrackingStatus(value) {
   return TRACKING_STATUS_VALUES.has(normalized) ? normalized : "driver_assigned";
 }
 
+async function ensureShortLinksTable() {
+  if (!shortLinksTableReady) {
+    shortLinksTableReady = (async () => {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS short_links (
+          code TEXT PRIMARY KEY,
+          link_type TEXT NOT NULL,
+          destination_url TEXT NOT NULL,
+          location_id TEXT,
+          booking_id BIGINT,
+          tracking_session_id UUID,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          expires_at TIMESTAMPTZ,
+          click_count INTEGER NOT NULL DEFAULT 0,
+          last_clicked_at TIMESTAMPTZ
+        )
+      `);
+    })().catch((err) => {
+      shortLinksTableReady = null;
+      throw err;
+    });
+  }
+  return shortLinksTableReady;
+}
+
 function normalizeBooleanish(value, fallback = false) {
   if (typeof value === "boolean") return value;
   if (value === null || value === undefined || value === "") return fallback;
@@ -1010,6 +1036,174 @@ function normalizePublicAppUrl(value) {
   }
 }
 
+function getShortLinkBaseUrl(req = null) {
+  const configured = normalizePublicAppUrl(
+    process.env.SHORT_LINK_BASE_URL ||
+    process.env.GO_SHORT_BASE_URL ||
+    "https://go.crmonesource.com"
+  );
+  if (configured) return configured;
+  const host = String(req?.get?.("host") || "").trim();
+  if (host) {
+    const protocol = req?.protocol || "https";
+    return `${protocol}://${host}`;
+  }
+  return "https://go.crmonesource.com";
+}
+
+function generateShortCode(length = 6) {
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
+  const bytes = randomBytes(Math.max(length, 6));
+  let result = "";
+  for (let i = 0; i < length; i += 1) {
+    result += alphabet[bytes[i] % alphabet.length];
+  }
+  return result;
+}
+
+async function createShortLink({
+  req = null,
+  linkType,
+  destinationUrl,
+  locationId = null,
+  bookingId = null,
+  trackingSessionId = null,
+  expiresAt = null,
+}) {
+  const normalizedType = String(linkType || "").trim().toLowerCase();
+  const normalizedDestination = String(destinationUrl || "").trim();
+  if (!normalizedType || !normalizedDestination) return null;
+  await ensureShortLinksTable();
+  const existing = await pool.query(
+    `SELECT code
+     FROM short_links
+     WHERE link_type = $1
+       AND destination_url = $2
+       AND COALESCE(location_id, '') = COALESCE($3, '')
+       AND COALESCE(booking_id, 0) = COALESCE($4, 0)
+       AND COALESCE(tracking_session_id::text, '') = COALESCE($5, '')
+     ORDER BY created_at DESC
+     LIMIT 1`,
+    [
+      normalizedType,
+      normalizedDestination,
+      locationId ? String(locationId).trim() : null,
+      bookingId ? Number(bookingId) : null,
+      trackingSessionId ? String(trackingSessionId).trim() : null,
+    ]
+  );
+  let code = String(existing.rows[0]?.code || "").trim();
+  if (!code) {
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      const candidate = generateShortCode(6);
+      try {
+        await pool.query(
+          `INSERT INTO short_links (
+             code, link_type, destination_url, location_id, booking_id, tracking_session_id, expires_at
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+          [
+            candidate,
+            normalizedType,
+            normalizedDestination,
+            locationId ? String(locationId).trim() : null,
+            bookingId ? Number(bookingId) : null,
+            trackingSessionId ? String(trackingSessionId).trim() : null,
+            expiresAt || null,
+          ]
+        );
+        code = candidate;
+        break;
+      } catch (err) {
+        if (err?.code !== "23505") throw err;
+      }
+    }
+  }
+  if (!code) {
+    throw new Error(`Unable to create short link for type ${normalizedType}.`);
+  }
+  return `${getShortLinkBaseUrl(req)}/${normalizedType}/${code}`;
+}
+
+async function buildShortPublicUrls({
+  req = null,
+  locationId = null,
+  bookingId = null,
+  trackingSessionId = null,
+  tracking = {},
+  portal = {},
+  followUp = {},
+}) {
+  const result = {
+    tracking: { ...tracking },
+    portal: { ...portal },
+    follow_up: { ...followUp },
+  };
+  if (tracking.customer_tracking_url) {
+    const shortUrl = await createShortLink({
+      req,
+      linkType: "c",
+      destinationUrl: tracking.customer_tracking_url,
+      locationId,
+      bookingId,
+      trackingSessionId,
+    });
+    result.tracking.customer_tracking_short_url = shortUrl;
+    result.tracking.customer_tracking_url = shortUrl;
+  }
+  if (tracking.driver_tracking_url) {
+    const shortUrl = await createShortLink({
+      req,
+      linkType: "d",
+      destinationUrl: tracking.driver_tracking_url,
+      locationId,
+      bookingId,
+      trackingSessionId,
+    });
+    result.tracking.driver_tracking_short_url = shortUrl;
+    result.tracking.driver_tracking_url = shortUrl;
+  }
+  if (tracking.follow_up_url || followUp.review_and_tip_url) {
+    const followDestination = tracking.follow_up_url || followUp.review_and_tip_url;
+    const shortUrl = await createShortLink({
+      req,
+      linkType: "f",
+      destinationUrl: followDestination,
+      locationId,
+      bookingId,
+      trackingSessionId,
+    });
+    result.tracking.follow_up_short_url = shortUrl;
+    result.tracking.follow_up_url = shortUrl;
+    result.follow_up.review_and_tip_short_url = shortUrl;
+    result.follow_up.review_and_tip_url = shortUrl;
+  }
+  if (portal.ride_hub_url) {
+    const shortUrl = await createShortLink({
+      req,
+      linkType: "h",
+      destinationUrl: portal.ride_hub_url,
+      locationId,
+      bookingId,
+      trackingSessionId,
+    });
+    result.portal.ride_hub_short_url = shortUrl;
+    result.portal.ride_hub_url = shortUrl;
+  }
+  if (portal.ride_inbox_url) {
+    const shortUrl = await createShortLink({
+      req,
+      linkType: "n",
+      destinationUrl: portal.ride_inbox_url,
+      locationId,
+      bookingId,
+      trackingSessionId,
+    });
+    result.portal.ride_inbox_short_url = shortUrl;
+    result.portal.ride_inbox_url = shortUrl;
+  }
+  return result;
+}
+
 function buildTrackingUrls(req, driverToken, customerToken, publicAppUrl = null) {
   const baseUrl = normalizePublicAppUrl(publicAppUrl) || getPublicAppUrl(req);
   return {
@@ -1367,9 +1561,27 @@ function buildTrackingSessionClientShape(session) {
   };
 }
 
-function buildTrackingStatusWebhookPayload({ req, session, status }) {
+async function buildTrackingStatusWebhookPayload({ req, session, status }) {
   const trackingUrls = buildTrackingUrls(req, session.driver_token, session.customer_token, session.public_app_url);
   const portalUrls = buildCustomerPortalUrls(req, session.location_id, session.customer_token, session.public_app_url);
+  const shortUrls = await buildShortPublicUrls({
+    req,
+    locationId: session.location_id,
+    bookingId: session.booking_id,
+    trackingSessionId: session.id,
+    tracking: {
+      customer_tracking_url: trackingUrls.customer_url,
+      driver_tracking_url: trackingUrls.driver_url,
+      follow_up_url: trackingUrls.follow_up_url,
+    },
+    portal: {
+      ride_hub_url: portalUrls.ride_hub_url,
+      ride_inbox_url: portalUrls.ride_inbox_url,
+    },
+    followUp: {
+      review_and_tip_url: trackingUrls.follow_up_url,
+    },
+  });
   const customerName = [session.first_name, session.last_name].filter(Boolean).join(" ").trim();
   const vehicleRecord = getVehicleRecordForSession(session);
   const vehicleDisplayName = buildVehicleDisplayName(vehicleRecord, session.vehicle_slot_id || "");
@@ -1428,19 +1640,25 @@ function buildTrackingStatusWebhookPayload({ req, session, status }) {
       accuracy: session.accuracy ?? null,
       last_location_at: session.last_location_at || null,
       customer_tracking_token: session.customer_token,
-      customer_tracking_url: trackingUrls.customer_url,
-      follow_up_url: trackingUrls.follow_up_url,
+      customer_tracking_url: shortUrls.tracking.customer_tracking_url,
+      customer_tracking_short_url: shortUrls.tracking.customer_tracking_short_url || null,
+      follow_up_url: shortUrls.tracking.follow_up_url,
+      follow_up_short_url: shortUrls.tracking.follow_up_short_url || null,
       driver_tracking_token: session.driver_token,
-      driver_tracking_url: trackingUrls.driver_url,
+      driver_tracking_url: shortUrls.tracking.driver_tracking_url,
+      driver_tracking_short_url: shortUrls.tracking.driver_tracking_short_url || null,
     },
     follow_up: {
-      review_and_tip_url: trackingUrls.follow_up_url,
+      review_and_tip_url: shortUrls.follow_up.review_and_tip_url,
+      review_and_tip_short_url: shortUrls.follow_up.review_and_tip_short_url || null,
       tip_enabled: normalizePaymentProvider(session.payment_provider || "stripe") === "stripe",
       suggested_tip_amounts: [5, 10, 20],
     },
     portal: {
-      ride_hub_url: portalUrls.ride_hub_url,
-      ride_inbox_url: portalUrls.ride_inbox_url,
+      ride_hub_url: shortUrls.portal.ride_hub_url,
+      ride_hub_short_url: shortUrls.portal.ride_hub_short_url || null,
+      ride_inbox_url: shortUrls.portal.ride_inbox_url,
+      ride_inbox_short_url: shortUrls.portal.ride_inbox_short_url || null,
       premium_client_portal_enabled: premiumClientPortalEnabled,
       pro_mobile_app_enabled: proMobileAppEnabled,
     },
@@ -1502,7 +1720,7 @@ async function triggerTrackingStatusWebhook({ req, trackingSessionId, status }) 
     };
   }
 
-  const payload = buildTrackingStatusWebhookPayload({ req, session, status });
+  const payload = await buildTrackingStatusWebhookPayload({ req, session, status });
   const response = await fetch(webhookUrl, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -2504,6 +2722,15 @@ async function sendDriverAssignmentSmsForBooking({ bookingId, locationId, paymen
     locationId,
     req,
   });
+  const shortUrls = await buildShortPublicUrls({
+    req,
+    locationId,
+    bookingId,
+    trackingSessionId: tracking.tracking_session_id || null,
+    tracking: {
+      driver_tracking_url: tracking.driver_url || null,
+    },
+  });
 
   let driverContactId = await upsertCrmContact({
     locationId,
@@ -2520,7 +2747,7 @@ async function sendDriverAssignmentSmsForBooking({ bookingId, locationId, paymen
   const message = buildDriverBookingSmsMessage({
     booking,
     paymentState,
-    trackingUrl: tracking.driver_url || null,
+    trackingUrl: shortUrls.tracking.driver_tracking_url || tracking.driver_url || null,
   });
 
   let sendResult = await sendCrmSmsToContact({
@@ -3266,6 +3493,41 @@ app.get("/saas-sales.html", (req, res) => {
 });
 app.get("/addons.html", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "addons.html"));
+});
+app.get("/:linkType(h|n|c|d|f)/:code", async (req, res) => {
+  try {
+    await ensureShortLinksTable();
+    const linkType = String(req.params.linkType || "").trim().toLowerCase();
+    const code = String(req.params.code || "").trim();
+    if (!code) {
+      return res.status(404).send("Short link not found.");
+    }
+    const result = await pool.query(
+      `SELECT code, link_type, destination_url, expires_at
+       FROM short_links
+       WHERE code = $1 AND link_type = $2
+       LIMIT 1`,
+      [code, linkType]
+    );
+    const row = result.rows[0];
+    if (!row) {
+      return res.status(404).send("Short link not found.");
+    }
+    if (row.expires_at && new Date(row.expires_at).getTime() < Date.now()) {
+      return res.status(410).send("Short link expired.");
+    }
+    await pool.query(
+      `UPDATE short_links
+       SET click_count = click_count + 1,
+           last_clicked_at = NOW()
+       WHERE code = $1`,
+      [code]
+    ).catch(() => {});
+    return res.redirect(302, String(row.destination_url || "").trim());
+  } catch (err) {
+    console.error("Short link redirect error:", err);
+    return res.status(500).send("Unable to open short link.");
+  }
 });
 app.get("/driver-tracking.html", (req, res) => {
   const suffix = req.originalUrl.includes("?") ? req.originalUrl.slice(req.originalUrl.indexOf("?")) : "";
@@ -7945,13 +8207,18 @@ function buildCrmBookingPayload({
       tracking_session_id: tracking.tracking_session_id || null,
       customer_tracking_token: tracking.customer_tracking_token || null,
       customer_tracking_url: tracking.customer_tracking_url || null,
+      customer_tracking_short_url: tracking.customer_tracking_short_url || null,
       driver_tracking_token: tracking.driver_tracking_token || null,
       driver_tracking_url: tracking.driver_tracking_url || null,
+      driver_tracking_short_url: tracking.driver_tracking_short_url || null,
       follow_up_url: tracking.follow_up_url || null,
+      follow_up_short_url: tracking.follow_up_short_url || null,
     },
     portal: {
       ride_hub_url: portal.ride_hub_url || null,
+      ride_hub_short_url: portal.ride_hub_short_url || null,
       ride_inbox_url: portal.ride_inbox_url || null,
+      ride_inbox_short_url: portal.ride_inbox_short_url || null,
       premium_client_portal_enabled: premiumClientPortalEnabled,
       pro_mobile_app_enabled: proMobileAppEnabled,
     },
@@ -8007,6 +8274,8 @@ function buildCrmBookingPayload({
       payment_provider: paymentProvider,
     },
     follow_up: {
+      review_and_tip_url: tracking.follow_up_url || null,
+      review_and_tip_short_url: tracking.follow_up_short_url || null,
       send_premium_portal_invite: premiumClientPortalEnabled,
       send_pro_mobile_app_invite: proMobileAppEnabled,
       send_payment_sms: paymentRequired,
@@ -9580,6 +9849,23 @@ async function triggerCrmWebhook(location_id, booking_id) {
     const trackingSession = await ensureTrackingSessionForBookingInternal({ bookingId: b.id, locationId: location_id });
     const trackingUrls = buildTrackingUrls(null, trackingSession.driver_token, trackingSession.customer_token, p?.public_app_url);
     const portalUrls = buildCustomerPortalUrls(null, location_id, trackingSession.customer_token, p?.public_app_url);
+    const shortUrls = await buildShortPublicUrls({
+      locationId: location_id,
+      bookingId: b.id,
+      trackingSessionId: trackingSession.tracking_session_id || null,
+      tracking: {
+        customer_tracking_url: trackingUrls.customer_url,
+        driver_tracking_url: trackingUrls.driver_url,
+        follow_up_url: trackingUrls.follow_up_url,
+      },
+      portal: {
+        ride_hub_url: portalUrls.ride_hub_url,
+        ride_inbox_url: portalUrls.ride_inbox_url,
+      },
+      followUp: {
+        review_and_tip_url: trackingUrls.follow_up_url,
+      },
+    });
     const entitlements = buildPlanEntitlements({
       planName: p.plan_name || "starter",
       addonBrandingUnlocked: p.addon_branding_unlocked,
@@ -9637,14 +9923,19 @@ async function triggerCrmWebhook(location_id, booking_id) {
       tracking: {
         tracking_session_id: trackingSession.tracking_session_id,
         customer_tracking_token: trackingSession.customer_token,
-        customer_tracking_url: trackingUrls.customer_url,
+        customer_tracking_url: shortUrls.tracking.customer_tracking_url,
+        customer_tracking_short_url: shortUrls.tracking.customer_tracking_short_url || null,
         driver_tracking_token: trackingSession.driver_token,
-        driver_tracking_url: trackingUrls.driver_url,
-        follow_up_url: trackingUrls.follow_up_url,
+        driver_tracking_url: shortUrls.tracking.driver_tracking_url,
+        driver_tracking_short_url: shortUrls.tracking.driver_tracking_short_url || null,
+        follow_up_url: shortUrls.tracking.follow_up_url,
+        follow_up_short_url: shortUrls.tracking.follow_up_short_url || null,
       },
       portal: {
-        ride_hub_url: portalUrls.ride_hub_url,
-        ride_inbox_url: portalUrls.ride_inbox_url,
+        ride_hub_url: shortUrls.portal.ride_hub_url,
+        ride_hub_short_url: shortUrls.portal.ride_hub_short_url || null,
+        ride_inbox_url: shortUrls.portal.ride_inbox_url,
+        ride_inbox_short_url: shortUrls.portal.ride_inbox_short_url || null,
       },
       financials: {
         total_price: totalPrice,
