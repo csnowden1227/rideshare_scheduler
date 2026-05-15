@@ -252,8 +252,8 @@
           </div>
         </div>
         <div class="hero-actions">
-          <a id="followup-home-link" class="hero-button" href="/ridehubportal">Ride Hub</a>
-          <a id="followup-inbox-link" class="hero-button" href="/ridehubnotifications">Ride Inbox</a>
+          <a id="followup-home-link" class="hero-button" href="/ride-hub-portal">Ride Hub</a>
+          <a id="followup-inbox-link" class="hero-button" href="/ride-hub-notifications">Ride Inbox</a>
         </div>
       </div>
       <h1>How Was Your Ride?</h1>
@@ -316,7 +316,7 @@
   <script>
     const query = new URLSearchParams(window.location.search);
     const pathSegments = window.location.pathname.split("/").filter(Boolean);
-    const routeIndex = Math.max(pathSegments.lastIndexOf("customerfollowup"), pathSegments.lastIndexOf("customer-follow-up"));
+    const routeIndex = Math.max(pathSegments.lastIndexOf("customer-follow-up"), pathSegments.lastIndexOf("customerfollowup"));
     const pathToken = routeIndex >= 0 ? decodeURIComponent(pathSegments[routeIndex + 1] || "") : "";
     const pathTipResult = routeIndex >= 0 ? decodeURIComponent(pathSegments[routeIndex + 2] || "") : "";
     const pathSessionId = routeIndex >= 0 ? decodeURIComponent(pathSegments[routeIndex + 3] || "") : "";
@@ -389,10 +389,10 @@
       const homeLink = document.getElementById("followup-home-link");
       const inboxLink = document.getElementById("followup-inbox-link");
       if (homeLink) {
-        homeLink.href = buildPortalPath("ridehubportal");
+        homeLink.href = buildPortalPath("ride-hub-portal");
       }
       if (inboxLink) {
-        inboxLink.href = buildPortalPath("ridehubnotifications");
+        inboxLink.href = buildPortalPath("ride-hub-notifications");
       }
     }
 

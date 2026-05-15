@@ -334,7 +334,7 @@
       <h1 id="hero-title">Your ride at a glance.</h1>
       <p id="hero-copy">Check what is complete, what needs your attention, and what comes next in your ride journey.</p>
       <div class="top-actions">
-        <a id="home-link" class="button button-primary" href="/ridehubportal">Back to Ride Hub</a>
+        <a id="home-link" class="button button-primary" href="/ride-hub-portal">Back to Ride Hub</a>
         <a id="portal-link" class="button button-secondary hidden" href="#" target="_blank" rel="noopener noreferrer">Open Client Portal</a>
       </div>
     </section>
@@ -353,7 +353,7 @@
             <p id="booking-copy">Your reservation is saved and your trip details are ready to review.</p>
             <div class="stage-state complete" id="booking-state">Complete</div>
             <div class="notification-actions">
-              <a id="booking-home-link" class="mini-button light" href="/ridehubportal">View ride home</a>
+              <a id="booking-home-link" class="mini-button light" href="/ride-hub-portal">View ride home</a>
             </div>
           </div>
 
@@ -448,7 +448,7 @@
     (function () {
       const query = new URLSearchParams(window.location.search);
       const pathSegments = window.location.pathname.split("/").filter(Boolean);
-      const routeIndex = Math.max(pathSegments.lastIndexOf("ridehubnotifications"), pathSegments.lastIndexOf("ride-hub-notifications"));
+      const routeIndex = Math.max(pathSegments.lastIndexOf("ride-hub-notifications"), pathSegments.lastIndexOf("ridehubnotifications"));
       const pathLocationId = routeIndex >= 0 ? decodeURIComponent(pathSegments[routeIndex + 1] || "") : "";
       const pathToken = routeIndex >= 0 ? decodeURIComponent(pathSegments[routeIndex + 2] || "") : "";
       const locationId = (query.get("location_id") || pathLocationId || "").trim();
@@ -565,7 +565,7 @@
       }
 
       function updateLinks() {
-        const homeUrl = buildPortalPath("ridehubportal");
+        const homeUrl = buildPortalPath("ride-hub-portal");
         const homeLink = document.getElementById("home-link");
         const bookingHomeLink = document.getElementById("booking-home-link");
         if (homeLink) homeLink.href = homeUrl;
@@ -691,7 +691,7 @@
           try {
             sessionPayload = await loadSessionContext();
             const session = sessionPayload.session || {};
-            activeTrackingUrl = `${backendUrl}/customertracking/${encodeURIComponent(token)}`;
+            activeTrackingUrl = `${backendUrl}/customer-tracking/${encodeURIComponent(token)}`;
             activeFollowUpUrl = session.follow_up_url || activeFollowUpUrl;
             setText("customer-name", session.customer_name || "Customer name will appear here.");
             setText("pickup-text", session.pickup_address || "Pickup address will appear here.");

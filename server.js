@@ -1013,9 +1013,9 @@ function normalizePublicAppUrl(value) {
 function buildTrackingUrls(req, driverToken, customerToken, publicAppUrl = null) {
   const baseUrl = normalizePublicAppUrl(publicAppUrl) || getPublicAppUrl(req);
   return {
-    driver_url: `${baseUrl}/drivertracking/${encodeURIComponent(driverToken)}`,
-    customer_url: `${baseUrl}/customertracking/${encodeURIComponent(customerToken)}`,
-    follow_up_url: `${baseUrl}/customerfollowup/${encodeURIComponent(customerToken)}`,
+    driver_url: `${baseUrl}/driver-tracking/${encodeURIComponent(driverToken)}`,
+    customer_url: `${baseUrl}/customer-tracking/${encodeURIComponent(customerToken)}`,
+    follow_up_url: `${baseUrl}/customer-follow-up/${encodeURIComponent(customerToken)}`,
   };
 }
 
@@ -1026,8 +1026,8 @@ function buildCustomerPortalUrls(req, locationId, customerToken, publicAppUrl = 
   if (customerToken) segments.push(encodeURIComponent(String(customerToken || "").trim()));
   const suffix = segments.length ? `/${segments.join("/")}` : "";
   return {
-    ride_hub_url: `${baseUrl}/ridehubportal${suffix}`,
-    ride_inbox_url: `${baseUrl}/ridehubnotifications${suffix}`,
+    ride_hub_url: `${baseUrl}/ride-hub-portal${suffix}`,
+    ride_inbox_url: `${baseUrl}/ride-hub-notifications${suffix}`,
   };
 }
 
@@ -3299,11 +3299,11 @@ app.get([
 });
 app.get("/customer-portal-app-home.html", (req, res) => {
   const suffix = req.originalUrl.includes("?") ? req.originalUrl.slice(req.originalUrl.indexOf("?")) : "";
-  res.redirect(302, `/ridehubportal${suffix}`);
+  res.redirect(302, `/ride-hub-portal${suffix}`);
 });
 app.get("/customer-portal-app-notifications.html", (req, res) => {
   const suffix = req.originalUrl.includes("?") ? req.originalUrl.slice(req.originalUrl.indexOf("?")) : "";
-  res.redirect(302, `/ridehubnotifications${suffix}`);
+  res.redirect(302, `/ride-hub-notifications${suffix}`);
 });
 app.get([
   "/ride-hub-portal",
@@ -3327,7 +3327,7 @@ app.get([
 });
 app.get("/ride-hub-inbox", (req, res) => {
   const suffix = req.originalUrl.includes("?") ? req.originalUrl.slice(req.originalUrl.indexOf("?")) : "";
-  res.redirect(302, `/ridehubnotifications${suffix}`);
+  res.redirect(302, `/ride-hub-notifications${suffix}`);
 });
 app.get("/page-directory.html", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "page-directory.html"));
@@ -6347,7 +6347,7 @@ app.post("/api/tracking/tip-checkout", async (req, res) => {
     }
 
     const baseUrl = normalizePublicAppUrl(session.public_app_url) || getPublicAppUrl(req);
-    const followUpUrl = `${baseUrl}/customerfollowup/${encodeURIComponent(token)}`;
+    const followUpUrl = `${baseUrl}/customer-follow-up/${encodeURIComponent(token)}`;
     const checkoutSession = await createStripeCheckoutSessionForAmount({
       apiKey: paymentProfile.stripeSecretKey,
       amount: tipAmount,
@@ -6360,8 +6360,8 @@ app.post("/api/tracking/tip-checkout", async (req, res) => {
       paymentStatus: "tip",
       title: "Driver Tip",
       description: `Tip for your completed ride with ${session.business_name || "your chauffeur service"}`,
-      successUrl: `${baseUrl}/customerfollowup/${encodeURIComponent(token)}/tip-success/{CHECKOUT_SESSION_ID}`,
-      cancelUrl: `${baseUrl}/customerfollowup/${encodeURIComponent(token)}/tip-cancelled`,
+      successUrl: `${baseUrl}/customer-follow-up/${encodeURIComponent(token)}/tip-success/{CHECKOUT_SESSION_ID}`,
+      cancelUrl: `${baseUrl}/customer-follow-up/${encodeURIComponent(token)}/tip-cancelled`,
       paymentChoice: "tip",
       balanceDueDeadline: null,
     });

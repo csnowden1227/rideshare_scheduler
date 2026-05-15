@@ -436,8 +436,8 @@
           </p>
           <div class="hero-actions">
             <a id="portal-link" class="button button-primary" href="#">Open Client Portal Login</a>
-            <a id="notification-link" class="button button-dark" href="/ridehubnotifications">Open Ride Inbox</a>
-            <a id="tracking-link" class="button button-secondary" href="/customertracking">Track Current Ride</a>
+            <a id="notification-link" class="button button-dark" href="/ride-hub-notifications">Open Ride Inbox</a>
+            <a id="tracking-link" class="button button-secondary" href="/customer-tracking">Track Current Ride</a>
           </div>
           <div class="badge-row">
             <div class="badge">Booking + updates</div>
@@ -543,7 +543,7 @@
     (function () {
       const query = new URLSearchParams(window.location.search);
       const pathSegments = window.location.pathname.split("/").filter(Boolean);
-      const routeIndex = Math.max(pathSegments.lastIndexOf("ridehubportal"), pathSegments.lastIndexOf("ride-hub-portal"));
+      const routeIndex = Math.max(pathSegments.lastIndexOf("ride-hub-portal"), pathSegments.lastIndexOf("ridehubportal"));
       const pathLocationId = routeIndex >= 0 ? decodeURIComponent(pathSegments[routeIndex + 1] || "") : "";
       const pathToken = routeIndex >= 0 ? decodeURIComponent(pathSegments[routeIndex + 2] || "") : "";
       const locationId = (query.get("location_id") || pathLocationId || "").trim();
@@ -648,12 +648,12 @@
 
         const notificationLink = document.getElementById("notification-link");
         if (notificationLink) {
-          notificationLink.href = buildPortalPath("ridehubnotifications");
+          notificationLink.href = buildPortalPath("ride-hub-notifications");
         }
 
         const trackingLink = document.getElementById("tracking-link");
         if (trackingLink) {
-          trackingLink.href = activeTrackingUrl || (token ? `/customertracking/${encodeURIComponent(token)}` : "/customertracking");
+          trackingLink.href = activeTrackingUrl || (token ? `/customer-tracking/${encodeURIComponent(token)}` : "/customer-tracking");
         }
       }
 
@@ -676,7 +676,7 @@
         if (!token) return null;
         const data = await requestJson(`${backendUrl}/api/tracking/session/customer?token=${encodeURIComponent(token)}`);
         const session = data.session || {};
-        activeTrackingUrl = `${backendUrl}/customertracking/${encodeURIComponent(token)}`;
+        activeTrackingUrl = `${backendUrl}/customer-tracking/${encodeURIComponent(token)}`;
         activeFollowUpUrl = session.follow_up_url || activeFollowUpUrl;
         activeCustomerName = session.customer_name || activeCustomerName;
         setText("status-text", session.status || "Ride in progress");

@@ -311,7 +311,7 @@
   <script>
     const query = new URLSearchParams(window.location.search);
     const pathSegments = window.location.pathname.split("/").filter(Boolean);
-    const routeIndex = Math.max(pathSegments.lastIndexOf("drivertracking"), pathSegments.lastIndexOf("driver-tracking"));
+    const routeIndex = Math.max(pathSegments.lastIndexOf("driver-tracking"), pathSegments.lastIndexOf("drivertracking"));
     const pathToken = routeIndex >= 0 ? decodeURIComponent(pathSegments[routeIndex + 1] || "") : "";
     const token = (query.get("token") || pathToken || "").trim();
     const apiBase = window.location.origin;
