@@ -20,6 +20,12 @@ import * as turf from '@turf/turf';
 const { Pool, Client } = pkg;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
+
+function sendPublicHtmlPage(res, fileName) {
+  res.type("html");
+  return res.sendFile(path.join(__dirname, "public", fileName));
+}
+
 function normalizeStripeSecretKey(value) {
   return String(value || "").trim().replace(/^['"]|['"]$/g, "");
 }
@@ -3548,14 +3554,14 @@ app.get("/driver-tracking.html", (req, res) => {
   res.redirect(302, `/drivertracking${suffix}`);
 });
 app.get(["/driver-tracking", "/driver-tracking/:token", "/drivertracking", "/drivertracking/:token"], (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "driver-tracking"));
+  return sendPublicHtmlPage(res, "driver-tracking");
 });
 app.get("/customer-tracking.html", (req, res) => {
   const suffix = req.originalUrl.includes("?") ? req.originalUrl.slice(req.originalUrl.indexOf("?")) : "";
   res.redirect(302, `/customertracking${suffix}`);
 });
 app.get(["/customer-tracking", "/customer-tracking/:token", "/customertracking", "/customertracking/:token"], (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "customer-tracking"));
+  return sendPublicHtmlPage(res, "customer-tracking");
 });
 app.get("/ride-follow-up.html", (req, res) => {
   const suffix = req.originalUrl.includes("?") ? req.originalUrl.slice(req.originalUrl.indexOf("?")) : "";
@@ -3571,7 +3577,7 @@ app.get([
   "/customerfollowup/:token/:tipResult",
   "/customerfollowup/:token/:tipResult/:sessionId",
 ], (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "customer-follow-up"));
+  return sendPublicHtmlPage(res, "customer-follow-up");
 });
 app.get("/customer-portal-app-home.html", (req, res) => {
   const suffix = req.originalUrl.includes("?") ? req.originalUrl.slice(req.originalUrl.indexOf("?")) : "";
@@ -3589,7 +3595,7 @@ app.get([
   "/ridehubportal/:locationId",
   "/ridehubportal/:locationId/:token",
 ], (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "ride-hub-portal"));
+  return sendPublicHtmlPage(res, "ride-hub-portal");
 });
 app.get([
   "/ride-hub-notifications",
@@ -3599,7 +3605,7 @@ app.get([
   "/ridehubnotifications/:locationId",
   "/ridehubnotifications/:locationId/:token",
 ], (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "ride-hub-notifications"));
+  return sendPublicHtmlPage(res, "ride-hub-notifications");
 });
 app.get("/ride-hub-inbox", (req, res) => {
   const suffix = req.originalUrl.includes("?") ? req.originalUrl.slice(req.originalUrl.indexOf("?")) : "";
