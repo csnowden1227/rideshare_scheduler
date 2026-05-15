@@ -1004,7 +1004,7 @@ function normalizePublicAppUrl(value) {
   const withProtocol = /^[a-z]+:\/\//i.test(raw) ? raw : `https://${raw}`;
   try {
     const url = new URL(withProtocol);
-    return url.toString().replace(/\/+$/, "");
+    return url.origin.replace(/\/+$/, "");
   } catch {
     return "";
   }
@@ -1013,9 +1013,9 @@ function normalizePublicAppUrl(value) {
 function buildTrackingUrls(req, driverToken, customerToken, publicAppUrl = null) {
   const baseUrl = normalizePublicAppUrl(publicAppUrl) || getPublicAppUrl(req);
   return {
-    driver_url: `${baseUrl}/driver-tracking?token=${encodeURIComponent(driverToken)}`,
-    customer_url: `${baseUrl}/customer-tracking?token=${encodeURIComponent(customerToken)}`,
-    follow_up_url: `${baseUrl}/customer-follow-up?token=${encodeURIComponent(customerToken)}`,
+    driver_url: `${baseUrl}/drivertracking?token=${encodeURIComponent(driverToken)}`,
+    customer_url: `${baseUrl}/customertracking?token=${encodeURIComponent(customerToken)}`,
+    follow_up_url: `${baseUrl}/customerfollowup?token=${encodeURIComponent(customerToken)}`,
   };
 }
 
@@ -1026,8 +1026,8 @@ function buildCustomerPortalUrls(req, locationId, customerToken, publicAppUrl = 
   if (customerToken) params.set("token", String(customerToken || "").trim());
   const suffix = params.toString() ? `?${params.toString()}` : "";
   return {
-    ride_hub_url: `${baseUrl}/ride-hub-portal${suffix}`,
-    ride_inbox_url: `${baseUrl}/ride-hub-notifications${suffix}`,
+    ride_hub_url: `${baseUrl}/ridehubportal${suffix}`,
+    ride_inbox_url: `${baseUrl}/ridehubnotifications${suffix}`,
   };
 }
 
@@ -3269,42 +3269,62 @@ app.get("/addons.html", (req, res) => {
 });
 app.get("/driver-tracking.html", (req, res) => {
   const suffix = req.originalUrl.includes("?") ? req.originalUrl.slice(req.originalUrl.indexOf("?")) : "";
-  res.redirect(302, `/driver-tracking${suffix}`);
+  res.redirect(302, `/drivertracking${suffix}`);
 });
 app.get("/driver-tracking", (req, res) => {
+  const suffix = req.originalUrl.includes("?") ? req.originalUrl.slice(req.originalUrl.indexOf("?")) : "";
+  res.redirect(302, `/drivertracking${suffix}`);
+});
+app.get("/drivertracking", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "driver-tracking"));
 });
 app.get("/customer-tracking.html", (req, res) => {
   const suffix = req.originalUrl.includes("?") ? req.originalUrl.slice(req.originalUrl.indexOf("?")) : "";
-  res.redirect(302, `/customer-tracking${suffix}`);
+  res.redirect(302, `/customertracking${suffix}`);
 });
 app.get("/customer-tracking", (req, res) => {
+  const suffix = req.originalUrl.includes("?") ? req.originalUrl.slice(req.originalUrl.indexOf("?")) : "";
+  res.redirect(302, `/customertracking${suffix}`);
+});
+app.get("/customertracking", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "customer-tracking"));
 });
 app.get("/ride-follow-up.html", (req, res) => {
   const suffix = req.originalUrl.includes("?") ? req.originalUrl.slice(req.originalUrl.indexOf("?")) : "";
-  res.redirect(302, `/customer-follow-up${suffix}`);
+  res.redirect(302, `/customerfollowup${suffix}`);
 });
 app.get("/customer-follow-up", (req, res) => {
+  const suffix = req.originalUrl.includes("?") ? req.originalUrl.slice(req.originalUrl.indexOf("?")) : "";
+  res.redirect(302, `/customerfollowup${suffix}`);
+});
+app.get("/customerfollowup", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "customer-follow-up"));
 });
 app.get("/customer-portal-app-home.html", (req, res) => {
   const suffix = req.originalUrl.includes("?") ? req.originalUrl.slice(req.originalUrl.indexOf("?")) : "";
-  res.redirect(302, `/ride-hub-portal${suffix}`);
+  res.redirect(302, `/ridehubportal${suffix}`);
 });
 app.get("/customer-portal-app-notifications.html", (req, res) => {
   const suffix = req.originalUrl.includes("?") ? req.originalUrl.slice(req.originalUrl.indexOf("?")) : "";
-  res.redirect(302, `/ride-hub-notifications${suffix}`);
+  res.redirect(302, `/ridehubnotifications${suffix}`);
 });
 app.get("/ride-hub-portal", (req, res) => {
+  const suffix = req.originalUrl.includes("?") ? req.originalUrl.slice(req.originalUrl.indexOf("?")) : "";
+  res.redirect(302, `/ridehubportal${suffix}`);
+});
+app.get("/ridehubportal", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "ride-hub-portal"));
 });
 app.get("/ride-hub-notifications", (req, res) => {
+  const suffix = req.originalUrl.includes("?") ? req.originalUrl.slice(req.originalUrl.indexOf("?")) : "";
+  res.redirect(302, `/ridehubnotifications${suffix}`);
+});
+app.get("/ridehubnotifications", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "ride-hub-notifications"));
 });
 app.get("/ride-hub-inbox", (req, res) => {
   const suffix = req.originalUrl.includes("?") ? req.originalUrl.slice(req.originalUrl.indexOf("?")) : "";
-  res.redirect(302, `/ride-hub-notifications${suffix}`);
+  res.redirect(302, `/ridehubnotifications${suffix}`);
 });
 app.get("/page-directory.html", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "page-directory.html"));
@@ -6324,7 +6344,7 @@ app.post("/api/tracking/tip-checkout", async (req, res) => {
     }
 
     const baseUrl = normalizePublicAppUrl(session.public_app_url) || getPublicAppUrl(req);
-    const followUpUrl = `${baseUrl}/customer-follow-up?token=${encodeURIComponent(token)}`;
+    const followUpUrl = `${baseUrl}/customerfollowup?token=${encodeURIComponent(token)}`;
     const checkoutSession = await createStripeCheckoutSessionForAmount({
       apiKey: paymentProfile.stripeSecretKey,
       amount: tipAmount,

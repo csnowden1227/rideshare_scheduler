@@ -252,8 +252,8 @@
           </div>
         </div>
         <div class="hero-actions">
-          <a id="followup-home-link" class="hero-button" href="ride-hub-portal">Ride Hub</a>
-          <a id="followup-inbox-link" class="hero-button" href="ride-hub-notifications">Ride Inbox</a>
+          <a id="followup-home-link" class="hero-button" href="ridehubportal">Ride Hub</a>
+          <a id="followup-inbox-link" class="hero-button" href="ridehubnotifications">Ride Inbox</a>
         </div>
       </div>
       <h1>How Was Your Ride?</h1>
@@ -382,10 +382,10 @@
       const homeLink = document.getElementById("followup-home-link");
       const inboxLink = document.getElementById("followup-inbox-link");
       if (homeLink) {
-        homeLink.href = `ride-hub-portal${suffix}`;
+        homeLink.href = `ridehubportal${suffix}`;
       }
       if (inboxLink) {
-        inboxLink.href = `ride-hub-notifications${suffix}`;
+        inboxLink.href = `ridehubnotifications${suffix}`;
       }
     }
 
