@@ -9802,6 +9802,7 @@ res.json({
   entitlements,
 
   business_name: profile.business_name,
+  public_app_url: profile.public_app_url || "",
   business_logo: sanitizedBranding.business_logo || "",
   brand_color_primary: sanitizedBranding.brand_color_primary || DEFAULT_BRAND_COLORS.primary,
   brand_color_secondary: sanitizedBranding.brand_color_secondary || DEFAULT_BRAND_COLORS.secondary,
@@ -10073,6 +10074,7 @@ app.get("/api/get-profile-widget/:location_id", async (req, res) => {
         plan_name: entitlements.plan_name,
         entitlements,
         business_name: p.business_name || "",
+        public_app_url: p.public_app_url || "",
         business_logo: sanitizedBranding.business_logo || "",
         brand_color_primary: sanitizedBranding.brand_color_primary || DEFAULT_BRAND_COLORS.primary,
         brand_color_secondary: sanitizedBranding.brand_color_secondary || DEFAULT_BRAND_COLORS.secondary,
