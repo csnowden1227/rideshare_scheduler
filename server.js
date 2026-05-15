@@ -8297,6 +8297,7 @@ async function createBookingRecord(input, { paymentLink = null, triggerWebhook =
     dropoff_lat,
     dropoff_lng,
     start_time,
+    start_time_local = null,
     total_price,
     quoted_price = 0,
     addon_total = 0,
@@ -8410,7 +8411,7 @@ async function createBookingRecord(input, { paymentLink = null, triggerWebhook =
   const bookingTimingValidation = validateBookingTimingRules({
     slot: fleetVehicle || {},
     startTime: start_time,
-    startTimeLocal: req.body.start_time_local,
+    startTimeLocal: start_time_local,
     profileDefaults: {
       open_time: profile.open_time,
       close_time: profile.close_time,
