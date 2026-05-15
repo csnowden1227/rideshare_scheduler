@@ -252,8 +252,8 @@
           </div>
         </div>
         <div class="hero-actions">
-          <a id="followup-home-link" class="hero-button" href="ridehubportal">Ride Hub</a>
-          <a id="followup-inbox-link" class="hero-button" href="ridehubnotifications">Ride Inbox</a>
+          <a id="followup-home-link" class="hero-button" href="/ride-hub-portal">Ride Hub</a>
+          <a id="followup-inbox-link" class="hero-button" href="/ride-hub-notifications">Ride Inbox</a>
         </div>
       </div>
       <h1>How Was Your Ride?</h1>
@@ -315,11 +315,16 @@
 
   <script>
     const query = new URLSearchParams(window.location.search);
-    const token = (query.get("token") || "").trim();
-    const locationId = (query.get("location_id") || "").trim();
+    const pathSegments = window.location.pathname.split("/").filter(Boolean);
+    const routeIndex = Math.max(pathSegments.lastIndexOf("customer-follow-up"), pathSegments.lastIndexOf("customerfollowup"));
+    const pathToken = routeIndex >= 0 ? decodeURIComponent(pathSegments[routeIndex + 1] || "") : "";
+    const pathTipResult = routeIndex >= 0 ? decodeURIComponent(pathSegments[routeIndex + 2] || "") : "";
+    const pathSessionId = routeIndex >= 0 ? decodeURIComponent(pathSegments[routeIndex + 3] || "") : "";
+    const token = (query.get("token") || pathToken || "").trim();
+    let locationId = (query.get("location_id") || "").trim();
     const portalUrl = (query.get("portal_url") || query.get("client_portal_url") || "").trim();
-    const tipResult = (query.get("tip") || "").trim();
-    const tipSessionId = (query.get("session_id") || "").trim();
+    const tipResult = (query.get("tip") || pathTipResult || "").trim();
+    const tipSessionId = (query.get("session_id") || pathSessionId || "").trim();
     const DEFAULT_BRAND = {
       name: "Chauffeur Deluxe",
       primary: "#082f49",
@@ -373,19 +378,21 @@
       }
     }
 
+    function buildPortalPath(basePath) {
+      const segments = [basePath];
+      if (locationId) segments.push(encodeURIComponent(locationId));
+      if (token) segments.push(encodeURIComponent(token));
+      return `/${segments.join("/")}`;
+    }
+
     function updateHubLinks() {
-      const params = new URLSearchParams();
-      if (locationId) params.set("location_id", locationId);
-      if (portalUrl) params.set("portal_url", portalUrl);
-      if (token) params.set("token", token);
-      const suffix = params.toString() ? `?${params.toString()}` : "";
       const homeLink = document.getElementById("followup-home-link");
       const inboxLink = document.getElementById("followup-inbox-link");
       if (homeLink) {
-        homeLink.href = `ridehubportal${suffix}`;
+        homeLink.href = buildPortalPath("ride-hub-portal");
       }
       if (inboxLink) {
-        inboxLink.href = `ridehubnotifications${suffix}`;
+        inboxLink.href = buildPortalPath("ride-hub-notifications");
       }
     }
 
@@ -454,6 +461,8 @@
 
       updateHubLinks();
       const data = await requestJson(`/api/tracking/follow-up?token=${encodeURIComponent(token)}`);
+      locationId = String(data?.session?.location_id || locationId || "").trim();
+      updateHubLinks();
       const planName = data?.session?.branding?.plan_name || "starter";
       if (!(planName === "premium" || planName === "pro")) {
         setStatus("feedback-status", "Premium or Pro upgrade required for the customer client portal follow-up experience.", true);
@@ -478,14 +487,14 @@
         renderStars();
       }
 
-      if (tipResult === "success" && tipSessionId) {
+      if ((tipResult === "success" || tipResult === "tip-success") && tipSessionId) {
         const tipStatus = await requestJson(`/api/tracking/tip-checkout-status?token=${encodeURIComponent(token)}&session_id=${encodeURIComponent(tipSessionId)}`);
         if (tipStatus.paid) {
           setStatus("tip-status", `Thank you. Your tip of $${Number(tipStatus.tip_amount || 0).toFixed(2)} has been received.`);
         } else {
           setStatus("tip-status", "Your tip checkout has not been marked paid yet.", true);
         }
-      } else if (tipResult === "cancelled") {
+      } else if (tipResult === "cancelled" || tipResult === "tip-cancelled") {
         setStatus("tip-status", "Tip checkout was cancelled. You can try again any time.", true);
       }
     }

@@ -223,7 +223,10 @@
 
   <script>
     const query = new URLSearchParams(window.location.search);
-    const customerToken = (query.get("token") || "").trim();
+    const pathSegments = window.location.pathname.split("/").filter(Boolean);
+    const routeIndex = Math.max(pathSegments.lastIndexOf("customer-tracking"), pathSegments.lastIndexOf("customertracking"));
+    const pathToken = routeIndex >= 0 ? decodeURIComponent(pathSegments[routeIndex + 1] || "") : "";
+    const customerToken = (query.get("token") || pathToken || "").trim();
     const apiBase = window.location.origin;
     let customerMap = null;
     let customerMarker = null;
