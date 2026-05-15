@@ -149,6 +149,23 @@
       transition: transform 0.18s ease, box-shadow 0.18s ease, filter 0.18s ease;
       cursor: pointer;
     }
+    .button.hidden {
+      display: none;
+    }
+    .button-pulse {
+      position: relative;
+      overflow: hidden;
+      animation: pulseCta 2.2s ease-in-out infinite;
+    }
+    .button-pulse::after {
+      content: "";
+      position: absolute;
+      inset: -14%;
+      border-radius: inherit;
+      border: 2px solid rgba(255, 255, 255, 0.28);
+      opacity: 0;
+      animation: pulseRing 2.2s ease-out infinite;
+    }
 
     .button:hover {
       transform: translateY(-1px);
@@ -170,6 +187,28 @@
     .button-dark {
       background: #0f172a;
       color: #fff;
+    }
+    .button-review {
+      background: linear-gradient(135deg, #0f172a 0%, #1d4ed8 100%);
+      color: #fff;
+    }
+    @keyframes pulseCta {
+      0%, 100% {
+        transform: translateY(0) scale(1);
+      }
+      50% {
+        transform: translateY(-2px) scale(1.015);
+      }
+    }
+    @keyframes pulseRing {
+      0% {
+        opacity: 0.42;
+        transform: scale(0.96);
+      }
+      100% {
+        opacity: 0;
+        transform: scale(1.12);
+      }
     }
 
     .badge-row {
@@ -438,6 +477,7 @@
             <a id="portal-link" class="button button-primary" href="#">Open Client Portal Login</a>
             <a id="notification-link" class="button button-dark" href="/ride-hub-notifications">Open Ride Inbox</a>
             <a id="tracking-link" class="button button-secondary" href="/customer-tracking">Track Current Ride</a>
+            <a id="follow-up-link" class="button button-review button-pulse hidden" href="/customer-follow-up">Don't Forget to Leave a Review and Tip</a>
           </div>
           <div class="badge-row">
             <div class="badge">Booking + updates</div>
@@ -654,6 +694,16 @@
         const trackingLink = document.getElementById("tracking-link");
         if (trackingLink) {
           trackingLink.href = activeTrackingUrl || (token ? `/customer-tracking/${encodeURIComponent(token)}` : "/customer-tracking");
+        }
+
+        const followUpLink = document.getElementById("follow-up-link");
+        if (followUpLink) {
+          if (activeFollowUpUrl) {
+            followUpLink.href = activeFollowUpUrl;
+            followUpLink.classList.remove("hidden");
+          } else {
+            followUpLink.classList.add("hidden");
+          }
         }
       }
 

@@ -49,6 +49,82 @@
       padding: 22px;
       box-shadow: 0 10px 26px rgba(15, 23, 42, 0.05);
     }
+    .followup-banner {
+      display: none;
+      margin-top: 20px;
+      padding: 18px 20px;
+      border-radius: 20px;
+      border: 1px solid rgba(15, 118, 110, 0.2);
+      background: linear-gradient(135deg, rgba(236, 254, 255, 0.98) 0%, rgba(219, 234, 254, 0.95) 100%);
+      box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+    .followup-banner.is-visible {
+      display: flex;
+    }
+    .followup-copy {
+      flex: 1 1 280px;
+    }
+    .followup-copy strong {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 16px;
+      color: #0f172a;
+    }
+    .followup-copy span {
+      display: block;
+      color: var(--brand-muted);
+      line-height: 1.7;
+      font-size: 14px;
+    }
+    .followup-button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 50px;
+      padding: 14px 18px;
+      border-radius: 16px;
+      background: linear-gradient(135deg, var(--brand-primary) 0%, var(--brand-secondary) 100%);
+      color: #fff;
+      text-decoration: none;
+      font-size: 14px;
+      font-weight: 800;
+      letter-spacing: 0.02em;
+      box-shadow: 0 16px 30px rgba(8, 47, 73, 0.22);
+      animation: trackingCtaPulse 2.2s ease-in-out infinite;
+      position: relative;
+      overflow: hidden;
+    }
+    .followup-button::after {
+      content: "";
+      position: absolute;
+      inset: -14%;
+      border-radius: inherit;
+      border: 2px solid rgba(255, 255, 255, 0.28);
+      opacity: 0;
+      animation: trackingCtaRing 2.2s ease-out infinite;
+    }
+    @keyframes trackingCtaPulse {
+      0%, 100% {
+        transform: translateY(0) scale(1);
+      }
+      50% {
+        transform: translateY(-2px) scale(1.015);
+      }
+    }
+    @keyframes trackingCtaRing {
+      0% {
+        opacity: 0.42;
+        transform: scale(0.96);
+      }
+      100% {
+        opacity: 0;
+        transform: scale(1.12);
+      }
+    }
     .grid {
       display: grid;
       grid-template-columns: 1fr 1.2fr;
@@ -219,6 +295,14 @@
         </div>
       </div>
     </div>
+
+    <div id="followup-banner" class="followup-banner">
+      <div class="followup-copy">
+        <strong>Don't forget to leave a review and tip.</strong>
+        <span>Once your ride is wrapped up, you can open the follow-up page here and take care of both in one step.</span>
+      </div>
+      <a id="followup-button" class="followup-button" href="#">Open Review and Tip</a>
+    </div>
   </div>
 
   <script>
@@ -237,6 +321,7 @@
     let customerMapsLoaded = false;
     let googleMapsPromise = null;
     let pollTimer = null;
+    let activeFollowUpUrl = "";
 
     function setText(id, value) {
       const el = document.getElementById(id);
@@ -276,6 +361,18 @@
       if (!value) return "Location updating...";
       const date = new Date(value);
       return Number.isNaN(date.getTime()) ? "Location updating..." : date.toLocaleString();
+    }
+
+    function updateFollowUpCta() {
+      const banner = document.getElementById("followup-banner");
+      const button = document.getElementById("followup-button");
+      if (!banner || !button) return;
+      if (activeFollowUpUrl) {
+        button.href = activeFollowUpUrl;
+        banner.classList.add("is-visible");
+      } else {
+        banner.classList.remove("is-visible");
+      }
     }
 
     function getSessionData(payload) {
@@ -496,6 +593,8 @@
         setImage("cust-driver-photo", session.driver_photo_data || "", "Driver photo");
         setImage("cust-vehicle-image", session.vehicle_image || "", "Vehicle photo");
         applyBranding(session.branding || {}, session.business_name || "");
+        activeFollowUpUrl = session.follow_up_url || activeFollowUpUrl;
+        updateFollowUpCta();
         pickupPosition = toLatLng(session.pickup_lat, session.pickup_lng);
         dropoffPosition = toLatLng(session.dropoff_lat, session.dropoff_lng);
 
