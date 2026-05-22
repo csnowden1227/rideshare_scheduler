@@ -1759,7 +1759,7 @@ function applyLocalPlanFallback(planName = planOverride || currentPlanName || 's
         funnel_enabled: fallbackPlan === 'pro'
     };
     setBrandingPlanMessage(fallbackPlan);
-    renderFleet(getIncludedFleetCount(), []);
+    renderFleet(getEffectiveFleetLimit(), []);
     updateFleetControls();
     updatePaymentProviderUI();
     serviceAreaRulesState = createNormalizedServiceAreaRuleState({});
@@ -1817,7 +1817,7 @@ function applyProfileToWizard(data = {}, { allowSensitive = true } = {}) {
 
     setFleetPlanMessage(data.plan_name || 'starter');
     setBrandingPlanMessage(data.plan_name || 'starter');
-    const fleetCount = Math.max((data.fleet || []).length, Math.min(getEffectiveFleetLimit(), getIncludedFleetCount()));
+    const fleetCount = Math.max((data.fleet || []).length, getEffectiveFleetLimit());
     renderFleet(fleetCount, data.fleet || []);
 
     if (data.fixed_rates) data.fixed_rates.forEach(r => addRouteRow(r));
