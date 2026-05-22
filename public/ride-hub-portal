@@ -477,6 +477,7 @@
             <a id="portal-link" class="button button-primary" href="#">Open Client Portal Login</a>
             <a id="notification-link" class="button button-dark" href="/ride-hub-notifications">Open Ride Inbox</a>
             <a id="tracking-link" class="button button-secondary" href="/customer-tracking">Track Current Ride</a>
+            <button id="share-trip-link" class="button button-secondary hidden" type="button">Share Live Trip</button>
             <a id="follow-up-link" class="button button-review button-pulse hidden" href="/customer-follow-up">Don't Forget to Leave a Review and Tip</a>
           </div>
           <div class="badge-row">
@@ -606,6 +607,7 @@
       let activeTrackingUrl = (query.get("tracking_url") || "").trim();
       let activeFollowUpUrl = (query.get("follow_up_url") || "").trim();
       let activeCustomerName = (query.get("customer_name") || "").trim();
+      let activeBusinessName = DEFAULT_BRAND.name;
 
       function textValue(key, fallback) {
         const value = (query.get(key) || "").trim();
@@ -663,6 +665,7 @@
 
         const finalName = businessName || DEFAULT_BRAND.name;
         const finalTagline = widgetTagline || DEFAULT_BRAND.tagline;
+        activeBusinessName = finalName;
         document.title = `${finalName} Client Portal`;
         setText("brand-name", finalName);
         setText("brand-tagline", finalTagline);
@@ -696,6 +699,11 @@
           trackingLink.href = activeTrackingUrl || (token ? `/customer-tracking/${encodeURIComponent(token)}` : "/customer-tracking");
         }
 
+        const shareButton = document.getElementById("share-trip-link");
+        if (shareButton) {
+          shareButton.classList.toggle("hidden", !activeTrackingUrl);
+        }
+
         const followUpLink = document.getElementById("follow-up-link");
         if (followUpLink) {
           if (activeFollowUpUrl) {
@@ -704,6 +712,38 @@
           } else {
             followUpLink.classList.add("hidden");
           }
+        }
+      }
+
+      function buildSharePayload() {
+        const business = activeBusinessName || DEFAULT_BRAND.name;
+        const rider = activeCustomerName ? `${activeCustomerName}'s trip` : "this trip";
+        return {
+          title: `${business} live trip tracking`,
+          text: `Follow ${rider} live with ${business}.`,
+          url: activeTrackingUrl,
+        };
+      }
+
+      async function shareTripLink() {
+        if (!activeTrackingUrl) return;
+        const payload = buildSharePayload();
+        try {
+          if (navigator.share) {
+            await navigator.share(payload);
+            return;
+          }
+        } catch (error) {
+          if (error && error.name === "AbortError") {
+            return;
+          }
+        }
+
+        try {
+          await navigator.clipboard.writeText(activeTrackingUrl);
+          window.alert("Live trip link copied. Share it with family or friends.");
+        } catch (error) {
+          window.prompt("Copy this live trip tracking link:", activeTrackingUrl);
         }
       }
 
@@ -815,6 +855,7 @@
 
         const effectivePlan = session?.branding?.plan_name || profile?.plan_name || profile?.entitlements?.plan_name || "starter";
         updateLinks();
+        document.getElementById("share-trip-link")?.addEventListener("click", shareTripLink);
 
         if (!isPremiumPortalPlan(effectivePlan)) {
           showUpgradeRequired(effectivePlan);
