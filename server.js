@@ -10569,6 +10569,17 @@ async function triggerCrmWebhook(location_id, booking_id) {
       b.crm_contact_id = resolvedCrmContactId;
     }
 
+    const resolvedCustomerContact = await getCrmContactDetails({
+      locationId: location_id,
+      contactId: resolvedCrmContactId || b.crm_contact_id || null,
+    });
+
+    console.log("[customer-webhook] resolved CRM contact", {
+      bookingId: booking_id,
+      locationId: location_id,
+      contact: resolvedCustomerContact,
+    });
+
     const profileRes = await client.query(
       "SELECT crm_webhook_url, tax_rate, business_name, payment_provider, public_app_url, fleet, plan_name, addon_branding_unlocked, addon_funnel_unlocked, addon_tracking_unlocked, addon_extra_vehicle_count FROM profiles WHERE location_id = $1",
       [location_id]
