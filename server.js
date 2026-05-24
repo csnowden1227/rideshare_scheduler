@@ -3094,13 +3094,25 @@ async function sendDriverAssignmentSmsForBooking({ bookingId, locationId, paymen
     },
   });
 
+  let driverContactResolution = "phone_only_primary";
   let driverContactId = await upsertCrmContact({
     locationId,
     firstName: driverName,
     lastName: "",
-    email: driverEmail || undefined,
+    email: undefined,
     phone: driverPhone,
   });
+
+  if (!driverContactId && driverEmail) {
+    driverContactResolution = "email_and_phone_fallback";
+    driverContactId = await upsertCrmContact({
+      locationId,
+      firstName: driverName,
+      lastName: "",
+      email: driverEmail || undefined,
+      phone: driverPhone,
+    });
+  }
 
   if (!driverContactId) {
     console.warn("[driver-sms] unable to resolve CRM contact for driver", {
@@ -3109,6 +3121,8 @@ async function sendDriverAssignmentSmsForBooking({ bookingId, locationId, paymen
       paymentState,
       driverName,
       driverPhone,
+      driverEmail,
+      driverContactResolution,
     });
     return { success: false, skipped: true, reason: "Unable to resolve driver CRM contact." };
   }
@@ -3130,6 +3144,7 @@ async function sendDriverAssignmentSmsForBooking({ bookingId, locationId, paymen
     locationId,
     paymentState,
     contactId: driverContactId,
+    contactResolution: driverContactResolution,
     success: Boolean(sendResult?.success),
     status: sendResult?.status || null,
     tokenSource: sendResult?.tokenSource || null,
@@ -3142,6 +3157,7 @@ async function sendDriverAssignmentSmsForBooking({ bookingId, locationId, paymen
     /missing phone number/i.test(String(sendResult?.error || "")) &&
     driverPhone
   ) {
+    driverContactResolution = "phone_only_retry";
     driverContactId = await upsertCrmContact({
       locationId,
       firstName: driverName,
@@ -3176,6 +3192,7 @@ async function sendDriverAssignmentSmsForBooking({ bookingId, locationId, paymen
       locationId,
       paymentState,
       contactId: driverContactId,
+      contactResolution: driverContactResolution,
       success: Boolean(sendResult?.success),
       status: sendResult?.status || null,
       tokenSource: sendResult?.tokenSource || null,
