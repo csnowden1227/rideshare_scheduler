@@ -6,6 +6,7 @@ dotenv.config();
 
 import express from 'express';
 import cors from 'cors';
+import fs from 'fs';
 import pkg from 'pg';
 import Stripe from 'stripe';
 import dns from 'dns/promises';
@@ -23,7 +24,9 @@ const app = express();
 
 function sendPublicHtmlPage(res, fileName) {
   res.type("html");
-  return res.sendFile(path.join(__dirname, "public", fileName));
+  const htmlPath = path.join(__dirname, "public", `${fileName}.html`);
+  const legacyPath = path.join(__dirname, "public", fileName);
+  return res.sendFile(fs.existsSync(htmlPath) ? htmlPath : legacyPath);
 }
 
 function normalizeStripeSecretKey(value) {
@@ -3051,7 +3054,28 @@ async function sendDriverAssignmentSmsForBooking({ bookingId, locationId, paymen
   const driverPhone = normalizeDriverPhone(matchedDriver?.driver_phone || "");
   const driverEmail = normalizeDriverEmail(matchedDriver?.driver_email || "");
 
+  console.log("[driver-sms] matched fleet row", {
+    bookingId,
+    locationId,
+    paymentState,
+    bookingVehicleSlotId: String(booking.vehicle_slot_id || "").trim() || null,
+    matchedVehicleSlotId: String(matchedDriver?.vehicle_slot_id || "").trim() || null,
+    driverNamePresent: Boolean(driverName),
+    driverPhonePresent: Boolean(driverPhone),
+    driverEmailPresent: Boolean(driverEmail),
+  });
+
   if (!driverName || !driverPhone) {
+    console.warn("[driver-sms] skipping send because driver data is incomplete", {
+      bookingId,
+      locationId,
+      paymentState,
+      reason: "Driver name or phone is missing.",
+      bookingVehicleSlotId: String(booking.vehicle_slot_id || "").trim() || null,
+      matchedVehicleSlotId: String(matchedDriver?.vehicle_slot_id || "").trim() || null,
+      rawDriverName: driverName || null,
+      rawDriverPhone: driverPhone || null,
+    });
     return { success: false, skipped: true, reason: "Driver name or phone is missing." };
   }
 
@@ -3079,6 +3103,13 @@ async function sendDriverAssignmentSmsForBooking({ bookingId, locationId, paymen
   });
 
   if (!driverContactId) {
+    console.warn("[driver-sms] unable to resolve CRM contact for driver", {
+      bookingId,
+      locationId,
+      paymentState,
+      driverName,
+      driverPhone,
+    });
     return { success: false, skipped: true, reason: "Unable to resolve driver CRM contact." };
   }
 
@@ -3092,6 +3123,18 @@ async function sendDriverAssignmentSmsForBooking({ bookingId, locationId, paymen
     locationId,
     contactId: driverContactId,
     message,
+  });
+
+  console.log("[driver-sms] initial CRM SMS result", {
+    bookingId,
+    locationId,
+    paymentState,
+    contactId: driverContactId,
+    success: Boolean(sendResult?.success),
+    status: sendResult?.status || null,
+    tokenSource: sendResult?.tokenSource || null,
+    attemptedSources: sendResult?.attemptedSources || [],
+    error: sendResult?.error || sendResult?.reason || null,
   });
 
   if (
@@ -3108,6 +3151,13 @@ async function sendDriverAssignmentSmsForBooking({ bookingId, locationId, paymen
     });
 
     if (!driverContactId) {
+      console.warn("[driver-sms] phone-only retry could not resolve CRM contact", {
+        bookingId,
+        locationId,
+        paymentState,
+        driverName,
+        driverPhone,
+      });
       return {
         success: false,
         skipped: true,
@@ -3119,6 +3169,18 @@ async function sendDriverAssignmentSmsForBooking({ bookingId, locationId, paymen
       locationId,
       contactId: driverContactId,
       message,
+    });
+
+    console.log("[driver-sms] phone-only retry CRM SMS result", {
+      bookingId,
+      locationId,
+      paymentState,
+      contactId: driverContactId,
+      success: Boolean(sendResult?.success),
+      status: sendResult?.status || null,
+      tokenSource: sendResult?.tokenSource || null,
+      attemptedSources: sendResult?.attemptedSources || [],
+      error: sendResult?.error || sendResult?.reason || null,
     });
   }
 
@@ -8839,6 +8901,14 @@ async function updateBookingConfirmation({
   depositPercent,
   totalPrice,
 }) {
+  console.log("[driver-sms] updateBookingConfirmation invoked", {
+    bookingId,
+    paymentStatus,
+    depositAmount,
+    depositPercent,
+    totalPrice,
+  });
+
   const numericTotalPrice = Number(totalPrice || 0);
   const numericDepositAmount = Number(depositAmount || 0);
   const numericDepositPercent = Number(depositPercent || 0);
@@ -8886,11 +8956,23 @@ async function updateBookingConfirmation({
   await triggerCrmWebhook(result.rows[0].location_id, result.rows[0].id);
 
   try {
-    await maybeSendDriverAssignmentSmsAfterConfirmation({
+    const driverSmsResult = await maybeSendDriverAssignmentSmsAfterConfirmation({
       bookingId,
       locationId: result.rows[0].location_id,
       paymentStatus,
       existingBooking,
+    });
+    console.log("[driver-sms] post-confirmation result", {
+      bookingId,
+      locationId: result.rows[0].location_id,
+      paymentStatus,
+      attempted: Boolean(driverSmsResult?.attempted),
+      skipped: Boolean(driverSmsResult?.skipped),
+      success: Boolean(driverSmsResult?.success),
+      reason: driverSmsResult?.reason || null,
+      error: driverSmsResult?.error || null,
+      status: driverSmsResult?.status || null,
+      tokenSource: driverSmsResult?.tokenSource || null,
     });
   } catch (driverSmsErr) {
     console.error("Driver assignment SMS error after confirmation:", driverSmsErr);
@@ -8944,8 +9026,22 @@ async function maybeSendDriverAssignmentSmsAfterConfirmation({
   let markAssignmentSent = false;
   let markPaidInFullSent = false;
 
+  console.log("[driver-sms] evaluating confirmation trigger", {
+    bookingId,
+    locationId,
+    paymentStatus,
+    forceReplay: Boolean(forceReplay),
+    priorBalanceDue: Number(bookingState.balance_due || 0),
+    assignmentSmsSentAt: bookingState.driver_assignment_sms_sent_at || null,
+    paidInFullSmsSentAt: bookingState.driver_paid_in_full_sms_sent_at || null,
+  });
+
   if (paymentStatus === "paid_deposit") {
     if (!forceReplay && bookingState.driver_assignment_sms_sent_at) {
+      console.log("[driver-sms] skipping paid_deposit send because assignment SMS already exists", {
+        bookingId,
+        locationId,
+      });
       return {
         attempted: false,
         skipped: true,
@@ -8974,6 +9070,10 @@ async function maybeSendDriverAssignmentSmsAfterConfirmation({
         bookingState.driver_assignment_sms_sent_at &&
         bookingState.driver_paid_in_full_sms_sent_at
       ) {
+        console.log("[driver-sms] skipping paid_in_full send because both driver SMS timestamps already exist", {
+          bookingId,
+          locationId,
+        });
         return {
           attempted: false,
           skipped: true,
@@ -8985,6 +9085,11 @@ async function maybeSendDriverAssignmentSmsAfterConfirmation({
       markPaidInFullSent = true;
     }
   } else {
+    console.warn("[driver-sms] unsupported payment status for driver SMS", {
+      bookingId,
+      locationId,
+      paymentStatus,
+    });
     return {
       attempted: false,
       skipped: true,
