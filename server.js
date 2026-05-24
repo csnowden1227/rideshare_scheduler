@@ -2985,6 +2985,42 @@ async function sendCrmSmsToContact({
       }),
     },
     {
+      label: "legacy_v2021_type_and_message_type_2",
+      version: "2021-07-28",
+      payload: withDefinedFields({
+        type: "SMS",
+        messageType: 2,
+        locationId: String(locationId),
+        contactId: String(contactId),
+        message: trimmedMessage,
+        toNumber: normalizedToNumber,
+      }),
+    },
+    {
+      label: "legacy_v2021_type_sms_lower_and_message_type_2",
+      version: "2021-07-28",
+      payload: withDefinedFields({
+        type: "sms",
+        messageType: 2,
+        locationId: String(locationId),
+        contactId: String(contactId),
+        message: trimmedMessage,
+        toNumber: normalizedToNumber,
+      }),
+    },
+    {
+      label: "legacy_v2021_type_type_sms_and_message_type_2",
+      version: "2021-07-28",
+      payload: withDefinedFields({
+        type: "TYPE_SMS",
+        messageType: 2,
+        locationId: String(locationId),
+        contactId: String(contactId),
+        message: trimmedMessage,
+        toNumber: normalizedToNumber,
+      }),
+    },
+    {
       label: "legacy_v2021_message_type_string",
       version: "2021-07-28",
       payload: withDefinedFields({
