@@ -2533,6 +2533,8 @@ async function getStoredOrRefreshedCrmToken(locationId) {
 }
 
 async function getCrmAccessTokenCandidates(locationId) {
+  const options = arguments[1] || {};
+  const includeEnvFallback = options.includeEnvFallback !== false;
   const candidates = [];
   const seen = new Set();
 
@@ -2545,7 +2547,9 @@ async function getCrmAccessTokenCandidates(locationId) {
 
   pushCandidate(await getProfileCrmApiKey(locationId), "profile_pit");
   pushCandidate(await getStoredOrRefreshedCrmToken(locationId), "location_oauth");
-  pushCandidate(CRM_ONESOURCE_API_KEY, "env_fallback");
+  if (includeEnvFallback) {
+    pushCandidate(CRM_ONESOURCE_API_KEY, "env_fallback");
+  }
 
   return candidates;
 }
@@ -2559,8 +2563,8 @@ function buildCrmHeaders(token, extraHeaders = {}) {
   };
 }
 
-async function fetchCrmWithFallback(locationId, url, init = {}, retryStatuses = [401, 403]) {
-  const candidates = await getCrmAccessTokenCandidates(locationId);
+async function fetchCrmWithFallback(locationId, url, init = {}, retryStatuses = [401, 403], options = {}) {
+  const candidates = await getCrmAccessTokenCandidates(locationId, options);
   if (!candidates.length) {
     return {
       response: null,
@@ -2870,17 +2874,21 @@ async function upsertCrmContact({
   lastName,
   email,
   phone,
+  crmAuthOptions = {},
 }) {
   if (!locationId) return null;
   if (!email && !phone && !firstName && !lastName) return null;
 
-  const { response, bodyText, tokenSource, attemptedSources } = await fetchCrmWithFallback(locationId, new URL("/contacts/upsert", CRM_API_BASE_URL), {
-    method: "POST",
-    headers: {
-      Version: "2021-07-28",
-      Accept: "application/json",
-      "Content-Type": "application/json",
-    },
+  const { response, bodyText, tokenSource, attemptedSources } = await fetchCrmWithFallback(
+    locationId,
+    new URL("/contacts/upsert", CRM_API_BASE_URL),
+    {
+      method: "POST",
+      headers: {
+        Version: "2021-07-28",
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
       body: JSON.stringify({
         locationId: String(locationId),
         firstName: firstName || "",
@@ -2890,7 +2898,10 @@ async function upsertCrmContact({
         phone: normalizePhoneNumber(phone) || undefined,
         source: "rideshare-scheduler",
       }),
-    });
+    },
+    [401, 403],
+    crmAuthOptions
+  );
 
   if (!response) return null;
 
@@ -2911,6 +2922,7 @@ async function sendCrmSmsToContact({
   locationId,
   contactId,
   message,
+  crmAuthOptions = {},
 }) {
   if (!locationId || !contactId || !String(message || "").trim()) {
     return { success: false, status: 400, error: "locationId, contactId, and message are required." };
@@ -2949,7 +2961,8 @@ async function sendCrmSmsToContact({
         },
         body: JSON.stringify(bodyPayload),
       },
-      [400, 401, 403]
+      [400, 401, 403],
+      crmAuthOptions
     );
 
     if (response?.ok) {
@@ -3024,6 +3037,10 @@ async function sendDriverAssignmentSmsForBooking({ bookingId, locationId, paymen
   if (!bookingId || !locationId || !paymentState) {
     return { success: false, skipped: true, reason: "bookingId, locationId, and paymentState are required." };
   }
+
+  const driverSmsAuthOptions = {
+    includeEnvFallback: false,
+  };
 
   await ensureBookingSyncColumns();
   const bookingLookup = await pool.query(
@@ -3101,6 +3118,7 @@ async function sendDriverAssignmentSmsForBooking({ bookingId, locationId, paymen
     lastName: "",
     email: undefined,
     phone: driverPhone,
+    crmAuthOptions: driverSmsAuthOptions,
   });
 
   if (!driverContactId && driverEmail) {
@@ -3111,6 +3129,7 @@ async function sendDriverAssignmentSmsForBooking({ bookingId, locationId, paymen
       lastName: "",
       email: driverEmail || undefined,
       phone: driverPhone,
+      crmAuthOptions: driverSmsAuthOptions,
     });
   }
 
@@ -3137,6 +3156,7 @@ async function sendDriverAssignmentSmsForBooking({ bookingId, locationId, paymen
     locationId,
     contactId: driverContactId,
     message,
+    crmAuthOptions: driverSmsAuthOptions,
   });
 
   console.log("[driver-sms] initial CRM SMS result", {
@@ -3164,6 +3184,7 @@ async function sendDriverAssignmentSmsForBooking({ bookingId, locationId, paymen
       lastName: "",
       email: undefined,
       phone: driverPhone,
+      crmAuthOptions: driverSmsAuthOptions,
     });
 
     if (!driverContactId) {
@@ -3185,6 +3206,7 @@ async function sendDriverAssignmentSmsForBooking({ bookingId, locationId, paymen
       locationId,
       contactId: driverContactId,
       message,
+      crmAuthOptions: driverSmsAuthOptions,
     });
 
     console.log("[driver-sms] phone-only retry CRM SMS result", {
