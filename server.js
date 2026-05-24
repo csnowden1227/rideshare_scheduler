@@ -10743,11 +10743,29 @@ async function triggerCrmWebhook(location_id, booking_id) {
       body: JSON.stringify(payload)
     });
 
+    const responseText = await resp.text().catch(() => "");
+
+    console.log("[customer-webhook] delivery result", {
+      bookingId: booking_id,
+      locationId: location_id,
+      status: resp.status,
+      success: resp.ok,
+      webhookUrl: p.crm_webhook_url,
+      responsePreview: responseText.slice(0, 300) || null,
+      payloadSummary: {
+        crmContactId: resolvedCrmContactId || b.crm_contact_id || null,
+        customerPhone: normalizedCustomerPhone,
+        bookingStatus: b.status || "confirmed",
+        paymentStatus: depositAmount > 0 && balanceDue > 0 ? "paid_deposit" : (totalPrice > 0 ? "paid_in_full" : "unpaid"),
+      },
+    });
+
     return {
       success: resp.ok,
       status: resp.status,
       webhook_url: p.crm_webhook_url,
       payload,
+      response_preview: responseText.slice(0, 300) || null,
     };
 
     console.log(`✅ Webhook sent to GHL. Status: ${resp.status}`);
