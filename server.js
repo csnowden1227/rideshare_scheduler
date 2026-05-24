@@ -10551,13 +10551,42 @@ async function triggerCrmWebhook(location_id, booking_id) {
     }
 
     const b = bookingRes.rows[0];
-    const resolvedCrmContactId = b.crm_contact_id || await upsertCrmContact({
+    const normalizedCustomerPhone = normalizePhoneNumber(b.customer_phone) || b.customer_phone || null;
+
+    let resolvedCrmContactId = b.crm_contact_id || null;
+    let resolvedCustomerContact = await getCrmContactDetails({
       locationId: location_id,
-      firstName: b.first_name,
-      lastName: b.last_name,
-      email: b.customer_email,
-      phone: b.customer_phone,
+      contactId: resolvedCrmContactId,
     });
+
+    const existingCustomerContactHasPhone = Boolean(
+      normalizePhoneNumber(resolvedCustomerContact?.phone || "") || resolvedCustomerContact?.phone
+    );
+
+    if (!resolvedCrmContactId || !existingCustomerContactHasPhone) {
+      resolvedCrmContactId = await upsertCrmContact({
+        locationId: location_id,
+        firstName: b.first_name,
+        lastName: b.last_name,
+        email: undefined,
+        phone: normalizedCustomerPhone,
+      });
+
+      if (!resolvedCrmContactId && (b.customer_email || normalizedCustomerPhone)) {
+        resolvedCrmContactId = await upsertCrmContact({
+          locationId: location_id,
+          firstName: b.first_name,
+          lastName: b.last_name,
+          email: b.customer_email,
+          phone: normalizedCustomerPhone,
+        });
+      }
+
+      resolvedCustomerContact = await getCrmContactDetails({
+        locationId: location_id,
+        contactId: resolvedCrmContactId,
+      });
+    }
 
     if (resolvedCrmContactId && String(resolvedCrmContactId) !== String(b.crm_contact_id || "")) {
       await client.query(
@@ -10569,14 +10598,10 @@ async function triggerCrmWebhook(location_id, booking_id) {
       b.crm_contact_id = resolvedCrmContactId;
     }
 
-    const resolvedCustomerContact = await getCrmContactDetails({
-      locationId: location_id,
-      contactId: resolvedCrmContactId || b.crm_contact_id || null,
-    });
-
     console.log("[customer-webhook] resolved CRM contact", {
       bookingId: booking_id,
       locationId: location_id,
+      customerPhoneFromBooking: normalizedCustomerPhone,
       contact: resolvedCustomerContact,
     });
 
