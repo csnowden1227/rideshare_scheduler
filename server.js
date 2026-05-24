@@ -2930,26 +2930,40 @@ async function sendCrmSmsToContact({
 
   const requestBodies = [
     {
-      type: "SMS",
-      locationId: String(locationId),
-      contactId: String(contactId),
-      message: String(message).trim(),
+      label: "v2023_primary",
+      version: "2023-02-21",
+      payload: {
+        type: "SMS",
+        contactId: String(contactId),
+        message: String(message).trim(),
+        status: "pending",
+      },
     },
     {
-      messageType: "SMS",
-      locationId: String(locationId),
-      contactId: String(contactId),
-      message: String(message).trim(),
+      label: "v2023_with_location",
+      version: "2023-02-21",
+      payload: {
+        type: "SMS",
+        locationId: String(locationId),
+        contactId: String(contactId),
+        message: String(message).trim(),
+        status: "pending",
+      },
     },
     {
-      type: "SMS",
-      contactId: String(contactId),
-      message: String(message).trim(),
+      label: "legacy_v2021",
+      version: "2021-07-28",
+      payload: {
+        type: "SMS",
+        locationId: String(locationId),
+        contactId: String(contactId),
+        message: String(message).trim(),
+      },
     },
   ];
 
   let lastFailure = null;
-  for (const bodyPayload of requestBodies) {
+  for (const requestBody of requestBodies) {
     const { response, bodyText, tokenSource, attemptedSources } = await fetchCrmWithFallback(
       locationId,
       new URL("/conversations/messages", CRM_API_BASE_URL),
@@ -2958,8 +2972,9 @@ async function sendCrmSmsToContact({
         headers: {
           Accept: "application/json",
           "Content-Type": "application/json",
+          Version: requestBody.version,
         },
-        body: JSON.stringify(bodyPayload),
+        body: JSON.stringify(requestBody.payload),
       },
       [400, 401, 403],
       crmAuthOptions
@@ -2974,13 +2989,15 @@ async function sendCrmSmsToContact({
       };
     }
 
-    lastFailure = {
-      success: false,
-      status: response?.status || 500,
-      tokenSource,
-      attemptedSources,
-      error: bodyText ? bodyText.slice(0, 300) : "CRM driver SMS send failed.",
-    };
+      lastFailure = {
+        success: false,
+        status: response?.status || 500,
+        tokenSource,
+        attemptedSources,
+        error: bodyText ? bodyText.slice(0, 300) : "CRM driver SMS send failed.",
+        requestLabel: requestBody.label,
+        requestVersion: requestBody.version,
+      };
 
     if (!response || ![400].includes(response.status)) {
       break;
