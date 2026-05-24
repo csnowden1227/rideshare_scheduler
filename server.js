@@ -2922,6 +2922,67 @@ async function upsertCrmContact({
   return extractCrmContactId(data);
 }
 
+function summarizeCrmContactDebug(contact = {}) {
+  const dndValue = contact?.dnd ||
+    contact?.DND ||
+    contact?.doNotDisturb ||
+    contact?.do_not_disturb ||
+    contact?.dndSettings ||
+    contact?.dnd_settings ||
+    null;
+
+  return {
+    id: contact?.id || contact?._id || null,
+    firstName: contact?.firstName || contact?.first_name || null,
+    lastName: contact?.lastName || contact?.last_name || null,
+    name: contact?.name || [contact?.firstName || contact?.first_name, contact?.lastName || contact?.last_name].filter(Boolean).join(" ").trim() || null,
+    email: contact?.email || null,
+    phone: contact?.phone || contact?.phoneNumber || contact?.phone_number || null,
+    dnd: dndValue,
+  };
+}
+
+async function getCrmContactDetails({
+  locationId,
+  contactId,
+  crmAuthOptions = {},
+}) {
+  if (!locationId || !contactId) return null;
+
+  const { response, bodyText, tokenSource, attemptedSources } = await fetchCrmWithFallback(
+    locationId,
+    new URL(`/contacts/${encodeURIComponent(String(contactId))}`, CRM_API_BASE_URL),
+    {
+      method: "GET",
+      headers: {
+        Version: "2021-07-28",
+        Accept: "application/json",
+      },
+    },
+    [401, 403],
+    crmAuthOptions
+  );
+
+  if (!response?.ok) {
+    return {
+      fetchFailed: true,
+      status: response?.status || null,
+      tokenSource: tokenSource || null,
+      attemptedSources: attemptedSources || [],
+      error: bodyText ? bodyText.slice(0, 300) : "Unable to load CRM contact details.",
+    };
+  }
+
+  const data = bodyText ? JSON.parse(bodyText) : {};
+  const contact = data?.contact || data?.data?.contact || data?.data || data;
+  return {
+    fetchFailed: false,
+    tokenSource,
+    attemptedSources,
+    ...summarizeCrmContactDebug(contact),
+  };
+}
+
 async function sendCrmSmsToContact({
   locationId,
   contactId,
@@ -3182,6 +3243,20 @@ async function sendDriverAssignmentSmsForBooking({ bookingId, locationId, paymen
     });
     return { success: false, skipped: true, reason: "Unable to resolve driver CRM contact." };
   }
+
+  const resolvedDriverContact = await getCrmContactDetails({
+    locationId,
+    contactId: driverContactId,
+    crmAuthOptions: driverSmsAuthOptions,
+  });
+
+  console.log("[driver-sms] resolved CRM contact", {
+    bookingId,
+    locationId,
+    paymentState,
+    contactResolution: driverContactResolution,
+    contact: resolvedDriverContact,
+  });
 
   const message = buildDriverBookingSmsMessage({
     booking,
