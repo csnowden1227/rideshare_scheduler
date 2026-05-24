@@ -2926,7 +2926,6 @@ async function sendCrmSmsToContact({
   locationId,
   contactId,
   message,
-  toNumber,
   crmAuthOptions = {},
 }) {
   if (!locationId || !contactId || !String(message || "").trim()) {
@@ -2934,139 +2933,44 @@ async function sendCrmSmsToContact({
   }
 
   const trimmedMessage = String(message).trim();
-  const normalizedToNumber = normalizePhoneNumber(toNumber) || undefined;
   const withDefinedFields = (payload) => Object.fromEntries(
     Object.entries(payload).filter(([, value]) => value !== undefined && value !== null && value !== "")
   );
 
   const requestBodies = [
     {
-      label: "v2023_primary",
-      version: "2023-02-21",
-      payload: withDefinedFields({
-        type: "SMS",
-        contactId: String(contactId),
-        message: trimmedMessage,
-        status: "pending",
-      }),
-    },
-    {
-      label: "v2023_with_to_number",
-      version: "2023-02-21",
-      payload: withDefinedFields({
-        type: "SMS",
-        contactId: String(contactId),
-        message: trimmedMessage,
-        status: "pending",
-        toNumber: normalizedToNumber,
-      }),
-    },
-    {
-      label: "v2023_with_location",
-      version: "2023-02-21",
-      payload: withDefinedFields({
-        type: "SMS",
-        locationId: String(locationId),
-        contactId: String(contactId),
-        message: trimmedMessage,
-        status: "pending",
-        toNumber: normalizedToNumber,
-      }),
-    },
-    {
-      label: "legacy_v2021_type",
+      label: "may15_type_with_location",
       version: "2021-07-28",
       payload: withDefinedFields({
         type: "SMS",
         locationId: String(locationId),
         contactId: String(contactId),
         message: trimmedMessage,
-        toNumber: normalizedToNumber,
       }),
     },
     {
-      label: "legacy_v2021_type_and_message_type_2",
-      version: "2021-07-28",
-      payload: withDefinedFields({
-        type: "SMS",
-        messageType: 2,
-        locationId: String(locationId),
-        contactId: String(contactId),
-        message: trimmedMessage,
-        toNumber: normalizedToNumber,
-      }),
-    },
-    {
-      label: "legacy_v2021_type_sms_lower_and_message_type_2",
-      version: "2021-07-28",
-      payload: withDefinedFields({
-        type: "sms",
-        messageType: 2,
-        locationId: String(locationId),
-        contactId: String(contactId),
-        message: trimmedMessage,
-        toNumber: normalizedToNumber,
-      }),
-    },
-    {
-      label: "legacy_v2021_type_type_sms_and_message_type_2",
-      version: "2021-07-28",
-      payload: withDefinedFields({
-        type: "TYPE_SMS",
-        messageType: 2,
-        locationId: String(locationId),
-        contactId: String(contactId),
-        message: trimmedMessage,
-        toNumber: normalizedToNumber,
-      }),
-    },
-    {
-      label: "legacy_v2021_message_type_string",
+      label: "may15_message_type_with_location",
       version: "2021-07-28",
       payload: withDefinedFields({
         messageType: "SMS",
         locationId: String(locationId),
         contactId: String(contactId),
         message: trimmedMessage,
-        toNumber: normalizedToNumber,
       }),
     },
     {
-      label: "legacy_v2021_message_type_0",
+      label: "may15_type_contact_only",
       version: "2021-07-28",
       payload: withDefinedFields({
-        messageType: 0,
-        locationId: String(locationId),
+        type: "SMS",
         contactId: String(contactId),
         message: trimmedMessage,
-        toNumber: normalizedToNumber,
-      }),
-    },
-    {
-      label: "legacy_v2021_message_type_1",
-      version: "2021-07-28",
-      payload: withDefinedFields({
-        messageType: 1,
-        locationId: String(locationId),
-        contactId: String(contactId),
-        message: trimmedMessage,
-        toNumber: normalizedToNumber,
-      }),
-    },
-    {
-      label: "legacy_v2021_message_type_2",
-      version: "2021-07-28",
-      payload: withDefinedFields({
-        messageType: 2,
-        locationId: String(locationId),
-        contactId: String(contactId),
-        message: trimmedMessage,
-        toNumber: normalizedToNumber,
       }),
     },
   ];
 
   let lastFailure = null;
+  const attemptTrail = [];
   for (const requestBody of requestBodies) {
     const { response, bodyText, tokenSource, attemptedSources } = await fetchCrmWithFallback(
       locationId,
@@ -3092,8 +2996,17 @@ async function sendCrmSmsToContact({
         attemptedSources,
         requestLabel: requestBody.label,
         requestVersion: requestBody.version,
+        attemptTrail,
       };
     }
+
+    attemptTrail.push({
+      label: requestBody.label,
+      version: requestBody.version,
+      status: response?.status || null,
+      tokenSource: tokenSource || null,
+      error: bodyText ? bodyText.slice(0, 160) : "CRM driver SMS send failed.",
+    });
 
       lastFailure = {
         success: false,
@@ -3103,6 +3016,7 @@ async function sendCrmSmsToContact({
         error: bodyText ? bodyText.slice(0, 300) : "CRM driver SMS send failed.",
         requestLabel: requestBody.label,
         requestVersion: requestBody.version,
+        attemptTrail,
       };
 
     if (!response || ![400, 422].includes(response.status)) {
@@ -3279,7 +3193,6 @@ async function sendDriverAssignmentSmsForBooking({ bookingId, locationId, paymen
     locationId,
     contactId: driverContactId,
     message,
-    toNumber: driverPhone,
     crmAuthOptions: driverSmsAuthOptions,
   });
 
@@ -3295,6 +3208,7 @@ async function sendDriverAssignmentSmsForBooking({ bookingId, locationId, paymen
     attemptedSources: sendResult?.attemptedSources || [],
     requestLabel: sendResult?.requestLabel || null,
     requestVersion: sendResult?.requestVersion || null,
+    attemptTrail: sendResult?.attemptTrail || [],
     error: sendResult?.error || sendResult?.reason || null,
   });
 
@@ -3332,7 +3246,6 @@ async function sendDriverAssignmentSmsForBooking({ bookingId, locationId, paymen
       locationId,
       contactId: driverContactId,
       message,
-      toNumber: driverPhone,
       crmAuthOptions: driverSmsAuthOptions,
     });
 
@@ -3348,6 +3261,7 @@ async function sendDriverAssignmentSmsForBooking({ bookingId, locationId, paymen
       attemptedSources: sendResult?.attemptedSources || [],
       requestLabel: sendResult?.requestLabel || null,
       requestVersion: sendResult?.requestVersion || null,
+      attemptTrail: sendResult?.attemptTrail || [],
       error: sendResult?.error || sendResult?.reason || null,
     });
   }
