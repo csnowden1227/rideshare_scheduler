@@ -62,6 +62,10 @@ const stripe = envStripeSecretKey
   : null;
 const CRM_ONESOURCE_API_KEY = String(process.env.CRMONESOURCE_API_KEY || "").trim();
 const CRM_API_BASE_URL = process.env.CRM_API_BASE_URL || "https://services.leadconnectorhq.com";
+const CRM_OAUTH_AUTHORIZE_URL = String(
+  process.env.CRM_OAUTH_AUTHORIZE_URL ||
+  "https://marketplace.leadconnectorhq.com/oauth/chooselocation"
+).trim();
 const CRM_OAUTH_CLIENT_ID = String(process.env.CRM_OAUTH_CLIENT_ID || "").trim();
 const CRM_OAUTH_CLIENT_SECRET = String(process.env.CRM_OAUTH_CLIENT_SECRET || "").trim();
 const CRM_OAUTH_REDIRECT_URI = String(process.env.CRM_OAUTH_REDIRECT_URI || "").trim();
@@ -2922,43 +2926,107 @@ async function sendCrmSmsToContact({
   locationId,
   contactId,
   message,
+  toNumber,
   crmAuthOptions = {},
 }) {
   if (!locationId || !contactId || !String(message || "").trim()) {
     return { success: false, status: 400, error: "locationId, contactId, and message are required." };
   }
 
+  const trimmedMessage = String(message).trim();
+  const normalizedToNumber = normalizePhoneNumber(toNumber) || undefined;
+  const withDefinedFields = (payload) => Object.fromEntries(
+    Object.entries(payload).filter(([, value]) => value !== undefined && value !== null && value !== "")
+  );
+
   const requestBodies = [
     {
       label: "v2023_primary",
       version: "2023-02-21",
-      payload: {
+      payload: withDefinedFields({
         type: "SMS",
         contactId: String(contactId),
-        message: String(message).trim(),
+        message: trimmedMessage,
         status: "pending",
-      },
+      }),
+    },
+    {
+      label: "v2023_with_to_number",
+      version: "2023-02-21",
+      payload: withDefinedFields({
+        type: "SMS",
+        contactId: String(contactId),
+        message: trimmedMessage,
+        status: "pending",
+        toNumber: normalizedToNumber,
+      }),
     },
     {
       label: "v2023_with_location",
       version: "2023-02-21",
-      payload: {
+      payload: withDefinedFields({
         type: "SMS",
         locationId: String(locationId),
         contactId: String(contactId),
-        message: String(message).trim(),
+        message: trimmedMessage,
         status: "pending",
-      },
+        toNumber: normalizedToNumber,
+      }),
     },
     {
-      label: "legacy_v2021",
+      label: "legacy_v2021_type",
       version: "2021-07-28",
-      payload: {
+      payload: withDefinedFields({
         type: "SMS",
         locationId: String(locationId),
         contactId: String(contactId),
-        message: String(message).trim(),
-      },
+        message: trimmedMessage,
+        toNumber: normalizedToNumber,
+      }),
+    },
+    {
+      label: "legacy_v2021_message_type_string",
+      version: "2021-07-28",
+      payload: withDefinedFields({
+        messageType: "SMS",
+        locationId: String(locationId),
+        contactId: String(contactId),
+        message: trimmedMessage,
+        toNumber: normalizedToNumber,
+      }),
+    },
+    {
+      label: "legacy_v2021_message_type_0",
+      version: "2021-07-28",
+      payload: withDefinedFields({
+        messageType: 0,
+        locationId: String(locationId),
+        contactId: String(contactId),
+        message: trimmedMessage,
+        toNumber: normalizedToNumber,
+      }),
+    },
+    {
+      label: "legacy_v2021_message_type_1",
+      version: "2021-07-28",
+      payload: withDefinedFields({
+        messageType: 1,
+        locationId: String(locationId),
+        contactId: String(contactId),
+        message: trimmedMessage,
+        toNumber: normalizedToNumber,
+      }),
+    },
+    {
+      label: "legacy_v2021_message_type_2",
+      version: "2021-07-28",
+      payload: withDefinedFields({
+        messageType: 2,
+        locationId: String(locationId),
+        contactId: String(contactId),
+        message: trimmedMessage,
+        toNumber: normalizedToNumber,
+      }),
     },
   ];
 
@@ -2986,6 +3054,8 @@ async function sendCrmSmsToContact({
         status: response.status,
         tokenSource,
         attemptedSources,
+        requestLabel: requestBody.label,
+        requestVersion: requestBody.version,
       };
     }
 
@@ -2999,7 +3069,7 @@ async function sendCrmSmsToContact({
         requestVersion: requestBody.version,
       };
 
-    if (!response || ![400].includes(response.status)) {
+    if (!response || ![400, 422].includes(response.status)) {
       break;
     }
   }
@@ -3173,6 +3243,7 @@ async function sendDriverAssignmentSmsForBooking({ bookingId, locationId, paymen
     locationId,
     contactId: driverContactId,
     message,
+    toNumber: driverPhone,
     crmAuthOptions: driverSmsAuthOptions,
   });
 
@@ -3186,6 +3257,8 @@ async function sendDriverAssignmentSmsForBooking({ bookingId, locationId, paymen
     status: sendResult?.status || null,
     tokenSource: sendResult?.tokenSource || null,
     attemptedSources: sendResult?.attemptedSources || [],
+    requestLabel: sendResult?.requestLabel || null,
+    requestVersion: sendResult?.requestVersion || null,
     error: sendResult?.error || sendResult?.reason || null,
   });
 
@@ -3223,6 +3296,7 @@ async function sendDriverAssignmentSmsForBooking({ bookingId, locationId, paymen
       locationId,
       contactId: driverContactId,
       message,
+      toNumber: driverPhone,
       crmAuthOptions: driverSmsAuthOptions,
     });
 
@@ -3236,6 +3310,8 @@ async function sendDriverAssignmentSmsForBooking({ bookingId, locationId, paymen
       status: sendResult?.status || null,
       tokenSource: sendResult?.tokenSource || null,
       attemptedSources: sendResult?.attemptedSources || [],
+      requestLabel: sendResult?.requestLabel || null,
+      requestVersion: sendResult?.requestVersion || null,
       error: sendResult?.error || sendResult?.reason || null,
     });
   }
@@ -4965,7 +5041,7 @@ app.get("/api/crm/oauth/start", requireWizardToken, async (req, res) => {
     return_to: req.query.return_to || null,
   }), "utf8").toString("base64url");
 
-  const authUrl = new URL("/oauth/authorize", CRM_API_BASE_URL);
+  const authUrl = new URL(CRM_OAUTH_AUTHORIZE_URL);
   authUrl.searchParams.set("response_type", "code");
   authUrl.searchParams.set("client_id", CRM_OAUTH_CLIENT_ID);
   authUrl.searchParams.set("redirect_uri", CRM_OAUTH_REDIRECT_URI);
