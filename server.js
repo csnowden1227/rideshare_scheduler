@@ -10476,6 +10476,8 @@ app.post("/api/create-checkout-session", async (req, res) => {
       const bookingResult = await createBookingRecord(
         {
           ...req.body,
+          total_price: totalPrice,
+          quoted_price: totalPrice,
           booking_mode: practiceMode ? "practice_widget" : (req.body.booking_mode || "standard"),
           booking_confirmed: false,
           payment_status: "unpaid",
@@ -10519,6 +10521,8 @@ app.post("/api/create-checkout-session", async (req, res) => {
     const bookingResult = await createBookingRecord(
       {
         ...req.body,
+        total_price: totalPrice,
+        quoted_price: totalPrice,
         booking_mode: practiceMode ? "practice_widget" : (req.body.booking_mode || "standard"),
         booking_confirmed: false,
         payment_status: "unpaid",
