@@ -342,6 +342,7 @@ async function ensureCustomerAccountTables() {
           last_login_at TIMESTAMPTZ
         )
       `);
+      await pool.query(`ALTER TABLE customer_accounts ADD COLUMN IF NOT EXISTS stripe_customer_id TEXT`);
       await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_customer_accounts_location_email ON customer_accounts (location_id, LOWER(email))`);
       await pool.query(`CREATE INDEX IF NOT EXISTS idx_customer_accounts_location_phone ON customer_accounts (location_id, phone)`);
 
@@ -2352,10 +2353,144 @@ function buildCustomerAccountShape(account) {
     full_name: [account.first_name, account.last_name].filter(Boolean).join(" ").trim(),
     email: account.email || "",
     phone: normalizePhoneNumber(account.phone || "") || account.phone || "",
+    has_saved_payment_customer: Boolean(String(account.stripe_customer_id || "").trim()),
     created_at: account.created_at || null,
     updated_at: account.updated_at || null,
     last_login_at: account.last_login_at || null,
   };
+}
+
+async function getStripeBillingConfigForCustomerAccount(locationId) {
+  const paymentProfile = await getPaymentProfileForLocation(locationId);
+  if (normalizePaymentProvider(paymentProfile.provider) !== "stripe" || !paymentProfile.stripeSecretKey) {
+    const err = new Error("Saved payment methods require Stripe to be configured on this Pro account.");
+    err.statusCode = 400;
+    throw err;
+  }
+  return paymentProfile;
+}
+
+async function ensureStripeCustomerForCustomerAccount(account) {
+  await ensureCustomerAccountTables();
+  const stripeCustomerId = String(account?.stripe_customer_id || "").trim();
+  const paymentProfile = await getStripeBillingConfigForCustomerAccount(account?.location_id);
+  if (stripeCustomerId) {
+    try {
+      const existingCustomer = await stripeFormRequest(
+        `/v1/customers/${encodeURIComponent(stripeCustomerId)}`,
+        {},
+        "GET",
+        paymentProfile.stripeSecretKey
+      );
+      return { paymentProfile, stripeCustomerId, stripeCustomer: existingCustomer };
+    } catch (err) {
+      console.warn("Saved payment method customer lookup failed, creating replacement Stripe customer:", err.message);
+    }
+  }
+
+  const fullName = [account?.first_name, account?.last_name].filter(Boolean).join(" ").trim();
+  const createdCustomer = await stripeFormRequest(
+    "/v1/customers",
+    {
+      email: account?.email || undefined,
+      name: fullName || undefined,
+      phone: normalizePhoneNumber(account?.phone || "") || account?.phone || undefined,
+      "metadata[customer_account_id]": account?.id || "",
+      "metadata[location_id]": account?.location_id || "",
+    },
+    "POST",
+    paymentProfile.stripeSecretKey
+  );
+
+  await pool.query(
+    `UPDATE customer_accounts
+     SET stripe_customer_id = $1,
+         updated_at = NOW()
+     WHERE id = $2`,
+    [createdCustomer.id, account.id]
+  );
+
+  return {
+    paymentProfile,
+    stripeCustomerId: createdCustomer.id,
+    stripeCustomer: createdCustomer,
+  };
+}
+
+function mapSavedStripePaymentMethod(method, defaultPaymentMethodId = "") {
+  const card = method?.card || {};
+  const billingDetails = method?.billing_details || {};
+  return {
+    id: method?.id || "",
+    brand: card?.brand || "card",
+    last4: card?.last4 || "",
+    exp_month: Number(card?.exp_month || 0) || null,
+    exp_year: Number(card?.exp_year || 0) || null,
+    funding: card?.funding || null,
+    country: card?.country || null,
+    is_default: String(defaultPaymentMethodId || "") === String(method?.id || ""),
+    billing_name: billingDetails?.name || null,
+    billing_email: billingDetails?.email || null,
+  };
+}
+
+async function listStripeSavedPaymentMethodsForCustomerAccount(account) {
+  const stripeCustomerId = String(account?.stripe_customer_id || "").trim();
+  if (!stripeCustomerId) {
+    return {
+      stripe_enabled: true,
+      stripe_customer_id: null,
+      default_payment_method_id: null,
+      methods: [],
+    };
+  }
+
+  const paymentProfile = await getStripeBillingConfigForCustomerAccount(account.location_id);
+  const [customer, paymentMethods] = await Promise.all([
+    stripeFormRequest(
+      `/v1/customers/${encodeURIComponent(stripeCustomerId)}`,
+      {},
+      "GET",
+      paymentProfile.stripeSecretKey
+    ),
+    stripeFormRequest(
+      `/v1/payment_methods?customer=${encodeURIComponent(stripeCustomerId)}&type=card`,
+      {},
+      "GET",
+      paymentProfile.stripeSecretKey
+    ),
+  ]);
+
+  const defaultPaymentMethodId = String(customer?.invoice_settings?.default_payment_method || "").trim() || null;
+  return {
+    stripe_enabled: true,
+    stripe_customer_id: stripeCustomerId,
+    default_payment_method_id: defaultPaymentMethodId,
+    methods: Array.isArray(paymentMethods?.data)
+      ? paymentMethods.data.map((method) => mapSavedStripePaymentMethod(method, defaultPaymentMethodId))
+      : [],
+  };
+}
+
+async function createStripeSavedPaymentMethodSetupSession({
+  apiKey = envStripeSecretKey,
+  stripeCustomerId,
+  customerAccountId,
+  locationId,
+  successUrl,
+  cancelUrl,
+}) {
+  return stripeFormRequest("/v1/checkout/sessions", {
+    mode: "setup",
+    customer: stripeCustomerId,
+    success_url: successUrl,
+    cancel_url: cancelUrl,
+    "payment_method_types[0]": "card",
+    "metadata[customer_account_id]": String(customerAccountId || ""),
+    "metadata[location_id]": String(locationId || ""),
+    "setup_intent_data[metadata][customer_account_id]": String(customerAccountId || ""),
+    "setup_intent_data[metadata][location_id]": String(locationId || ""),
+  }, "POST", apiKey);
 }
 
 async function createCustomerAccountSession({ accountId, locationId }) {
@@ -2391,6 +2526,7 @@ async function getCustomerAccountSessionFromRequest(req) {
        a.last_name,
        a.email,
        a.phone,
+       a.stripe_customer_id,
        a.created_at,
        a.updated_at,
        a.last_login_at
@@ -4502,6 +4638,12 @@ app.get([
   "/customerprofile",
 ], (req, res) => {
   return sendPublicHtmlPage(res, "customer-profile");
+});
+app.get([
+  "/customer-payment-methods",
+  "/customerpaymentmethods",
+], (req, res) => {
+  return sendPublicHtmlPage(res, "customer-payment-methods");
 });
 app.get("/ride-hub-inbox", (req, res) => {
   const suffix = req.originalUrl.includes("?") ? req.originalUrl.slice(req.originalUrl.indexOf("?")) : "";
@@ -11952,6 +12094,195 @@ app.post("/api/customer-account/profile", async (req, res) => {
   } catch (err) {
     console.error("Customer profile update error:", err);
     return res.status(err.statusCode || 500).json({ error: err.message || "Failed to update customer profile." });
+  }
+});
+
+app.get("/api/customer-account/payment-methods", async (req, res) => {
+  try {
+    await ensureCustomerAccountTables();
+    const session = await requireCustomerAccountSession(req, res);
+    if (!session) return;
+    await assertProCustomerAccountAccess(session.location_id);
+    const paymentProfile = await getStripeBillingConfigForCustomerAccount(session.location_id);
+    const summary = await listStripeSavedPaymentMethodsForCustomerAccount(session);
+    return res.json({
+      success: true,
+      payment_provider: normalizePaymentProvider(paymentProfile.provider),
+      ...summary,
+    });
+  } catch (err) {
+    console.error("Customer payment methods lookup error:", err);
+    return res.status(err.statusCode || 500).json({ error: err.message || "Failed to load saved payment methods." });
+  }
+});
+
+app.post("/api/customer-account/payment-methods/setup-session", async (req, res) => {
+  try {
+    await ensureCustomerAccountTables();
+    const session = await requireCustomerAccountSession(req, res);
+    if (!session) return;
+    await assertProCustomerAccountAccess(session.location_id);
+
+    const { paymentProfile, stripeCustomerId } = await ensureStripeCustomerForCustomerAccount(session);
+    const baseUrl = getPublicAppUrl(req);
+    const locationQuery = session.location_id
+      ? `?location_id=${encodeURIComponent(String(session.location_id || "").trim())}`
+      : "";
+    const successUrl = `${baseUrl}/customer-payment-methods${locationQuery ? `${locationQuery}&` : "?"}setup=success&session_id={CHECKOUT_SESSION_ID}`;
+    const cancelUrl = `${baseUrl}/customer-payment-methods${locationQuery ? `${locationQuery}&` : "?"}setup=cancel`;
+    const checkoutSession = await createStripeSavedPaymentMethodSetupSession({
+      apiKey: paymentProfile.stripeSecretKey,
+      stripeCustomerId,
+      customerAccountId: session.id,
+      locationId: session.location_id,
+      successUrl,
+      cancelUrl,
+    });
+
+    return res.json({
+      success: true,
+      checkout_url: checkoutSession.url,
+      stripe_customer_id: stripeCustomerId,
+      session_id: checkoutSession.id,
+    });
+  } catch (err) {
+    console.error("Customer saved payment setup session error:", err);
+    return res.status(err.statusCode || 500).json({ error: err.message || "Failed to prepare saved payment setup." });
+  }
+});
+
+app.get("/api/customer-account/payment-methods/setup-session-status", async (req, res) => {
+  try {
+    await ensureCustomerAccountTables();
+    const session = await requireCustomerAccountSession(req, res);
+    if (!session) return;
+    await assertProCustomerAccountAccess(session.location_id);
+    const stripeSessionId = String(req.query.session_id || "").trim();
+    if (!stripeSessionId) {
+      return res.status(400).json({ error: "session_id is required." });
+    }
+
+    const { paymentProfile, stripeCustomerId } = await ensureStripeCustomerForCustomerAccount(session);
+    const checkoutSession = await stripeFormRequest(
+      `/v1/checkout/sessions/${encodeURIComponent(stripeSessionId)}`,
+      {},
+      "GET",
+      paymentProfile.stripeSecretKey
+    );
+
+    const setupIntentId = String(checkoutSession?.setup_intent || "").trim();
+    let setupIntent = null;
+    if (setupIntentId) {
+      setupIntent = await stripeFormRequest(
+        `/v1/setup_intents/${encodeURIComponent(setupIntentId)}`,
+        {},
+        "GET",
+        paymentProfile.stripeSecretKey
+      );
+    }
+
+    const savedPaymentMethodId = String(setupIntent?.payment_method || "").trim();
+    if (savedPaymentMethodId) {
+      const customer = await stripeFormRequest(
+        `/v1/customers/${encodeURIComponent(stripeCustomerId)}`,
+        {},
+        "GET",
+        paymentProfile.stripeSecretKey
+      );
+      const currentDefaultId = String(customer?.invoice_settings?.default_payment_method || "").trim();
+      if (!currentDefaultId) {
+        await stripeFormRequest(
+          `/v1/customers/${encodeURIComponent(stripeCustomerId)}`,
+          {
+            "invoice_settings[default_payment_method]": savedPaymentMethodId,
+          },
+          "POST",
+          paymentProfile.stripeSecretKey
+        );
+      }
+    }
+
+    return res.json({
+      success: true,
+      complete: String(checkoutSession?.status || "").trim().toLowerCase() === "complete",
+      setup_intent_id: setupIntentId || null,
+      payment_method_id: savedPaymentMethodId || null,
+    });
+  } catch (err) {
+    console.error("Customer saved payment setup status error:", err);
+    return res.status(err.statusCode || 500).json({ error: err.message || "Failed to verify saved payment setup." });
+  }
+});
+
+app.post("/api/customer-account/payment-methods/default", async (req, res) => {
+  try {
+    await ensureCustomerAccountTables();
+    const session = await requireCustomerAccountSession(req, res);
+    if (!session) return;
+    await assertProCustomerAccountAccess(session.location_id);
+    const paymentMethodId = String(req.body.payment_method_id || "").trim();
+    if (!paymentMethodId) {
+      return res.status(400).json({ error: "payment_method_id is required." });
+    }
+
+    const { paymentProfile, stripeCustomerId } = await ensureStripeCustomerForCustomerAccount(session);
+    await stripeFormRequest(
+      `/v1/customers/${encodeURIComponent(stripeCustomerId)}`,
+      {
+        "invoice_settings[default_payment_method]": paymentMethodId,
+      },
+      "POST",
+      paymentProfile.stripeSecretKey
+    );
+
+    return res.json({ success: true, default_payment_method_id: paymentMethodId });
+  } catch (err) {
+    console.error("Customer saved payment default update error:", err);
+    return res.status(err.statusCode || 500).json({ error: err.message || "Failed to set the default payment method." });
+  }
+});
+
+app.post("/api/customer-account/payment-methods/detach", async (req, res) => {
+  try {
+    await ensureCustomerAccountTables();
+    const session = await requireCustomerAccountSession(req, res);
+    if (!session) return;
+    await assertProCustomerAccountAccess(session.location_id);
+    const paymentMethodId = String(req.body.payment_method_id || "").trim();
+    if (!paymentMethodId) {
+      return res.status(400).json({ error: "payment_method_id is required." });
+    }
+
+    const { paymentProfile, stripeCustomerId } = await ensureStripeCustomerForCustomerAccount(session);
+    const customer = await stripeFormRequest(
+      `/v1/customers/${encodeURIComponent(stripeCustomerId)}`,
+      {},
+      "GET",
+      paymentProfile.stripeSecretKey
+    );
+    const currentDefaultId = String(customer?.invoice_settings?.default_payment_method || "").trim();
+    if (currentDefaultId && currentDefaultId === paymentMethodId) {
+      await stripeFormRequest(
+        `/v1/customers/${encodeURIComponent(stripeCustomerId)}`,
+        {
+          "invoice_settings[default_payment_method]": "",
+        },
+        "POST",
+        paymentProfile.stripeSecretKey
+      );
+    }
+
+    await stripeFormRequest(
+      `/v1/payment_methods/${encodeURIComponent(paymentMethodId)}/detach`,
+      {},
+      "POST",
+      paymentProfile.stripeSecretKey
+    );
+
+    return res.json({ success: true, detached_payment_method_id: paymentMethodId });
+  } catch (err) {
+    console.error("Customer saved payment detach error:", err);
+    return res.status(err.statusCode || 500).json({ error: err.message || "Failed to remove the saved payment method." });
   }
 });
 

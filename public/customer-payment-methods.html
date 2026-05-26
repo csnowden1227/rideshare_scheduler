@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Saved Payment Methods</title>
+  <style>
+    :root { --ink: #0f172a; --muted: #64748b; --line: rgba(148,163,184,.22); --panel: rgba(255,255,255,.95); --shadow: 0 24px 48px rgba(15,23,42,.08); }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif; color: var(--ink); background: linear-gradient(180deg, #f8fafc 0%, #ffffff 44%, #eef2f7 100%); }
+    .shell { max-width: 1100px; margin: 0 auto; padding: 24px 16px 42px; }
+    .hero, .panel, .method-card { border-radius: 28px; box-shadow: var(--shadow); }
+    .hero { padding: 28px; color: #fff; background: linear-gradient(135deg, #172554 0%, #1e293b 48%, #334155 100%); }
+    .hero h1 { margin: 0; font-size: clamp(32px, 5vw, 50px); line-height: 1.02; letter-spacing: -.04em; }
+    .hero p { margin: 12px 0 0; line-height: 1.8; color: rgba(255,255,255,.88); max-width: 760px; }
+    .hero-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 18px; }
+    .btn { display: inline-flex; align-items: center; justify-content: center; min-height: 48px; padding: 12px 16px; border-radius: 16px; border: 0; cursor: pointer; font-size: 14px; font-weight: 800; text-decoration: none; }
+    .btn.primary { background: #fff; color: #172554; }
+    .btn.secondary { background: rgba(255,255,255,.12); color: #fff; border: 1px solid rgba(255,255,255,.18); }
+    .btn.dark { background: #172554; color: #fff; }
+    .panel { margin-top: 20px; background: var(--panel); border: 1px solid var(--line); padding: 22px; }
+    .panel h2 { margin: 0; font-size: 24px; letter-spacing: -.03em; color: #172554; }
+    .panel p { margin: 10px 0 0; color: #475569; line-height: 1.8; }
+    .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+    .method-list { display: grid; gap: 14px; margin-top: 18px; }
+    .method-card { background: linear-gradient(180deg, rgba(255,255,255,.98), rgba(248,250,252,.98)); border: 1px solid rgba(148,163,184,.18); padding: 18px; }
+    .method-card.default { border-color: rgba(15,118,110,.32); background: linear-gradient(180deg, rgba(240,253,250,.96), rgba(255,255,255,.98)); }
+    .method-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+    .method-head h3 { margin: 0; font-size: 20px; letter-spacing: -.03em; color: #172554; }
+    .pill { display: inline-flex; padding: 8px 10px; border-radius: 999px; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .1em; background: rgba(76,29,149,.12); color: #5b21b6; }
+    .pill.default { background: rgba(15,118,110,.12); color: #0f766e; }
+    .meta { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 14px; }
+    .meta-block { padding: 14px; border-radius: 18px; background: rgba(248,250,252,.92); border: 1px solid rgba(148,163,184,.16); }
+    .meta-block span { display: block; margin-bottom: 8px; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); }
+    .meta-block strong, .meta-block p { margin: 0; font-size: 14px; line-height: 1.7; color: #334155; }
+    .method-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
+    .mini-button { display: inline-flex; align-items: center; justify-content: center; min-height: 40px; padding: 10px 12px; border-radius: 14px; border: 1px solid rgba(148,163,184,.26); background: #fff; color: #172554; text-decoration: none; font-size: 13px; font-weight: 800; cursor: pointer; }
+    .empty, .error, .success, .info { margin-top: 16px; padding: 16px; border-radius: 18px; line-height: 1.75; }
+    .empty { background: #f8fafc; border: 1px dashed #cbd5e1; color: #64748b; }
+    .error { display: none; background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; }
+    .success { display: none; background: #ecfdf5; border: 1px solid #bbf7d0; color: #166534; }
+    .info { background: #eff6ff; border: 1px solid #bfdbfe; color: #1d4ed8; }
+    @media (max-width: 900px) { .meta { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <section class="hero">
+      <h1>Saved Payment Methods</h1>
+      <p>Store a card securely with Stripe so your Pro customer account is ready for faster checkout experiences later, without changing your current live booking flow today.</p>
+      <div class="hero-actions">
+        <a class="btn primary" href="/customer-dashboard">Dashboard</a>
+        <a class="btn secondary" href="/customer-profile">Profile</a>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <div>
+          <h2>Your Saved Cards</h2>
+          <p>Cards are stored securely by Stripe. You can add, remove, and choose a default card here.</p>
+        </div>
+        <button id="add-card-button" class="btn dark" type="button">Add Payment Method</button>
+      </div>
+      <div id="setup-info" class="info" style="display:none;"></div>
+      <div id="success-state" class="success"></div>
+      <div id="error-state" class="error"></div>
+      <div id="method-list" class="method-list"></div>
+      <div id="empty-state" class="empty" style="display:none;">No payment methods have been saved yet.</div>
+    </section>
+  </div>
+
+  <script>
+    (function () {
+      const query = new URLSearchParams(window.location.search);
+      const locationId = String(query.get("location_id") || "").trim();
+
+      function escapeHtml(value) {
+        return String(value || "")
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/\"/g, "&quot;")
+          .replace(/'/g, "&#39;");
+      }
+
+      function redirectToLogin() {
+        const suffix = locationId ? `?location_id=${encodeURIComponent(locationId)}` : "";
+        window.location.href = `/customer-login${suffix}`;
+      }
+
+      function setMessage(id, text) {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.textContent = text;
+        el.style.display = text ? "block" : "none";
+      }
+
+      async function fetchJson(url, options = {}) {
+        const response = await fetch(url, { credentials: "same-origin", ...options });
+        const data = await response.json().catch(() => ({}));
+        if (response.status === 401) {
+          redirectToLogin();
+          throw new Error("redirect");
+        }
+        if (!response.ok) throw new Error(data.error || "Request failed.");
+        return data;
+      }
+
+      function renderMethodCard(method) {
+        const isDefault = Boolean(method.is_default);
+        const defaultLabel = isDefault ? '<span class="pill default">Default</span>' : '<span class="pill">Saved Card</span>';
+        const expiry = method.exp_month && method.exp_year ? `${method.exp_month}/${method.exp_year}` : "Not available";
+        return `
+          <article class="method-card ${isDefault ? "default" : ""}">
+            <div class="method-head">
+              <h3>${escapeHtml((method.brand || "card").toUpperCase())} ending in ${escapeHtml(method.last4 || "----")}</h3>
+              ${defaultLabel}
+            </div>
+            <div class="meta">
+              <div class="meta-block"><span>Expires</span><strong>${escapeHtml(expiry)}</strong></div>
+              <div class="meta-block"><span>Billing Name</span><p>${escapeHtml(method.billing_name || "Not provided")}</p></div>
+              <div class="meta-block"><span>Card Type</span><p>${escapeHtml(method.funding || "Card")}</p></div>
+            </div>
+            <div class="method-actions">
+              ${isDefault ? "" : `<button class="mini-button" type="button" data-action="default" data-method-id="${escapeHtml(method.id)}">Set Default</button>`}
+              <button class="mini-button" type="button" data-action="remove" data-method-id="${escapeHtml(method.id)}">Remove</button>
+            </div>
+          </article>
+        `;
+      }
+
+      async function loadPaymentMethods() {
+        try {
+          const data = await fetchJson("/api/customer-account/payment-methods");
+          const methods = Array.isArray(data.methods) ? data.methods : [];
+          document.getElementById("method-list").innerHTML = methods.map(renderMethodCard).join("");
+          document.getElementById("empty-state").style.display = methods.length ? "none" : "block";
+        } catch (error) {
+          if (error.message === "redirect") return;
+          setMessage("error-state", error.message || "Unable to load saved payment methods.");
+        }
+      }
+
+      async function handleSetupReturn() {
+        const setupState = String(query.get("setup") || "").trim();
+        const sessionId = String(query.get("session_id") || "").trim();
+        if (!setupState) return;
+
+        if (setupState === "cancel") {
+          setMessage("setup-info", "Adding a payment method was canceled before Stripe saved the card.");
+          return;
+        }
+
+        if (setupState === "success" && sessionId) {
+          try {
+            const status = await fetchJson(`/api/customer-account/payment-methods/setup-session-status?session_id=${encodeURIComponent(sessionId)}`);
+            if (status.complete) {
+              setMessage("success-state", "Your payment method has been saved successfully.");
+            }
+          } catch (error) {
+            if (error.message !== "redirect") {
+              setMessage("error-state", error.message || "Saved card verification failed.");
+            }
+          } finally {
+            const cleanUrl = new URL(window.location.href);
+            cleanUrl.searchParams.delete("setup");
+            cleanUrl.searchParams.delete("session_id");
+            window.history.replaceState({}, document.title, cleanUrl.toString());
+          }
+        }
+      }
+
+      document.getElementById("add-card-button")?.addEventListener("click", async () => {
+        setMessage("error-state", "");
+        setMessage("success-state", "");
+        setMessage("setup-info", "");
+        try {
+          const data = await fetchJson("/api/customer-account/payment-methods/setup-session", { method: "POST" });
+          if (!data.checkout_url) throw new Error("Stripe did not return a setup session URL.");
+          window.location.href = data.checkout_url;
+        } catch (error) {
+          if (error.message !== "redirect") {
+            setMessage("error-state", error.message || "Unable to start the saved payment setup.");
+          }
+        }
+      });
+
+      document.getElementById("method-list")?.addEventListener("click", async (event) => {
+        const action = event.target?.getAttribute("data-action");
+        const methodId = event.target?.getAttribute("data-method-id");
+        if (!action || !methodId) return;
+
+        setMessage("error-state", "");
+        setMessage("success-state", "");
+
+        try {
+          if (action === "default") {
+            await fetchJson("/api/customer-account/payment-methods/default", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ payment_method_id: methodId }),
+            });
+            setMessage("success-state", "Default payment method updated.");
+          } else if (action === "remove") {
+            await fetchJson("/api/customer-account/payment-methods/detach", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ payment_method_id: methodId }),
+            });
+            setMessage("success-state", "Saved payment method removed.");
+          }
+          await loadPaymentMethods();
+        } catch (error) {
+          if (error.message !== "redirect") {
+            setMessage("error-state", error.message || "Unable to update the saved payment method.");
+          }
+        }
+      });
+
+      (async function init() {
+        await handleSetupReturn();
+        await loadPaymentMethods();
+      })();
+    })();
+  </script>
+</body>
+</html>
