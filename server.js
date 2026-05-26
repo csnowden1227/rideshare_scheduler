@@ -1345,6 +1345,18 @@ async function buildShortPublicUrls({
     result.portal.ride_inbox_short_url = shortUrl;
     result.portal.ride_inbox_url = shortUrl;
   }
+  if (portal.customer_login_url) {
+    const shortUrl = await createShortLink({
+      req,
+      linkType: "p",
+      destinationUrl: portal.customer_login_url,
+      locationId,
+      bookingId,
+      trackingSessionId,
+    });
+    result.portal.customer_login_short_url = shortUrl;
+    result.portal.customer_login_url = shortUrl;
+  }
   return result;
 }
 
@@ -4494,7 +4506,7 @@ app.get("/saas-sales.html", (req, res) => {
 app.get("/addons.html", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "addons.html"));
 });
-app.get("/:linkType(h|n|c|d|f)/:code", async (req, res) => {
+app.get("/:linkType(h|n|c|d|f|p)/:code", async (req, res) => {
   try {
     await ensureShortLinksTable();
     const linkType = String(req.params.linkType || "").trim().toLowerCase();
