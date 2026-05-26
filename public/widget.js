@@ -226,20 +226,9 @@
     const isLuxury = rawType.includes("luxury");
     const isXl = rawType.includes("xl");
     const isSuv = rawType.includes("suv");
-    const bodyColor = isLuxury ? "#111111" : "#d9dee7";
-    const strokeColor = isLuxury ? "#000000" : "#8b95a7";
-    const accentColor = isLuxury ? "#050505" : "#a21caf";
-    const windowColor = isLuxury ? "#374151" : "#f8fafc";
-    const shadowColor = "rgba(15,23,42,0.10)";
-    const wheelColor = "#1f2937";
-    const frontX = isSuv ? 34 : 42;
-    const rearX = isXl ? 286 : isSuv ? 272 : 250;
-    const roofPeak = isSuv ? 68 : 80;
-    const roofBack = isSuv ? 96 : 104;
-    const baseY = isSuv ? 108 : 114;
-    const bodyBottom = baseY + 24;
-    const wheelFront = isSuv ? 102 : 100;
-    const wheelRear = isXl ? 244 : isSuv ? 228 : 206;
+    const bodyColor = isLuxury ? "#111111" : "#8d96a3";
+    const wheelColor = isLuxury ? "#111111" : "#6b7280";
+    const cutColor = "#ffffff";
     const label = isLuxury
       ? (isSuv ? (isXl ? "Luxury XL SUV" : "Luxury SUV") : "Luxury Sedan")
       : (isSuv ? (isXl ? "Standard XL SUV" : "Standard SUV") : "Standard Sedan");
@@ -248,66 +237,130 @@
       <svg xmlns="http://www.w3.org/2000/svg" width="320" height="180" viewBox="0 0 320 180">
         <rect width="320" height="180" rx="18" fill="#ffffff"/>
         <text x="160" y="30" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="15" font-weight="700" fill="#334155">${escapeHtml(label)}</text>
-        <ellipse cx="160" cy="148" rx="${isXl ? 112 : 96}" ry="11" fill="${shadowColor}"/>
         ${isSuv ? `
-          <path d="M${frontX} ${baseY}
-                   L58 ${baseY}
-                   C74 86, 114 ${roofPeak}, 178 ${roofPeak}
-                   L236 ${roofPeak}
-                   C252 ${roofPeak}, 272 88, ${rearX} ${baseY}
-                   L${rearX + 16} ${baseY}
-                   C${rearX + 24} ${baseY}, ${rearX + 30} ${baseY + 6}, ${rearX + 30} ${baseY + 14}
-                   L${rearX + 30} ${bodyBottom}
-                   C${rearX + 30} ${bodyBottom + 8}, ${rearX + 24} ${bodyBottom + 12}, ${rearX + 16} ${bodyBottom + 12}
-                   L${frontX - 10} ${bodyBottom + 12}
-                   C${frontX - 18} ${bodyBottom + 12}, ${frontX - 24} ${bodyBottom + 6}, ${frontX - 24} ${bodyBottom - 2}
-                   L${frontX - 24} ${baseY + 14}
-                   C${frontX - 24} ${baseY + 6}, ${frontX - 18} ${baseY}, ${frontX} ${baseY} Z"
-                fill="${bodyColor}" stroke="${strokeColor}" stroke-width="3.5" stroke-linejoin="round"/>
-          <path d="M76 ${baseY - 2}
-                   C96 88, 128 ${roofBack}, 176 ${roofBack}
-                   L230 ${roofBack}
-                   C244 ${roofBack}, 258 94, 268 ${baseY - 2}
-                   Z"
-                fill="${accentColor}" opacity="0.95"/>
-          <path d="M104 ${baseY - 2}
-                   C122 94, 144 92, 176 92
-                   L224 92
-                   C236 92, 246 98, 254 ${baseY - 2}
-                   Z"
-                fill="${windowColor}" opacity="0.96"/>
+          <g transform="${isXl ? "translate(12 4) scale(1.06)" : "translate(24 10) scale(0.98)"}">
+            <path d="M22 111
+                     C35 79, 78 57, 141 55
+                     L192 55
+                     C226 55, 257 67, 292 95
+                     L278 84
+                     C261 71, 244 66, 220 66
+                     L147 66
+                     C95 66, 56 80, 29 112
+                     Z"
+                  fill="${bodyColor}"/>
+            <path d="M29 114
+                     C46 90, 83 76, 132 76
+                     L196 76
+                     C226 76, 252 86, 288 112
+                     L286 123
+                     C277 125, 268 131, 259 140
+                     L221 140
+                     C205 129, 184 124, 157 124
+                     L111 124
+                     C91 124, 73 128, 54 140
+                     L20 140
+                     C19 128, 20 120, 29 114
+                     Z"
+                  fill="${bodyColor}"/>
+            <path d="M44 102
+                     C66 82, 95 74, 132 73
+                     L173 73
+                     C197 73, 219 79, 238 90
+                     L207 90
+                     C177 90, 154 86, 127 88
+                     C97 89, 73 93, 44 102
+                     Z"
+                  fill="${cutColor}"/>
+            <path d="M58 96
+                     C74 79, 97 72, 130 71
+                     L144 71
+                     L132 97
+                     Z"
+                  fill="${cutColor}"/>
+            <path d="M154 71
+                     L176 71
+                     C195 71, 211 76, 225 87
+                     L205 97
+                     L164 97
+                     Z"
+                  fill="${cutColor}"/>
+            <path d="M61 111
+                     C98 100, 133 101, 175 108
+                     C143 111, 111 115, 78 123
+                     L60 123
+                     C54 119, 55 114, 61 111
+                     Z"
+                  fill="${cutColor}"/>
+            <path d="M204 109
+                     L245 109
+                     C251 109, 255 114, 252 119
+                     L215 119
+                     C208 119, 202 114, 204 109
+                     Z"
+                  fill="${cutColor}"/>
+            <circle cx="87" cy="136" r="24" fill="${bodyColor}"/>
+            <circle cx="87" cy="136" r="15.5" fill="${cutColor}"/>
+            <circle cx="87" cy="136" r="3.2" fill="${wheelColor}"/>
+            <circle cx="218" cy="136" r="24" fill="${bodyColor}"/>
+            <circle cx="218" cy="136" r="15.5" fill="${cutColor}"/>
+            <circle cx="218" cy="136" r="3.2" fill="${wheelColor}"/>
+          </g>
         ` : `
-          <path d="M${frontX} ${baseY}
-                   L70 ${baseY}
-                   C88 92, 118 ${roofPeak}, 170 ${roofPeak}
-                   L214 ${roofPeak}
-                   C228 ${roofPeak}, 240 94, ${rearX} ${baseY}
-                   L${rearX + 16} ${baseY}
-                   C${rearX + 24} ${baseY}, ${rearX + 30} ${baseY + 6}, ${rearX + 30} ${baseY + 14}
-                   L${rearX + 30} ${bodyBottom}
-                   C${rearX + 30} ${bodyBottom + 8}, ${rearX + 24} ${bodyBottom + 12}, ${rearX + 16} ${bodyBottom + 12}
-                   L${frontX - 6} ${bodyBottom + 12}
-                   C${frontX - 14} ${bodyBottom + 12}, ${frontX - 20} ${bodyBottom + 6}, ${frontX - 20} ${bodyBottom - 2}
-                   L${frontX - 20} ${baseY + 12}
-                   C${frontX - 20} ${baseY + 4}, ${frontX - 12} ${baseY}, ${frontX} ${baseY} Z"
-                fill="${bodyColor}" stroke="${strokeColor}" stroke-width="3.5" stroke-linejoin="round"/>
-          <path d="M96 ${baseY - 2}
-                   C112 92, 136 ${roofBack}, 172 ${roofBack}
-                   L208 ${roofBack}
-                   C220 ${roofBack}, 230 98, 238 ${baseY - 2}
-                   Z"
-                fill="${accentColor}" opacity="0.95"/>
-          <path d="M120 ${baseY - 2}
-                   C132 98, 148 96, 172 96
-                   L202 96
-                   C212 96, 220 100, 226 ${baseY - 2}
-                   Z"
-                fill="${windowColor}" opacity="0.96"/>
+          <g transform="translate(28 18) scale(1.12)">
+            <path d="M24 111
+                     C32 91, 49 76, 74 71
+                     L131 70
+                     C164 70, 191 84, 214 105
+                     L202 96
+                     C192 88, 177 84, 158 84
+                     L93 84
+                     C62 84, 40 93, 24 111
+                     Z"
+                  fill="${bodyColor}"/>
+            <path d="M22 114
+                     C40 94, 65 86, 97 86
+                     L161 86
+                     C188 86, 210 94, 229 110
+                     L225 125
+                     C215 128, 207 133, 199 141
+                     L164 141
+                     C151 131, 136 126, 115 126
+                     L89 126
+                     C74 126, 60 130, 49 140
+                     L24 140
+                     C19 131, 18 121, 22 114
+                     Z"
+                  fill="${bodyColor}"/>
+            <path d="M49 99
+                     C61 86, 78 80, 97 80
+                     L130 80
+                     L117 100
+                     L45 100
+                     Z"
+                  fill="${cutColor}"/>
+            <path d="M138 80
+                     L158 80
+                     C176 80, 191 86, 204 97
+                     L171 100
+                     L132 100
+                     Z"
+                  fill="${cutColor}"/>
+            <path d="M170 109
+                     L207 109
+                     C213 109, 216 114, 214 119
+                     L177 119
+                     C171 119, 167 114, 170 109
+                     Z"
+                  fill="${cutColor}"/>
+            <circle cx="84" cy="136" r="18" fill="${bodyColor}"/>
+            <circle cx="84" cy="136" r="11.5" fill="${cutColor}"/>
+            <circle cx="84" cy="136" r="2.6" fill="${wheelColor}"/>
+            <circle cx="181" cy="136" r="18" fill="${bodyColor}"/>
+            <circle cx="181" cy="136" r="11.5" fill="${cutColor}"/>
+            <circle cx="181" cy="136" r="2.6" fill="${wheelColor}"/>
+          </g>
         `}
-        <circle cx="${wheelFront}" cy="${bodyBottom + 12}" r="16" fill="${wheelColor}"/>
-        <circle cx="${wheelRear}" cy="${bodyBottom + 12}" r="16" fill="${wheelColor}"/>
-        <circle cx="${wheelFront}" cy="${bodyBottom + 12}" r="7" fill="#94a3b8"/>
-        <circle cx="${wheelRear}" cy="${bodyBottom + 12}" r="7" fill="#94a3b8"/>
       </svg>
     `;
 
@@ -330,41 +383,55 @@
     return details.join(" ");
   }
 
+  function vehicleSortOrder(vehicle = {}) {
+    const normalized = vehicleDisplayName(vehicle).trim().toLowerCase();
+    const order = {
+      "luxury sedan": 0,
+      "luxury suv": 1,
+      "luxury xl suv": 2,
+      "standard sedan": 3,
+      "standard suv": 4,
+      "standard xl suv": 5,
+    };
+    return Number.isFinite(order[normalized]) ? order[normalized] : 999;
+  }
+
   function renderVehiclePicker(fleet = []) {
     if (!fleet.length) {
       return `<div style="padding:14px;border:1px dashed #cbd5e1;border-radius:14px;background:#f8fafc;color:#64748b;font-size:13px;">No fleet vehicles are available yet. Add vehicles in the Setup Wizard first.</div>`;
     }
 
-    const cards = fleet.map((vehicle, index) => {
+    const orderedFleet = [...fleet].sort((a, b) => {
+      const orderDiff = vehicleSortOrder(a) - vehicleSortOrder(b);
+      if (orderDiff !== 0) return orderDiff;
+      return vehicleDisplayName(a).localeCompare(vehicleDisplayName(b));
+    });
+
+    const cards = orderedFleet.map((vehicle, index) => {
       const label = vehicleDisplayName(vehicle);
       const meta = vehicleMetaLine(vehicle);
       const imageSrc = vehicleImageSource(vehicle);
-      const selectionText = index === 0 ? "Selected" : "Tap to select";
       return `
         <button
           type="button"
           class="cd_vehicle_card"
           data-vehicle-slot-id="${escapeHtml(vehicle.vehicle_slot_id)}"
           aria-pressed="${index === 0 ? "true" : "false"}"
-          style="display:grid;grid-template-rows:auto auto 1fr auto;gap:10px;width:100%;min-height:188px;padding:14px;border:1px solid #cbd5e1;border-radius:18px;background:#fff;cursor:pointer;text-align:left;transition:all .2s ease;box-shadow:0 8px 20px rgba(15,23,42,.04);"
+          style="display:grid;grid-template-rows:auto 1fr auto;gap:10px;width:100%;min-height:212px;padding:14px 14px 12px;border:2px solid #111111;border-radius:0;background:#fff;cursor:pointer;text-align:center;transition:all .2s ease;box-shadow:none;"
         >
-          <span style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
-            <span style="font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:#64748b;">Vehicle Option</span>
-            <span class="cd_vehicle_pick_label" style="font-size:11px;font-weight:800;color:${index === 0 ? "#6d28d9" : "#94a3b8"};">${selectionText}</span>
+          <span style="font-size:18px;font-weight:800;color:#111827;line-height:1.2;">${escapeHtml(label)}</span>
+          <img src="${escapeHtml(imageSrc)}" alt="${escapeHtml(label)}" style="width:100%;height:116px;object-fit:contain;display:block;" />
+          <span style="display:grid;gap:4px;min-width:0;align-content:end;justify-items:center;">
+            ${meta ? `<span style="font-size:12px;color:#64748b;line-height:1.35;">${escapeHtml(meta)}</span>` : `<span style="font-size:12px;color:#64748b;line-height:1.35;">Tap to select</span>`}
+            <span class="cd_vehicle_pick_label" style="font-size:12px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:${index === 0 ? "#6d28d9" : "#64748b"};">${index === 0 ? "Selected" : "Tap to select"}</span>
           </span>
-          <img src="${escapeHtml(imageSrc)}" alt="${escapeHtml(label)}" style="width:100%;height:82px;object-fit:contain;border-radius:14px;border:1px solid #dbe4f0;background:#f8fafc;flex-shrink:0;padding:6px;box-sizing:border-box;" />
-          <span style="display:grid;gap:4px;min-width:0;align-content:start;">
-            <span style="font-size:15px;font-weight:800;color:#0f172a;line-height:1.25;">${escapeHtml(label)}</span>
-            ${meta ? `<span style="font-size:12px;color:#64748b;line-height:1.35;">${escapeHtml(meta)}</span>` : `<span style="font-size:12px;color:#94a3b8;line-height:1.35;">Choose this vehicle type</span>`}
-          </span>
-          <span style="display:inline-flex;align-items:center;justify-content:center;min-height:34px;padding:8px 10px;border-radius:999px;background:#f8fafc;color:#334155;font-size:12px;font-weight:700;border:1px solid #e2e8f0;">Select ${escapeHtml(label)}</span>
         </button>
       `;
     }).join("");
 
     return `
-      <input id="cd_vehicle_slot_id" type="hidden" value="${escapeHtml(fleet[0]?.vehicle_slot_id || "")}" />
-      <div id="cd_vehicle_picker" style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;">
+      <input id="cd_vehicle_slot_id" type="hidden" value="${escapeHtml(orderedFleet[0]?.vehicle_slot_id || "")}" />
+      <div id="cd_vehicle_picker" style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0;border:2px solid #111111;">
         ${cards}
       </div>
     `;
@@ -374,14 +441,14 @@
     document.querySelectorAll(".cd_vehicle_card").forEach((card) => {
       const isSelected = card.dataset.vehicleSlotId === selectedSlotId;
       card.setAttribute("aria-pressed", isSelected ? "true" : "false");
-      card.style.border = isSelected ? "2px solid #7c3aed" : "1px solid #cbd5e1";
-      card.style.boxShadow = isSelected ? "0 14px 28px rgba(124,58,237,.14)" : "0 8px 20px rgba(15,23,42,.04)";
-      card.style.transform = isSelected ? "translateY(-1px)" : "translateY(0)";
+      card.style.borderColor = isSelected ? "#6d28d9" : "#111111";
       card.style.background = isSelected ? "#faf5ff" : "#fff";
+      card.style.boxShadow = isSelected ? "inset 0 0 0 2px #6d28d9" : "none";
+      card.style.transform = "translateY(0)";
       const pickLabel = card.querySelector(".cd_vehicle_pick_label");
       if (pickLabel) {
         pickLabel.textContent = isSelected ? "Selected" : "Tap to select";
-        pickLabel.style.color = isSelected ? "#6d28d9" : "#94a3b8";
+        pickLabel.style.color = isSelected ? "#6d28d9" : "#64748b";
       }
     });
   }
