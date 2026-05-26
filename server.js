@@ -9884,7 +9884,7 @@ async function createBalancePaymentLink(bookingRow) {
   return buildBalancePaymentEntryUrl(bookingRow.id);
 }
 
-async function createBookingRecord(input, { paymentLink = null, triggerWebhook = true } = {}) {
+async function createBookingRecord(input, { paymentLink = null, triggerWebhook = true, req = null } = {}) {
   const {
     location_id,
     vehicle_slot_id,
@@ -10479,7 +10479,7 @@ app.post("/api/create-checkout-session", async (req, res) => {
           hours_until_ride: hoursUntilRide,
           payment_provider: paymentProvider,
         },
-        { triggerWebhook: true, paymentLink: null }
+        { triggerWebhook: true, paymentLink: null, req }
       );
 
       bookingId = bookingResult.booking?.id;
@@ -12303,6 +12303,7 @@ app.post("/api/create-booking", async (req, res) => {
     const bookingResult = await createBookingRecord(req.body, {
       paymentLink: req.body.payment_link || null,
       triggerWebhook: true,
+      req,
     });
     return res.status(200).json(bookingResult);
   } catch (err) {
