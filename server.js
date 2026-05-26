@@ -11,7 +11,7 @@ import pkg from 'pg';
 import Stripe from 'stripe';
 import dns from 'dns/promises';
 import https from 'https';
-import { randomBytes, randomUUID } from 'crypto';
+import { randomBytes, randomUUID, scryptSync, timingSafeEqual } from 'crypto';
 import { Client as GoogleMapsClient } from "@googlemaps/google-maps-services-js";
 import { google } from 'googleapis';
 import path from 'path';
@@ -99,6 +99,11 @@ let saasAddonPurchasesTableReady = null;
 let dispatchTablesReady = null;
 let tripTrackingTablesReady = null;
 let shortLinksTableReady = null;
+let customerAccountTablesReady = null;
+
+const CUSTOMER_ACCOUNT_SESSION_COOKIE = "crm_customer_session";
+const CUSTOMER_ACCOUNT_SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 30;
+const CUSTOMER_PASSWORD_RESET_TTL_MS = 1000 * 60 * 60;
 
 const DEFAULT_BRAND_COLORS = {
   primary: "#082f49",
@@ -215,6 +220,66 @@ function safeParseJson(data, fallback = []) {
   }
 }
 
+function normalizeCustomerEmail(value) {
+  return String(value || "").trim().toLowerCase().slice(0, 160);
+}
+
+function normalizeCustomerName(value, maxLength = 80) {
+  return String(value || "").trim().slice(0, maxLength);
+}
+
+function normalizeCustomerPassword(value) {
+  return String(value || "");
+}
+
+function hashCustomerPassword(password) {
+  const normalizedPassword = normalizeCustomerPassword(password);
+  const salt = randomBytes(16).toString("hex");
+  const derived = scryptSync(normalizedPassword, salt, 64).toString("hex");
+  return `scrypt$${salt}$${derived}`;
+}
+
+function verifyCustomerPassword(password, storedHash) {
+  const normalizedStoredHash = String(storedHash || "").trim();
+  const parts = normalizedStoredHash.split("$");
+  if (parts.length !== 3 || parts[0] !== "scrypt") return false;
+  const [, salt, expectedHash] = parts;
+  const providedHash = scryptSync(normalizeCustomerPassword(password), salt, 64);
+  const expectedBuffer = Buffer.from(expectedHash, "hex");
+  if (expectedBuffer.length !== providedHash.length) return false;
+  return timingSafeEqual(expectedBuffer, providedHash);
+}
+
+function parseCookies(req) {
+  const cookieHeader = String(req.headers?.cookie || "");
+  return cookieHeader.split(";").reduce((acc, part) => {
+    const [rawKey, ...rawValue] = part.split("=");
+    const key = String(rawKey || "").trim();
+    if (!key) return acc;
+    acc[key] = decodeURIComponent(rawValue.join("=").trim() || "");
+    return acc;
+  }, {});
+}
+
+function setCustomerSessionCookie(res, token) {
+  res.cookie(CUSTOMER_ACCOUNT_SESSION_COOKIE, token, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: true,
+    maxAge: CUSTOMER_ACCOUNT_SESSION_TTL_MS,
+    path: "/",
+  });
+}
+
+function clearCustomerSessionCookie(res) {
+  res.clearCookie(CUSTOMER_ACCOUNT_SESSION_COOKIE, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: true,
+    path: "/",
+  });
+}
+
 async function ensureBookingSyncColumns() {
   if (!bookingSyncColumnsReady) {
     bookingSyncColumnsReady = (async () => {
@@ -258,6 +323,57 @@ async function ensureCrmLocationTokenTable() {
     });
   }
   return crmLocationTokenColumnsReady;
+}
+
+async function ensureCustomerAccountTables() {
+  if (!customerAccountTablesReady) {
+    customerAccountTablesReady = (async () => {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS customer_accounts (
+          id TEXT PRIMARY KEY,
+          location_id TEXT NOT NULL,
+          first_name TEXT NOT NULL,
+          last_name TEXT NOT NULL,
+          email TEXT NOT NULL,
+          phone TEXT,
+          password_hash TEXT NOT NULL,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          last_login_at TIMESTAMPTZ
+        )
+      `);
+      await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_customer_accounts_location_email ON customer_accounts (location_id, LOWER(email))`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_customer_accounts_location_phone ON customer_accounts (location_id, phone)`);
+
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS customer_account_sessions (
+          token TEXT PRIMARY KEY,
+          customer_account_id TEXT NOT NULL REFERENCES customer_accounts(id) ON DELETE CASCADE,
+          location_id TEXT NOT NULL,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          expires_at TIMESTAMPTZ NOT NULL
+        )
+      `);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_customer_account_sessions_account ON customer_account_sessions (customer_account_id)`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_customer_account_sessions_expires ON customer_account_sessions (expires_at)`);
+
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS customer_password_reset_tokens (
+          token TEXT PRIMARY KEY,
+          customer_account_id TEXT NOT NULL REFERENCES customer_accounts(id) ON DELETE CASCADE,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          expires_at TIMESTAMPTZ NOT NULL,
+          used_at TIMESTAMPTZ
+        )
+      `);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_customer_password_reset_account ON customer_password_reset_tokens (customer_account_id)`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_customer_password_reset_expires ON customer_password_reset_tokens (expires_at)`);
+    })().catch((err) => {
+      customerAccountTablesReady = null;
+      throw err;
+    });
+  }
+  return customerAccountTablesReady;
 }
 
 async function ensureProfileCrmApiKeyColumn() {
@@ -2196,6 +2312,188 @@ function normalizePlanName(value = "") {
 
 function getPlanRuleSet(planName = "starter") {
   return PLAN_RULES[normalizePlanName(planName)] || PLAN_RULES.starter;
+}
+
+async function getLocationPlanName(locationId) {
+  const profileIdColumn = await getProfileIdColumn();
+  const result = await pool.query(
+    `SELECT plan_name
+     FROM profiles
+     WHERE ${profileIdColumn} = $1
+     LIMIT 1`,
+    [locationId]
+  );
+  return normalizePlanName(result.rows[0]?.plan_name || "starter");
+}
+
+async function assertProCustomerAccountAccess(locationId) {
+  const planName = await getLocationPlanName(locationId);
+  if (planName !== "pro") {
+    const err = new Error("Customer accounts are available for Pro accounts only.");
+    err.statusCode = 403;
+    throw err;
+  }
+  return planName;
+}
+
+function buildCustomerAccountShape(account) {
+  if (!account) return null;
+  return {
+    id: account.id,
+    location_id: account.location_id,
+    first_name: account.first_name || "",
+    last_name: account.last_name || "",
+    full_name: [account.first_name, account.last_name].filter(Boolean).join(" ").trim(),
+    email: account.email || "",
+    phone: normalizePhoneNumber(account.phone || "") || account.phone || "",
+    created_at: account.created_at || null,
+    updated_at: account.updated_at || null,
+    last_login_at: account.last_login_at || null,
+  };
+}
+
+async function createCustomerAccountSession({ accountId, locationId }) {
+  await ensureCustomerAccountTables();
+  const token = randomBytes(32).toString("hex");
+  const expiresAt = new Date(Date.now() + CUSTOMER_ACCOUNT_SESSION_TTL_MS).toISOString();
+  await pool.query(
+    `INSERT INTO customer_account_sessions (token, customer_account_id, location_id, expires_at)
+     VALUES ($1, $2, $3, $4)`,
+    [token, accountId, locationId, expiresAt]
+  );
+  return { token, expires_at: expiresAt };
+}
+
+async function deleteCustomerAccountSession(token) {
+  await ensureCustomerAccountTables();
+  if (!token) return;
+  await pool.query(`DELETE FROM customer_account_sessions WHERE token = $1`, [token]);
+}
+
+async function getCustomerAccountSessionFromRequest(req) {
+  await ensureCustomerAccountTables();
+  const cookies = parseCookies(req);
+  const token = String(cookies[CUSTOMER_ACCOUNT_SESSION_COOKIE] || "").trim();
+  if (!token) return null;
+  const result = await pool.query(
+    `SELECT
+       s.token,
+       s.expires_at,
+       a.id,
+       a.location_id,
+       a.first_name,
+       a.last_name,
+       a.email,
+       a.phone,
+       a.created_at,
+       a.updated_at,
+       a.last_login_at
+     FROM customer_account_sessions s
+     INNER JOIN customer_accounts a ON a.id = s.customer_account_id
+     WHERE s.token = $1
+       AND s.expires_at > NOW()
+     LIMIT 1`,
+    [token]
+  );
+  return result.rows[0] || null;
+}
+
+async function requireCustomerAccountSession(req, res) {
+  const session = await getCustomerAccountSessionFromRequest(req);
+  if (!session) {
+    res.status(401).json({ error: "Customer login required." });
+    return null;
+  }
+  return session;
+}
+
+async function fetchCustomerRidesForIdentity({
+  locationId,
+  crmContactId = "",
+  email = "",
+  phone = "",
+  limit = 50,
+}) {
+  const normalizedCustomerPhone = normalizePhoneNumber(phone || "") || "";
+  const normalizedCustomerEmail = normalizeCustomerEmail(email || "");
+  const normalizedCrmContactId = String(crmContactId || "").trim();
+  const profileIdColumn = await getProfileIdColumn();
+
+  const bookingsResult = await pool.query(
+    `SELECT
+       b.id,
+       b.location_id,
+       b.first_name,
+       b.last_name,
+       b.customer_email,
+       b.customer_phone,
+       b.pickup_address,
+       b.dropoff_address,
+       b.start_time,
+       b.end_time,
+       b.total_price,
+       b.vehicle_slot_id,
+       b.status,
+       b.booking_mode,
+       b.deposit_amount,
+       b.deposit_percent,
+       b.balance_due,
+       b.crm_contact_id,
+       p.business_name,
+       p.fleet
+     FROM bookings b
+     LEFT JOIN profiles p ON p.${profileIdColumn} = b.location_id
+     WHERE b.location_id = $1
+       AND (
+         ($2 <> '' AND COALESCE(b.crm_contact_id, '') = $2)
+         OR ($3 <> '' AND COALESCE(b.customer_phone, '') = $3)
+         OR ($4 <> '' AND LOWER(COALESCE(b.customer_email, '')) = $4)
+       )
+     ORDER BY b.start_time DESC, b.id DESC
+     LIMIT $5`,
+    [locationId, normalizedCrmContactId, normalizedCustomerPhone, normalizedCustomerEmail, Math.max(1, Number(limit || 50))]
+  );
+
+  const now = Date.now();
+  return bookingsResult.rows.map((ride) => {
+    const vehicleRecord = getVehicleRecordForSession({
+      vehicle_slot_id: ride.vehicle_slot_id,
+      fleet: ride.fleet,
+    });
+    const startTime = ride.start_time ? new Date(ride.start_time) : null;
+    const startTimeMs = startTime && !Number.isNaN(startTime.getTime()) ? startTime.getTime() : null;
+    const normalizedStatus = String(ride.status || "").trim().toLowerCase();
+    const isCancelled = normalizedStatus === "cancelled" || normalizedStatus === "canceled";
+    const isUpcoming = !isCancelled && startTimeMs !== null && startTimeMs >= now;
+    const paymentStatus = Number(ride.deposit_amount || 0) > 0 && Number(ride.balance_due || 0) > 0
+      ? "paid_deposit"
+      : (Number(ride.total_price || 0) > 0 ? "paid_in_full" : "unpaid");
+
+    return {
+      booking_id: ride.id,
+      status: normalizedStatus || "confirmed",
+      booking_mode: String(ride.booking_mode || "standard").trim() || "standard",
+      is_upcoming: isUpcoming,
+      is_cancelled: isCancelled,
+      start_time: ride.start_time || null,
+      end_time: ride.end_time || null,
+      pickup_address: ride.pickup_address || "",
+      dropoff_address: ride.dropoff_address || "",
+      total_price: Number(ride.total_price || 0),
+      deposit_amount: Number(ride.deposit_amount || 0),
+      deposit_percent: Number(ride.deposit_percent || 0),
+      balance_due: Number(ride.balance_due || 0),
+      payment_status: paymentStatus,
+      vehicle_slot_id: ride.vehicle_slot_id || "",
+      vehicle_display_name: buildVehicleDisplayName(vehicleRecord, ride.vehicle_slot_id || ""),
+      customer: {
+        first_name: ride.first_name || "",
+        last_name: ride.last_name || "",
+        email: ride.customer_email || "",
+        phone: normalizePhoneNumber(ride.customer_phone || "") || ride.customer_phone || "",
+      },
+    };
+  });
 }
 
 function buildPlanEntitlements({
@@ -4156,6 +4454,48 @@ app.get([
   "/ridehistory/:locationId/:token",
 ], (req, res) => {
   return sendPublicHtmlPage(res, "ride-history");
+});
+app.get([
+  "/customer-login",
+  "/customerlogin",
+], (req, res) => {
+  return sendPublicHtmlPage(res, "customer-login");
+});
+app.get([
+  "/customer-forgot-password",
+  "/customerforgotpassword",
+], (req, res) => {
+  return sendPublicHtmlPage(res, "customer-forgot-password");
+});
+app.get([
+  "/customer-reset-password",
+  "/customerresetpassword",
+], (req, res) => {
+  return sendPublicHtmlPage(res, "customer-reset-password");
+});
+app.get([
+  "/customer-dashboard",
+  "/customerdashboard",
+], (req, res) => {
+  return sendPublicHtmlPage(res, "customer-dashboard");
+});
+app.get([
+  "/customer-upcoming-rides",
+  "/customerupcomingrides",
+], (req, res) => {
+  return sendPublicHtmlPage(res, "customer-upcoming-rides");
+});
+app.get([
+  "/customer-ride-history",
+  "/customerridehistory",
+], (req, res) => {
+  return sendPublicHtmlPage(res, "customer-ride-history");
+});
+app.get([
+  "/customer-profile",
+  "/customerprofile",
+], (req, res) => {
+  return sendPublicHtmlPage(res, "customer-profile");
 });
 app.get("/ride-hub-inbox", (req, res) => {
   const suffix = req.originalUrl.includes("?") ? req.originalUrl.slice(req.originalUrl.indexOf("?")) : "";
@@ -7243,90 +7583,20 @@ app.get("/api/customer/ride-history", async (req, res) => {
       return res.status(403).json({ error: "Ride History is available for Pro accounts only." });
     }
 
+    const crmContactId = String(session.crm_contact_id || "").trim();
     const normalizedCustomerPhone = normalizePhoneNumber(session.customer_phone || "") || "";
     const normalizedCustomerEmail = String(session.customer_email || "").trim().toLowerCase();
-    const crmContactId = String(session.crm_contact_id || "").trim();
-    const profileIdColumn = await getProfileIdColumn();
 
     if (!crmContactId && !normalizedCustomerPhone && !normalizedCustomerEmail) {
       return res.status(400).json({ error: "Customer session is missing identifiers for ride history." });
     }
 
-    const bookingsResult = await pool.query(
-      `SELECT
-         b.id,
-         b.location_id,
-         b.first_name,
-         b.last_name,
-         b.customer_email,
-         b.customer_phone,
-         b.pickup_address,
-         b.dropoff_address,
-         b.start_time,
-         b.end_time,
-         b.total_price,
-         b.vehicle_slot_id,
-         b.status,
-         b.booking_mode,
-         b.deposit_amount,
-         b.deposit_percent,
-         b.balance_due,
-         b.crm_contact_id,
-         p.business_name,
-         p.fleet,
-         p.plan_name
-       FROM bookings b
-       LEFT JOIN profiles p ON p.${profileIdColumn} = b.location_id
-       WHERE b.location_id = $1
-         AND (
-           ($2 <> '' AND COALESCE(b.crm_contact_id, '') = $2)
-           OR ($3 <> '' AND COALESCE(b.customer_phone, '') = $3)
-           OR ($4 <> '' AND LOWER(COALESCE(b.customer_email, '')) = $4)
-         )
-       ORDER BY b.start_time DESC, b.id DESC
-       LIMIT 50`,
-      [session.location_id, crmContactId, normalizedCustomerPhone, normalizedCustomerEmail]
-    );
-
-    const now = Date.now();
-    const rides = bookingsResult.rows.map((ride) => {
-      const vehicleRecord = getVehicleRecordForSession({
-        vehicle_slot_id: ride.vehicle_slot_id,
-        fleet: ride.fleet,
-      });
-      const startTime = ride.start_time ? new Date(ride.start_time) : null;
-      const startTimeMs = startTime && !Number.isNaN(startTime.getTime()) ? startTime.getTime() : null;
-      const normalizedStatus = String(ride.status || "").trim().toLowerCase();
-      const isCancelled = normalizedStatus === "cancelled" || normalizedStatus === "canceled";
-      const isUpcoming = !isCancelled && startTimeMs !== null && startTimeMs >= now;
-      const paymentStatus = Number(ride.deposit_amount || 0) > 0 && Number(ride.balance_due || 0) > 0
-        ? "paid_deposit"
-        : (Number(ride.total_price || 0) > 0 ? "paid_in_full" : "unpaid");
-
-      return {
-        booking_id: ride.id,
-        status: normalizedStatus || "confirmed",
-        booking_mode: String(ride.booking_mode || "standard").trim() || "standard",
-        is_upcoming: isUpcoming,
-        is_cancelled: isCancelled,
-        start_time: ride.start_time || null,
-        end_time: ride.end_time || null,
-        pickup_address: ride.pickup_address || "",
-        dropoff_address: ride.dropoff_address || "",
-        total_price: Number(ride.total_price || 0),
-        deposit_amount: Number(ride.deposit_amount || 0),
-        deposit_percent: Number(ride.deposit_percent || 0),
-        balance_due: Number(ride.balance_due || 0),
-        payment_status: paymentStatus,
-        vehicle_slot_id: ride.vehicle_slot_id || "",
-        vehicle_display_name: buildVehicleDisplayName(vehicleRecord, ride.vehicle_slot_id || ""),
-        customer: {
-          first_name: ride.first_name || "",
-          last_name: ride.last_name || "",
-          email: ride.customer_email || "",
-          phone: normalizePhoneNumber(ride.customer_phone || "") || ride.customer_phone || "",
-        },
-      };
+    const rides = await fetchCustomerRidesForIdentity({
+      locationId: session.location_id,
+      crmContactId,
+      email: normalizedCustomerEmail,
+      phone: normalizedCustomerPhone,
+      limit: 50,
     });
 
     return res.json({
@@ -11326,6 +11596,352 @@ app.get("/api/get-profile-widget/:location_id", async (req, res) => {
   } catch (err) {
     console.error("Database Error:", err);
     return res.status(500).send("Database Error");
+  }
+});
+
+app.post("/api/customer-account/signup", async (req, res) => {
+  try {
+    await ensureCustomerAccountTables();
+    const locationId = String(req.body.location_id || "").trim();
+    const firstName = normalizeCustomerName(req.body.first_name);
+    const lastName = normalizeCustomerName(req.body.last_name);
+    const email = normalizeCustomerEmail(req.body.email);
+    const phone = normalizePhoneNumber(req.body.phone || "") || String(req.body.phone || "").trim();
+    const password = normalizeCustomerPassword(req.body.password);
+
+    if (!locationId || !firstName || !lastName || !email || !password) {
+      return res.status(400).json({ error: "location_id, first_name, last_name, email, and password are required." });
+    }
+    if (password.length < 8) {
+      return res.status(400).json({ error: "Password must be at least 8 characters long." });
+    }
+
+    const planName = await assertProCustomerAccountAccess(locationId);
+    const existing = await pool.query(
+      `SELECT id FROM customer_accounts WHERE location_id = $1 AND LOWER(email) = $2 LIMIT 1`,
+      [locationId, email]
+    );
+    if (existing.rows.length) {
+      return res.status(409).json({ error: "An account already exists with that email address." });
+    }
+
+    const accountId = randomUUID();
+    const passwordHash = hashCustomerPassword(password);
+    await pool.query(
+      `INSERT INTO customer_accounts (
+         id, location_id, first_name, last_name, email, phone, password_hash
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+      [accountId, locationId, firstName, lastName, email, phone || null, passwordHash]
+    );
+
+    const sessionRecord = await createCustomerAccountSession({ accountId, locationId });
+    setCustomerSessionCookie(res, sessionRecord.token);
+
+    return res.json({
+      success: true,
+      plan_name: planName,
+      account: buildCustomerAccountShape({
+        id: accountId,
+        location_id: locationId,
+        first_name: firstName,
+        last_name: lastName,
+        email,
+        phone,
+      }),
+    });
+  } catch (err) {
+    console.error("Customer signup error:", err);
+    return res.status(err.statusCode || 500).json({ error: err.message || "Failed to create customer account." });
+  }
+});
+
+app.post("/api/customer-account/login", async (req, res) => {
+  try {
+    await ensureCustomerAccountTables();
+    const locationId = String(req.body.location_id || "").trim();
+    const email = normalizeCustomerEmail(req.body.email);
+    const password = normalizeCustomerPassword(req.body.password);
+
+    if (!locationId || !email || !password) {
+      return res.status(400).json({ error: "location_id, email, and password are required." });
+    }
+
+    const planName = await assertProCustomerAccountAccess(locationId);
+    const result = await pool.query(
+      `SELECT *
+       FROM customer_accounts
+       WHERE location_id = $1 AND LOWER(email) = $2
+       LIMIT 1`,
+      [locationId, email]
+    );
+    const account = result.rows[0];
+    if (!account || !verifyCustomerPassword(password, account.password_hash)) {
+      return res.status(401).json({ error: "Invalid email or password." });
+    }
+
+    await pool.query(
+      `UPDATE customer_accounts
+       SET last_login_at = NOW(), updated_at = NOW()
+       WHERE id = $1`,
+      [account.id]
+    );
+
+    const sessionRecord = await createCustomerAccountSession({ accountId: account.id, locationId });
+    setCustomerSessionCookie(res, sessionRecord.token);
+
+    return res.json({
+      success: true,
+      plan_name: planName,
+      account: buildCustomerAccountShape({
+        ...account,
+        last_login_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }),
+    });
+  } catch (err) {
+    console.error("Customer login error:", err);
+    return res.status(err.statusCode || 500).json({ error: err.message || "Failed to log in." });
+  }
+});
+
+app.post("/api/customer-account/logout", async (req, res) => {
+  try {
+    await ensureCustomerAccountTables();
+    const cookies = parseCookies(req);
+    const token = String(cookies[CUSTOMER_ACCOUNT_SESSION_COOKIE] || "").trim();
+    if (token) {
+      await deleteCustomerAccountSession(token);
+    }
+    clearCustomerSessionCookie(res);
+    return res.json({ success: true });
+  } catch (err) {
+    console.error("Customer logout error:", err);
+    return res.status(500).json({ error: err.message || "Failed to log out." });
+  }
+});
+
+app.get("/api/customer-account/session", async (req, res) => {
+  try {
+    const session = await getCustomerAccountSessionFromRequest(req);
+    if (!session) {
+      return res.status(401).json({ error: "Customer login required." });
+    }
+    const planName = await getLocationPlanName(session.location_id);
+    return res.json({
+      success: true,
+      plan_name: planName,
+      account: buildCustomerAccountShape(session),
+    });
+  } catch (err) {
+    console.error("Customer session error:", err);
+    return res.status(500).json({ error: err.message || "Failed to load customer session." });
+  }
+});
+
+app.post("/api/customer-account/forgot-password", async (req, res) => {
+  try {
+    await ensureCustomerAccountTables();
+    const locationId = String(req.body.location_id || "").trim();
+    const email = normalizeCustomerEmail(req.body.email);
+    if (!locationId || !email) {
+      return res.status(400).json({ error: "location_id and email are required." });
+    }
+
+    await assertProCustomerAccountAccess(locationId);
+    const lookup = await pool.query(
+      `SELECT id
+       FROM customer_accounts
+       WHERE location_id = $1 AND LOWER(email) = $2
+       LIMIT 1`,
+      [locationId, email]
+    );
+
+    if (!lookup.rows.length) {
+      return res.json({
+        success: true,
+        message: "If an account exists for that email, a reset link has been prepared.",
+      });
+    }
+
+    const accountId = lookup.rows[0].id;
+    const token = randomBytes(32).toString("hex");
+    const expiresAt = new Date(Date.now() + CUSTOMER_PASSWORD_RESET_TTL_MS).toISOString();
+    await pool.query(
+      `INSERT INTO customer_password_reset_tokens (token, customer_account_id, expires_at)
+       VALUES ($1, $2, $3)`,
+      [token, accountId, expiresAt]
+    );
+    const resetUrl = `${getPublicAppUrl(req)}/customer-reset-password?token=${encodeURIComponent(token)}`;
+
+    return res.json({
+      success: true,
+      message: "Password reset link generated.",
+      reset_url: resetUrl,
+      expires_at: expiresAt,
+    });
+  } catch (err) {
+    console.error("Customer forgot password error:", err);
+    return res.status(err.statusCode || 500).json({ error: err.message || "Failed to prepare password reset." });
+  }
+});
+
+app.post("/api/customer-account/reset-password", async (req, res) => {
+  try {
+    await ensureCustomerAccountTables();
+    const token = String(req.body.token || "").trim();
+    const password = normalizeCustomerPassword(req.body.password);
+    if (!token || !password) {
+      return res.status(400).json({ error: "token and password are required." });
+    }
+    if (password.length < 8) {
+      return res.status(400).json({ error: "Password must be at least 8 characters long." });
+    }
+
+    const result = await pool.query(
+      `SELECT token, customer_account_id, expires_at, used_at
+       FROM customer_password_reset_tokens
+       WHERE token = $1
+       LIMIT 1`,
+      [token]
+    );
+    const resetToken = result.rows[0];
+    if (!resetToken || resetToken.used_at || new Date(resetToken.expires_at).getTime() < Date.now()) {
+      return res.status(400).json({ error: "This reset link is invalid or has expired." });
+    }
+
+    const passwordHash = hashCustomerPassword(password);
+    await pool.query(
+      `UPDATE customer_accounts
+       SET password_hash = $1, updated_at = NOW()
+       WHERE id = $2`,
+      [passwordHash, resetToken.customer_account_id]
+    );
+    await pool.query(
+      `UPDATE customer_password_reset_tokens
+       SET used_at = NOW()
+       WHERE token = $1`,
+      [token]
+    );
+    await pool.query(
+      `DELETE FROM customer_account_sessions
+       WHERE customer_account_id = $1`,
+      [resetToken.customer_account_id]
+    );
+
+    return res.json({ success: true, message: "Password updated successfully." });
+  } catch (err) {
+    console.error("Customer reset password error:", err);
+    return res.status(500).json({ error: err.message || "Failed to reset password." });
+  }
+});
+
+app.get("/api/customer-account/upcoming-rides", async (req, res) => {
+  try {
+    const session = await requireCustomerAccountSession(req, res);
+    if (!session) return;
+    await assertProCustomerAccountAccess(session.location_id);
+    const rides = await fetchCustomerRidesForIdentity({
+      locationId: session.location_id,
+      email: session.email,
+      phone: session.phone,
+      limit: 25,
+    });
+    return res.json({
+      success: true,
+      rides: rides.filter((ride) => ride.is_upcoming),
+    });
+  } catch (err) {
+    console.error("Customer upcoming rides error:", err);
+    return res.status(err.statusCode || 500).json({ error: err.message || "Failed to load upcoming rides." });
+  }
+});
+
+app.get("/api/customer-account/ride-history", async (req, res) => {
+  try {
+    const session = await requireCustomerAccountSession(req, res);
+    if (!session) return;
+    await assertProCustomerAccountAccess(session.location_id);
+    const rides = await fetchCustomerRidesForIdentity({
+      locationId: session.location_id,
+      email: session.email,
+      phone: session.phone,
+      limit: 50,
+    });
+    return res.json({
+      success: true,
+      upcoming_rides: rides.filter((ride) => ride.is_upcoming),
+      ride_history: rides.filter((ride) => !ride.is_upcoming),
+      rides,
+    });
+  } catch (err) {
+    console.error("Customer account ride history error:", err);
+    return res.status(err.statusCode || 500).json({ error: err.message || "Failed to load ride history." });
+  }
+});
+
+app.get("/api/customer-account/profile", async (req, res) => {
+  try {
+    const session = await requireCustomerAccountSession(req, res);
+    if (!session) return;
+    const planName = await assertProCustomerAccountAccess(session.location_id);
+    return res.json({
+      success: true,
+      plan_name: planName,
+      account: buildCustomerAccountShape(session),
+    });
+  } catch (err) {
+    console.error("Customer profile lookup error:", err);
+    return res.status(err.statusCode || 500).json({ error: err.message || "Failed to load customer profile." });
+  }
+});
+
+app.post("/api/customer-account/profile", async (req, res) => {
+  try {
+    await ensureCustomerAccountTables();
+    const session = await requireCustomerAccountSession(req, res);
+    if (!session) return;
+    await assertProCustomerAccountAccess(session.location_id);
+
+    const firstName = normalizeCustomerName(req.body.first_name);
+    const lastName = normalizeCustomerName(req.body.last_name);
+    const email = normalizeCustomerEmail(req.body.email);
+    const phone = normalizePhoneNumber(req.body.phone || "") || String(req.body.phone || "").trim();
+    if (!firstName || !lastName || !email) {
+      return res.status(400).json({ error: "first_name, last_name, and email are required." });
+    }
+
+    const duplicate = await pool.query(
+      `SELECT id
+       FROM customer_accounts
+       WHERE location_id = $1
+         AND LOWER(email) = $2
+         AND id <> $3
+       LIMIT 1`,
+      [session.location_id, email, session.id]
+    );
+    if (duplicate.rows.length) {
+      return res.status(409).json({ error: "Another customer account already uses that email address." });
+    }
+
+    const result = await pool.query(
+      `UPDATE customer_accounts
+       SET first_name = $1,
+           last_name = $2,
+           email = $3,
+           phone = $4,
+           updated_at = NOW()
+       WHERE id = $5
+       RETURNING *`,
+      [firstName, lastName, email, phone || null, session.id]
+    );
+
+    return res.json({
+      success: true,
+      account: buildCustomerAccountShape(result.rows[0]),
+    });
+  } catch (err) {
+    console.error("Customer profile update error:", err);
+    return res.status(err.statusCode || 500).json({ error: err.message || "Failed to update customer profile." });
   }
 });
 

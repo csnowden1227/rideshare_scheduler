@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Customer Profile</title>
+  <style>
+    body { margin: 0; font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif; background: linear-gradient(180deg, #f8fafc 0%, #ffffff 44%, #eef2f7 100%); color: #0f172a; }
+    .shell { max-width: 920px; margin: 0 auto; padding: 24px 16px 42px; }
+    .hero, .card { border-radius: 28px; box-shadow: 0 24px 48px rgba(15,23,42,.08); }
+    .hero { padding: 28px; color: #fff; background: linear-gradient(135deg, #172554 0%, #1e293b 48%, #334155 100%); }
+    .hero h1 { margin: 0; font-size: clamp(32px, 5vw, 50px); line-height: 1.02; letter-spacing: -.04em; }
+    .hero p { margin: 12px 0 0; line-height: 1.8; color: rgba(255,255,255,.88); max-width: 720px; }
+    .hero-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 18px; }
+    .btn { display: inline-flex; align-items: center; justify-content: center; min-height: 48px; padding: 12px 16px; border-radius: 16px; border: 0; cursor: pointer; text-decoration: none; font-size: 14px; font-weight: 800; }
+    .btn.primary { background: #fff; color: #172554; }
+    .btn.secondary { background: rgba(255,255,255,.12); color: #fff; border: 1px solid rgba(255,255,255,.18); }
+    .card { margin-top: 20px; background: rgba(255,255,255,.95); border: 1px solid rgba(148,163,184,.22); padding: 24px; }
+    .field-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+    .field { margin-top: 14px; }
+    .field label { display: block; margin-bottom: 6px; font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: .12em; color: #475569; }
+    .field input { width: 100%; padding: 14px 15px; border-radius: 16px; border: 1px solid #cbd5e1; background: #fff; font-size: 14px; }
+    .actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 20px; }
+    .actions .btn.primary { background: #172554; color: #fff; }
+    .message { display: none; margin-top: 14px; padding: 12px 14px; border-radius: 14px; font-size: 14px; line-height: 1.7; }
+    .message.error { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
+    .message.success { background: #ecfdf5; color: #166534; border: 1px solid #bbf7d0; }
+    @media (max-width: 720px) { .field-grid { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <section class="hero">
+      <h1>Profile</h1>
+      <p>Keep your customer account details ready for upcoming rides, ride history, and fast rebooking across your Pro experience.</p>
+      <div class="hero-actions">
+        <a class="btn primary" href="/customer-dashboard">Dashboard</a>
+        <a class="btn secondary" href="/customer-upcoming-rides">Upcoming Rides</a>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="field-grid">
+        <div class="field"><label for="first-name">First Name</label><input id="first-name" placeholder="First name" /></div>
+        <div class="field"><label for="last-name">Last Name</label><input id="last-name" placeholder="Last name" /></div>
+        <div class="field"><label for="email">Email</label><input id="email" type="email" placeholder="Email address" /></div>
+        <div class="field"><label for="phone">Phone</label><input id="phone" type="tel" placeholder="Mobile phone" /></div>
+      </div>
+      <div class="actions">
+        <button id="save-button" class="btn primary" type="button">Save Profile</button>
+        <a class="btn secondary" href="/customer-ride-history">Ride History</a>
+      </div>
+      <div id="error-message" class="message error"></div>
+      <div id="success-message" class="message success"></div>
+    </section>
+  </div>
+
+  <script>
+    (function () {
+      const query = new URLSearchParams(window.location.search);
+      const locationId = String(query.get("location_id") || "").trim();
+
+      function redirectToLogin() {
+        const suffix = locationId ? `?location_id=${encodeURIComponent(locationId)}` : "";
+        window.location.href = `/customer-login${suffix}`;
+      }
+
+      function setMessage(id, text) {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.textContent = text;
+        el.style.display = text ? "block" : "none";
+      }
+
+      async function fetchJson(url, options = {}) {
+        const response = await fetch(url, { credentials: "same-origin", ...options });
+        const data = await response.json().catch(() => ({}));
+        if (response.status === 401) {
+          redirectToLogin();
+          throw new Error("redirect");
+        }
+        if (!response.ok) throw new Error(data.error || "Request failed.");
+        return data;
+      }
+
+      function fillProfile(account) {
+        document.getElementById("first-name").value = account.first_name || "";
+        document.getElementById("last-name").value = account.last_name || "";
+        document.getElementById("email").value = account.email || "";
+        document.getElementById("phone").value = account.phone || "";
+      }
+
+      async function loadProfile() {
+        try {
+          const data = await fetchJson("/api/customer-account/profile");
+          fillProfile(data.account || {});
+        } catch (error) {
+          if (error.message === "redirect") return;
+          setMessage("error-message", error.message || "Unable to load your profile.");
+        }
+      }
+
+      document.getElementById("save-button")?.addEventListener("click", async () => {
+        setMessage("error-message", "");
+        setMessage("success-message", "");
+        try {
+          const data = await fetchJson("/api/customer-account/profile", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              first_name: document.getElementById("first-name").value.trim(),
+              last_name: document.getElementById("last-name").value.trim(),
+              email: document.getElementById("email").value.trim(),
+              phone: document.getElementById("phone").value.trim(),
+            }),
+          });
+          fillProfile(data.account || {});
+          setMessage("success-message", "Profile saved successfully.");
+        } catch (error) {
+          if (error.message === "redirect") return;
+          setMessage("error-message", error.message || "Unable to save your profile.");
+        }
+      });
+
+      loadProfile();
+    })();
+  </script>
+</body>
+</html>

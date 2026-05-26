@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Upcoming Rides</title>
+  <style>
+    :root { --ink: #0f172a; --muted: #64748b; --line: rgba(148,163,184,.22); --panel: rgba(255,255,255,.95); --shadow: 0 24px 48px rgba(15,23,42,.08); }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif; color: var(--ink); background: linear-gradient(180deg, #f8fafc 0%, #ffffff 44%, #eef2f7 100%); }
+    .shell { max-width: 1120px; margin: 0 auto; padding: 24px 16px 42px; }
+    .hero, .panel, .ride-card { border-radius: 28px; box-shadow: var(--shadow); }
+    .hero { padding: 28px; color: #fff; background: linear-gradient(135deg, #172554 0%, #1e293b 48%, #334155 100%); }
+    .hero h1 { margin: 0; font-size: clamp(32px, 5vw, 50px); line-height: 1.02; letter-spacing: -.04em; }
+    .hero p { margin: 12px 0 0; line-height: 1.8; color: rgba(255,255,255,.88); max-width: 720px; }
+    .hero-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 18px; }
+    .btn { display: inline-flex; align-items: center; justify-content: center; min-height: 48px; padding: 12px 16px; border-radius: 16px; border: 0; cursor: pointer; font-size: 14px; font-weight: 800; text-decoration: none; }
+    .btn.primary { background: #fff; color: #172554; }
+    .btn.secondary { background: rgba(255,255,255,.12); color: #fff; border: 1px solid rgba(255,255,255,.18); }
+    .panel { margin-top: 20px; background: var(--panel); border: 1px solid var(--line); padding: 22px; }
+    .panel h2 { margin: 0; font-size: 24px; letter-spacing: -.03em; color: #172554; }
+    .panel p { margin: 10px 0 0; color: #475569; line-height: 1.8; }
+    .ride-list { display: grid; gap: 14px; margin-top: 18px; }
+    .ride-card { background: linear-gradient(180deg, rgba(240,253,250,.96), rgba(255,255,255,.98)); border: 1px solid rgba(15,118,110,.26); padding: 18px; }
+    .ride-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+    .ride-head h3 { margin: 0; font-size: 20px; letter-spacing: -.03em; }
+    .pill { display: inline-flex; padding: 8px 10px; border-radius: 999px; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .1em; background: rgba(15,118,110,.12); color: #0f766e; }
+    .meta { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 14px; }
+    .meta-block { padding: 14px; border-radius: 18px; background: rgba(255,255,255,.84); border: 1px solid rgba(148,163,184,.18); }
+    .meta-block span { display: block; margin-bottom: 8px; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); }
+    .meta-block strong, .meta-block p { margin: 0; font-size: 14px; line-height: 1.7; color: #334155; }
+    .ride-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
+    .mini-button { display: inline-flex; align-items: center; justify-content: center; min-height: 40px; padding: 10px 12px; border-radius: 14px; border: 1px solid rgba(148,163,184,.26); background: #fff; color: #172554; text-decoration: none; font-size: 13px; font-weight: 800; }
+    .empty, .error { margin-top: 16px; padding: 16px; border-radius: 18px; line-height: 1.75; }
+    .empty { background: #f8fafc; border: 1px dashed #cbd5e1; color: #64748b; }
+    .error { display: none; background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; }
+    @media (max-width: 900px) { .meta { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <section class="hero">
+      <h1>Upcoming Rides</h1>
+      <p>Review your future confirmed reservations, keep an eye on timing, and jump back into booking with Book Again whenever you need a fresh trip.</p>
+      <div class="hero-actions">
+        <a class="btn primary" href="/customer-dashboard">Dashboard</a>
+        <a class="btn secondary" href="/customer-ride-history">Ride History</a>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Your Upcoming Reservations</h2>
+      <p>As new confirmed rides are created under this customer account, they will appear here automatically.</p>
+      <div id="ride-list" class="ride-list"></div>
+      <div id="empty-state" class="empty" style="display:none;">No upcoming rides are on the calendar yet.</div>
+      <div id="error-state" class="error"></div>
+    </section>
+  </div>
+
+  <script>
+    (function () {
+      const query = new URLSearchParams(window.location.search);
+      const locationId = String(query.get("location_id") || "").trim();
+
+      function escapeHtml(value) {
+        return String(value || "")
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/\"/g, "&quot;")
+          .replace(/'/g, "&#39;");
+      }
+
+      function formatDateTime(value) {
+        if (!value) return "Time not available";
+        const date = new Date(value);
+        return Number.isNaN(date.getTime()) ? "Time not available" : date.toLocaleString();
+      }
+
+      function formatCurrency(value) {
+        return new Intl.NumberFormat(undefined, { style: "currency", currency: "USD" }).format(Number(value || 0));
+      }
+
+      function redirectToLogin() {
+        const suffix = locationId ? `?location_id=${encodeURIComponent(locationId)}` : "";
+        window.location.href = `/customer-login${suffix}`;
+      }
+
+      async function fetchJson(url, options = {}) {
+        const response = await fetch(url, { credentials: "same-origin", ...options });
+        const data = await response.json().catch(() => ({}));
+        if (response.status === 401) {
+          redirectToLogin();
+          throw new Error("redirect");
+        }
+        if (!response.ok) throw new Error(data.error || "Request failed.");
+        return data;
+      }
+
+      function buildRebookUrl(ride) {
+        const url = new URL(window.location.origin + "/ride-hub-portal");
+        url.searchParams.set("first_name", ride.customer?.first_name || "");
+        url.searchParams.set("last_name", ride.customer?.last_name || "");
+        url.searchParams.set("email", ride.customer?.email || "");
+        url.searchParams.set("phone", ride.customer?.phone || "");
+        url.searchParams.set("pickup_address", ride.pickup_address || "");
+        url.searchParams.set("dropoff_address", ride.dropoff_address || "");
+        url.searchParams.set("vehicle_slot_id", ride.vehicle_slot_id || "");
+        url.searchParams.set("rebook", "1");
+        if (locationId) url.searchParams.set("location_id", locationId);
+        return url.toString();
+      }
+
+      function renderRideCard(ride) {
+        return `
+          <article class="ride-card">
+            <div class="ride-head">
+              <h3>${escapeHtml(ride.vehicle_display_name || "Ride Reservation")}</h3>
+              <span class="pill">Upcoming</span>
+            </div>
+            <div class="meta">
+              <div class="meta-block"><span>Pickup Time</span><strong>${escapeHtml(formatDateTime(ride.start_time))}</strong></div>
+              <div class="meta-block"><span>Route</span><p>${escapeHtml(ride.pickup_address || "")}<br />${escapeHtml(ride.dropoff_address || "")}</p></div>
+              <div class="meta-block"><span>Total</span><strong>${escapeHtml(formatCurrency(ride.total_price))}</strong></div>
+            </div>
+            <div class="ride-actions">
+              <a class="mini-button" href="${escapeHtml(buildRebookUrl(ride))}">Book Again</a>
+            </div>
+          </article>
+        `;
+      }
+
+      async function loadUpcomingRides() {
+        try {
+          const data = await fetchJson("/api/customer-account/upcoming-rides");
+          const rides = Array.isArray(data.rides) ? data.rides : [];
+          const rideList = document.getElementById("ride-list");
+          const emptyState = document.getElementById("empty-state");
+          rideList.innerHTML = rides.map(renderRideCard).join("");
+          emptyState.style.display = rides.length ? "none" : "block";
+        } catch (error) {
+          if (error.message === "redirect") return;
+          const errorState = document.getElementById("error-state");
+          errorState.textContent = error.message || "Unable to load upcoming rides.";
+          errorState.style.display = "block";
+        }
+      }
+
+      loadUpcomingRides();
+    })();
+  </script>
+</body>
+</html>
