@@ -6867,9 +6867,9 @@ app.post("/api/confirm-booking-payment", async (req, res) => {
     const {
       booking_id,
       payment_status = "paid_in_full",
-      total_price = 0,
-      deposit_amount = 0,
-      deposit_percent = 100,
+      total_price,
+      deposit_amount,
+      deposit_percent,
     } = req.body;
 
     if (!booking_id) {
@@ -9639,14 +9639,11 @@ async function updateBookingConfirmation({
     totalPrice,
   });
 
-  const numericTotalPrice = Number(totalPrice || 0);
-  const numericDepositAmount = Number(depositAmount || 0);
-  const numericDepositPercent = Number(depositPercent || 0);
-  const balanceDue = Number((numericTotalPrice - numericDepositAmount).toFixed(2));
   await ensureBookingSyncColumns();
 
   const existingBookingResult = await pool.query(
-    `SELECT id, location_id, balance_due, driver_assignment_sms_sent_at, driver_paid_in_full_sms_sent_at
+    `SELECT id, location_id, balance_due, total_price, deposit_amount, deposit_percent,
+            driver_assignment_sms_sent_at, driver_paid_in_full_sms_sent_at
      FROM bookings
      WHERE id = $1
      LIMIT 1`,
@@ -9654,6 +9651,20 @@ async function updateBookingConfirmation({
   );
   const existingBooking = existingBookingResult.rows[0] || null;
 
+  const numericTotalPrice =
+    totalPrice !== undefined && totalPrice !== null && String(totalPrice).trim() !== ""
+      ? Number(totalPrice || 0)
+      : Number(existingBooking?.total_price || 0);
+  const numericDepositAmount =
+    depositAmount !== undefined && depositAmount !== null && String(depositAmount).trim() !== ""
+      ? Number(depositAmount || 0)
+      : Number(existingBooking?.deposit_amount || 0);
+  const numericDepositPercent =
+    depositPercent !== undefined && depositPercent !== null && String(depositPercent).trim() !== ""
+      ? Number(depositPercent || 0)
+      : Number(existingBooking?.deposit_percent || 0);
+
+  const balanceDue = Number((numericTotalPrice - numericDepositAmount).toFixed(2));
   const result = await pool.query(
     `UPDATE bookings
      SET status = $1,
