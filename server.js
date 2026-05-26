@@ -8828,6 +8828,9 @@ function buildCrmBookingPayload({
   const normalizedPlanName = normalizePlanName(meta.plan_name || "starter");
   const premiumClientPortalEnabled = normalizedPlanName === "premium" || normalizedPlanName === "pro";
   const proMobileAppEnabled = normalizedPlanName === "pro";
+  const normalizedBookingMode = String(booking.booking_mode || "standard").trim().toLowerCase() === "practice_widget"
+    ? "standard"
+    : (booking.booking_mode || "standard");
   const calendarTitle = `${businessName || "Chauffeur Deluxe"} Reservation #${booking.booking_id}`;
   const calendarDescription = [
     customer.first_name || customer.last_name ? `Reservation for ${[customer.first_name, customer.last_name].filter(Boolean).join(" ")}` : null,
@@ -8859,7 +8862,7 @@ function buildCrmBookingPayload({
       booking_id: booking.booking_id,
       status: normalizedStatus,
       is_confirmed: isConfirmed,
-      booking_mode: booking.booking_mode || "standard",
+      booking_mode: normalizedBookingMode,
       pickup_address: booking.pickup_address || null,
       dropoff_address: booking.dropoff_address || null,
       pickup_lat: booking.pickup_lat ?? null,
