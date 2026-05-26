@@ -209,6 +209,18 @@
       .trim();
   }
 
+  function isPresetVehicleCategory(vehicle = {}) {
+    const normalized = vehicleDisplayName(vehicle).trim().toLowerCase();
+    return [
+      "standard sedan",
+      "luxury sedan",
+      "standard suv",
+      "luxury suv",
+      "standard xl suv",
+      "luxury xl suv",
+    ].includes(normalized);
+  }
+
   function vehicleFallbackImage(vehicle = {}) {
     const rawType = vehicleDisplayName(vehicle).toLowerCase();
     const isLuxury = rawType.includes("luxury");
@@ -303,6 +315,9 @@
   }
 
   function vehicleImageSource(vehicle = {}) {
+    if (isPresetVehicleCategory(vehicle)) {
+      return vehicleFallbackImage(vehicle);
+    }
     return String(vehicle.vehicle_image || "").trim() || vehicleFallbackImage(vehicle);
   }
 
