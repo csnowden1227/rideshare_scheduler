@@ -221,6 +221,19 @@
     ].includes(normalized);
   }
 
+  function presetVehicleAssetPath(vehicle = {}) {
+    const normalized = vehicleDisplayName(vehicle).trim().toLowerCase();
+    const fileName = {
+      "luxury sedan": "luxury-sedan.png",
+      "luxury suv": "luxury-suv.png",
+      "luxury xl suv": "luxury-xl-suv.png",
+      "standard sedan": "standard-sedan.png",
+      "standard suv": "standard-suv.png",
+      "standard xl suv": "standard-xl-suv.png",
+    }[normalized];
+    return fileName ? `${BACKEND_URL}/widget-vehicles/${fileName}` : "";
+  }
+
   function vehicleFallbackImage(vehicle = {}) {
     const rawType = vehicleDisplayName(vehicle).toLowerCase();
     const isLuxury = rawType.includes("luxury");
@@ -369,7 +382,7 @@
 
   function vehicleImageSource(vehicle = {}) {
     if (isPresetVehicleCategory(vehicle)) {
-      return vehicleFallbackImage(vehicle);
+      return presetVehicleAssetPath(vehicle) || vehicleFallbackImage(vehicle);
     }
     return String(vehicle.vehicle_image || "").trim() || vehicleFallbackImage(vehicle);
   }
@@ -383,33 +396,17 @@
     return details.join(" ");
   }
 
-  function vehicleSortOrder(vehicle = {}) {
-    const normalized = vehicleDisplayName(vehicle).trim().toLowerCase();
-    const order = {
-      "luxury sedan": 0,
-      "luxury suv": 1,
-      "luxury xl suv": 2,
-      "standard sedan": 3,
-      "standard suv": 4,
-      "standard xl suv": 5,
-    };
-    return Number.isFinite(order[normalized]) ? order[normalized] : 999;
-  }
-
   function renderVehiclePicker(fleet = []) {
     if (!fleet.length) {
       return `<div style="padding:14px;border:1px dashed #cbd5e1;border-radius:14px;background:#f8fafc;color:#64748b;font-size:13px;">No fleet vehicles are available yet. Add vehicles in the Setup Wizard first.</div>`;
     }
 
-    const orderedFleet = [...fleet].sort((a, b) => {
-      const orderDiff = vehicleSortOrder(a) - vehicleSortOrder(b);
-      if (orderDiff !== 0) return orderDiff;
-      return vehicleDisplayName(a).localeCompare(vehicleDisplayName(b));
-    });
+    const orderedFleet = [...fleet];
+    const columnCount = Math.min(3, Math.max(1, orderedFleet.length));
+    const maxWidth = columnCount === 3 ? "720px" : columnCount === 2 ? "480px" : "240px";
 
     const cards = orderedFleet.map((vehicle, index) => {
       const label = vehicleDisplayName(vehicle);
-      const meta = vehicleMetaLine(vehicle);
       const imageSrc = vehicleImageSource(vehicle);
       return `
         <button
@@ -417,21 +414,19 @@
           class="cd_vehicle_card"
           data-vehicle-slot-id="${escapeHtml(vehicle.vehicle_slot_id)}"
           aria-pressed="${index === 0 ? "true" : "false"}"
-          style="display:grid;grid-template-rows:auto 1fr auto;gap:10px;width:100%;min-height:212px;padding:14px 14px 12px;border:2px solid #111111;border-radius:0;background:#fff;cursor:pointer;text-align:center;transition:all .2s ease;box-shadow:none;"
+          style="display:grid;grid-template-rows:auto 1fr;gap:8px;width:100%;min-height:176px;padding:10px 10px 12px;border:1.5px solid #111111;border-radius:0;background:#fff;cursor:pointer;text-align:center;transition:all .18s ease;box-shadow:none;"
         >
-          <span style="font-size:18px;font-weight:800;color:#111827;line-height:1.2;">${escapeHtml(label)}</span>
-          <img src="${escapeHtml(imageSrc)}" alt="${escapeHtml(label)}" style="width:100%;height:116px;object-fit:contain;display:block;" />
-          <span style="display:grid;gap:4px;min-width:0;align-content:end;justify-items:center;">
-            ${meta ? `<span style="font-size:12px;color:#64748b;line-height:1.35;">${escapeHtml(meta)}</span>` : `<span style="font-size:12px;color:#64748b;line-height:1.35;">Tap to select</span>`}
-            <span class="cd_vehicle_pick_label" style="font-size:12px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:${index === 0 ? "#6d28d9" : "#64748b"};">${index === 0 ? "Selected" : "Tap to select"}</span>
-          </span>
+          <span style="font-size:12px;font-weight:700;color:#111827;line-height:1.2;">${escapeHtml(label)}</span>
+          <div style="display:flex;align-items:center;justify-content:center;min-height:110px;">
+            <img src="${escapeHtml(imageSrc)}" alt="${escapeHtml(label)}" style="width:100%;max-width:${label.toLowerCase().includes("xl") ? "210px" : label.toLowerCase().includes("suv") ? "184px" : "162px"};height:104px;object-fit:contain;display:block;" />
+          </div>
         </button>
       `;
     }).join("");
 
     return `
       <input id="cd_vehicle_slot_id" type="hidden" value="${escapeHtml(orderedFleet[0]?.vehicle_slot_id || "")}" />
-      <div id="cd_vehicle_picker" style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0;border:2px solid #111111;">
+      <div id="cd_vehicle_picker" style="display:grid;grid-template-columns:repeat(${columnCount},minmax(0,1fr));gap:0;border:1.5px solid #111111;max-width:${maxWidth};margin:0 auto;">
         ${cards}
       </div>
     `;
@@ -445,11 +440,6 @@
       card.style.background = isSelected ? "#faf5ff" : "#fff";
       card.style.boxShadow = isSelected ? "inset 0 0 0 2px #6d28d9" : "none";
       card.style.transform = "translateY(0)";
-      const pickLabel = card.querySelector(".cd_vehicle_pick_label");
-      if (pickLabel) {
-        pickLabel.textContent = isSelected ? "Selected" : "Tap to select";
-        pickLabel.style.color = isSelected ? "#6d28d9" : "#64748b";
-      }
     });
   }
 
@@ -971,9 +961,9 @@
 
               <div>
                 <div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.14em;color:${escapeHtml(colors.secondary)};">Trip Setup</div>
-                <div id="cd_vehicle_grid" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px;">
-                  <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Vehicle</label>${vehiclePicker}</div>
-                  <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Passengers</label><input id="cd_passenger_count" type="number" min="1" value="1" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" /></div>
+                <div id="cd_vehicle_grid" style="display:grid;grid-template-columns:minmax(0,1fr) 220px;gap:18px;align-items:start;margin-top:12px;">
+                  <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:8px;">Select Your Vehicle</label>${vehiclePicker}</div>
+                  <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:8px;"># of Passengers</label><input id="cd_passenger_count" type="number" min="1" value="1" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" /></div>
                 </div>
                 <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-top:12px;">
                   <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Route Option</label><select id="cd_booking_mode" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;"><option value="standard">Standard Booking</option><option value="fixed">Fixed Destinations</option><option value="event">Events</option></select></div>
