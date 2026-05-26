@@ -53,7 +53,7 @@
       }
 
       const script = document.createElement("script");
-      const params = new URLSearchParams({ loc: locationId, mode });
+      const params = new URLSearchParams({ loc: locationId, mode, v: String(Date.now()) });
       if (token) params.set("token", token);
       script.src = `${backendUrl}/widget.js?${params.toString()}`;
       document.body.appendChild(script);
