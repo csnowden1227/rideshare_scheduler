@@ -10522,7 +10522,7 @@ app.post("/api/create-checkout-session", async (req, res) => {
         hours_until_ride: hoursUntilRide,
         payment_provider: paymentProvider,
       },
-      { triggerWebhook: false }
+      { triggerWebhook: false, req }
     );
 
     bookingId = bookingResult.booking?.id;
@@ -10726,7 +10726,7 @@ app.post("/api/test-run/create-checkout-session", async (req, res) => {
           ? [{ description: `${serviceFeeType === "percent" ? "Processing Fee" : "Service Fee"}`, price: serviceFeeAmount, type: "per_booking" }]
           : [],
       },
-      { triggerWebhook: false }
+      { triggerWebhook: false, req }
     );
 
     bookingId = bookingResult.booking?.id;
