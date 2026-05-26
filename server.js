@@ -10148,7 +10148,7 @@ async function createBookingRecord(input, { paymentLink = null, triggerWebhook =
   }
 
   if (triggerWebhook && webhookUrl && webhookUrl.startsWith("http")) {
-    const trackingSession = await ensureTrackingSessionForBookingInternal({ bookingId, locationId: location_id, req });
+    const trackingSession = await ensureTrackingSessionForBookingInternal({ bookingId: booking_id, locationId: location_id, req });
     const trackingUrls = buildTrackingUrls(req, trackingSession.driver_token, trackingSession.customer_token, profile.public_app_url);
     const portalUrls = buildCustomerPortalUrls(req, location_id, trackingSession.customer_token, profile.public_app_url);
     const crmPayload = buildCrmBookingPayload({
