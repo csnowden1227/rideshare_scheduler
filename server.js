@@ -1362,7 +1362,11 @@ function buildCustomerPortalUrls(req, locationId, customerToken, publicAppUrl = 
   if (locationId) segments.push(encodeURIComponent(String(locationId || "").trim()));
   if (customerToken) segments.push(encodeURIComponent(String(customerToken || "").trim()));
   const suffix = segments.length ? `/${segments.join("/")}` : "";
+  const loginQuery = locationId
+    ? `?location_id=${encodeURIComponent(String(locationId || "").trim())}`
+    : "";
   return {
+    customer_login_url: `${baseUrl}/customer-login${loginQuery}`,
     ride_hub_url: `${baseUrl}/ride-hub-portal${suffix}`,
     ride_inbox_url: `${baseUrl}/ride-hub-notifications${suffix}`,
   };
@@ -1721,6 +1725,7 @@ async function buildTrackingStatusWebhookPayload({ req, session, status }) {
       follow_up_url: trackingUrls.follow_up_url,
     },
     portal: {
+      customer_login_url: portalUrls.customer_login_url || null,
       ride_hub_url: portalUrls.ride_hub_url,
       ride_inbox_url: portalUrls.ride_inbox_url,
     },
@@ -1801,6 +1806,7 @@ async function buildTrackingStatusWebhookPayload({ req, session, status }) {
       suggested_tip_amounts: [5, 10, 20],
     },
     portal: {
+      customer_login_url: shortUrls.portal.customer_login_url || portalUrls.customer_login_url || null,
       ride_hub_url: shortUrls.portal.ride_hub_url,
       ride_hub_short_url: shortUrls.portal.ride_hub_short_url || null,
       ride_inbox_url: shortUrls.portal.ride_inbox_url,
@@ -9321,6 +9327,7 @@ function buildCrmBookingPayload({
       follow_up_short_url: tracking.follow_up_short_url || null,
     },
     portal: {
+      customer_login_url: portal.customer_login_url || null,
       ride_hub_url: portal.ride_hub_url || null,
       ride_hub_short_url: portal.ride_hub_short_url || null,
       ride_inbox_url: portal.ride_inbox_url || null,
@@ -10035,6 +10042,7 @@ async function createBookingRecord(input, { paymentLink = null, triggerWebhook =
         follow_up_url: trackingUrls.follow_up_url || null,
       },
       portal: {
+        customer_login_url: portalUrls.customer_login_url || null,
         ride_hub_url: portalUrls.ride_hub_url || null,
         ride_inbox_url: portalUrls.ride_inbox_url || null,
       },
@@ -11044,6 +11052,7 @@ async function triggerCrmWebhook(location_id, booking_id) {
         follow_up_url: trackingUrls.follow_up_url,
       },
       portal: {
+        customer_login_url: portalUrls.customer_login_url || null,
         ride_hub_url: portalUrls.ride_hub_url,
         ride_inbox_url: portalUrls.ride_inbox_url,
       },
@@ -11117,6 +11126,7 @@ async function triggerCrmWebhook(location_id, booking_id) {
         follow_up_short_url: shortUrls.tracking.follow_up_short_url || null,
       },
       portal: {
+        customer_login_url: shortUrls.portal.customer_login_url || portalUrls.customer_login_url || null,
         ride_hub_url: shortUrls.portal.ride_hub_url,
         ride_hub_short_url: shortUrls.portal.ride_hub_short_url || null,
         ride_inbox_url: shortUrls.portal.ride_inbox_url,
