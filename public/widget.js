@@ -324,26 +324,32 @@
       const label = vehicleDisplayName(vehicle);
       const meta = vehicleMetaLine(vehicle);
       const imageSrc = vehicleImageSource(vehicle);
+      const selectionText = index === 0 ? "Selected" : "Tap to select";
       return `
         <button
           type="button"
           class="cd_vehicle_card"
           data-vehicle-slot-id="${escapeHtml(vehicle.vehicle_slot_id)}"
           aria-pressed="${index === 0 ? "true" : "false"}"
-          style="display:flex;align-items:center;gap:12px;width:100%;padding:12px;border:1px solid #cbd5e1;border-radius:16px;background:#fff;cursor:pointer;text-align:left;transition:all .2s ease;box-shadow:0 8px 20px rgba(15,23,42,.04);"
+          style="display:grid;grid-template-rows:auto auto 1fr auto;gap:10px;width:100%;min-height:188px;padding:14px;border:1px solid #cbd5e1;border-radius:18px;background:#fff;cursor:pointer;text-align:left;transition:all .2s ease;box-shadow:0 8px 20px rgba(15,23,42,.04);"
         >
-          <img src="${escapeHtml(imageSrc)}" alt="${escapeHtml(label)}" style="width:92px;height:62px;object-fit:cover;border-radius:12px;border:1px solid #dbe4f0;background:#f8fafc;flex-shrink:0;" />
-          <span style="display:grid;gap:4px;min-width:0;">
-            <span style="font-size:14px;font-weight:800;color:#0f172a;line-height:1.25;">${escapeHtml(label)}</span>
-            ${meta ? `<span style="font-size:12px;color:#64748b;line-height:1.35;">${escapeHtml(meta)}</span>` : ""}
+          <span style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+            <span style="font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:#64748b;">Vehicle Option</span>
+            <span class="cd_vehicle_pick_label" style="font-size:11px;font-weight:800;color:${index === 0 ? "#6d28d9" : "#94a3b8"};">${selectionText}</span>
           </span>
+          <img src="${escapeHtml(imageSrc)}" alt="${escapeHtml(label)}" style="width:100%;height:82px;object-fit:contain;border-radius:14px;border:1px solid #dbe4f0;background:#f8fafc;flex-shrink:0;padding:6px;box-sizing:border-box;" />
+          <span style="display:grid;gap:4px;min-width:0;align-content:start;">
+            <span style="font-size:15px;font-weight:800;color:#0f172a;line-height:1.25;">${escapeHtml(label)}</span>
+            ${meta ? `<span style="font-size:12px;color:#64748b;line-height:1.35;">${escapeHtml(meta)}</span>` : `<span style="font-size:12px;color:#94a3b8;line-height:1.35;">Choose this vehicle type</span>`}
+          </span>
+          <span style="display:inline-flex;align-items:center;justify-content:center;min-height:34px;padding:8px 10px;border-radius:999px;background:#f8fafc;color:#334155;font-size:12px;font-weight:700;border:1px solid #e2e8f0;">Select ${escapeHtml(label)}</span>
         </button>
       `;
     }).join("");
 
     return `
       <input id="cd_vehicle_slot_id" type="hidden" value="${escapeHtml(fleet[0]?.vehicle_slot_id || "")}" />
-      <div id="cd_vehicle_picker" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;">
+      <div id="cd_vehicle_picker" style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;">
         ${cards}
       </div>
     `;
@@ -357,6 +363,11 @@
       card.style.boxShadow = isSelected ? "0 14px 28px rgba(124,58,237,.14)" : "0 8px 20px rgba(15,23,42,.04)";
       card.style.transform = isSelected ? "translateY(-1px)" : "translateY(0)";
       card.style.background = isSelected ? "#faf5ff" : "#fff";
+      const pickLabel = card.querySelector(".cd_vehicle_pick_label");
+      if (pickLabel) {
+        pickLabel.textContent = isSelected ? "Selected" : "Tap to select";
+        pickLabel.style.color = isSelected ? "#6d28d9" : "#94a3b8";
+      }
     });
   }
 
