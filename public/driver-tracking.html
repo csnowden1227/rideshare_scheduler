@@ -572,6 +572,36 @@
       return { lat: Number(lat), lng: Number(lng) };
     }
 
+    function createDriverMarkerIcon() {
+      const styles = getComputedStyle(document.documentElement);
+      const primary = (styles.getPropertyValue("--brand-primary") || "#082f49").trim();
+      const secondary = (styles.getPropertyValue("--brand-secondary") || "#0f766e").trim();
+      const svg = `
+        <svg xmlns="http://www.w3.org/2000/svg" width="72" height="72" viewBox="0 0 72 72">
+          <defs>
+            <filter id="carShadow" x="-30%" y="-30%" width="160%" height="160%">
+              <feDropShadow dx="0" dy="4" stdDeviation="4" flood-color="rgba(15,23,42,0.22)"/>
+            </filter>
+          </defs>
+          <g filter="url(#carShadow)">
+            <circle cx="36" cy="36" r="27" fill="#ffffff" stroke="${secondary}" stroke-width="2.5"/>
+            <path d="M17 40 L21 30 C22.5 26 26 23 30.4 23 H43.8 C48.2 23 52 26.1 53.8 30.2 L57 40 V46.5 C57 48.4 55.4 50 53.5 50 H51.5 C49.6 50 48 48.4 48 46.5 V45 H24 V46.5 C24 48.4 22.4 50 20.5 50 H18.5 C16.6 50 15 48.4 15 46.5 V42.2 C15 41.4 15.7 40.6 16.6 40.3 Z" fill="${primary}"/>
+            <path d="M24 31.5 C25.3 28.3 28.4 26 31.8 26 H42.6 C46.1 26 49.4 28.5 50.8 31.9 L52.4 35.8 H21.9 Z" fill="${secondary}"/>
+            <path d="M27 31.8 C28 29.5 29.8 28.4 32 28.4 H41.8 C44.1 28.4 46.3 29.8 47.3 31.8 L48.5 34.2 H25.9 Z" fill="#dbeafe"/>
+            <circle cx="24.5" cy="44.5" r="4.2" fill="#111827"/>
+            <circle cx="47.5" cy="44.5" r="4.2" fill="#111827"/>
+            <circle cx="24.5" cy="44.5" r="1.8" fill="#cbd5e1"/>
+            <circle cx="47.5" cy="44.5" r="1.8" fill="#cbd5e1"/>
+          </g>
+        </svg>
+      `;
+      return {
+        url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`,
+        scaledSize: new google.maps.Size(54, 54),
+        anchor: new google.maps.Point(27, 27),
+      };
+    }
+
     function fitMapToPoints(map, points) {
       const validPoints = points.filter(Boolean);
       if (!map || !validPoints.length) {
@@ -709,7 +739,9 @@
         driverMarker = new google.maps.Marker({
           position: fallback,
           map: driverMap,
-          title: "Driver Location"
+          title: "Driver Location",
+          icon: createDriverMarkerIcon(),
+          zIndex: 1000
         });
       } else if (position && driverMarker) {
         driverMarker.setPosition(position);
