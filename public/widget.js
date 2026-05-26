@@ -1,6 +1,7 @@
 (function () {
   const scriptTag = document.currentScript;
   const params = new URL(scriptTag.src).searchParams;
+  const pageQuery = new URLSearchParams(window.location.search);
   const locationId = params.get("loc");
   const widgetMode = String(params.get("mode") || "live").toLowerCase() === "practice" ? "practice" : "live";
   const BACKEND_URL = scriptTag.src.split("/widget.js")[0];
@@ -191,6 +192,36 @@
 
   function providerSupportsDirectCheckout() {
     return getPaymentProvider() === "stripe";
+  }
+
+  function prefillField(fieldId, queryKey) {
+    const input = document.getElementById(fieldId);
+    const value = String(pageQuery.get(queryKey) || "").trim();
+    if (input && value) {
+      input.value = value;
+    }
+  }
+
+  function applyPrefillFromPageQuery() {
+    prefillField("cd_first_name", "first_name");
+    prefillField("cd_last_name", "last_name");
+    prefillField("cd_email", "email");
+    prefillField("cd_phone", "phone");
+    prefillField("cd_pickup", "pickup_address");
+    prefillField("cd_dropoff", "dropoff_address");
+    prefillField("cd_passenger_count", "passenger_count");
+
+    const vehicleSlotId = String(pageQuery.get("vehicle_slot_id") || "").trim();
+    if (vehicleSlotId) {
+      const hiddenInput = document.getElementById("cd_vehicle_slot_id");
+      const matchingCard = Array.from(document.querySelectorAll(".cd_vehicle_card")).find(
+        (card) => String(card.dataset.vehicleSlotId || "").trim() === vehicleSlotId
+      );
+      if (hiddenInput && matchingCard) {
+        hiddenInput.value = vehicleSlotId;
+        syncVehiclePickerSelection(vehicleSlotId);
+      }
+    }
   }
 
   function selectedVehicle() {
@@ -1079,6 +1110,7 @@
     bindVehiclePicker();
     updateBookingModeUI();
     initAutocomplete();
+    applyPrefillFromPageQuery();
   }
 
   function showError(message) {

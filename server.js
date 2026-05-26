@@ -4147,6 +4147,16 @@ app.get([
 ], (req, res) => {
   return sendPublicHtmlPage(res, "ride-hub-notifications");
 });
+app.get([
+  "/ride-history",
+  "/ride-history/:locationId",
+  "/ride-history/:locationId/:token",
+  "/ridehistory",
+  "/ridehistory/:locationId",
+  "/ridehistory/:locationId/:token",
+], (req, res) => {
+  return sendPublicHtmlPage(res, "ride-history");
+});
 app.get("/ride-hub-inbox", (req, res) => {
   const suffix = req.originalUrl.includes("?") ? req.originalUrl.slice(req.originalUrl.indexOf("?")) : "";
   res.redirect(302, `/ride-hub-notifications${suffix}`);
@@ -7213,6 +7223,131 @@ app.post("/api/tracking/tip-checkout", async (req, res) => {
   } catch (err) {
     console.error("Tracking tip checkout error:", err);
     return res.status(err.statusCode || 500).json({ error: err.message || "Failed to start tip checkout." });
+  }
+});
+
+app.get("/api/customer/ride-history", async (req, res) => {
+  try {
+    const token = String(req.query.token || "").trim();
+    if (!token) {
+      return res.status(400).json({ error: "token is required." });
+    }
+
+    const session = await getTrackingSessionByToken({ token, role: "customer" });
+    if (!session) {
+      return res.status(404).json({ error: "Customer session not found." });
+    }
+
+    const normalizedPlanName = normalizePlanName(session.plan_name || "starter");
+    if (normalizedPlanName !== "pro") {
+      return res.status(403).json({ error: "Ride History is available for Pro accounts only." });
+    }
+
+    const normalizedCustomerPhone = normalizePhoneNumber(session.customer_phone || "") || "";
+    const normalizedCustomerEmail = String(session.customer_email || "").trim().toLowerCase();
+    const crmContactId = String(session.crm_contact_id || "").trim();
+    const profileIdColumn = await getProfileIdColumn();
+
+    if (!crmContactId && !normalizedCustomerPhone && !normalizedCustomerEmail) {
+      return res.status(400).json({ error: "Customer session is missing identifiers for ride history." });
+    }
+
+    const bookingsResult = await pool.query(
+      `SELECT
+         b.id,
+         b.location_id,
+         b.first_name,
+         b.last_name,
+         b.customer_email,
+         b.customer_phone,
+         b.pickup_address,
+         b.dropoff_address,
+         b.start_time,
+         b.end_time,
+         b.total_price,
+         b.vehicle_slot_id,
+         b.status,
+         b.booking_mode,
+         b.deposit_amount,
+         b.deposit_percent,
+         b.balance_due,
+         b.crm_contact_id,
+         p.business_name,
+         p.fleet,
+         p.plan_name
+       FROM bookings b
+       LEFT JOIN profiles p ON p.${profileIdColumn} = b.location_id
+       WHERE b.location_id = $1
+         AND (
+           ($2 <> '' AND COALESCE(b.crm_contact_id, '') = $2)
+           OR ($3 <> '' AND COALESCE(b.customer_phone, '') = $3)
+           OR ($4 <> '' AND LOWER(COALESCE(b.customer_email, '')) = $4)
+         )
+       ORDER BY b.start_time DESC, b.id DESC
+       LIMIT 50`,
+      [session.location_id, crmContactId, normalizedCustomerPhone, normalizedCustomerEmail]
+    );
+
+    const now = Date.now();
+    const rides = bookingsResult.rows.map((ride) => {
+      const vehicleRecord = getVehicleRecordForSession({
+        vehicle_slot_id: ride.vehicle_slot_id,
+        fleet: ride.fleet,
+      });
+      const startTime = ride.start_time ? new Date(ride.start_time) : null;
+      const startTimeMs = startTime && !Number.isNaN(startTime.getTime()) ? startTime.getTime() : null;
+      const normalizedStatus = String(ride.status || "").trim().toLowerCase();
+      const isCancelled = normalizedStatus === "cancelled" || normalizedStatus === "canceled";
+      const isUpcoming = !isCancelled && startTimeMs !== null && startTimeMs >= now;
+      const paymentStatus = Number(ride.deposit_amount || 0) > 0 && Number(ride.balance_due || 0) > 0
+        ? "paid_deposit"
+        : (Number(ride.total_price || 0) > 0 ? "paid_in_full" : "unpaid");
+
+      return {
+        booking_id: ride.id,
+        status: normalizedStatus || "confirmed",
+        booking_mode: String(ride.booking_mode || "standard").trim() || "standard",
+        is_upcoming: isUpcoming,
+        is_cancelled: isCancelled,
+        start_time: ride.start_time || null,
+        end_time: ride.end_time || null,
+        pickup_address: ride.pickup_address || "",
+        dropoff_address: ride.dropoff_address || "",
+        total_price: Number(ride.total_price || 0),
+        deposit_amount: Number(ride.deposit_amount || 0),
+        deposit_percent: Number(ride.deposit_percent || 0),
+        balance_due: Number(ride.balance_due || 0),
+        payment_status: paymentStatus,
+        vehicle_slot_id: ride.vehicle_slot_id || "",
+        vehicle_display_name: buildVehicleDisplayName(vehicleRecord, ride.vehicle_slot_id || ""),
+        customer: {
+          first_name: ride.first_name || "",
+          last_name: ride.last_name || "",
+          email: ride.customer_email || "",
+          phone: normalizePhoneNumber(ride.customer_phone || "") || ride.customer_phone || "",
+        },
+      };
+    });
+
+    return res.json({
+      success: true,
+      plan_name: normalizedPlanName,
+      business_name: session.business_name || "Chauffeur Deluxe",
+      customer: {
+        first_name: session.first_name || "",
+        last_name: session.last_name || "",
+        full_name: [session.first_name, session.last_name].filter(Boolean).join(" ").trim(),
+        email: session.customer_email || "",
+        phone: normalizePhoneNumber(session.customer_phone || "") || session.customer_phone || "",
+        crm_contact_id: session.crm_contact_id || null,
+      },
+      rides,
+      upcoming_rides: rides.filter((ride) => ride.is_upcoming),
+      ride_history: rides.filter((ride) => !ride.is_upcoming),
+    });
+  } catch (err) {
+    console.error("Customer ride history error:", err);
+    return res.status(500).json({ error: err.message || "Failed to load customer ride history." });
   }
 });
 

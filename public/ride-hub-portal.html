@@ -476,6 +476,7 @@
           <div class="hero-actions">
             <a id="notification-link" class="button button-dark" href="/ride-hub-notifications">Open Ride Inbox</a>
             <a id="tracking-link" class="button button-secondary" href="/customer-tracking">Track Current Ride</a>
+            <a id="history-link" class="button button-secondary hidden" href="/ride-history">Ride History</a>
             <button id="share-trip-link" class="button button-secondary hidden" type="button">Share Live Trip</button>
             <a id="follow-up-link" class="button button-review button-pulse hidden" href="/customer-follow-up">Don't Forget to Leave a Review and Tip</a>
           </div>
@@ -607,6 +608,7 @@
       let activeFollowUpUrl = (query.get("follow_up_url") || "").trim();
       let activeCustomerName = (query.get("customer_name") || "").trim();
       let activeBusinessName = DEFAULT_BRAND.name;
+      let activePlanName = "starter";
 
       function textValue(key, fallback) {
         const value = (query.get(key) || "").trim();
@@ -665,6 +667,7 @@
         const finalName = businessName || DEFAULT_BRAND.name;
         const finalTagline = widgetTagline || DEFAULT_BRAND.tagline;
         activeBusinessName = finalName;
+        activePlanName = planName || activePlanName;
         document.title = `${finalName} Client Portal`;
         setText("brand-name", finalName);
         setText("brand-tagline", finalTagline);
@@ -691,6 +694,16 @@
         const trackingLink = document.getElementById("tracking-link");
         if (trackingLink) {
           trackingLink.href = activeTrackingUrl || (token ? `/customer-tracking/${encodeURIComponent(token)}` : "/customer-tracking");
+        }
+
+        const historyLink = document.getElementById("history-link");
+        if (historyLink) {
+          if (isProPlan(activePlanName) && token) {
+            historyLink.href = buildPortalPath("ride-history");
+            historyLink.classList.remove("hidden");
+          } else {
+            historyLink.classList.add("hidden");
+          }
         }
 
         const shareButton = document.getElementById("share-trip-link");
