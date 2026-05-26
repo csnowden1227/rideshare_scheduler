@@ -402,8 +402,6 @@
     }
 
     const orderedFleet = [...fleet];
-    const columnCount = Math.min(3, Math.max(1, orderedFleet.length));
-    const maxWidth = columnCount === 3 ? "720px" : columnCount === 2 ? "480px" : "240px";
 
     const cards = orderedFleet.map((vehicle, index) => {
       const label = vehicleDisplayName(vehicle);
@@ -414,7 +412,7 @@
           class="cd_vehicle_card"
           data-vehicle-slot-id="${escapeHtml(vehicle.vehicle_slot_id)}"
           aria-pressed="${index === 0 ? "true" : "false"}"
-          style="display:grid;grid-template-rows:auto 1fr;gap:8px;width:100%;min-height:176px;padding:10px 10px 12px;border:1.5px solid #111111;border-radius:0;background:#fff;cursor:pointer;text-align:center;transition:all .18s ease;box-shadow:none;"
+          style="display:grid;grid-template-rows:auto 1fr;gap:8px;flex:0 0 156px;width:156px;min-height:176px;padding:10px 10px 12px;border:1.5px solid #111111;border-radius:0;background:#fff;cursor:pointer;text-align:center;transition:all .18s ease;box-shadow:none;"
         >
           <span style="font-size:12px;font-weight:700;color:#111827;line-height:1.2;">${escapeHtml(label)}</span>
           <div style="display:flex;align-items:center;justify-content:center;min-height:110px;">
@@ -426,7 +424,7 @@
 
     return `
       <input id="cd_vehicle_slot_id" type="hidden" value="${escapeHtml(orderedFleet[0]?.vehicle_slot_id || "")}" />
-      <div id="cd_vehicle_picker" style="display:grid;grid-template-columns:repeat(${columnCount},minmax(0,1fr));gap:0;border:1.5px solid #111111;max-width:${maxWidth};margin:0 auto;">
+      <div id="cd_vehicle_picker" style="display:flex;flex-wrap:wrap;justify-content:center;gap:0;max-width:936px;margin:0 auto;padding-bottom:2px;">
         ${cards}
       </div>
     `;
@@ -961,9 +959,9 @@
 
               <div>
                 <div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.14em;color:${escapeHtml(colors.secondary)};">Trip Setup</div>
-                <div id="cd_vehicle_grid" style="display:grid;grid-template-columns:minmax(0,1fr) 220px;gap:18px;align-items:start;margin-top:12px;">
+                <div id="cd_vehicle_grid" style="display:grid;grid-template-columns:1fr;gap:14px;align-items:start;margin-top:12px;">
                   <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:8px;">Select Your Vehicle</label>${vehiclePicker}</div>
-                  <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:8px;"># of Passengers</label><input id="cd_passenger_count" type="number" min="1" value="1" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" /></div>
+                  <div style="max-width:220px;"><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:8px;"># of Passengers</label><input id="cd_passenger_count" type="number" min="1" value="1" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" /></div>
                 </div>
                 <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-top:12px;">
                   <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Route Option</label><select id="cd_booking_mode" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;"><option value="standard">Standard Booking</option><option value="fixed">Fixed Destinations</option><option value="event">Events</option></select></div>
