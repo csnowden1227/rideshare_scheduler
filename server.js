@@ -56,6 +56,51 @@ function normalizeAuthorizeEnvironment(value) {
   return normalized === "sandbox" ? "sandbox" : "production";
 }
 
+function normalizeInsuranceProvider(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (!normalized) return "tint";
+  if (["tint", "boost", "xcover", "custom"].includes(normalized)) return normalized;
+  return "custom";
+}
+
+function normalizeInsuranceEmbedMode(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (normalized === "iframe") return "iframe";
+  if (normalized === "api_redirect" || normalized === "redirect") return "api_redirect";
+  return "iframe";
+}
+
+function normalizeInsuranceStatus(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  const allowed = new Set([
+    "not_offered",
+    "quoted",
+    "offered",
+    "purchased",
+    "active",
+    "expired",
+    "cancelled",
+    "declined",
+    "failed",
+  ]);
+  return allowed.has(normalized) ? normalized : "not_offered";
+}
+
+function normalizeOptionalMoney(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return null;
+  return Math.round(parsed * 100) / 100;
+}
+
+function buildInsuranceShellQuoteId() {
+  return `ins_quote_${randomUUID().replace(/-/g, "").slice(0, 18)}`;
+}
+
+function buildInsuranceShellPolicyId() {
+  return `ins_policy_${randomUUID().replace(/-/g, "").slice(0, 18)}`;
+}
+
 const envStripeSecretKey = normalizeStripeSecretKey(process.env.STRIPE_SECRET_KEY || "");
 const stripe = envStripeSecretKey
   ? new Stripe(envStripeSecretKey, { apiVersion: "2025-02-24.acacia" })
@@ -100,6 +145,7 @@ let dispatchTablesReady = null;
 let tripTrackingTablesReady = null;
 let shortLinksTableReady = null;
 let customerAccountTablesReady = null;
+let insuranceModuleTablesReady = null;
 
 const CUSTOMER_ACCOUNT_SESSION_COOKIE = "crm_customer_session";
 const CUSTOMER_ACCOUNT_SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 30;
@@ -375,6 +421,53 @@ async function ensureCustomerAccountTables() {
     });
   }
   return customerAccountTablesReady;
+}
+
+async function ensureInsuranceModuleTables() {
+  if (!insuranceModuleTablesReady) {
+    insuranceModuleTablesReady = (async () => {
+      await ensureBookingSyncColumns();
+      await pool.query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS insurance_enabled BOOLEAN NOT NULL DEFAULT FALSE`);
+      await pool.query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS insurance_provider TEXT`);
+      await pool.query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS insurance_program_id TEXT`);
+      await pool.query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS insurance_api_key_ref TEXT`);
+      await pool.query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS insurance_embed_mode TEXT`);
+      await pool.query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS insurance_brand_name TEXT`);
+      await pool.query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS insurance_state_rules JSONB DEFAULT '[]'::jsonb`);
+      await pool.query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS insurance_embed_url TEXT`);
+      await pool.query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS insurance_webhook_secret TEXT`);
+      await pool.query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS insurance_notes TEXT`);
+
+      await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS insurance_provider TEXT`);
+      await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS insurance_quote_id TEXT`);
+      await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS insurance_policy_id TEXT`);
+      await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS insurance_status TEXT DEFAULT 'not_offered'`);
+      await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS insurance_effective_at TIMESTAMPTZ`);
+      await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS insurance_expires_at TIMESTAMPTZ`);
+      await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS insurance_certificate_url TEXT`);
+      await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS insurance_premium_amount NUMERIC`);
+      await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS insurance_purchase_url TEXT`);
+      await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS insurance_payload_json JSONB DEFAULT '{}'::jsonb`);
+
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS insurance_event_logs (
+          id TEXT PRIMARY KEY,
+          location_id TEXT NOT NULL,
+          booking_id BIGINT,
+          provider TEXT,
+          event_type TEXT NOT NULL,
+          payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_insurance_event_logs_location ON insurance_event_logs (location_id, created_at DESC)`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_insurance_event_logs_booking ON insurance_event_logs (booking_id, created_at DESC)`);
+    })().catch((err) => {
+      insuranceModuleTablesReady = null;
+      throw err;
+    });
+  }
+  return insuranceModuleTablesReady;
 }
 
 async function ensureProfileCrmApiKeyColumn() {
@@ -4559,6 +4652,12 @@ app.get("/setup-wizard.html", requireWizardToken, (req, res) => {
 app.get("/setup-wizard", requireWizardToken, (req, res) => {
   res.sendFile(path.join(__dirname, "public", "setup-wizard.html"));
 });
+app.get("/insurance-manager.html", requireWizardToken, (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "insurance-manager.html"));
+});
+app.get("/insurance-manager", requireWizardToken, (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "insurance-manager.html"));
+});
 app.get("/rideshare-onboarding.html", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "rideshare-onboarding.html"));
 });
@@ -6298,6 +6397,97 @@ function getPublicAppUrl(req = null) {
     return `${req.protocol}://${req.get("host")}`.replace(/\/+$/, "");
   }
   return "https://rideshare-scheduler-axx6.onrender.com";
+}
+
+function buildInsuranceSettingsShape(profile = {}) {
+  return {
+    enabled: Boolean(profile.insurance_enabled),
+    provider: normalizeInsuranceProvider(profile.insurance_provider),
+    program_id: String(profile.insurance_program_id || "").trim() || null,
+    api_key_ref: String(profile.insurance_api_key_ref || "").trim() || null,
+    embed_mode: normalizeInsuranceEmbedMode(profile.insurance_embed_mode),
+    brand_name: String(profile.insurance_brand_name || profile.business_name || "").trim() || null,
+    embed_url: String(profile.insurance_embed_url || "").trim() || null,
+    webhook_secret: String(profile.insurance_webhook_secret || "").trim() || null,
+    notes: String(profile.insurance_notes || "").trim() || null,
+    state_rules: safeParseJson(profile.insurance_state_rules, []),
+  };
+}
+
+function buildInsuranceBookingShape(booking = {}) {
+  return {
+    booking_id: Number(booking.id || booking.booking_id || 0) || null,
+    location_id: String(booking.location_id || "").trim() || null,
+    customer_name: [booking.first_name, booking.last_name].filter(Boolean).join(" ").trim() || null,
+    customer_email: String(booking.email || booking.customer_email || "").trim() || null,
+    customer_phone: String(booking.phone || "").trim() || null,
+    pickup_address: booking.pickup_address || null,
+    dropoff_address: booking.dropoff_address || null,
+    start_time: booking.start_time || null,
+    end_time: booking.end_time || null,
+    vehicle_slot_id: booking.vehicle_slot_id || null,
+    vehicle_type: booking.vehicle_type || null,
+    total_price: normalizeOptionalMoney(booking.total_price),
+    insurance: {
+      provider: normalizeInsuranceProvider(booking.insurance_provider),
+      quote_id: String(booking.insurance_quote_id || "").trim() || null,
+      policy_id: String(booking.insurance_policy_id || "").trim() || null,
+      status: normalizeInsuranceStatus(booking.insurance_status),
+      effective_at: booking.insurance_effective_at || null,
+      expires_at: booking.insurance_expires_at || null,
+      certificate_url: String(booking.insurance_certificate_url || "").trim() || null,
+      premium_amount: normalizeOptionalMoney(booking.insurance_premium_amount),
+      purchase_url: String(booking.insurance_purchase_url || "").trim() || null,
+      payload: safeParseJson(booking.insurance_payload_json, {}),
+    },
+  };
+}
+
+async function logInsuranceEvent({
+  locationId,
+  bookingId = null,
+  provider = null,
+  eventType,
+  payload = {},
+}) {
+  await ensureInsuranceModuleTables();
+  await pool.query(
+    `INSERT INTO insurance_event_logs (id, location_id, booking_id, provider, event_type, payload_json)
+     VALUES ($1, $2, $3, $4, $5, $6::jsonb)`,
+    [
+      randomUUID(),
+      String(locationId || "").trim(),
+      bookingId ? Number(bookingId) : null,
+      provider ? String(provider).trim() : null,
+      String(eventType || "").trim(),
+      JSON.stringify(payload || {}),
+    ]
+  );
+}
+
+function computeInsuranceShellPremium(booking = {}) {
+  const totalPrice = normalizeOptionalMoney(booking.total_price) || 0;
+  const computed = totalPrice > 0 ? totalPrice * 0.08 : 12;
+  return Math.max(8, Math.round(computed * 100) / 100);
+}
+
+function buildInsurancePurchaseUrl({
+  embedUrl,
+  bookingId,
+  quoteId,
+  locationId,
+}) {
+  const normalized = String(embedUrl || "").trim();
+  if (!normalized) return null;
+  try {
+    const url = new URL(normalized);
+    url.searchParams.set("booking_id", String(bookingId || "").trim());
+    url.searchParams.set("quote_id", String(quoteId || "").trim());
+    url.searchParams.set("location_id", String(locationId || "").trim());
+    return url.toString();
+  } catch {
+    return normalized;
+  }
 }
 
 const BOOKING_DISPLAY_TIMEZONE = String(process.env.BOOKING_DISPLAY_TIMEZONE || "America/Los_Angeles").trim() || "America/Los_Angeles";
@@ -11731,6 +11921,446 @@ res.json({
     res.status(500).json({ error: "Server error" });
   } finally {
     if (client) client.release();
+  }
+});
+
+app.get("/api/insurance/settings/:location_id", requireWizardToken, async (req, res) => {
+  try {
+    await ensureInsuranceModuleTables();
+    const locationId = String(req.params.location_id || "").trim();
+    if (!locationId) {
+      return res.status(400).json({ error: "location_id is required." });
+    }
+    const profileLookup = await pool.query(
+      `SELECT location_id, business_name, insurance_enabled, insurance_provider, insurance_program_id,
+              insurance_api_key_ref, insurance_embed_mode, insurance_brand_name, insurance_state_rules,
+              insurance_embed_url, insurance_webhook_secret, insurance_notes
+       FROM profiles
+       WHERE location_id = $1
+       LIMIT 1`,
+      [locationId]
+    );
+    const profile = profileLookup.rows[0];
+    if (!profile) {
+      return res.status(404).json({ error: "Location profile not found." });
+    }
+    return res.json({
+      success: true,
+      location_id: locationId,
+      business_name: profile.business_name || null,
+      settings: buildInsuranceSettingsShape(profile),
+      webhook_url: `${getPublicAppUrl(req)}/api/insurance/webhook/${encodeURIComponent(locationId)}`,
+    });
+  } catch (err) {
+    console.error("Insurance settings load error:", err);
+    return res.status(500).json({ error: "Failed to load insurance settings." });
+  }
+});
+
+app.post("/api/insurance/settings/:location_id", requireWizardToken, async (req, res) => {
+  try {
+    await ensureInsuranceModuleTables();
+    const locationId = String(req.params.location_id || "").trim();
+    if (!locationId) {
+      return res.status(400).json({ error: "location_id is required." });
+    }
+    const stateRules = typeof req.body.state_rules === "string"
+      ? safeParseJson(req.body.state_rules, [])
+      : safeParseJson(req.body.state_rules, []);
+    const values = [
+      Boolean(req.body.enabled),
+      normalizeInsuranceProvider(req.body.provider),
+      String(req.body.program_id || "").trim() || null,
+      String(req.body.api_key_ref || "").trim() || null,
+      normalizeInsuranceEmbedMode(req.body.embed_mode),
+      String(req.body.brand_name || "").trim() || null,
+      JSON.stringify(stateRules),
+      String(req.body.embed_url || "").trim() || null,
+      String(req.body.webhook_secret || "").trim() || null,
+      String(req.body.notes || "").trim() || null,
+      locationId,
+    ];
+    const result = await pool.query(
+      `UPDATE profiles
+       SET insurance_enabled = $1,
+           insurance_provider = $2,
+           insurance_program_id = $3,
+           insurance_api_key_ref = $4,
+           insurance_embed_mode = $5,
+           insurance_brand_name = $6,
+           insurance_state_rules = $7::jsonb,
+           insurance_embed_url = $8,
+           insurance_webhook_secret = $9,
+           insurance_notes = $10
+       WHERE location_id = $11
+       RETURNING location_id, business_name, insurance_enabled, insurance_provider, insurance_program_id,
+                 insurance_api_key_ref, insurance_embed_mode, insurance_brand_name, insurance_state_rules,
+                 insurance_embed_url, insurance_webhook_secret, insurance_notes`,
+      values
+    );
+    if (!result.rows[0]) {
+      return res.status(404).json({ error: "Location profile not found." });
+    }
+    await logInsuranceEvent({
+      locationId,
+      provider: normalizeInsuranceProvider(req.body.provider),
+      eventType: "settings.updated",
+      payload: { settings: buildInsuranceSettingsShape(result.rows[0]) },
+    });
+    return res.json({
+      success: true,
+      settings: buildInsuranceSettingsShape(result.rows[0]),
+      webhook_url: `${getPublicAppUrl(req)}/api/insurance/webhook/${encodeURIComponent(locationId)}`,
+    });
+  } catch (err) {
+    console.error("Insurance settings save error:", err);
+    return res.status(500).json({ error: "Failed to save insurance settings." });
+  }
+});
+
+app.get("/api/insurance/booking/:bookingId", requireWizardToken, async (req, res) => {
+  try {
+    await ensureInsuranceModuleTables();
+    const bookingId = Number(req.params.bookingId || 0);
+    if (!bookingId) {
+      return res.status(400).json({ error: "Valid bookingId is required." });
+    }
+    const bookingLookup = await pool.query(
+      `SELECT b.*,
+              p.business_name,
+              p.insurance_enabled,
+              p.insurance_provider,
+              p.insurance_program_id,
+              p.insurance_api_key_ref,
+              p.insurance_embed_mode,
+              p.insurance_brand_name,
+              p.insurance_state_rules,
+              p.insurance_embed_url,
+              p.insurance_webhook_secret,
+              p.insurance_notes
+       FROM bookings b
+       LEFT JOIN profiles p ON p.location_id = b.location_id
+       WHERE b.id = $1
+       LIMIT 1`,
+      [bookingId]
+    );
+    const booking = bookingLookup.rows[0];
+    if (!booking) {
+      return res.status(404).json({ error: "Booking not found." });
+    }
+    return res.json({
+      success: true,
+      booking: buildInsuranceBookingShape(booking),
+      settings: buildInsuranceSettingsShape(booking),
+      business_name: booking.business_name || null,
+    });
+  } catch (err) {
+    console.error("Insurance booking lookup error:", err);
+    return res.status(500).json({ error: "Failed to load booking insurance details." });
+  }
+});
+
+app.post("/api/insurance/quote", requireWizardToken, async (req, res) => {
+  try {
+    await ensureInsuranceModuleTables();
+    const bookingId = Number(req.body.booking_id || 0);
+    if (!bookingId) {
+      return res.status(400).json({ error: "booking_id is required." });
+    }
+    const bookingLookup = await pool.query(
+      `SELECT b.*, p.business_name, p.insurance_enabled, p.insurance_provider, p.insurance_program_id,
+              p.insurance_api_key_ref, p.insurance_embed_mode, p.insurance_brand_name, p.insurance_state_rules,
+              p.insurance_embed_url, p.insurance_webhook_secret, p.insurance_notes
+       FROM bookings b
+       LEFT JOIN profiles p ON p.location_id = b.location_id
+       WHERE b.id = $1
+       LIMIT 1`,
+      [bookingId]
+    );
+    const booking = bookingLookup.rows[0];
+    if (!booking) {
+      return res.status(404).json({ error: "Booking not found." });
+    }
+    const settings = buildInsuranceSettingsShape(booking);
+    if (!settings.enabled) {
+      return res.status(400).json({ error: "Insurance is not enabled for this SaaS location yet." });
+    }
+    const quoteId = buildInsuranceShellQuoteId();
+    const premiumAmount = normalizeOptionalMoney(req.body.premium_amount) ?? computeInsuranceShellPremium(booking);
+    const effectiveAt = req.body.effective_at || booking.start_time || null;
+    const expiresAt = req.body.expires_at || booking.end_time || null;
+    const purchaseUrl = buildInsurancePurchaseUrl({
+      embedUrl: req.body.embed_url || settings.embed_url,
+      bookingId,
+      quoteId,
+      locationId: booking.location_id,
+    });
+    const payload = {
+      provider: settings.provider,
+      quote_id: quoteId,
+      booking_id: bookingId,
+      location_id: booking.location_id,
+      effective_at: effectiveAt,
+      expires_at: expiresAt,
+      premium_amount: premiumAmount,
+      embed_mode: settings.embed_mode,
+      purchase_url: purchaseUrl,
+      state_rules: settings.state_rules,
+      notes: settings.notes,
+      source: "insurance_shell_quote",
+    };
+
+    await pool.query(
+      `UPDATE bookings
+       SET insurance_provider = $2,
+           insurance_quote_id = $3,
+           insurance_status = $4,
+           insurance_effective_at = $5,
+           insurance_expires_at = $6,
+           insurance_premium_amount = $7,
+           insurance_purchase_url = $8,
+           insurance_payload_json = $9::jsonb
+       WHERE id = $1`,
+      [
+        bookingId,
+        settings.provider,
+        quoteId,
+        "offered",
+        effectiveAt,
+        expiresAt,
+        premiumAmount,
+        purchaseUrl,
+        JSON.stringify(payload),
+      ]
+    );
+
+    await logInsuranceEvent({
+      locationId: booking.location_id,
+      bookingId,
+      provider: settings.provider,
+      eventType: "quote.created",
+      payload,
+    });
+
+    return res.json({
+      success: true,
+      quote: {
+        quote_id: quoteId,
+        provider: settings.provider,
+        premium_amount: premiumAmount,
+        effective_at: effectiveAt,
+        expires_at: expiresAt,
+        embed_mode: settings.embed_mode,
+        purchase_url: purchaseUrl,
+      },
+      booking: buildInsuranceBookingShape({
+        ...booking,
+        insurance_provider: settings.provider,
+        insurance_quote_id: quoteId,
+        insurance_status: "offered",
+        insurance_effective_at: effectiveAt,
+        insurance_expires_at: expiresAt,
+        insurance_premium_amount: premiumAmount,
+        insurance_purchase_url: purchaseUrl,
+        insurance_payload_json: payload,
+      }),
+    });
+  } catch (err) {
+    console.error("Insurance quote shell error:", err);
+    return res.status(500).json({ error: "Failed to create the insurance quote shell." });
+  }
+});
+
+app.post("/api/insurance/bind", requireWizardToken, async (req, res) => {
+  try {
+    await ensureInsuranceModuleTables();
+    const bookingId = Number(req.body.booking_id || 0);
+    if (!bookingId) {
+      return res.status(400).json({ error: "booking_id is required." });
+    }
+    const bookingLookup = await pool.query(`SELECT * FROM bookings WHERE id = $1 LIMIT 1`, [bookingId]);
+    const booking = bookingLookup.rows[0];
+    if (!booking) {
+      return res.status(404).json({ error: "Booking not found." });
+    }
+    const policyId = String(req.body.policy_id || booking.insurance_policy_id || buildInsuranceShellPolicyId()).trim();
+    const certificateUrl = String(req.body.certificate_url || booking.insurance_certificate_url || "").trim() || null;
+    const effectiveAt = req.body.effective_at || booking.insurance_effective_at || booking.start_time || null;
+    const expiresAt = req.body.expires_at || booking.insurance_expires_at || booking.end_time || null;
+    const premiumAmount = normalizeOptionalMoney(req.body.premium_amount) ?? normalizeOptionalMoney(booking.insurance_premium_amount) ?? computeInsuranceShellPremium(booking);
+    const nextStatus = normalizeInsuranceStatus(req.body.status || "purchased");
+    const mergedPayload = {
+      ...safeParseJson(booking.insurance_payload_json, {}),
+      provider_response: safeParseJson(req.body.provider_payload, {}),
+      bound_at: new Date().toISOString(),
+    };
+
+    await pool.query(
+      `UPDATE bookings
+       SET insurance_policy_id = $2,
+           insurance_status = $3,
+           insurance_effective_at = $4,
+           insurance_expires_at = $5,
+           insurance_certificate_url = $6,
+           insurance_premium_amount = $7,
+           insurance_payload_json = $8::jsonb
+       WHERE id = $1`,
+      [bookingId, policyId, nextStatus, effectiveAt, expiresAt, certificateUrl, premiumAmount, JSON.stringify(mergedPayload)]
+    );
+
+    await logInsuranceEvent({
+      locationId: booking.location_id,
+      bookingId,
+      provider: booking.insurance_provider,
+      eventType: "policy.bound",
+      payload: {
+        policy_id: policyId,
+        status: nextStatus,
+        certificate_url: certificateUrl,
+        effective_at: effectiveAt,
+        expires_at: expiresAt,
+        premium_amount: premiumAmount,
+      },
+    });
+
+    const refreshed = await pool.query(`SELECT * FROM bookings WHERE id = $1 LIMIT 1`, [bookingId]);
+    return res.json({
+      success: true,
+      booking: buildInsuranceBookingShape(refreshed.rows[0]),
+    });
+  } catch (err) {
+    console.error("Insurance bind shell error:", err);
+    return res.status(500).json({ error: "Failed to bind insurance coverage." });
+  }
+});
+
+app.post("/api/insurance/cancel", requireWizardToken, async (req, res) => {
+  try {
+    await ensureInsuranceModuleTables();
+    const bookingId = Number(req.body.booking_id || 0);
+    if (!bookingId) {
+      return res.status(400).json({ error: "booking_id is required." });
+    }
+    const bookingLookup = await pool.query(`SELECT * FROM bookings WHERE id = $1 LIMIT 1`, [bookingId]);
+    const booking = bookingLookup.rows[0];
+    if (!booking) {
+      return res.status(404).json({ error: "Booking not found." });
+    }
+    const reason = String(req.body.reason || "insured_requested").trim();
+    const mergedPayload = {
+      ...safeParseJson(booking.insurance_payload_json, {}),
+      cancellation: {
+        reason,
+        cancelled_at: new Date().toISOString(),
+      },
+    };
+    await pool.query(
+      `UPDATE bookings
+       SET insurance_status = 'cancelled',
+           insurance_payload_json = $2::jsonb
+       WHERE id = $1`,
+      [bookingId, JSON.stringify(mergedPayload)]
+    );
+    await logInsuranceEvent({
+      locationId: booking.location_id,
+      bookingId,
+      provider: booking.insurance_provider,
+      eventType: "policy.cancelled",
+      payload: { reason },
+    });
+    const refreshed = await pool.query(`SELECT * FROM bookings WHERE id = $1 LIMIT 1`, [bookingId]);
+    return res.json({ success: true, booking: buildInsuranceBookingShape(refreshed.rows[0]) });
+  } catch (err) {
+    console.error("Insurance cancel shell error:", err);
+    return res.status(500).json({ error: "Failed to cancel insurance coverage." });
+  }
+});
+
+app.post("/api/insurance/webhook/:location_id", async (req, res) => {
+  try {
+    await ensureInsuranceModuleTables();
+    const locationId = String(req.params.location_id || "").trim();
+    if (!locationId) {
+      return res.status(400).json({ error: "location_id is required." });
+    }
+    const profileLookup = await pool.query(
+      `SELECT insurance_provider, insurance_webhook_secret FROM profiles WHERE location_id = $1 LIMIT 1`,
+      [locationId]
+    );
+    const profile = profileLookup.rows[0];
+    if (!profile) {
+      return res.status(404).json({ error: "Location profile not found." });
+    }
+    const expectedSecret = String(profile.insurance_webhook_secret || "").trim();
+    const providedSecret = String(
+      req.headers["x-insurance-webhook-secret"] ||
+      req.headers["x-webhook-secret"] ||
+      req.query.secret ||
+      ""
+    ).trim();
+    if (expectedSecret && expectedSecret !== providedSecret) {
+      return res.status(403).json({ error: "Invalid insurance webhook secret." });
+    }
+
+    const payload = req.body || {};
+    const quoteId = String(payload.quote_id || payload.quoteId || "").trim();
+    const policyId = String(payload.policy_id || payload.policyId || "").trim();
+    const eventType = String(payload.event_type || payload.eventType || "carrier.update").trim();
+    const nextStatus = payload.status ? normalizeInsuranceStatus(payload.status) : null;
+
+    let matchedBooking = null;
+    if (policyId || quoteId) {
+      const bookingLookup = await pool.query(
+        `SELECT * FROM bookings
+         WHERE location_id = $1
+           AND (insurance_policy_id = $2 OR insurance_quote_id = $3)
+         ORDER BY id DESC
+         LIMIT 1`,
+        [locationId, policyId || null, quoteId || null]
+      );
+      matchedBooking = bookingLookup.rows[0] || null;
+    }
+
+    if (matchedBooking && nextStatus) {
+      const mergedPayload = {
+        ...safeParseJson(matchedBooking.insurance_payload_json, {}),
+        last_webhook: payload,
+      };
+      await pool.query(
+        `UPDATE bookings
+         SET insurance_status = $2,
+             insurance_policy_id = COALESCE($3, insurance_policy_id),
+             insurance_quote_id = COALESCE($4, insurance_quote_id),
+             insurance_certificate_url = COALESCE($5, insurance_certificate_url),
+             insurance_payload_json = $6::jsonb
+         WHERE id = $1`,
+        [
+          matchedBooking.id,
+          nextStatus,
+          policyId || null,
+          quoteId || null,
+          String(payload.certificate_url || payload.certificateUrl || "").trim() || null,
+          JSON.stringify(mergedPayload),
+        ]
+      );
+    }
+
+    await logInsuranceEvent({
+      locationId,
+      bookingId: matchedBooking?.id || null,
+      provider: profile.insurance_provider,
+      eventType,
+      payload,
+    });
+
+    return res.json({
+      success: true,
+      matched_booking_id: matchedBooking?.id || null,
+      status_applied: nextStatus,
+    });
+  } catch (err) {
+    console.error("Insurance webhook error:", err);
+    return res.status(500).json({ error: "Insurance webhook processing failed." });
   }
 });
 

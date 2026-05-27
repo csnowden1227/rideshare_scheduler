@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Insurance Manager</title>
+  <style>
+    :root {
+      --ink: #0f172a;
+      --muted: #64748b;
+      --line: rgba(148, 163, 184, 0.28);
+      --panel: rgba(255, 255, 255, 0.96);
+      --shadow: 0 24px 52px rgba(15, 23, 42, 0.08);
+      --accent: #5b21b6;
+      --accent-2: #0f766e;
+      --success: #166534;
+      --danger: #991b1b;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top left, rgba(91, 33, 182, 0.12), transparent 24%),
+        linear-gradient(180deg, #f8fafc 0%, #ffffff 42%, #eef2ff 100%);
+    }
+    .shell { max-width: 1280px; margin: 0 auto; padding: 24px 16px 42px; }
+    .hero, .panel, .summary-card, .event-card, .iframe-wrap { border-radius: 28px; box-shadow: var(--shadow); }
+    .hero {
+      background: linear-gradient(135deg, #111827 0%, #5b21b6 55%, #0f766e 100%);
+      color: #fff;
+      padding: 28px;
+    }
+    .hero h1 { margin: 0; font-size: clamp(34px, 5vw, 52px); line-height: 1.02; letter-spacing: -.04em; }
+    .hero p { margin: 12px 0 0; line-height: 1.8; max-width: 860px; color: rgba(255,255,255,.88); }
+    .hero .sub { margin-top: 16px; padding: 14px 16px; border-radius: 18px; background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.14); }
+    .grid { display: grid; grid-template-columns: minmax(0, 420px) minmax(0, 1fr); gap: 20px; margin-top: 20px; }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      padding: 22px;
+    }
+    .panel h2 { margin: 0; font-size: 24px; letter-spacing: -.03em; color: #172554; }
+    .panel p { margin: 10px 0 0; color: #475569; line-height: 1.8; }
+    .field-grid { display: grid; gap: 14px; margin-top: 18px; }
+    .field-grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    label { display: block; margin-bottom: 8px; font-size: 12px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+    input, select, textarea {
+      width: 100%;
+      border-radius: 16px;
+      border: 1px solid #cbd5e1;
+      padding: 12px 14px;
+      font: inherit;
+      color: var(--ink);
+      background: #fff;
+    }
+    textarea { min-height: 124px; resize: vertical; }
+    .toggle {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 14px 16px;
+      border-radius: 18px;
+      background: #f8fafc;
+      border: 1px solid var(--line);
+    }
+    .toggle input { width: 18px; height: 18px; }
+    .actions, .hero-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 18px; }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 48px;
+      padding: 12px 18px;
+      border-radius: 16px;
+      border: 0;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 800;
+      text-decoration: none;
+    }
+    .btn.primary { background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: #fff; }
+    .btn.secondary { background: #fff; color: #172554; border: 1px solid rgba(148,163,184,.3); }
+    .btn.dark { background: #111827; color: #fff; }
+    .status, .error, .success, .info {
+      margin-top: 16px;
+      padding: 14px 16px;
+      border-radius: 18px;
+      line-height: 1.75;
+      display: none;
+    }
+    .status, .info { background: #eff6ff; border: 1px solid #bfdbfe; color: #1d4ed8; }
+    .success { background: #ecfdf5; border: 1px solid #bbf7d0; color: var(--success); }
+    .error { background: #fef2f2; border: 1px solid #fecaca; color: var(--danger); }
+    .summary {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      gap: 12px;
+      margin-top: 18px;
+    }
+    .summary-card {
+      background: linear-gradient(180deg, rgba(255,255,255,.98), rgba(248,250,252,.98));
+      border: 1px solid rgba(148,163,184,.18);
+      padding: 16px;
+    }
+    .summary-card span {
+      display: block;
+      margin-bottom: 8px;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .summary-card strong, .summary-card p { margin: 0; font-size: 14px; line-height: 1.7; color: #334155; }
+    .event-card {
+      margin-top: 18px;
+      background: #fff;
+      border: 1px solid var(--line);
+      padding: 18px;
+    }
+    .event-card h3 { margin: 0 0 8px; font-size: 20px; color: #172554; }
+    .event-card pre {
+      margin: 14px 0 0;
+      max-height: 320px;
+      overflow: auto;
+      padding: 14px;
+      border-radius: 18px;
+      background: #0f172a;
+      color: #e2e8f0;
+      font-size: 12px;
+      line-height: 1.6;
+    }
+    .iframe-wrap {
+      margin-top: 18px;
+      overflow: hidden;
+      border: 1px solid rgba(91, 33, 182, 0.2);
+      background: #fff;
+      display: none;
+    }
+    .iframe-wrap iframe { width: 100%; min-height: 780px; border: 0; background: #fff; }
+    .inline-note { margin-top: 12px; color: #475569; font-size: 13px; line-height: 1.75; }
+    @media (max-width: 980px) {
+      .grid, .field-grid.two { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <section class="hero">
+      <h1>Embedded Insurance Manager</h1>
+      <p>Configure your insurance partner, generate booking-linked quote shells, and test iframe purchase flow without forcing your carrier logic directly into the booking widget too early.</p>
+      <div class="sub">
+        This shell is designed for mobility insurance partners like Tint. It stores policy state on each booking now, so later real quote and bind callbacks have a clean place to land.
+      </div>
+      <div class="hero-actions">
+        <a class="btn secondary" id="open-wizard-link" href="#">Open Setup Wizard</a>
+        <a class="btn secondary" href="/page-directory.html" target="_blank" rel="noreferrer">Page Directory</a>
+      </div>
+    </section>
+
+    <div class="grid">
+      <section class="panel">
+        <h2>Insurance Settings</h2>
+        <p>These settings live per SaaS location. Use them to define the provider, embed mode, and callback secret now, even before the live carrier integration is fully wired.</p>
+        <div class="toggle">
+          <input type="checkbox" id="insurance-enabled" />
+          <div>
+            <strong>Insurance enabled for this location</strong>
+            <div class="inline-note">Turn this on once the location is ready to quote or bind booking-linked coverage.</div>
+          </div>
+        </div>
+        <div class="field-grid two">
+          <div>
+            <label for="insurance-provider">Provider</label>
+            <select id="insurance-provider">
+              <option value="tint">Tint</option>
+              <option value="boost">Boost</option>
+              <option value="xcover">XCover</option>
+              <option value="custom">Custom</option>
+            </select>
+          </div>
+          <div>
+            <label for="insurance-embed-mode">Embed Mode</label>
+            <select id="insurance-embed-mode">
+              <option value="iframe">iFrame</option>
+              <option value="api_redirect">API Redirect</option>
+            </select>
+          </div>
+        </div>
+        <div class="field-grid two">
+          <div>
+            <label for="insurance-program-id">Program ID</label>
+            <input id="insurance-program-id" type="text" placeholder="tint-mobility-program" />
+          </div>
+          <div>
+            <label for="insurance-api-key-ref">API Key Reference</label>
+            <input id="insurance-api-key-ref" type="text" placeholder="vault://tint/live/location-01" />
+          </div>
+        </div>
+        <div class="field-grid two">
+          <div>
+            <label for="insurance-brand-name">Brand Name</label>
+            <input id="insurance-brand-name" type="text" placeholder="Chauffeur Deluxe Coverage" />
+          </div>
+          <div>
+            <label for="insurance-embed-url">Embed / Purchase URL</label>
+            <input id="insurance-embed-url" type="url" placeholder="https://partner.example.com/coverage" />
+          </div>
+        </div>
+        <div class="field-grid two">
+          <div>
+            <label for="insurance-webhook-secret">Webhook Secret</label>
+            <input id="insurance-webhook-secret" type="text" placeholder="shared-secret-from-carrier" />
+          </div>
+          <div>
+            <label for="insurance-webhook-url">Webhook URL</label>
+            <input id="insurance-webhook-url" type="text" readonly />
+          </div>
+        </div>
+        <div class="field-grid">
+          <div>
+            <label for="insurance-state-rules">State Rules (JSON)</label>
+            <textarea id="insurance-state-rules" placeholder='[{"state":"CA","enabled":true}]'></textarea>
+          </div>
+          <div>
+            <label for="insurance-notes">Internal Notes</label>
+            <textarea id="insurance-notes" placeholder="Program notes, carrier caveats, or manual bind instructions..."></textarea>
+          </div>
+        </div>
+        <div class="actions">
+          <button class="btn primary" id="save-settings-button" type="button">Save Insurance Settings</button>
+          <button class="btn secondary" id="reload-settings-button" type="button">Reload</button>
+        </div>
+        <div id="settings-success" class="success"></div>
+        <div id="settings-error" class="error"></div>
+      </section>
+
+      <section class="panel">
+        <h2>Booking Coverage Shell</h2>
+        <p>Load a booking, generate a quote shell, and preview the embedded purchase experience. This is the safest bridge until the real Tint quote/bind callbacks are live.</p>
+        <div class="field-grid two">
+          <div>
+            <label for="booking-id">Booking ID</label>
+            <input id="booking-id" type="number" min="1" placeholder="156" />
+          </div>
+          <div>
+            <label for="manual-premium">Override Premium</label>
+            <input id="manual-premium" type="number" min="0" step="0.01" placeholder="Leave blank to auto-compute" />
+          </div>
+        </div>
+        <div class="actions">
+          <button class="btn dark" id="load-booking-button" type="button">Load Booking</button>
+          <button class="btn primary" id="quote-booking-button" type="button">Create Quote Shell</button>
+          <button class="btn secondary" id="bind-booking-button" type="button">Mark Policy Bound</button>
+          <button class="btn secondary" id="cancel-booking-button" type="button">Cancel Coverage</button>
+        </div>
+        <div id="booking-info" class="status"></div>
+        <div id="booking-success" class="success"></div>
+        <div id="booking-error" class="error"></div>
+
+        <div class="summary" id="booking-summary"></div>
+
+        <div class="iframe-wrap" id="insurance-iframe-wrap">
+          <iframe id="insurance-iframe" title="Insurance purchase experience"></iframe>
+        </div>
+
+        <article class="event-card">
+          <h3>Last Insurance Payload</h3>
+          <p class="inline-note">This is the booking-level insurance payload shell stored on the reservation. Once Tint is connected, webhook updates can land in this same shape.</p>
+          <pre id="insurance-payload-preview">Load a booking to inspect the insurance payload shell.</pre>
+        </article>
+      </section>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      const query = new URLSearchParams(window.location.search);
+      const locationId = String(query.get("location_id") || "").trim();
+      const token = String(query.get("token") || "").trim();
+      const bookingIdFromQuery = String(query.get("booking_id") || "").trim();
+      const apiHeaders = token ? { "X-Setup-Wizard-Token": token } : {};
+      let currentSettings = null;
+      let currentBooking = null;
+
+      function byId(id) {
+        return document.getElementById(id);
+      }
+
+      function setMessage(id, text) {
+        const el = byId(id);
+        if (!el) return;
+        el.textContent = text || "";
+        el.style.display = text ? "block" : "none";
+      }
+
+      function escapeHtml(value) {
+        return String(value || "")
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;")
+          .replace(/'/g, "&#39;");
+      }
+
+      async function fetchJson(url, options = {}) {
+        const response = await fetch(url, {
+          credentials: "same-origin",
+          headers: {
+            ...(options.headers || {}),
+            ...apiHeaders,
+          },
+          ...options,
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(data.error || "Request failed.");
+        }
+        return data;
+      }
+
+      function updateWizardLink() {
+        const wizardLink = byId("open-wizard-link");
+        if (!wizardLink) return;
+        const params = new URLSearchParams();
+        if (locationId) params.set("location_id", locationId);
+        if (token) params.set("token", token);
+        wizardLink.href = `/setup-wizard.html${params.toString() ? `?${params.toString()}` : ""}`;
+      }
+
+      function fillSettings(settings, webhookUrl) {
+        currentSettings = settings;
+        byId("insurance-enabled").checked = Boolean(settings.enabled);
+        byId("insurance-provider").value = settings.provider || "tint";
+        byId("insurance-embed-mode").value = settings.embed_mode || "iframe";
+        byId("insurance-program-id").value = settings.program_id || "";
+        byId("insurance-api-key-ref").value = settings.api_key_ref || "";
+        byId("insurance-brand-name").value = settings.brand_name || "";
+        byId("insurance-embed-url").value = settings.embed_url || "";
+        byId("insurance-webhook-secret").value = settings.webhook_secret || "";
+        byId("insurance-webhook-url").value = webhookUrl || "";
+        byId("insurance-state-rules").value = JSON.stringify(Array.isArray(settings.state_rules) ? settings.state_rules : [], null, 2);
+        byId("insurance-notes").value = settings.notes || "";
+      }
+
+      function renderBookingSummary(booking) {
+        const insurance = booking?.insurance || {};
+        const cards = [
+          { label: "Booking", value: booking?.booking_id || "Not loaded" },
+          { label: "Customer", value: booking?.customer_name || "Not loaded" },
+          { label: "Vehicle", value: booking?.vehicle_type || booking?.vehicle_slot_id || "Not set" },
+          { label: "Coverage Status", value: insurance.status || "not_offered" },
+          { label: "Quote ID", value: insurance.quote_id || "Not created" },
+          { label: "Policy ID", value: insurance.policy_id || "Not bound" },
+          { label: "Premium", value: insurance.premium_amount != null ? `$${Number(insurance.premium_amount).toFixed(2)}` : "Not priced" },
+          { label: "Effective Window", value: [insurance.effective_at, insurance.expires_at].filter(Boolean).join(" to ") || "Not set" },
+        ];
+        byId("booking-summary").innerHTML = cards.map((card) => `
+          <article class="summary-card">
+            <span>${escapeHtml(card.label)}</span>
+            <strong>${escapeHtml(card.value)}</strong>
+          </article>
+        `).join("");
+      }
+
+      function renderPayloadPreview(booking) {
+        byId("insurance-payload-preview").textContent = JSON.stringify(booking?.insurance?.payload || {}, null, 2);
+      }
+
+      function renderIframe(booking, settings) {
+        const wrap = byId("insurance-iframe-wrap");
+        const iframe = byId("insurance-iframe");
+        const purchaseUrl = booking?.insurance?.purchase_url || null;
+        const embedMode = settings?.embed_mode || "iframe";
+        if (purchaseUrl && embedMode === "iframe") {
+          iframe.src = purchaseUrl;
+          wrap.style.display = "block";
+        } else {
+          iframe.removeAttribute("src");
+          wrap.style.display = "none";
+        }
+      }
+
+      async function loadSettings() {
+        if (!locationId) {
+          setMessage("settings-error", "location_id is required in the URL to manage insurance settings.");
+          return;
+        }
+        try {
+          setMessage("settings-error", "");
+          const data = await fetchJson(`/api/insurance/settings/${encodeURIComponent(locationId)}${token ? `?token=${encodeURIComponent(token)}` : ""}`);
+          fillSettings(data.settings, data.webhook_url);
+          setMessage("settings-success", `Insurance settings loaded for ${data.business_name || locationId}.`);
+        } catch (error) {
+          setMessage("settings-error", error.message || "Unable to load insurance settings.");
+        }
+      }
+
+      async function saveSettings() {
+        if (!locationId) return;
+        try {
+          setMessage("settings-error", "");
+          setMessage("settings-success", "");
+          const stateRulesRaw = byId("insurance-state-rules").value.trim();
+          const stateRules = stateRulesRaw ? JSON.parse(stateRulesRaw) : [];
+          const body = {
+            enabled: byId("insurance-enabled").checked,
+            provider: byId("insurance-provider").value,
+            embed_mode: byId("insurance-embed-mode").value,
+            program_id: byId("insurance-program-id").value,
+            api_key_ref: byId("insurance-api-key-ref").value,
+            brand_name: byId("insurance-brand-name").value,
+            embed_url: byId("insurance-embed-url").value,
+            webhook_secret: byId("insurance-webhook-secret").value,
+            state_rules: stateRules,
+            notes: byId("insurance-notes").value,
+          };
+          const data = await fetchJson(`/api/insurance/settings/${encodeURIComponent(locationId)}${token ? `?token=${encodeURIComponent(token)}` : ""}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          });
+          fillSettings(data.settings, data.webhook_url);
+          setMessage("settings-success", "Insurance settings saved.");
+        } catch (error) {
+          setMessage("settings-error", error.message || "Unable to save insurance settings.");
+        }
+      }
+
+      async function loadBooking() {
+        const bookingId = String(byId("booking-id").value || "").trim();
+        if (!bookingId) {
+          setMessage("booking-error", "Enter a booking ID first.");
+          return;
+        }
+        try {
+          setMessage("booking-error", "");
+          setMessage("booking-success", "");
+          const data = await fetchJson(`/api/insurance/booking/${encodeURIComponent(bookingId)}${token ? `?token=${encodeURIComponent(token)}` : ""}`);
+          currentBooking = data.booking;
+          currentSettings = data.settings || currentSettings;
+          renderBookingSummary(currentBooking);
+          renderPayloadPreview(currentBooking);
+          renderIframe(currentBooking, currentSettings);
+          setMessage("booking-info", `Loaded booking ${data.booking.booking_id} for ${data.booking.customer_name || "customer"}.`);
+        } catch (error) {
+          setMessage("booking-error", error.message || "Unable to load booking insurance details.");
+        }
+      }
+
+      async function createQuoteShell() {
+        const bookingId = String(byId("booking-id").value || "").trim();
+        if (!bookingId) {
+          setMessage("booking-error", "Enter a booking ID before creating a quote shell.");
+          return;
+        }
+        try {
+          setMessage("booking-error", "");
+          setMessage("booking-success", "");
+          const premiumRaw = String(byId("manual-premium").value || "").trim();
+          const body = { booking_id: Number(bookingId) };
+          if (premiumRaw) body.premium_amount = Number(premiumRaw);
+          const data = await fetchJson(`/api/insurance/quote${token ? `?token=${encodeURIComponent(token)}` : ""}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          });
+          currentBooking = data.booking;
+          renderBookingSummary(currentBooking);
+          renderPayloadPreview(currentBooking);
+          renderIframe(currentBooking, currentSettings);
+          setMessage("booking-success", `Quote shell ${data.quote.quote_id} created. Premium ${Number(data.quote.premium_amount || 0).toFixed(2)}.`);
+        } catch (error) {
+          setMessage("booking-error", error.message || "Unable to create the insurance quote shell.");
+        }
+      }
+
+      async function bindBooking() {
+        const bookingId = String(byId("booking-id").value || "").trim();
+        if (!bookingId) {
+          setMessage("booking-error", "Enter a booking ID before binding coverage.");
+          return;
+        }
+        try {
+          setMessage("booking-error", "");
+          setMessage("booking-success", "");
+          const data = await fetchJson(`/api/insurance/bind${token ? `?token=${encodeURIComponent(token)}` : ""}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ booking_id: Number(bookingId), status: "purchased" }),
+          });
+          currentBooking = data.booking;
+          renderBookingSummary(currentBooking);
+          renderPayloadPreview(currentBooking);
+          renderIframe(currentBooking, currentSettings);
+          setMessage("booking-success", `Coverage marked bound for booking ${bookingId}.`);
+        } catch (error) {
+          setMessage("booking-error", error.message || "Unable to bind coverage.");
+        }
+      }
+
+      async function cancelCoverage() {
+        const bookingId = String(byId("booking-id").value || "").trim();
+        if (!bookingId) {
+          setMessage("booking-error", "Enter a booking ID before canceling coverage.");
+          return;
+        }
+        try {
+          setMessage("booking-error", "");
+          setMessage("booking-success", "");
+          const data = await fetchJson(`/api/insurance/cancel${token ? `?token=${encodeURIComponent(token)}` : ""}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ booking_id: Number(bookingId), reason: "operator_requested" }),
+          });
+          currentBooking = data.booking;
+          renderBookingSummary(currentBooking);
+          renderPayloadPreview(currentBooking);
+          renderIframe(currentBooking, currentSettings);
+          setMessage("booking-success", `Coverage canceled for booking ${bookingId}.`);
+        } catch (error) {
+          setMessage("booking-error", error.message || "Unable to cancel coverage.");
+        }
+      }
+
+      byId("save-settings-button").addEventListener("click", saveSettings);
+      byId("reload-settings-button").addEventListener("click", loadSettings);
+      byId("load-booking-button").addEventListener("click", loadBooking);
+      byId("quote-booking-button").addEventListener("click", createQuoteShell);
+      byId("bind-booking-button").addEventListener("click", bindBooking);
+      byId("cancel-booking-button").addEventListener("click", cancelCoverage);
+
+      updateWizardLink();
+      if (bookingIdFromQuery) {
+        byId("booking-id").value = bookingIdFromQuery;
+      }
+      loadSettings().then(() => {
+        if (bookingIdFromQuery) loadBooking();
+      });
+    })();
+  </script>
+</body>
+</html>
