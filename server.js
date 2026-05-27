@@ -1832,7 +1832,6 @@ async function buildTrackingStatusWebhookPayload({ req, session, status }) {
         name: session.driver_display_name || null,
         phone: normalizeDriverPhone(session.driver_phone || "") || null,
         email: session.driver_email || null,
-        photo_data: session.driver_photo_data || null,
       },
     vehicle: {
       slot_id: session.vehicle_slot_id || null,
@@ -1841,7 +1840,6 @@ async function buildTrackingStatusWebhookPayload({ req, session, status }) {
       year: vehicleRecord?.vehicle_year || null,
       make: vehicleRecord?.vehicle_make || null,
       model: vehicleRecord?.vehicle_model || null,
-      image_data: vehicleRecord?.vehicle_image || null,
       license_plate: vehicleRecord?.vehicle_license_plate || null,
     },
     created_at: new Date().toISOString(),
