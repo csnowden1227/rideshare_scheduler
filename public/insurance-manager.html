@@ -271,6 +271,12 @@
           <p class="inline-note">This is the booking-level insurance payload shell stored on the reservation. Once Tint is connected, webhook updates can land in this same shape.</p>
           <pre id="insurance-payload-preview">Load a booking to inspect the insurance payload shell.</pre>
         </article>
+
+        <article class="event-card">
+          <h3>Tint-Ready Provider Preview</h3>
+          <p class="inline-note">Tint publicly documents iframe, REST API, webhooks, and mobility support. This preview turns your booking into a partner-ready request shell while we wait on Tint’s exact program schema.</p>
+          <pre id="insurance-provider-preview">Load a booking to inspect the provider request preview.</pre>
+        </article>
       </section>
     </div>
   </div>
@@ -284,6 +290,7 @@
       const apiHeaders = token ? { "X-Setup-Wizard-Token": token } : {};
       let currentSettings = null;
       let currentBooking = null;
+      let currentProviderPreview = null;
 
       function byId(id) {
         return document.getElementById(id);
@@ -369,6 +376,11 @@
         byId("insurance-payload-preview").textContent = JSON.stringify(booking?.insurance?.payload || {}, null, 2);
       }
 
+      function renderProviderPreview(preview) {
+        currentProviderPreview = preview || null;
+        byId("insurance-provider-preview").textContent = JSON.stringify(preview || {}, null, 2);
+      }
+
       function renderIframe(booking, settings) {
         const wrap = byId("insurance-iframe-wrap");
         const iframe = byId("insurance-iframe");
@@ -444,6 +456,8 @@
           renderBookingSummary(currentBooking);
           renderPayloadPreview(currentBooking);
           renderIframe(currentBooking, currentSettings);
+          const providerPreview = await fetchJson(`/api/insurance/provider-preview/${encodeURIComponent(bookingId)}${token ? `?token=${encodeURIComponent(token)}` : ""}`);
+          renderProviderPreview(providerPreview.preview || {});
           setMessage("booking-info", `Loaded booking ${data.booking.booking_id} for ${data.booking.customer_name || "customer"}.`);
         } catch (error) {
           setMessage("booking-error", error.message || "Unable to load booking insurance details.");
@@ -470,6 +484,7 @@
           currentBooking = data.booking;
           renderBookingSummary(currentBooking);
           renderPayloadPreview(currentBooking);
+          renderProviderPreview(data.provider_preview || {});
           renderIframe(currentBooking, currentSettings);
           setMessage("booking-success", `Quote shell ${data.quote.quote_id} created. Premium ${Number(data.quote.premium_amount || 0).toFixed(2)}.`);
         } catch (error) {
@@ -494,6 +509,7 @@
           currentBooking = data.booking;
           renderBookingSummary(currentBooking);
           renderPayloadPreview(currentBooking);
+          renderProviderPreview(data.provider_preview || {});
           renderIframe(currentBooking, currentSettings);
           setMessage("booking-success", `Coverage marked bound for booking ${bookingId}.`);
         } catch (error) {
@@ -518,6 +534,7 @@
           currentBooking = data.booking;
           renderBookingSummary(currentBooking);
           renderPayloadPreview(currentBooking);
+          renderProviderPreview({});
           renderIframe(currentBooking, currentSettings);
           setMessage("booking-success", `Coverage canceled for booking ${bookingId}.`);
         } catch (error) {

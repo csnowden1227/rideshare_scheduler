@@ -6490,6 +6490,104 @@ function buildInsurancePurchaseUrl({
   }
 }
 
+function buildTintQuoteShellRequest(booking = {}, settings = {}) {
+  const bookingShape = buildInsuranceBookingShape(booking);
+  const insurance = bookingShape.insurance || {};
+  return {
+    integration_surface: settings.embed_mode || "iframe",
+    program_id: settings.program_id || null,
+    partner_reference: {
+      location_id: bookingShape.location_id,
+      booking_id: bookingShape.booking_id,
+      vehicle_slot_id: bookingShape.vehicle_slot_id,
+    },
+    insured_experience: {
+      brand_name: settings.brand_name || null,
+      purchase_url: insurance.purchase_url || null,
+    },
+    trip: {
+      type: "livery_passenger_on_board",
+      pickup_address: bookingShape.pickup_address,
+      dropoff_address: bookingShape.dropoff_address,
+      scheduled_pickup_at: bookingShape.start_time,
+      scheduled_dropoff_at: bookingShape.end_time,
+      display_pickup_at: bookingShape.start_time ? formatDisplayDateTime(bookingShape.start_time) : null,
+      display_dropoff_at: bookingShape.end_time ? formatDisplayDateTime(bookingShape.end_time) : null,
+      fare_amount: bookingShape.total_price,
+      currency: "USD",
+    },
+    vehicle: {
+      slot_id: bookingShape.vehicle_slot_id,
+      type: bookingShape.vehicle_type,
+    },
+    customer: {
+      full_name: bookingShape.customer_name,
+      email: bookingShape.customer_email,
+      phone: bookingShape.customer_phone,
+    },
+    coverage_request: {
+      quote_id: insurance.quote_id,
+      requested_status: insurance.status,
+      effective_at: insurance.effective_at || bookingShape.start_time,
+      expires_at: insurance.expires_at || bookingShape.end_time,
+      premium_amount: insurance.premium_amount,
+      certificate_url: insurance.certificate_url,
+    },
+    notes: settings.notes || null,
+    disclaimer: "Tint publicly documents iframe, REST API, and webhooks for embedded insurance, but this request preview is a Tint-ready shell until your exact program schema is provided by Tint.",
+  };
+}
+
+function buildTintBindShellRequest(booking = {}, settings = {}) {
+  const quoteRequest = buildTintQuoteShellRequest(booking, settings);
+  return {
+    ...quoteRequest,
+    lifecycle_action: "bind_policy",
+    coverage_request: {
+      ...quoteRequest.coverage_request,
+      policy_id: booking?.insurance_policy_id || null,
+      requested_status: normalizeInsuranceStatus(booking?.insurance_status || "purchased"),
+    },
+  };
+}
+
+function buildInsuranceProviderPreview(booking = {}, settings = {}) {
+  const provider = normalizeInsuranceProvider(settings.provider || booking.insurance_provider);
+  if (provider === "tint") {
+    return {
+      provider,
+      official_capabilities: {
+        iframe: true,
+        rest_api: true,
+        webhooks: true,
+        multi_program: true,
+      },
+      quote_request_preview: buildTintQuoteShellRequest(booking, settings),
+      bind_request_preview: buildTintBindShellRequest(booking, settings),
+      implementation_notes: [
+        "Use Tint iframe for the fastest branded proof of concept.",
+        "Promote to API-first quote and bind once Tint shares the exact program schema.",
+        "Keep per-booking quote_id, policy_id, certificate_url, effective dates, and status on the booking record.",
+      ],
+    };
+  }
+  return {
+    provider,
+    quote_request_preview: {
+      booking: buildInsuranceBookingShape(booking),
+      settings,
+    },
+    bind_request_preview: {
+      booking: buildInsuranceBookingShape(booking),
+      settings,
+    },
+    implementation_notes: [
+      "Provider-specific schema has not been defined yet.",
+      "Keep the booking insurance fields generic until the carrier or MGA shares its contract.",
+    ],
+  };
+}
+
 const BOOKING_DISPLAY_TIMEZONE = String(process.env.BOOKING_DISPLAY_TIMEZONE || "America/Los_Angeles").trim() || "America/Los_Angeles";
 
 function formatDisplayDateTime(isoValue, timeZone = BOOKING_DISPLAY_TIMEZONE) {
@@ -12060,6 +12158,50 @@ app.get("/api/insurance/booking/:bookingId", requireWizardToken, async (req, res
   }
 });
 
+app.get("/api/insurance/provider-preview/:bookingId", requireWizardToken, async (req, res) => {
+  try {
+    await ensureInsuranceModuleTables();
+    const bookingId = Number(req.params.bookingId || 0);
+    if (!bookingId) {
+      return res.status(400).json({ error: "Valid bookingId is required." });
+    }
+    const bookingLookup = await pool.query(
+      `SELECT b.*,
+              p.business_name,
+              p.insurance_enabled,
+              p.insurance_provider,
+              p.insurance_program_id,
+              p.insurance_api_key_ref,
+              p.insurance_embed_mode,
+              p.insurance_brand_name,
+              p.insurance_state_rules,
+              p.insurance_embed_url,
+              p.insurance_webhook_secret,
+              p.insurance_notes
+       FROM bookings b
+       LEFT JOIN profiles p ON p.location_id = b.location_id
+       WHERE b.id = $1
+       LIMIT 1`,
+      [bookingId]
+    );
+    const booking = bookingLookup.rows[0];
+    if (!booking) {
+      return res.status(404).json({ error: "Booking not found." });
+    }
+    const settings = buildInsuranceSettingsShape(booking);
+    const preview = buildInsuranceProviderPreview(booking, settings);
+    return res.json({
+      success: true,
+      booking: buildInsuranceBookingShape(booking),
+      settings,
+      preview,
+    });
+  } catch (err) {
+    console.error("Insurance provider preview error:", err);
+    return res.status(500).json({ error: "Failed to build the provider preview." });
+  }
+});
+
 app.post("/api/insurance/quote", requireWizardToken, async (req, res) => {
   try {
     await ensureInsuranceModuleTables();
@@ -12153,6 +12295,17 @@ app.post("/api/insurance/quote", requireWizardToken, async (req, res) => {
         embed_mode: settings.embed_mode,
         purchase_url: purchaseUrl,
       },
+      provider_preview: buildInsuranceProviderPreview({
+        ...booking,
+        insurance_provider: settings.provider,
+        insurance_quote_id: quoteId,
+        insurance_status: "offered",
+        insurance_effective_at: effectiveAt,
+        insurance_expires_at: expiresAt,
+        insurance_premium_amount: premiumAmount,
+        insurance_purchase_url: purchaseUrl,
+        insurance_payload_json: payload,
+      }, settings),
       booking: buildInsuranceBookingShape({
         ...booking,
         insurance_provider: settings.provider,
@@ -12226,6 +12379,7 @@ app.post("/api/insurance/bind", requireWizardToken, async (req, res) => {
     const refreshed = await pool.query(`SELECT * FROM bookings WHERE id = $1 LIMIT 1`, [bookingId]);
     return res.json({
       success: true,
+      provider_preview: buildInsuranceProviderPreview(refreshed.rows[0], buildInsuranceSettingsShape(booking)),
       booking: buildInsuranceBookingShape(refreshed.rows[0]),
     });
   } catch (err) {
