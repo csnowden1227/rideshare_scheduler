@@ -3977,11 +3977,11 @@ function buildInstantBookingToggleNotification({
   if (notificationKind === INSTANT_BOOKING_NOTIFICATION_KIND_DAILY && enabledChanges.length && windowLabels) {
     subject = `${companyName} is available for on-demand booking today`;
     intro = `${companyName} is available for on-demand booking from ${windowLabels.startLabel} until ${windowLabels.endLabel}.`;
-    sms = `${companyName} is available for on-demand booking from ${windowLabels.startLabel} until ${windowLabels.endLabel}. Reserve now while availability remains open.`;
+    sms = `${companyName} is available for on-demand booking today from ${formatTimeLabel(primaryChange?.start_time)} until ${formatTimeLabel(primaryChange?.end_time)}. Reserve now while availability remains open.`;
   } else if (enabledChanges.length && windowLabels) {
     subject = `${companyName} is available for on-demand booking`;
     intro = `As of ${effectiveTimestampLabel}, ${companyName} is available for on-demand booking from ${windowLabels.startLabel} until ${windowLabels.endLabel}.`;
-    sms = `As of ${effectiveTimestampLabel}, ${companyName} is available for on-demand booking from ${windowLabels.startLabel} until ${windowLabels.endLabel}. Reserve now while availability remains open.`;
+    sms = `${companyName} is available for on-demand booking from ${formatTimeLabel(primaryChange?.start_time)} until ${formatTimeLabel(primaryChange?.end_time)}. Reserve now while availability remains open.`;
   } else if (disabledChanges.length) {
     subject = `${companyName} on-demand booking availability update`;
     intro = `As of ${effectiveTimestampLabel}, ${companyName} is not currently available for on-demand booking at this time.`;
