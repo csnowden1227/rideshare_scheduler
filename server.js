@@ -635,6 +635,7 @@ async function ensureTripTrackingTables() {
       await pool.query(`CREATE INDEX IF NOT EXISTS idx_trip_tracking_sessions_location_id ON trip_tracking_sessions(location_id)`);
       await pool.query(`CREATE INDEX IF NOT EXISTS idx_trip_tracking_sessions_status ON trip_tracking_sessions(status)`);
       await pool.query(`ALTER TABLE trip_tracking_sessions ADD COLUMN IF NOT EXISTS customer_notified_en_route_at TIMESTAMPTZ`);
+      await pool.query(`ALTER TABLE trip_tracking_sessions ADD COLUMN IF NOT EXISTS customer_notified_arrived_at TIMESTAMPTZ`);
       await pool.query(`ALTER TABLE trip_tracking_sessions ADD COLUMN IF NOT EXISTS customer_followup_sent_at TIMESTAMPTZ`);
       await pool.query(`ALTER TABLE trip_tracking_sessions ADD COLUMN IF NOT EXISTS driver_profile_id TEXT`);
       await pool.query(`ALTER TABLE trip_tracking_sessions ADD COLUMN IF NOT EXISTS driver_display_name TEXT`);
@@ -3532,13 +3533,18 @@ function buildDriverBookingSmsMessage({
   return lines.join("\n");
 }
 
-function buildCustomerEnRouteSmsMessage({
+function buildCustomerTrackingStatusSmsMessage({
   session,
   trackingUrl,
   portalUrl,
   planName,
+  status,
 }) {
-  const lines = ["Your chauffeur is on the way."];
+  const lines = [
+    status === "arrived_at_pickup"
+      ? "Your chauffeur has arrived at the pickup location."
+      : "Your chauffeur is on the way."
+  ];
   if (trackingUrl) {
     lines.push(`Track your driver here: ${trackingUrl}`);
   }
@@ -3556,6 +3562,7 @@ function buildCustomerEnRouteSmsMessage({
 async function sendCustomerEnRouteTrackingSms({
   trackingSessionId,
   req = null,
+  status = "en_route_to_pickup",
 }) {
   if (!trackingSessionId) {
     return { success: false, skipped: true, reason: "trackingSessionId is required." };
@@ -3626,11 +3633,12 @@ async function sendCustomerEnRouteTrackingSms({
     ? (shortUrls.portal.customer_login_url || portalUrls.customer_login_url || null)
     : (shortUrls.portal.ride_hub_url || portalUrls.ride_hub_url || null);
   const customerTrackingLink = shortUrls.tracking.customer_tracking_url || trackingUrls.customer_url || null;
-  const message = buildCustomerEnRouteSmsMessage({
+  const message = buildCustomerTrackingStatusSmsMessage({
     session,
     trackingUrl: customerTrackingLink,
     portalUrl: portalLink,
     planName: normalizedPlanName,
+    status,
   });
 
   const sendResult = await sendCrmSmsToContact({
@@ -8258,7 +8266,7 @@ app.post("/api/tracking/status", async (req, res) => {
     await client.query("BEGIN");
 
     const existingSessionResult = await client.query(
-      `SELECT id, status, customer_notified_en_route_at, customer_followup_sent_at
+      `SELECT id, status, customer_notified_en_route_at, customer_notified_arrived_at, customer_followup_sent_at
        FROM trip_tracking_sessions
        WHERE driver_token = $1
        LIMIT 1
@@ -8296,6 +8304,10 @@ app.post("/api/tracking/status", async (req, res) => {
       status === "en_route_to_pickup" &&
       existingSession.status !== "en_route_to_pickup" &&
       !existingSession.customer_notified_en_route_at;
+    const shouldTriggerCustomerArrived =
+      status === "arrived_at_pickup" &&
+      existingSession.status !== "arrived_at_pickup" &&
+      !existingSession.customer_notified_arrived_at;
 
     const shouldTriggerPostRideFollowup =
       status === "completed" &&
@@ -8315,6 +8327,15 @@ app.post("/api/tracking/status", async (req, res) => {
       await client.query(
         `UPDATE trip_tracking_sessions
          SET customer_followup_sent_at = NOW()
+         WHERE id = $1`,
+        [existingSession.id]
+      );
+    }
+
+    if (shouldTriggerCustomerArrived) {
+      await client.query(
+        `UPDATE trip_tracking_sessions
+         SET customer_notified_arrived_at = NOW()
          WHERE id = $1`,
         [existingSession.id]
       );
@@ -8359,11 +8380,12 @@ app.post("/api/tracking/status", async (req, res) => {
       }
     }
 
-    if (shouldTriggerCustomerTracking) {
+    if (shouldTriggerCustomerTracking || shouldTriggerCustomerArrived) {
       try {
         const smsResult = await sendCustomerEnRouteTrackingSms({
           trackingSessionId: existingSession.id,
           req,
+          status,
         });
         directCustomerSms = {
           attempted: true,
@@ -8426,7 +8448,7 @@ app.post("/api/tracking/session/practice-notify", async (req, res) => {
 
     const sessionLookup = trackingSessionId
       ? await client.query(
-          `SELECT id, booking_id, status, customer_notified_en_route_at
+          `SELECT id, booking_id, status, customer_notified_en_route_at, customer_notified_arrived_at
            FROM trip_tracking_sessions
            WHERE id = $1
            LIMIT 1
@@ -8434,7 +8456,7 @@ app.post("/api/tracking/session/practice-notify", async (req, res) => {
           [trackingSessionId]
         )
       : await client.query(
-          `SELECT id, booking_id, status, customer_notified_en_route_at
+          `SELECT id, booking_id, status, customer_notified_en_route_at, customer_notified_arrived_at
            FROM trip_tracking_sessions
            WHERE booking_id = $1
            LIMIT 1
