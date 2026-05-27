@@ -1746,7 +1746,6 @@ async function buildTrackingStatusWebhookPayload({ req, session, status }) {
       review_and_tip_url: trackingUrls.follow_up_url,
     },
   });
-  const customerName = [session.first_name, session.last_name].filter(Boolean).join(" ").trim();
   const normalizedPlanName = normalizePlanName(session.plan_name || "starter");
   const premiumClientPortalEnabled = normalizedPlanName === "premium" || normalizedPlanName === "pro";
   const proMobileAppEnabled = normalizedPlanName === "pro";
@@ -1772,58 +1771,25 @@ async function buildTrackingStatusWebhookPayload({ req, session, status }) {
     send_driver_tracking_email: status === "en_route_to_pickup" && Boolean(String(session.driver_email || "").trim()),
     send_post_ride_followup_sms: status === "completed",
     business_name: session.business_name || "Chauffeur Deluxe",
-      customer: {
-        first_name: session.first_name || null,
-        last_name: session.last_name || null,
-        full_name: customerName || null,
-        email: session.customer_email || null,
-        phone: normalizePhoneNumber(session.customer_phone || "") || null,
-        crm_contact_id: session.crm_contact_id || null,
-      },
+    customer: {
+      first_name: session.first_name || null,
+      last_name: session.last_name || null,
+      email: session.customer_email || null,
+      phone: normalizePhoneNumber(session.customer_phone || "") || null,
+      crm_contact_id: session.crm_contact_id || null,
+    },
     booking: {
       status: session.booking_status || null,
-      pickup_address: session.pickup_address || null,
-      dropoff_address: session.dropoff_address || null,
-      pickup_lat: session.pickup_lat ?? null,
-      pickup_lng: session.pickup_lng ?? null,
-      dropoff_lat: session.dropoff_lat ?? null,
-      dropoff_lng: session.dropoff_lng ?? null,
       start_time: session.start_time || null,
-      end_time: session.end_time || null,
-      vehicle_slot_id: session.vehicle_slot_id || null,
-      total_price: Number(session.total_price || 0),
     },
     tracking: {
       status,
-      driver_lat: session.current_lat ?? null,
-      driver_lng: session.current_lng ?? null,
-      heading: session.heading ?? null,
-      speed: session.speed ?? null,
-      accuracy: session.accuracy ?? null,
-      last_location_at: session.last_location_at || null,
-      customer_tracking_token: session.customer_token,
       customer_tracking_url: shortUrls.tracking.customer_tracking_url,
-      customer_tracking_short_url: shortUrls.tracking.customer_tracking_short_url || null,
       follow_up_url: shortUrls.tracking.follow_up_url,
-      follow_up_short_url: shortUrls.tracking.follow_up_short_url || null,
-      driver_tracking_token: session.driver_token,
-      driver_tracking_url: shortUrls.tracking.driver_tracking_url,
-      driver_tracking_short_url: shortUrls.tracking.driver_tracking_short_url || null,
-    },
-    follow_up: {
-      review_and_tip_url: shortUrls.follow_up.review_and_tip_url,
-      review_and_tip_short_url: shortUrls.follow_up.review_and_tip_short_url || null,
-      tip_enabled: normalizePaymentProvider(session.payment_provider || "stripe") === "stripe",
-      suggested_tip_amounts: [5, 10, 20],
     },
     portal: {
       customer_login_url: shortUrls.portal.customer_login_url || portalUrls.customer_login_url || null,
       ride_hub_url: shortUrls.portal.ride_hub_url,
-      ride_hub_short_url: shortUrls.portal.ride_hub_short_url || null,
-      ride_inbox_url: shortUrls.portal.ride_inbox_url,
-      ride_inbox_short_url: shortUrls.portal.ride_inbox_short_url || null,
-      premium_client_portal_enabled: premiumClientPortalEnabled,
-      pro_mobile_app_enabled: proMobileAppEnabled,
     },
     created_at: new Date().toISOString(),
   };
@@ -8257,6 +8223,7 @@ app.post("/api/tracking/status", async (req, res) => {
           skipped: Boolean(webhookResult.skipped),
           status: webhookResult.status || null,
           reason: webhookResult.error || null,
+          response_preview: webhookResult.response_preview || null,
           customer_tracking_url: webhookResult.customer_tracking_url || null,
           follow_up_url: webhookResult.follow_up_url || null,
         };
