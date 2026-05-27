@@ -3532,6 +3532,123 @@ function buildDriverBookingSmsMessage({
   return lines.join("\n");
 }
 
+function buildCustomerEnRouteSmsMessage({
+  session,
+  trackingUrl,
+  portalUrl,
+  planName,
+}) {
+  const lines = ["Your chauffeur is on the way."];
+  if (trackingUrl) {
+    lines.push(`Track your driver here: ${trackingUrl}`);
+  }
+  if (planName === "pro" && portalUrl) {
+    lines.push(`Manage your rides here: ${portalUrl}`);
+  } else if (planName === "premium" && portalUrl) {
+    lines.push(`Open Ride Hub: ${portalUrl}`);
+  }
+  if (session?.start_time) {
+    lines.push(`Pickup Time: ${formatDisplayDateTime(session.start_time) || session.start_time}`);
+  }
+  return lines.join("\n");
+}
+
+async function sendCustomerEnRouteTrackingSms({
+  trackingSessionId,
+  req = null,
+}) {
+  if (!trackingSessionId) {
+    return { success: false, skipped: true, reason: "trackingSessionId is required." };
+  }
+
+  const session = await getTrackingSessionById(trackingSessionId);
+  if (!session) {
+    return { success: false, skipped: true, reason: "Tracking session not found." };
+  }
+
+  const normalizedCustomerPhone = normalizePhoneNumber(session.customer_phone || "");
+  if (!normalizedCustomerPhone) {
+    return { success: false, skipped: true, reason: "Customer phone is missing." };
+  }
+
+  const crmAuthOptions = {
+    includeEnvFallback: false,
+  };
+
+  let customerContactId = session.crm_contact_id || await upsertCrmContact({
+    locationId: session.location_id,
+    firstName: session.first_name,
+    lastName: session.last_name,
+    email: undefined,
+    phone: normalizedCustomerPhone,
+    crmAuthOptions,
+  });
+
+  if (!customerContactId && (session.customer_email || normalizedCustomerPhone)) {
+    customerContactId = await upsertCrmContact({
+      locationId: session.location_id,
+      firstName: session.first_name,
+      lastName: session.last_name,
+      email: session.customer_email || undefined,
+      phone: normalizedCustomerPhone,
+      crmAuthOptions,
+    });
+  }
+
+  if (!customerContactId) {
+    return { success: false, skipped: true, reason: "Unable to resolve CRM customer contact." };
+  }
+
+  const trackingUrls = buildTrackingUrls(req, session.driver_token, session.customer_token, session.public_app_url);
+  const portalUrls = buildCustomerPortalUrls(req, session.location_id, session.customer_token, session.public_app_url);
+  const shortUrls = await buildShortPublicUrls({
+    req,
+    locationId: session.location_id,
+    bookingId: session.booking_id,
+    trackingSessionId: session.id,
+    tracking: {
+      customer_tracking_url: trackingUrls.customer_url,
+      driver_tracking_url: trackingUrls.driver_url,
+      follow_up_url: trackingUrls.follow_up_url,
+    },
+    portal: {
+      customer_login_url: portalUrls.customer_login_url || null,
+      ride_hub_url: portalUrls.ride_hub_url,
+      ride_inbox_url: portalUrls.ride_inbox_url,
+    },
+    followUp: {
+      review_and_tip_url: trackingUrls.follow_up_url,
+    },
+  });
+
+  const normalizedPlanName = normalizePlanName(session.plan_name || "starter");
+  const portalLink = normalizedPlanName === "pro"
+    ? (shortUrls.portal.customer_login_url || portalUrls.customer_login_url || null)
+    : (shortUrls.portal.ride_hub_url || portalUrls.ride_hub_url || null);
+  const customerTrackingLink = shortUrls.tracking.customer_tracking_url || trackingUrls.customer_url || null;
+  const message = buildCustomerEnRouteSmsMessage({
+    session,
+    trackingUrl: customerTrackingLink,
+    portalUrl: portalLink,
+    planName: normalizedPlanName,
+  });
+
+  const sendResult = await sendCrmSmsToContact({
+    locationId: session.location_id,
+    contactId: customerContactId,
+    message,
+    crmAuthOptions,
+  });
+
+  return {
+    ...sendResult,
+    contactId: customerContactId,
+    customer_tracking_url: customerTrackingLink,
+    portal_url: portalLink,
+    plan_name: normalizedPlanName,
+  };
+}
+
 async function sendDriverAssignmentSmsForBooking({ bookingId, locationId, paymentState, req = null }) {
   if (!bookingId || !locationId || !paymentState) {
     return { success: false, skipped: true, reason: "bookingId, locationId, and paymentState are required." };
@@ -8210,6 +8327,11 @@ app.post("/api/tracking/status", async (req, res) => {
       skipped: true,
       reason: "Status change does not require a customer-facing tracking or follow-up notification.",
     };
+    let directCustomerSms = {
+      attempted: false,
+      skipped: true,
+      reason: "Status change does not require a direct customer tracking SMS.",
+    };
 
     if (shouldTriggerCustomerTracking || shouldTriggerPostRideFollowup) {
       try {
@@ -8237,11 +8359,41 @@ app.post("/api/tracking/status", async (req, res) => {
       }
     }
 
+    if (shouldTriggerCustomerTracking) {
+      try {
+        const smsResult = await sendCustomerEnRouteTrackingSms({
+          trackingSessionId: existingSession.id,
+          req,
+        });
+        directCustomerSms = {
+          attempted: true,
+          skipped: Boolean(smsResult.skipped),
+          success: Boolean(smsResult.success),
+          reason: smsResult.reason || null,
+          error: smsResult.error || null,
+          status: smsResult.status || null,
+          tokenSource: smsResult.tokenSource || null,
+          customer_tracking_url: smsResult.customer_tracking_url || null,
+          portal_url: smsResult.portal_url || null,
+          plan_name: smsResult.plan_name || null,
+        };
+      } catch (smsError) {
+        console.error("Direct customer en-route SMS error:", smsError);
+        directCustomerSms = {
+          attempted: true,
+          skipped: false,
+          success: false,
+          reason: smsError?.message || "Direct customer en-route SMS failed.",
+        };
+      }
+    }
+
     return res.json({
       success: true,
       tracking_session_id: result.rows[0].id,
       status: result.rows[0].status,
       tracking_status_webhook: statusWebhook,
+      direct_customer_sms: directCustomerSms,
     });
   } catch (err) {
     if (client) {
@@ -8337,6 +8489,11 @@ app.post("/api/tracking/session/practice-notify", async (req, res) => {
       skipped: true,
       reason: "Practice tracking SMS was already sent for this session.",
     };
+    let directCustomerSms = {
+      attempted: false,
+      skipped: true,
+      reason: "Practice tracking SMS was already sent for this session.",
+    };
 
     if (shouldTriggerCustomerTracking) {
       try {
@@ -8350,6 +8507,7 @@ app.post("/api/tracking/session/practice-notify", async (req, res) => {
           skipped: Boolean(webhookResult.skipped),
           status: webhookResult.status || null,
           reason: webhookResult.error || null,
+          response_preview: webhookResult.response_preview || null,
           customer_tracking_url: webhookResult.customer_tracking_url || null,
           follow_up_url: webhookResult.follow_up_url || null,
         };
@@ -8361,6 +8519,33 @@ app.post("/api/tracking/session/practice-notify", async (req, res) => {
           reason: webhookError?.message || "Practice tracking notification failed.",
         };
       }
+
+      try {
+        const smsResult = await sendCustomerEnRouteTrackingSms({
+          trackingSessionId: sessionRow.id,
+          req,
+        });
+        directCustomerSms = {
+          attempted: true,
+          skipped: Boolean(smsResult.skipped),
+          success: Boolean(smsResult.success),
+          reason: smsResult.reason || null,
+          error: smsResult.error || null,
+          status: smsResult.status || null,
+          tokenSource: smsResult.tokenSource || null,
+          customer_tracking_url: smsResult.customer_tracking_url || null,
+          portal_url: smsResult.portal_url || null,
+          plan_name: smsResult.plan_name || null,
+        };
+      } catch (smsError) {
+        console.error("Practice direct customer en-route SMS error:", smsError);
+        directCustomerSms = {
+          attempted: true,
+          skipped: false,
+          success: false,
+          reason: smsError?.message || "Practice direct customer en-route SMS failed.",
+        };
+      }
     }
 
     return res.json({
@@ -8368,6 +8553,7 @@ app.post("/api/tracking/session/practice-notify", async (req, res) => {
       tracking_session_id: sessionRow.id,
       status: "en_route_to_pickup",
       tracking_status_webhook: statusWebhook,
+      direct_customer_sms: directCustomerSms,
     });
   } catch (err) {
     if (client) {
