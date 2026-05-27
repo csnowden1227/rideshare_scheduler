@@ -6136,7 +6136,13 @@ function buildWizardSyncPayload({
         driver_email: row.driver_email || "",
         base_rate: Number(row.base_rate || 0),
         mile_rate: Number(row.mile_rate || 0),
-        outbound_buffer_min: Number(row.outbound_buffer_min || 0)
+        outbound_buffer_min: Number(row.outbound_buffer_min || 0),
+        instant_booking_enabled: normalizeBooleanish(row.instant_booking_enabled, true),
+        instant_booking_start_time: normalizeTimeOfDay(row.instant_booking_start_time, DEFAULT_INSTANT_BOOKING_START_TIME),
+        instant_booking_end_time: normalizeTimeOfDay(row.instant_booking_end_time, DEFAULT_INSTANT_BOOKING_END_TIME),
+        min_notice_min: Number.isFinite(parseInt(row.min_notice_min, 10))
+          ? Math.max(0, parseInt(row.min_notice_min, 10))
+          : (normalizeBooleanish(row.instant_booking_enabled, true) ? 0 : (DEFAULT_NON_INSTANT_NOTICE_HOURS * 60)),
       })) : []
     }
   };
