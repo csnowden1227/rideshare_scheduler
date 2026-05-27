@@ -1747,8 +1747,6 @@ async function buildTrackingStatusWebhookPayload({ req, session, status }) {
     },
   });
   const customerName = [session.first_name, session.last_name].filter(Boolean).join(" ").trim();
-  const vehicleRecord = getVehicleRecordForSession(session);
-  const vehicleDisplayName = buildVehicleDisplayName(vehicleRecord, session.vehicle_slot_id || "");
   const normalizedPlanName = normalizePlanName(session.plan_name || "starter");
   const premiumClientPortalEnabled = normalizedPlanName === "premium" || normalizedPlanName === "pro";
   const proMobileAppEnabled = normalizedPlanName === "pro";
@@ -1827,21 +1825,6 @@ async function buildTrackingStatusWebhookPayload({ req, session, status }) {
       premium_client_portal_enabled: premiumClientPortalEnabled,
       pro_mobile_app_enabled: proMobileAppEnabled,
     },
-    assigned_driver: {
-        id: session.driver_profile_id || null,
-        name: session.driver_display_name || null,
-        phone: normalizeDriverPhone(session.driver_phone || "") || null,
-        email: session.driver_email || null,
-      },
-    vehicle: {
-      slot_id: session.vehicle_slot_id || null,
-      type: vehicleRecord?.vehicle_type || null,
-      display_name: vehicleDisplayName || null,
-      year: vehicleRecord?.vehicle_year || null,
-      make: vehicleRecord?.vehicle_make || null,
-      model: vehicleRecord?.vehicle_model || null,
-      license_plate: vehicleRecord?.vehicle_license_plate || null,
-    },
     created_at: new Date().toISOString(),
   };
 }
@@ -1889,11 +1872,13 @@ async function triggerTrackingStatusWebhook({ req, trackingSessionId, status }) 
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
+  const responseText = await response.text().catch(() => "");
 
   return {
     success: response.ok,
     skipped: false,
     status: response.status,
+    response_preview: responseText.slice(0, 300) || null,
     customer_tracking_url: payload.tracking.customer_tracking_url,
     follow_up_url: payload.follow_up.review_and_tip_url,
   };
