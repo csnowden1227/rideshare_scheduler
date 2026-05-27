@@ -3977,11 +3977,11 @@ function buildInstantBookingToggleNotification({
   if (notificationKind === INSTANT_BOOKING_NOTIFICATION_KIND_DAILY && enabledChanges.length && windowLabels) {
     subject = `${companyName} is available for on-demand booking today`;
     intro = `${companyName} is available for on-demand booking from ${windowLabels.startLabel} until ${windowLabels.endLabel}.`;
-    sms = `${companyName} is available for on-demand booking today from ${formatTimeLabel(primaryChange?.start_time)} until ${formatTimeLabel(primaryChange?.end_time)}. Reserve now while availability remains open.`;
+    sms = `${companyName} is available for on-demand booking today from ${formatTimeLabel(primaryChange?.start_time)} until ${formatTimeLabel(primaryChange?.end_time)}.`;
   } else if (enabledChanges.length && windowLabels) {
     subject = `${companyName} is available for on-demand booking`;
     intro = `As of ${effectiveTimestampLabel}, ${companyName} is available for on-demand booking from ${windowLabels.startLabel} until ${windowLabels.endLabel}.`;
-    sms = `${companyName} is available for on-demand booking from ${formatTimeLabel(primaryChange?.start_time)} until ${formatTimeLabel(primaryChange?.end_time)}. Reserve now while availability remains open.`;
+    sms = `${companyName} is available for on-demand booking from ${formatTimeLabel(primaryChange?.start_time)} until ${formatTimeLabel(primaryChange?.end_time)}.`;
   } else if (disabledChanges.length) {
     subject = `${companyName} on-demand booking availability update`;
     intro = `As of ${effectiveTimestampLabel}, ${companyName} is not currently available for on-demand booking at this time.`;
@@ -4015,7 +4015,7 @@ async function notifyCrmContactsOfInstantBookingToggle({
   timeZone = BOOKING_DISPLAY_TIMEZONE,
 }) {
   if (!locationId || !changes.length) {
-    return { triggered: false, notified_contacts: 0, sms_sent: 0, emails_sent: 0 };
+    return { triggered: false, notified_contacts: 0, sms_sent: 0, emails_sent: 0, sms_attempted: 0, emails_attempted: 0 };
   }
 
   const contacts = await listCrmContactsForLocation({
@@ -4032,6 +4032,10 @@ async function notifyCrmContactsOfInstantBookingToggle({
   let smsSent = 0;
   let emailsSent = 0;
   let notifiedContacts = 0;
+  let smsAttempted = 0;
+  let emailsAttempted = 0;
+  const smsFailures = [];
+  const emailFailures = [];
 
   for (const contact of contacts) {
     const contactId = String(contact?.id || contact?._id || "").trim();
@@ -4040,6 +4044,7 @@ async function notifyCrmContactsOfInstantBookingToggle({
 
     const phone = normalizePhoneNumber(contact?.phone || contact?.phoneNumber || "");
     if (phone) {
+      smsAttempted += 1;
       const smsResult = await sendCrmSmsToContact({
         locationId,
         contactId,
@@ -4049,11 +4054,20 @@ async function notifyCrmContactsOfInstantBookingToggle({
       if (smsResult.success) {
         smsSent += 1;
         touched = true;
+      } else {
+        smsFailures.push({
+          contact_id: contactId,
+          phone,
+          status: smsResult.status || null,
+          error: smsResult.error || null,
+          request_label: smsResult.requestLabel || null,
+        });
       }
     }
 
     const email = String(contact?.email || contact?.emailAddress || "").trim();
     if (email) {
+      emailsAttempted += 1;
       const emailResult = await sendCrmEmailToContact({
         locationId,
         contactId,
@@ -4065,6 +4079,13 @@ async function notifyCrmContactsOfInstantBookingToggle({
       if (emailResult.success) {
         emailsSent += 1;
         touched = true;
+      } else {
+        emailFailures.push({
+          contact_id: contactId,
+          email,
+          status: emailResult.status || null,
+          error: emailResult.error || null,
+        });
       }
     }
 
@@ -4078,8 +4099,12 @@ async function notifyCrmContactsOfInstantBookingToggle({
     notification_kind: notificationKind,
     changes,
     notified_contacts: notifiedContacts,
+    sms_attempted: smsAttempted,
     sms_sent: smsSent,
+    sms_failures: smsFailures.slice(0, 10),
+    emails_attempted: emailsAttempted,
     emails_sent: emailsSent,
+    email_failures: emailFailures.slice(0, 10),
   };
 }
 
