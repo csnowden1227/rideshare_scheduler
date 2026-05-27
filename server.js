@@ -4223,11 +4223,18 @@ async function processDailyInstantBookingNotifications() {
         },
       });
 
-      console.log("[instant-booking] Daily CRM contact notification result", {
-        locationId: profile.location_id,
-        sentForDate,
-        result: JSON.parse(JSON.stringify(result)),
-      });
+      console.log(
+        "[instant-booking] Daily CRM contact notification result",
+        JSON.stringify(
+          {
+            locationId: profile.location_id,
+            sentForDate,
+            result,
+          },
+          null,
+          2
+        )
+      );
     }
   } catch (error) {
     console.error("[instant-booking] Daily CRM contact notification error", {
@@ -5998,10 +6005,17 @@ async function saveConfigHandler(req, res) {
                 changes: instantBookingToggleChanges,
               },
             });
-            console.log("[instant-booking] CRM contact notification result", {
-              locationId: location_id,
-              result: JSON.parse(JSON.stringify(result)),
-            });
+            console.log(
+              "[instant-booking] CRM contact notification result",
+              JSON.stringify(
+                {
+                  locationId: location_id,
+                  result,
+                },
+                null,
+                2
+              )
+            );
           })
           .catch((error) => {
             console.error("[instant-booking] CRM contact notification error", {
