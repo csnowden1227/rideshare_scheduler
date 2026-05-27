@@ -73,6 +73,7 @@ function normalizeInsuranceEmbedMode(value) {
 function normalizeInsuranceStatus(value) {
   const normalized = String(value || "").trim().toLowerCase();
   const allowed = new Set([
+    "requested",
     "not_offered",
     "quoted",
     "offered",
@@ -99,6 +100,47 @@ function buildInsuranceShellQuoteId() {
 
 function buildInsuranceShellPolicyId() {
   return `ins_policy_${randomUUID().replace(/-/g, "").slice(0, 18)}`;
+}
+
+function normalizeInsuranceCoverageOption(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  const allowed = new Set(["tnc_period_3", "tnc_periods_2_3", "tnc_periods_1_3"]);
+  return allowed.has(normalized) ? normalized : "tnc_period_3";
+}
+
+function normalizeInsuranceActivationRule(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  const allowed = new Set(["passenger_on_board", "matched_to_dropoff", "app_on_to_dropoff"]);
+  return allowed.has(normalized) ? normalized : "passenger_on_board";
+}
+
+function getInsuranceCoverageOptionMeta(option) {
+  const normalized = normalizeInsuranceCoverageOption(option);
+  if (normalized === "tnc_periods_1_3") {
+    return {
+      code: normalized,
+      label: "TNC Periods 1-3",
+      description: "App on, matched, and passenger-on-board coverage.",
+      periods: ["period_1", "period_2", "period_3"],
+      activation_rule: "app_on_to_dropoff",
+    };
+  }
+  if (normalized === "tnc_periods_2_3") {
+    return {
+      code: normalized,
+      label: "TNC Periods 2-3",
+      description: "Matched through dropoff, including passenger-on-board.",
+      periods: ["period_2", "period_3"],
+      activation_rule: "matched_to_dropoff",
+    };
+  }
+  return {
+    code: "tnc_period_3",
+    label: "TNC Period 3",
+    description: "Passenger in vehicle only.",
+    periods: ["period_3"],
+    activation_rule: "passenger_on_board",
+  };
 }
 
 const envStripeSecretKey = normalizeStripeSecretKey(process.env.STRIPE_SECRET_KEY || "");
@@ -437,6 +479,8 @@ async function ensureInsuranceModuleTables() {
       await pool.query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS insurance_embed_url TEXT`);
       await pool.query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS insurance_webhook_secret TEXT`);
       await pool.query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS insurance_notes TEXT`);
+      await pool.query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS insurance_coverage_option TEXT`);
+      await pool.query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS insurance_activation_rule TEXT`);
 
       await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS insurance_provider TEXT`);
       await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS insurance_quote_id TEXT`);
@@ -448,6 +492,10 @@ async function ensureInsuranceModuleTables() {
       await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS insurance_premium_amount NUMERIC`);
       await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS insurance_purchase_url TEXT`);
       await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS insurance_payload_json JSONB DEFAULT '{}'::jsonb`);
+      await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS insurance_coverage_option TEXT`);
+      await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS insurance_activation_rule TEXT`);
+      await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS insurance_requested_at TIMESTAMPTZ`);
+      await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS insurance_request_notes TEXT`);
 
       await pool.query(`
         CREATE TABLE IF NOT EXISTS insurance_event_logs (
@@ -6400,6 +6448,7 @@ function getPublicAppUrl(req = null) {
 }
 
 function buildInsuranceSettingsShape(profile = {}) {
+  const coverageMeta = getInsuranceCoverageOptionMeta(profile.insurance_coverage_option);
   return {
     enabled: Boolean(profile.insurance_enabled),
     provider: normalizeInsuranceProvider(profile.insurance_provider),
@@ -6411,10 +6460,21 @@ function buildInsuranceSettingsShape(profile = {}) {
     webhook_secret: String(profile.insurance_webhook_secret || "").trim() || null,
     notes: String(profile.insurance_notes || "").trim() || null,
     state_rules: safeParseJson(profile.insurance_state_rules, []),
+    coverage_option: coverageMeta.code,
+    coverage_option_label: coverageMeta.label,
+    coverage_description: coverageMeta.description,
+    covered_periods: coverageMeta.periods,
+    activation_rule: normalizeInsuranceActivationRule(profile.insurance_activation_rule || coverageMeta.activation_rule),
+    available_coverage_options: [
+      getInsuranceCoverageOptionMeta("tnc_period_3"),
+      getInsuranceCoverageOptionMeta("tnc_periods_2_3"),
+      getInsuranceCoverageOptionMeta("tnc_periods_1_3"),
+    ],
   };
 }
 
 function buildInsuranceBookingShape(booking = {}) {
+  const coverageMeta = getInsuranceCoverageOptionMeta(booking.insurance_coverage_option);
   return {
     booking_id: Number(booking.id || booking.booking_id || 0) || null,
     location_id: String(booking.location_id || "").trim() || null,
@@ -6438,6 +6498,13 @@ function buildInsuranceBookingShape(booking = {}) {
       certificate_url: String(booking.insurance_certificate_url || "").trim() || null,
       premium_amount: normalizeOptionalMoney(booking.insurance_premium_amount),
       purchase_url: String(booking.insurance_purchase_url || "").trim() || null,
+      coverage_option: coverageMeta.code,
+      coverage_option_label: coverageMeta.label,
+      coverage_description: coverageMeta.description,
+      covered_periods: coverageMeta.periods,
+      activation_rule: normalizeInsuranceActivationRule(booking.insurance_activation_rule || coverageMeta.activation_rule),
+      requested_at: booking.insurance_requested_at || null,
+      request_notes: String(booking.insurance_request_notes || "").trim() || null,
       payload: safeParseJson(booking.insurance_payload_json, {}),
     },
   };
@@ -6467,7 +6534,12 @@ async function logInsuranceEvent({
 
 function computeInsuranceShellPremium(booking = {}) {
   const totalPrice = normalizeOptionalMoney(booking.total_price) || 0;
-  const computed = totalPrice > 0 ? totalPrice * 0.08 : 12;
+  const coverageOption = normalizeInsuranceCoverageOption(booking.insurance_coverage_option);
+  const multiplier =
+    coverageOption === "tnc_periods_1_3" ? 0.14 :
+    coverageOption === "tnc_periods_2_3" ? 0.11 :
+    0.08;
+  const computed = totalPrice > 0 ? totalPrice * multiplier : 12;
   return Math.max(8, Math.round(computed * 100) / 100);
 }
 
@@ -6506,7 +6578,11 @@ function buildTintQuoteShellRequest(booking = {}, settings = {}) {
       purchase_url: insurance.purchase_url || null,
     },
     trip: {
-      type: "livery_passenger_on_board",
+      type: "livery_tnc",
+      coverage_option: insurance.coverage_option,
+      coverage_option_label: insurance.coverage_option_label,
+      covered_periods: insurance.covered_periods,
+      activation_rule: insurance.activation_rule,
       pickup_address: bookingShape.pickup_address,
       dropoff_address: bookingShape.dropoff_address,
       scheduled_pickup_at: bookingShape.start_time,
@@ -6532,8 +6608,12 @@ function buildTintQuoteShellRequest(booking = {}, settings = {}) {
       expires_at: insurance.expires_at || bookingShape.end_time,
       premium_amount: insurance.premium_amount,
       certificate_url: insurance.certificate_url,
+      coverage_description: insurance.coverage_description,
+      request_notes: insurance.request_notes,
+      requested_at: insurance.requested_at,
     },
     notes: settings.notes || null,
+    platform_role: "technology_layer_only",
     disclaimer: "Tint publicly documents iframe, REST API, and webhooks for embedded insurance, but this request preview is a Tint-ready shell until your exact program schema is provided by Tint.",
   };
 }
@@ -12032,7 +12112,8 @@ app.get("/api/insurance/settings/:location_id", requireWizardToken, async (req, 
     const profileLookup = await pool.query(
       `SELECT location_id, business_name, insurance_enabled, insurance_provider, insurance_program_id,
               insurance_api_key_ref, insurance_embed_mode, insurance_brand_name, insurance_state_rules,
-              insurance_embed_url, insurance_webhook_secret, insurance_notes
+              insurance_embed_url, insurance_webhook_secret, insurance_notes,
+              insurance_coverage_option, insurance_activation_rule
        FROM profiles
        WHERE location_id = $1
        LIMIT 1`,
@@ -12076,6 +12157,8 @@ app.post("/api/insurance/settings/:location_id", requireWizardToken, async (req,
       String(req.body.embed_url || "").trim() || null,
       String(req.body.webhook_secret || "").trim() || null,
       String(req.body.notes || "").trim() || null,
+      normalizeInsuranceCoverageOption(req.body.coverage_option),
+      normalizeInsuranceActivationRule(req.body.activation_rule),
       locationId,
     ];
     const result = await pool.query(
@@ -12089,11 +12172,14 @@ app.post("/api/insurance/settings/:location_id", requireWizardToken, async (req,
            insurance_state_rules = $7::jsonb,
            insurance_embed_url = $8,
            insurance_webhook_secret = $9,
-           insurance_notes = $10
-       WHERE location_id = $11
+           insurance_notes = $10,
+           insurance_coverage_option = $11,
+           insurance_activation_rule = $12
+       WHERE location_id = $13
        RETURNING location_id, business_name, insurance_enabled, insurance_provider, insurance_program_id,
                  insurance_api_key_ref, insurance_embed_mode, insurance_brand_name, insurance_state_rules,
-                 insurance_embed_url, insurance_webhook_secret, insurance_notes`,
+                 insurance_embed_url, insurance_webhook_secret, insurance_notes,
+                 insurance_coverage_option, insurance_activation_rule`,
       values
     );
     if (!result.rows[0]) {
@@ -12321,6 +12407,121 @@ app.post("/api/insurance/quote", requireWizardToken, async (req, res) => {
   } catch (err) {
     console.error("Insurance quote shell error:", err);
     return res.status(500).json({ error: "Failed to create the insurance quote shell." });
+  }
+});
+
+app.post("/api/insurance/request-coverage", requireWizardToken, async (req, res) => {
+  try {
+    await ensureInsuranceModuleTables();
+    const bookingId = Number(req.body.booking_id || 0);
+    if (!bookingId) {
+      return res.status(400).json({ error: "booking_id is required." });
+    }
+    const bookingLookup = await pool.query(
+      `SELECT b.*, p.business_name, p.insurance_enabled, p.insurance_provider, p.insurance_program_id,
+              p.insurance_api_key_ref, p.insurance_embed_mode, p.insurance_brand_name, p.insurance_state_rules,
+              p.insurance_embed_url, p.insurance_webhook_secret, p.insurance_notes,
+              p.insurance_coverage_option, p.insurance_activation_rule
+       FROM bookings b
+       LEFT JOIN profiles p ON p.location_id = b.location_id
+       WHERE b.id = $1
+       LIMIT 1`,
+      [bookingId]
+    );
+    const booking = bookingLookup.rows[0];
+    if (!booking) {
+      return res.status(404).json({ error: "Booking not found." });
+    }
+    const settings = buildInsuranceSettingsShape(booking);
+    const coverageOption = normalizeInsuranceCoverageOption(req.body.coverage_option || settings.coverage_option);
+    const coverageMeta = getInsuranceCoverageOptionMeta(coverageOption);
+    const activationRule = normalizeInsuranceActivationRule(req.body.activation_rule || settings.activation_rule || coverageMeta.activation_rule);
+    const requestNotes = String(req.body.request_notes || "").trim() || null;
+    const requestedAt = new Date().toISOString();
+    const premiumAmount = normalizeOptionalMoney(req.body.premium_amount) ?? computeInsuranceShellPremium({
+      ...booking,
+      insurance_coverage_option: coverageOption,
+    });
+    const quoteId = buildInsuranceShellQuoteId();
+    const purchaseUrl = buildInsurancePurchaseUrl({
+      embedUrl: req.body.embed_url || settings.embed_url,
+      bookingId,
+      quoteId,
+      locationId: booking.location_id,
+    });
+    const payload = {
+      provider: settings.provider,
+      booking_id: bookingId,
+      location_id: booking.location_id,
+      request_mode: "coverage_request_only",
+      requested_at: requestedAt,
+      coverage_option: coverageMeta.code,
+      coverage_option_label: coverageMeta.label,
+      covered_periods: coverageMeta.periods,
+      activation_rule: activationRule,
+      request_notes: requestNotes,
+      premium_amount: premiumAmount,
+      purchase_url: purchaseUrl,
+      source: "insurance_request_shell",
+    };
+
+    await pool.query(
+      `UPDATE bookings
+       SET insurance_provider = $2,
+           insurance_quote_id = $3,
+           insurance_status = 'requested',
+           insurance_requested_at = $4,
+           insurance_request_notes = $5,
+           insurance_coverage_option = $6,
+           insurance_activation_rule = $7,
+           insurance_premium_amount = $8,
+           insurance_purchase_url = $9,
+           insurance_payload_json = $10::jsonb
+       WHERE id = $1`,
+      [
+        bookingId,
+        settings.provider,
+        quoteId,
+        requestedAt,
+        requestNotes,
+        coverageMeta.code,
+        activationRule,
+        premiumAmount,
+        purchaseUrl,
+        JSON.stringify(payload),
+      ]
+    );
+
+    await logInsuranceEvent({
+      locationId: booking.location_id,
+      bookingId,
+      provider: settings.provider,
+      eventType: "coverage.requested",
+      payload,
+    });
+
+    const refreshed = await pool.query(`SELECT * FROM bookings WHERE id = $1 LIMIT 1`, [bookingId]);
+    return res.json({
+      success: true,
+      request: {
+        quote_id: quoteId,
+        requested_at: requestedAt,
+        coverage_option: coverageMeta.code,
+        coverage_option_label: coverageMeta.label,
+        covered_periods: coverageMeta.periods,
+        activation_rule: activationRule,
+        premium_amount: premiumAmount,
+      },
+      provider_preview: buildInsuranceProviderPreview(refreshed.rows[0], {
+        ...settings,
+        coverage_option: coverageMeta.code,
+        activation_rule: activationRule,
+      }),
+      booking: buildInsuranceBookingShape(refreshed.rows[0]),
+    });
+  } catch (err) {
+    console.error("Insurance request coverage error:", err);
+    return res.status(500).json({ error: "Failed to request coverage." });
   }
 });
 

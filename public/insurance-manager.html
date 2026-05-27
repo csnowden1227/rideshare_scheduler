@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Insurance Manager</title>
+  <title>Insurance Coverage Manager</title>
   <style>
     :root {
       --ink: #0f172a;
@@ -149,10 +149,10 @@
 <body>
   <div class="shell">
     <section class="hero">
-      <h1>Embedded Insurance Manager</h1>
-      <p>Configure your insurance partner, generate booking-linked quote shells, and test iframe purchase flow without forcing your carrier logic directly into the booking widget too early.</p>
+      <h1>Insurance Coverage Manager</h1>
+      <p>Configure a carrier/MGA/program partner model where your platform handles technology and workflow while the insurance side handles underwriting, policy issuance, and episodic coverage operations.</p>
       <div class="sub">
-        This shell is designed for mobility insurance partners like Tint. It stores policy state on each booking now, so later real quote and bind callbacks have a clean place to land.
+        This shell is designed for mobility partners like Tint. Your users can choose TNC coverage periods here, request coverage through the platform, and keep your business positioned as the technology layer instead of the insurance carrier.
       </div>
       <div class="hero-actions">
         <a class="btn secondary" id="open-wizard-link" href="#">Open Setup Wizard</a>
@@ -163,7 +163,7 @@
     <div class="grid">
       <section class="panel">
         <h2>Insurance Settings</h2>
-        <p>These settings live per SaaS location. Use them to define the provider, embed mode, and callback secret now, even before the live carrier integration is fully wired.</p>
+        <p>These settings live per SaaS location. Use them to define the partner, the default TNC period coverage option, and the callback wiring before the live carrier integration is fully wired.</p>
         <div class="toggle">
           <input type="checkbox" id="insurance-enabled" />
           <div>
@@ -186,6 +186,24 @@
             <select id="insurance-embed-mode">
               <option value="iframe">iFrame</option>
               <option value="api_redirect">API Redirect</option>
+            </select>
+          </div>
+        </div>
+        <div class="field-grid two">
+          <div>
+            <label for="insurance-coverage-option">Default Coverage Option</label>
+            <select id="insurance-coverage-option">
+              <option value="tnc_period_3">TNC Period 3 - Passenger on board only</option>
+              <option value="tnc_periods_2_3">TNC Periods 2-3 - Matched through dropoff</option>
+              <option value="tnc_periods_1_3">TNC Periods 1-3 - App on through dropoff</option>
+            </select>
+          </div>
+          <div>
+            <label for="insurance-activation-rule">Activation Rule</label>
+            <select id="insurance-activation-rule">
+              <option value="passenger_on_board">Passenger On Board</option>
+              <option value="matched_to_dropoff">Matched To Dropoff</option>
+              <option value="app_on_to_dropoff">App On To Dropoff</option>
             </select>
           </div>
         </div>
@@ -238,8 +256,8 @@
       </section>
 
       <section class="panel">
-        <h2>Booking Coverage Shell</h2>
-        <p>Load a booking, generate a quote shell, and preview the embedded purchase experience. This is the safest bridge until the real Tint quote/bind callbacks are live.</p>
+        <h2>Booking Coverage Request</h2>
+        <p>Load a booking, choose the TNC period option, and send a coverage request through the platform. That keeps the insurance handling with the carrier/MGA partner while your app owns the workflow.</p>
         <div class="field-grid two">
           <div>
             <label for="booking-id">Booking ID</label>
@@ -250,9 +268,33 @@
             <input id="manual-premium" type="number" min="0" step="0.01" placeholder="Leave blank to auto-compute" />
           </div>
         </div>
+        <div class="field-grid two">
+          <div>
+            <label for="booking-coverage-option">Coverage Option</label>
+            <select id="booking-coverage-option">
+              <option value="tnc_period_3">TNC Period 3 - Passenger on board only</option>
+              <option value="tnc_periods_2_3">TNC Periods 2-3 - Matched through dropoff</option>
+              <option value="tnc_periods_1_3">TNC Periods 1-3 - App on through dropoff</option>
+            </select>
+          </div>
+          <div>
+            <label for="booking-activation-rule">Activation Rule</label>
+            <select id="booking-activation-rule">
+              <option value="passenger_on_board">Passenger On Board</option>
+              <option value="matched_to_dropoff">Matched To Dropoff</option>
+              <option value="app_on_to_dropoff">App On To Dropoff</option>
+            </select>
+          </div>
+        </div>
+        <div class="field-grid">
+          <div>
+            <label for="booking-request-notes">Coverage Request Notes</label>
+            <textarea id="booking-request-notes" placeholder="Example: Request TNC Period 3 only while passenger is in vehicle."></textarea>
+          </div>
+        </div>
         <div class="actions">
           <button class="btn dark" id="load-booking-button" type="button">Load Booking</button>
-          <button class="btn primary" id="quote-booking-button" type="button">Create Quote Shell</button>
+          <button class="btn primary" id="request-coverage-button" type="button">Request Coverage</button>
           <button class="btn secondary" id="bind-booking-button" type="button">Mark Policy Bound</button>
           <button class="btn secondary" id="cancel-booking-button" type="button">Cancel Coverage</button>
         </div>
@@ -274,7 +316,7 @@
 
         <article class="event-card">
           <h3>Tint-Ready Provider Preview</h3>
-          <p class="inline-note">Tint publicly documents iframe, REST API, webhooks, and mobility support. This preview turns your booking into a partner-ready request shell while we wait on Tint’s exact program schema.</p>
+          <p class="inline-note">Tint publicly documents iframe, REST API, webhooks, and mobility support. This preview turns your chosen TNC coverage option into a partner-ready request shell while we wait on Tint’s exact program schema.</p>
           <pre id="insurance-provider-preview">Load a booking to inspect the provider request preview.</pre>
         </article>
       </section>
@@ -342,6 +384,8 @@
         byId("insurance-enabled").checked = Boolean(settings.enabled);
         byId("insurance-provider").value = settings.provider || "tint";
         byId("insurance-embed-mode").value = settings.embed_mode || "iframe";
+        byId("insurance-coverage-option").value = settings.coverage_option || "tnc_period_3";
+        byId("insurance-activation-rule").value = settings.activation_rule || "passenger_on_board";
         byId("insurance-program-id").value = settings.program_id || "";
         byId("insurance-api-key-ref").value = settings.api_key_ref || "";
         byId("insurance-brand-name").value = settings.brand_name || "";
@@ -350,6 +394,8 @@
         byId("insurance-webhook-url").value = webhookUrl || "";
         byId("insurance-state-rules").value = JSON.stringify(Array.isArray(settings.state_rules) ? settings.state_rules : [], null, 2);
         byId("insurance-notes").value = settings.notes || "";
+        byId("booking-coverage-option").value = settings.coverage_option || "tnc_period_3";
+        byId("booking-activation-rule").value = settings.activation_rule || "passenger_on_board";
       }
 
       function renderBookingSummary(booking) {
@@ -359,6 +405,7 @@
           { label: "Customer", value: booking?.customer_name || "Not loaded" },
           { label: "Vehicle", value: booking?.vehicle_type || booking?.vehicle_slot_id || "Not set" },
           { label: "Coverage Status", value: insurance.status || "not_offered" },
+          { label: "Coverage Option", value: insurance.coverage_option_label || "Not set" },
           { label: "Quote ID", value: insurance.quote_id || "Not created" },
           { label: "Policy ID", value: insurance.policy_id || "Not bound" },
           { label: "Premium", value: insurance.premium_amount != null ? `$${Number(insurance.premium_amount).toFixed(2)}` : "Not priced" },
@@ -421,6 +468,8 @@
             enabled: byId("insurance-enabled").checked,
             provider: byId("insurance-provider").value,
             embed_mode: byId("insurance-embed-mode").value,
+            coverage_option: byId("insurance-coverage-option").value,
+            activation_rule: byId("insurance-activation-rule").value,
             program_id: byId("insurance-program-id").value,
             api_key_ref: byId("insurance-api-key-ref").value,
             brand_name: byId("insurance-brand-name").value,
@@ -464,19 +513,24 @@
         }
       }
 
-      async function createQuoteShell() {
+      async function requestCoverage() {
         const bookingId = String(byId("booking-id").value || "").trim();
         if (!bookingId) {
-          setMessage("booking-error", "Enter a booking ID before creating a quote shell.");
+          setMessage("booking-error", "Enter a booking ID before requesting coverage.");
           return;
         }
         try {
           setMessage("booking-error", "");
           setMessage("booking-success", "");
           const premiumRaw = String(byId("manual-premium").value || "").trim();
-          const body = { booking_id: Number(bookingId) };
+          const body = {
+            booking_id: Number(bookingId),
+            coverage_option: byId("booking-coverage-option").value,
+            activation_rule: byId("booking-activation-rule").value,
+            request_notes: byId("booking-request-notes").value,
+          };
           if (premiumRaw) body.premium_amount = Number(premiumRaw);
-          const data = await fetchJson(`/api/insurance/quote${token ? `?token=${encodeURIComponent(token)}` : ""}`, {
+          const data = await fetchJson(`/api/insurance/request-coverage${token ? `?token=${encodeURIComponent(token)}` : ""}`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(body),
@@ -486,9 +540,9 @@
           renderPayloadPreview(currentBooking);
           renderProviderPreview(data.provider_preview || {});
           renderIframe(currentBooking, currentSettings);
-          setMessage("booking-success", `Quote shell ${data.quote.quote_id} created. Premium ${Number(data.quote.premium_amount || 0).toFixed(2)}.`);
+          setMessage("booking-success", `Coverage request ${data.request.quote_id} created for ${data.request.coverage_option_label}.`);
         } catch (error) {
-          setMessage("booking-error", error.message || "Unable to create the insurance quote shell.");
+          setMessage("booking-error", error.message || "Unable to request coverage.");
         }
       }
 
@@ -545,7 +599,7 @@
       byId("save-settings-button").addEventListener("click", saveSettings);
       byId("reload-settings-button").addEventListener("click", loadSettings);
       byId("load-booking-button").addEventListener("click", loadBooking);
-      byId("quote-booking-button").addEventListener("click", createQuoteShell);
+      byId("request-coverage-button").addEventListener("click", requestCoverage);
       byId("bind-booking-button").addEventListener("click", bindBooking);
       byId("cancel-booking-button").addEventListener("click", cancelCoverage);
 
