@@ -188,6 +188,7 @@ let tripTrackingTablesReady = null;
 let shortLinksTableReady = null;
 let customerAccountTablesReady = null;
 let insuranceModuleTablesReady = null;
+let instantBookingNotificationTablesReady = null;
 
 const CUSTOMER_ACCOUNT_SESSION_COOKIE = "crm_customer_session";
 const CUSTOMER_ACCOUNT_SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 30;
@@ -887,6 +888,8 @@ const TRACKING_STATUS_VALUES = new Set([
 const DEFAULT_INSTANT_BOOKING_START_TIME = "06:00";
 const DEFAULT_INSTANT_BOOKING_END_TIME = "22:00";
 const DEFAULT_NON_INSTANT_NOTICE_HOURS = 4;
+const INSTANT_BOOKING_NOTIFICATION_KIND_TOGGLE = "toggle";
+const INSTANT_BOOKING_NOTIFICATION_KIND_DAILY = "daily";
 
 function normalizeTrackingStatus(value) {
   const normalized = String(value || "").trim().toLowerCase();
@@ -916,6 +919,36 @@ async function ensureShortLinksTable() {
     });
   }
   return shortLinksTableReady;
+}
+
+async function ensureInstantBookingNotificationTables() {
+  if (!instantBookingNotificationTablesReady) {
+    instantBookingNotificationTablesReady = (async () => {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS instant_booking_notification_log (
+          id TEXT PRIMARY KEY,
+          location_id TEXT NOT NULL,
+          notification_kind TEXT NOT NULL,
+          window_signature TEXT NOT NULL,
+          sent_for_date DATE NOT NULL,
+          payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `);
+      await pool.query(`
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_instant_booking_notification_log_unique
+        ON instant_booking_notification_log (location_id, notification_kind, window_signature, sent_for_date)
+      `);
+      await pool.query(`
+        CREATE INDEX IF NOT EXISTS idx_instant_booking_notification_log_location_date
+        ON instant_booking_notification_log (location_id, sent_for_date DESC)
+      `);
+    })().catch((err) => {
+      instantBookingNotificationTablesReady = null;
+      throw err;
+    });
+  }
+  return instantBookingNotificationTablesReady;
 }
 
 function normalizeBooleanish(value, fallback = false) {
@@ -3635,6 +3668,535 @@ async function sendCrmSmsToContact({
   };
 }
 
+async function sendCrmEmailToContact({
+  locationId,
+  contactId,
+  subject,
+  message,
+  html = "",
+  crmAuthOptions = {},
+}) {
+  if (!locationId || !contactId || !String(subject || "").trim() || !String(message || "").trim()) {
+    return { success: false, status: 400, error: "locationId, contactId, subject, and message are required." };
+  }
+
+  const { response, bodyText, tokenSource, attemptedSources } = await fetchCrmWithFallback(
+    locationId,
+    new URL("/conversations/messages", CRM_API_BASE_URL),
+    {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        Version: "2023-02-21",
+      },
+      body: JSON.stringify({
+        type: "Email",
+        contactId: String(contactId),
+        subject: String(subject).trim(),
+        message: String(message).trim(),
+        html: String(html || "").trim() || `<p>${String(message).trim()}</p>`,
+        status: "pending",
+      }),
+    },
+    [400, 401, 403, 422],
+    crmAuthOptions
+  );
+
+  if (response?.ok) {
+    return {
+      success: true,
+      status: response.status,
+      tokenSource,
+      attemptedSources,
+    };
+  }
+
+  return {
+    success: false,
+    status: response?.status || 500,
+    tokenSource: tokenSource || null,
+    attemptedSources: attemptedSources || [],
+    error: bodyText ? bodyText.slice(0, 300) : "CRM email send failed.",
+  };
+}
+
+async function listCrmContactsForLocation({
+  locationId,
+  limit = 100,
+  crmAuthOptions = {},
+}) {
+  if (!locationId) return [];
+  const contacts = [];
+  let startAfterId = null;
+
+  for (let page = 0; page < 10; page += 1) {
+    const url = new URL("/contacts/", CRM_API_BASE_URL);
+    url.searchParams.set("locationId", String(locationId));
+    url.searchParams.set("limit", String(limit));
+    if (startAfterId) {
+      url.searchParams.set("startAfterId", String(startAfterId));
+    }
+
+    const { response, bodyText } = await fetchCrmWithFallback(
+      locationId,
+      url,
+      {
+        method: "GET",
+        headers: {
+          Accept: "application/json",
+          Version: "2023-02-21",
+        },
+      },
+      [401, 403],
+      crmAuthOptions
+    );
+
+    if (!response?.ok) {
+      throw new Error(`CRM contacts lookup failed (${response?.status || 500}): ${(bodyText || "").slice(0, 200)}`);
+    }
+
+    let data = {};
+    try {
+      data = bodyText ? JSON.parse(bodyText) : {};
+    } catch {
+      data = {};
+    }
+
+    const batch = data.contacts || data.data?.contacts || data.data || [];
+    if (!Array.isArray(batch) || !batch.length) break;
+    contacts.push(...batch);
+
+    const lastContact = batch[batch.length - 1];
+    const nextStartAfterId = String(
+      data.meta?.startAfterId ||
+      data.startAfterId ||
+      lastContact?.id ||
+      lastContact?._id ||
+      ""
+    ).trim();
+
+    if (batch.length < limit || !nextStartAfterId || nextStartAfterId === startAfterId) {
+      break;
+    }
+    startAfterId = nextStartAfterId;
+  }
+
+  return contacts;
+}
+
+function summarizeInstantBookingToggleChanges(previousFleet = [], nextFleet = []) {
+  const previousBySlot = new Map(
+    (Array.isArray(previousFleet) ? previousFleet : []).map((slot) => [
+      String(slot?.vehicle_slot_id || "").trim(),
+      { slot, policy: normalizeFleetBookingPolicy(slot) },
+    ])
+  );
+
+  const changes = [];
+  for (const nextSlot of Array.isArray(nextFleet) ? nextFleet : []) {
+    const slotId = String(nextSlot?.vehicle_slot_id || "").trim();
+    if (!slotId || !previousBySlot.has(slotId)) continue;
+    const previous = previousBySlot.get(slotId);
+    const nextPolicy = normalizeFleetBookingPolicy(nextSlot);
+    if (Boolean(previous.policy.instant_booking_enabled) === Boolean(nextPolicy.instant_booking_enabled)) continue;
+    changes.push({
+      vehicle_slot_id: slotId,
+      vehicle_type: String(nextSlot.vehicle_type || previous.slot?.vehicle_type || slotId).trim(),
+      enabled: Boolean(nextPolicy.instant_booking_enabled),
+      previous_enabled: Boolean(previous.policy.instant_booking_enabled),
+      start_time: nextPolicy.instant_booking_start_time,
+      end_time: nextPolicy.instant_booking_end_time,
+      min_notice_min: nextPolicy.min_notice_min,
+    });
+  }
+
+  return changes;
+}
+
+function escapeHtml(value) {
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function formatLocalDateLabel(dateValue, timeZone = BOOKING_DISPLAY_TIMEZONE) {
+  const date = dateValue instanceof Date ? dateValue : new Date(dateValue);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat("en-US", {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+    timeZone,
+  }).format(date);
+}
+
+function getLocalCalendarDateString(dateValue = new Date(), timeZone = BOOKING_DISPLAY_TIMEZONE) {
+  const date = dateValue instanceof Date ? dateValue : new Date(dateValue);
+  if (Number.isNaN(date.getTime())) return "";
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    timeZone,
+  }).formatToParts(date).reduce((acc, part) => {
+    if (part.type !== "literal") acc[part.type] = part.value;
+    return acc;
+  }, {});
+  if (!parts.year || !parts.month || !parts.day) return "";
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
+function buildInstantBookingWindowLabels({
+  startTime,
+  endTime,
+  timeZone = BOOKING_DISPLAY_TIMEZONE,
+  referenceDate = new Date(),
+}) {
+  const startMinutes = parseTimeOfDayToMinutes(startTime);
+  const endMinutes = parseTimeOfDayToMinutes(endTime);
+  const startDate = referenceDate instanceof Date ? new Date(referenceDate.getTime()) : new Date(referenceDate);
+  const endDate = new Date(startDate.getTime());
+  if (
+    Number.isFinite(startMinutes) &&
+    Number.isFinite(endMinutes) &&
+    startMinutes > endMinutes
+  ) {
+    endDate.setDate(endDate.getDate() + 1);
+  }
+  return {
+    startLabel: `${formatLocalDateLabel(startDate, timeZone)} at ${formatTimeLabel(startTime)}`,
+    endLabel: `${formatLocalDateLabel(endDate, timeZone)} at ${formatTimeLabel(endTime)}`,
+    sameDaySummary: `today from ${formatTimeLabel(startTime)} until ${formatTimeLabel(endTime)}`,
+  };
+}
+
+function buildInstantBookingWindowSignature(changes = []) {
+  return (Array.isArray(changes) ? changes : [])
+    .map((change) => {
+      const policy = normalizeFleetBookingPolicy(change);
+      return [
+        String(change.vehicle_slot_id || "").trim(),
+        String(change.vehicle_type || "").trim(),
+        String(policy.instant_booking_enabled),
+        String(policy.instant_booking_start_time || ""),
+        String(policy.instant_booking_end_time || ""),
+      ].join(":");
+    })
+    .sort()
+    .join("|");
+}
+
+function getInstantBookingCurrentMinutes(timeZone = BOOKING_DISPLAY_TIMEZONE, dateValue = new Date()) {
+  const date = dateValue instanceof Date ? dateValue : new Date(dateValue);
+  if (Number.isNaN(date.getTime())) return null;
+  const parts = new Intl.DateTimeFormat("en-US", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZone,
+  }).formatToParts(date).reduce((acc, part) => {
+    if (part.type !== "literal") acc[part.type] = part.value;
+    return acc;
+  }, {});
+  if (!parts.hour || !parts.minute) return null;
+  return (Number(parts.hour) * 60) + Number(parts.minute);
+}
+
+function buildDailyInstantBookingChanges(fleet = []) {
+  return (Array.isArray(fleet) ? fleet : [])
+    .map((slot) => {
+      const policy = normalizeFleetBookingPolicy(slot);
+      return {
+        vehicle_slot_id: String(slot?.vehicle_slot_id || "").trim(),
+        vehicle_type: String(slot?.vehicle_type || slot?.name || slot?.vehicle_slot_id || "").trim(),
+        enabled: Boolean(policy.instant_booking_enabled),
+        previous_enabled: Boolean(policy.instant_booking_enabled),
+        start_time: policy.instant_booking_start_time,
+        end_time: policy.instant_booking_end_time,
+        min_notice_min: policy.min_notice_min,
+      };
+    })
+    .filter((slot) => slot.vehicle_slot_id && slot.enabled);
+}
+
+function buildInstantBookingToggleNotification({
+  businessName,
+  changes = [],
+  notificationKind = INSTANT_BOOKING_NOTIFICATION_KIND_TOGGLE,
+  timeZone = BOOKING_DISPLAY_TIMEZONE,
+}) {
+  const companyName = String(businessName || "Your booking service").trim() || "Your booking service";
+  const enabledChanges = changes.filter((change) => change.enabled);
+  const disabledChanges = changes.filter((change) => !change.enabled);
+  const primaryChange = enabledChanges[0] || disabledChanges[0] || null;
+  const windowLabels = primaryChange
+    ? buildInstantBookingWindowLabels({
+        startTime: primaryChange.start_time,
+        endTime: primaryChange.end_time,
+        timeZone,
+      })
+    : null;
+  const detailLines = changes.map((change) => {
+    if (change.enabled) {
+      const labels = buildInstantBookingWindowLabels({
+        startTime: change.start_time,
+        endTime: change.end_time,
+        timeZone,
+      });
+      return `${change.vehicle_type} is available for on-demand booking from ${labels.startLabel} until ${labels.endLabel}.`;
+    }
+    return `${change.vehicle_type} is currently unavailable for on-demand booking.`;
+  });
+
+  let subject = `${companyName} instant booking availability update`;
+  let intro = `${companyName} updated on-demand booking availability.`;
+  let sms = `${companyName} updated on-demand booking availability.`;
+  let closing = `We'd be delighted to help with your next trip. Reserve while availability remains open.`;
+
+  if (notificationKind === INSTANT_BOOKING_NOTIFICATION_KIND_DAILY && enabledChanges.length && windowLabels) {
+    subject = `${companyName} is available for on-demand booking today`;
+    intro = `${companyName} is available for on-demand booking from ${windowLabels.startLabel} until ${windowLabels.endLabel}.`;
+    sms = `${companyName} is available for on-demand booking from ${windowLabels.startLabel} until ${windowLabels.endLabel}. Reserve now while availability remains open.`;
+  } else if (enabledChanges.length && windowLabels) {
+    subject = `${companyName} is available for on-demand booking`;
+    intro = `${companyName} is available for on-demand booking from ${windowLabels.startLabel} until ${windowLabels.endLabel}.`;
+    sms = `${companyName} is available for on-demand booking from ${windowLabels.startLabel} until ${windowLabels.endLabel}. Reserve now while availability remains open.`;
+  } else if (disabledChanges.length) {
+    subject = `${companyName} on-demand booking availability update`;
+    intro = `${companyName} is not currently available for on-demand booking at this time.`;
+    sms = `${companyName} is not currently available for on-demand booking at this time. We look forward to welcoming your next reservation soon.`;
+    closing = `Please keep us in mind for upcoming travel. We'll be glad to welcome your reservation as soon as availability reopens.`;
+  }
+
+  const text = [
+    intro,
+    "",
+    ...(detailLines.length ? detailLines : []),
+    "",
+    closing,
+  ].filter(Boolean).join("\n").trim();
+  const html = `
+    <div style="font-family: Arial, Helvetica, sans-serif; font-size: 14px; line-height: 1.7; color: #0f172a;">
+      <p>${escapeHtml(intro)}</p>
+      ${detailLines.length ? `<ul>${detailLines.map((line) => `<li>${escapeHtml(line)}</li>`).join("")}</ul>` : ""}
+      <p>${escapeHtml(closing)}</p>
+    </div>
+  `;
+
+  return { subject, sms, text, html };
+}
+
+async function notifyCrmContactsOfInstantBookingToggle({
+  locationId,
+  businessName,
+  changes = [],
+  notificationKind = INSTANT_BOOKING_NOTIFICATION_KIND_TOGGLE,
+  timeZone = BOOKING_DISPLAY_TIMEZONE,
+}) {
+  if (!locationId || !changes.length) {
+    return { triggered: false, notified_contacts: 0, sms_sent: 0, emails_sent: 0 };
+  }
+
+  const contacts = await listCrmContactsForLocation({
+    locationId,
+    crmAuthOptions: { includeEnvFallback: false },
+  });
+
+  const notification = buildInstantBookingToggleNotification({
+    businessName,
+    changes,
+    notificationKind,
+    timeZone,
+  });
+  let smsSent = 0;
+  let emailsSent = 0;
+  let notifiedContacts = 0;
+
+  for (const contact of contacts) {
+    const contactId = String(contact?.id || contact?._id || "").trim();
+    if (!contactId) continue;
+    let touched = false;
+
+    const phone = normalizePhoneNumber(contact?.phone || contact?.phoneNumber || "");
+    if (phone) {
+      const smsResult = await sendCrmSmsToContact({
+        locationId,
+        contactId,
+        message: notification.sms,
+        crmAuthOptions: { includeEnvFallback: false },
+      });
+      if (smsResult.success) {
+        smsSent += 1;
+        touched = true;
+      }
+    }
+
+    const email = String(contact?.email || contact?.emailAddress || "").trim();
+    if (email) {
+      const emailResult = await sendCrmEmailToContact({
+        locationId,
+        contactId,
+        subject: notification.subject,
+        message: notification.text,
+        html: notification.html,
+        crmAuthOptions: { includeEnvFallback: false },
+      });
+      if (emailResult.success) {
+        emailsSent += 1;
+        touched = true;
+      }
+    }
+
+    if (touched) {
+      notifiedContacts += 1;
+    }
+  }
+
+  return {
+    triggered: true,
+    notification_kind: notificationKind,
+    changes,
+    notified_contacts: notifiedContacts,
+    sms_sent: smsSent,
+    emails_sent: emailsSent,
+  };
+}
+
+async function recordInstantBookingNotificationLog({
+  locationId,
+  notificationKind,
+  windowSignature,
+  sentForDate,
+  payload = {},
+}) {
+  if (!locationId || !notificationKind || !windowSignature || !sentForDate) return;
+  await ensureInstantBookingNotificationTables();
+  await pool.query(
+    `INSERT INTO instant_booking_notification_log (
+      id,
+      location_id,
+      notification_kind,
+      window_signature,
+      sent_for_date,
+      payload_json
+    )
+    VALUES ($1, $2, $3, $4, $5::date, $6::jsonb)
+    ON CONFLICT (location_id, notification_kind, window_signature, sent_for_date)
+    DO NOTHING`,
+    [
+      randomUUID(),
+      String(locationId).trim(),
+      String(notificationKind).trim(),
+      String(windowSignature).trim(),
+      String(sentForDate).trim(),
+      JSON.stringify(payload || {}),
+    ]
+  );
+}
+
+async function hasInstantBookingNotificationLog({
+  locationId,
+  notificationKind,
+  windowSignature,
+  sentForDate,
+}) {
+  if (!locationId || !notificationKind || !windowSignature || !sentForDate) return false;
+  await ensureInstantBookingNotificationTables();
+  const result = await pool.query(
+    `SELECT 1
+     FROM instant_booking_notification_log
+     WHERE location_id = $1
+       AND notification_kind = $2
+       AND window_signature = $3
+       AND sent_for_date = $4::date
+     LIMIT 1`,
+    [
+      String(locationId).trim(),
+      String(notificationKind).trim(),
+      String(windowSignature).trim(),
+      String(sentForDate).trim(),
+    ]
+  );
+  return result.rows.length > 0;
+}
+
+let instantBookingDailyNotificationLoopRunning = false;
+
+async function processDailyInstantBookingNotifications() {
+  if (instantBookingDailyNotificationLoopRunning) return;
+  instantBookingDailyNotificationLoopRunning = true;
+  try {
+    await ensureInstantBookingNotificationTables();
+    const profilesResult = await pool.query(
+      `SELECT location_id, business_name, fleet
+       FROM profiles
+       WHERE COALESCE(fleet, '[]'::jsonb) <> '[]'::jsonb`
+    );
+
+    const now = new Date();
+    const sentForDate = getLocalCalendarDateString(now, BOOKING_DISPLAY_TIMEZONE);
+    const currentMinutes = getInstantBookingCurrentMinutes(BOOKING_DISPLAY_TIMEZONE, now);
+    if (!sentForDate || !Number.isFinite(currentMinutes)) return;
+
+    for (const profile of profilesResult.rows) {
+      const activeChanges = buildDailyInstantBookingChanges(safeParseJson(profile.fleet, []));
+      if (!activeChanges.length) continue;
+
+      const anyWindowActive = activeChanges.some((change) => {
+        const startMinutes = parseTimeOfDayToMinutes(change.start_time);
+        const endMinutes = parseTimeOfDayToMinutes(change.end_time);
+        return isMinutesWithinWindow(currentMinutes, startMinutes, endMinutes);
+      });
+      if (!anyWindowActive) continue;
+
+      const windowSignature = buildInstantBookingWindowSignature(activeChanges);
+      const alreadySent = await hasInstantBookingNotificationLog({
+        locationId: profile.location_id,
+        notificationKind: INSTANT_BOOKING_NOTIFICATION_KIND_DAILY,
+        windowSignature,
+        sentForDate,
+      });
+      if (alreadySent) continue;
+
+      const result = await notifyCrmContactsOfInstantBookingToggle({
+        locationId: profile.location_id,
+        businessName: profile.business_name || "Your booking service",
+        changes: activeChanges,
+        notificationKind: INSTANT_BOOKING_NOTIFICATION_KIND_DAILY,
+        timeZone: BOOKING_DISPLAY_TIMEZONE,
+      });
+
+      await recordInstantBookingNotificationLog({
+        locationId: profile.location_id,
+        notificationKind: INSTANT_BOOKING_NOTIFICATION_KIND_DAILY,
+        windowSignature,
+        sentForDate,
+        payload: {
+          result,
+          changes: activeChanges,
+        },
+      });
+
+      console.log("[instant-booking] Daily CRM contact notification result", {
+        locationId: profile.location_id,
+        sentForDate,
+        result,
+      });
+    }
+  } catch (error) {
+    console.error("[instant-booking] Daily CRM contact notification error", {
+      error: error?.message || error,
+    });
+  } finally {
+    instantBookingDailyNotificationLoopRunning = false;
+  }
+}
+
 function buildDriverBookingSmsMessage({
   booking,
   paymentState,
@@ -5238,6 +5800,7 @@ async function saveConfigHandler(req, res) {
     await ensureProfileEntitlementColumns();
     await ensureProfilePaymentProviderColumns();
     await ensureProfileServiceAreaColumns();
+    await ensureInstantBookingNotificationTables();
     const profileColumns = await getTableColumns("profiles");
     const profileIdColumn = profileColumns.has("location_id") ? "location_id" : "id";
     const existingProfileRes = await client.query(
@@ -5245,6 +5808,7 @@ async function saveConfigHandler(req, res) {
       [location_id]
     );
     const existingProfile = existingProfileRes.rows[0] || {};
+    const previousFleet = safeParseJson(existingProfile.fleet, []);
     const normalizedPlanName = normalizePlanName(plan_name || existingProfile.plan_name || "starter");
     const entitlements = buildPlanEntitlements({
       planName: normalizedPlanName,
@@ -5262,6 +5826,7 @@ async function saveConfigHandler(req, res) {
       entitlements,
     });
     const sanitizedFleet = sanitizeFleetByEntitlements(fleet, entitlements);
+    const instantBookingToggleChanges = summarizeInstantBookingToggleChanges(previousFleet, sanitizedFleet);
 
     const fieldEntries = [];
     const pushProfileField = (column, value, cast = "") => {
@@ -5365,6 +5930,47 @@ async function saveConfigHandler(req, res) {
 
     await client.query("COMMIT");
 
+    const instantBookingNotificationSummary = {
+      triggered: instantBookingToggleChanges.length > 0,
+      changes: instantBookingToggleChanges,
+    };
+
+    if (instantBookingToggleChanges.length > 0) {
+      const windowSignature = buildInstantBookingWindowSignature(instantBookingToggleChanges);
+      const sentForDate = getLocalCalendarDateString(new Date(), BOOKING_DISPLAY_TIMEZONE);
+      setTimeout(() => {
+        notifyCrmContactsOfInstantBookingToggle({
+          locationId: location_id,
+          businessName: business_name || existingProfile.business_name || "Your booking service",
+          changes: instantBookingToggleChanges,
+          notificationKind: INSTANT_BOOKING_NOTIFICATION_KIND_TOGGLE,
+          timeZone: BOOKING_DISPLAY_TIMEZONE,
+        })
+          .then(async (result) => {
+            await recordInstantBookingNotificationLog({
+              locationId: location_id,
+              notificationKind: INSTANT_BOOKING_NOTIFICATION_KIND_TOGGLE,
+              windowSignature,
+              sentForDate,
+              payload: {
+                result,
+                changes: instantBookingToggleChanges,
+              },
+            });
+            console.log("[instant-booking] CRM contact notification result", {
+              locationId: location_id,
+              result,
+            });
+          })
+          .catch((error) => {
+            console.error("[instant-booking] CRM contact notification error", {
+              locationId: location_id,
+              error: error?.message || error,
+            });
+          });
+      }, 0);
+    }
+
     let webhookSync = {
       attempted: false,
       success: false,
@@ -5404,6 +6010,7 @@ async function saveConfigHandler(req, res) {
     return res.json({
       success: true,
       entitlements,
+      instant_booking_notifications: instantBookingNotificationSummary,
       webhook_sync: webhookSync,
       message: "✅ Profile fully saved and aligned"
     });
@@ -13629,4 +14236,14 @@ const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
   startListener();
+  ensureInstantBookingNotificationTables()
+    .then(() => processDailyInstantBookingNotifications())
+    .catch((err) => {
+      console.error("[instant-booking] Failed to initialize notification tables:", err);
+    });
+  setInterval(() => {
+    processDailyInstantBookingNotifications().catch((err) => {
+      console.error("[instant-booking] Daily notification loop error:", err);
+    });
+  }, 15 * 60 * 1000);
 });
