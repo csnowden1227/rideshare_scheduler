@@ -3835,6 +3835,21 @@ function formatLocalDateLabel(dateValue, timeZone = BOOKING_DISPLAY_TIMEZONE) {
   }).format(date);
 }
 
+function formatLocalDateTimeLabel(dateValue, timeZone = BOOKING_DISPLAY_TIMEZONE) {
+  const date = dateValue instanceof Date ? dateValue : new Date(dateValue);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat("en-US", {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+    timeZone,
+  }).format(date);
+}
+
 function getLocalCalendarDateString(dateValue = new Date(), timeZone = BOOKING_DISPLAY_TIMEZONE) {
   const date = dateValue instanceof Date ? dateValue : new Date(dateValue);
   if (Number.isNaN(date.getTime())) return "";
@@ -3952,6 +3967,7 @@ function buildInstantBookingToggleNotification({
     }
     return `${change.vehicle_type} is currently unavailable for on-demand booking.`;
   });
+  const effectiveTimestampLabel = formatLocalDateTimeLabel(new Date(), timeZone);
 
   let subject = `${companyName} instant booking availability update`;
   let intro = `${companyName} updated on-demand booking availability.`;
@@ -3964,12 +3980,12 @@ function buildInstantBookingToggleNotification({
     sms = `${companyName} is available for on-demand booking from ${windowLabels.startLabel} until ${windowLabels.endLabel}. Reserve now while availability remains open.`;
   } else if (enabledChanges.length && windowLabels) {
     subject = `${companyName} is available for on-demand booking`;
-    intro = `${companyName} is available for on-demand booking from ${windowLabels.startLabel} until ${windowLabels.endLabel}.`;
-    sms = `${companyName} is available for on-demand booking from ${windowLabels.startLabel} until ${windowLabels.endLabel}. Reserve now while availability remains open.`;
+    intro = `As of ${effectiveTimestampLabel}, ${companyName} is available for on-demand booking from ${windowLabels.startLabel} until ${windowLabels.endLabel}.`;
+    sms = `As of ${effectiveTimestampLabel}, ${companyName} is available for on-demand booking from ${windowLabels.startLabel} until ${windowLabels.endLabel}. Reserve now while availability remains open.`;
   } else if (disabledChanges.length) {
     subject = `${companyName} on-demand booking availability update`;
-    intro = `${companyName} is not currently available for on-demand booking at this time.`;
-    sms = `${companyName} is not currently available for on-demand booking at this time. We look forward to welcoming your next reservation soon.`;
+    intro = `As of ${effectiveTimestampLabel}, ${companyName} is not currently available for on-demand booking at this time.`;
+    sms = `As of ${effectiveTimestampLabel}, ${companyName} is not currently available for on-demand booking at this time. We look forward to welcoming your next reservation soon.`;
     closing = `Please keep us in mind for upcoming travel. We'll be glad to welcome your reservation as soon as availability reopens.`;
   }
 
