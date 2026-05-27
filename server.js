@@ -4226,7 +4226,7 @@ async function processDailyInstantBookingNotifications() {
       console.log("[instant-booking] Daily CRM contact notification result", {
         locationId: profile.location_id,
         sentForDate,
-        result,
+        result: JSON.parse(JSON.stringify(result)),
       });
     }
   } catch (error) {
@@ -6000,7 +6000,7 @@ async function saveConfigHandler(req, res) {
             });
             console.log("[instant-booking] CRM contact notification result", {
               locationId: location_id,
-              result,
+              result: JSON.parse(JSON.stringify(result)),
             });
           })
           .catch((error) => {
