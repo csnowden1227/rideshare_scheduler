@@ -4310,6 +4310,29 @@ function buildCustomerTrackingStatusSmsMessage({
   return lines.join("\n");
 }
 
+function buildCustomerPostRideFollowupSmsMessage({
+  session,
+  followUpUrl,
+  portalUrl,
+  planName,
+}) {
+  const lines = [
+    "Thank you for riding with us.",
+  ];
+  if (followUpUrl) {
+    lines.push(`Review and tip here: ${followUpUrl}`);
+  }
+  if (planName === "pro" && portalUrl) {
+    lines.push(`Manage your rides here: ${portalUrl}`);
+  } else if (planName === "premium" && portalUrl) {
+    lines.push(`Open Ride Hub: ${portalUrl}`);
+  }
+  if (session?.end_time) {
+    lines.push(`Ride Completed: ${formatDisplayDateTime(session.end_time) || session.end_time}`);
+  }
+  return lines.join("\n");
+}
+
 async function sendCustomerEnRouteTrackingSms({
   trackingSessionId,
   req = null,
@@ -4403,6 +4426,106 @@ async function sendCustomerEnRouteTrackingSms({
     ...sendResult,
     contactId: customerContactId,
     customer_tracking_url: customerTrackingLink,
+    portal_url: portalLink,
+    plan_name: normalizedPlanName,
+  };
+}
+
+async function sendCustomerPostRideFollowupSms({
+  trackingSessionId,
+  req = null,
+}) {
+  if (!trackingSessionId) {
+    return { success: false, skipped: true, reason: "trackingSessionId is required." };
+  }
+
+  const session = await getTrackingSessionById(trackingSessionId);
+  if (!session) {
+    return { success: false, skipped: true, reason: "Tracking session not found." };
+  }
+
+  const normalizedCustomerPhone = normalizePhoneNumber(session.customer_phone || "");
+  if (!normalizedCustomerPhone) {
+    return { success: false, skipped: true, reason: "Customer phone is missing." };
+  }
+
+  const crmAuthOptions = {
+    includeEnvFallback: false,
+  };
+
+  let customerContactId = session.crm_contact_id || await upsertCrmContact({
+    locationId: session.location_id,
+    firstName: session.first_name,
+    lastName: session.last_name,
+    email: undefined,
+    phone: normalizedCustomerPhone,
+    crmAuthOptions,
+  });
+
+  if (!customerContactId && (session.customer_email || normalizedCustomerPhone)) {
+    customerContactId = await upsertCrmContact({
+      locationId: session.location_id,
+      firstName: session.first_name,
+      lastName: session.last_name,
+      email: session.customer_email || undefined,
+      phone: normalizedCustomerPhone,
+      crmAuthOptions,
+    });
+  }
+
+  if (!customerContactId) {
+    return { success: false, skipped: true, reason: "Unable to resolve CRM customer contact." };
+  }
+
+  const trackingUrls = buildTrackingUrls(req, session.driver_token, session.customer_token, session.public_app_url);
+  const portalUrls = buildCustomerPortalUrls(req, session.location_id, session.customer_token, session.public_app_url);
+  const shortUrls = await buildShortPublicUrls({
+    req,
+    locationId: session.location_id,
+    bookingId: session.booking_id,
+    trackingSessionId: session.id,
+    tracking: {
+      customer_tracking_url: trackingUrls.customer_url,
+      driver_tracking_url: trackingUrls.driver_url,
+      follow_up_url: trackingUrls.follow_up_url,
+    },
+    portal: {
+      customer_login_url: portalUrls.customer_login_url || null,
+      ride_hub_url: portalUrls.ride_hub_url,
+      ride_inbox_url: portalUrls.ride_inbox_url,
+    },
+    followUp: {
+      review_and_tip_url: trackingUrls.follow_up_url,
+    },
+  });
+
+  const normalizedPlanName = normalizePlanName(session.plan_name || "starter");
+  const portalLink = normalizedPlanName === "pro"
+    ? (shortUrls.portal.customer_login_url || portalUrls.customer_login_url || null)
+    : (shortUrls.portal.ride_hub_url || portalUrls.ride_hub_url || null);
+  const followUpLink = shortUrls.follow_up.review_and_tip_url
+    || shortUrls.tracking.follow_up_url
+    || trackingUrls.follow_up_url
+    || null;
+
+  const message = buildCustomerPostRideFollowupSmsMessage({
+    session,
+    followUpUrl: followUpLink,
+    portalUrl: portalLink,
+    planName: normalizedPlanName,
+  });
+
+  const sendResult = await sendCrmSmsToContact({
+    locationId: session.location_id,
+    contactId: customerContactId,
+    message,
+    crmAuthOptions,
+  });
+
+  return {
+    ...sendResult,
+    contactId: customerContactId,
+    follow_up_url: followUpLink,
     portal_url: portalLink,
     plan_name: normalizedPlanName,
   };
@@ -9416,13 +9539,18 @@ app.post("/api/tracking/status", async (req, res) => {
       }
     }
 
-    if (shouldTriggerCustomerTracking || shouldTriggerCustomerArrived) {
+    if (shouldTriggerCustomerTracking || shouldTriggerCustomerArrived || shouldTriggerPostRideFollowup) {
       try {
-        const smsResult = await sendCustomerEnRouteTrackingSms({
-          trackingSessionId: existingSession.id,
-          req,
-          status,
-        });
+        const smsResult = shouldTriggerPostRideFollowup
+          ? await sendCustomerPostRideFollowupSms({
+              trackingSessionId: existingSession.id,
+              req,
+            })
+          : await sendCustomerEnRouteTrackingSms({
+              trackingSessionId: existingSession.id,
+              req,
+              status,
+            });
         directCustomerSms = {
           attempted: true,
           skipped: Boolean(smsResult.skipped),
@@ -9432,16 +9560,17 @@ app.post("/api/tracking/status", async (req, res) => {
           status: smsResult.status || null,
           tokenSource: smsResult.tokenSource || null,
           customer_tracking_url: smsResult.customer_tracking_url || null,
+          follow_up_url: smsResult.follow_up_url || null,
           portal_url: smsResult.portal_url || null,
           plan_name: smsResult.plan_name || null,
         };
       } catch (smsError) {
-        console.error("Direct customer en-route SMS error:", smsError);
+        console.error("Direct customer status SMS error:", smsError);
         directCustomerSms = {
           attempted: true,
           skipped: false,
           success: false,
-          reason: smsError?.message || "Direct customer en-route SMS failed.",
+          reason: smsError?.message || "Direct customer status SMS failed.",
         };
       }
     }
