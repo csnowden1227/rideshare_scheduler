@@ -326,7 +326,7 @@
       <p>Use this secure tracking page to view your driver, vehicle, live route, and current trip status for this reservation.</p>
       <div class="hero-actions">
         <a id="home-portal-button" class="hero-button primary" href="/customer-dashboard">Home Portal</a>
-        <a id="dashboard-button" class="hero-button secondary" href="/customer-dashboard#dashboard-panel">Dashboard</a>
+        <a id="dashboard-button" class="hero-button secondary" href="/customer-account-dashboard">Dashboard</a>
       </div>
     </div>
 
@@ -427,7 +427,7 @@
     }
 
     document.getElementById("home-portal-button").href = withLocation("/customer-dashboard");
-    document.getElementById("dashboard-button").href = withLocation("/customer-dashboard", "dashboard-panel");
+    document.getElementById("dashboard-button").href = withLocation("/customer-account-dashboard");
 
     function setText(id, value) {
       const el = document.getElementById(id);

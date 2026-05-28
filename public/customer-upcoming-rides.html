@@ -45,7 +45,7 @@
       <p>Review your future confirmed reservations, keep an eye on timing, and jump back into booking with Book Again whenever you need a fresh trip.</p>
       <div class="hero-actions">
         <a id="home-button" class="btn primary" href="/customer-dashboard">Home Portal</a>
-        <a id="dashboard-button" class="btn secondary" href="/customer-dashboard#dashboard-panel">Dashboard</a>
+        <a id="dashboard-button" class="btn secondary" href="/customer-account-dashboard">Dashboard</a>
       </div>
     </section>
 
@@ -127,7 +127,7 @@
       }
 
       document.getElementById("home-button").href = withLocation("/customer-dashboard");
-      document.getElementById("dashboard-button").href = withLocation("/customer-dashboard", "dashboard-panel");
+      document.getElementById("dashboard-button").href = withLocation("/customer-account-dashboard");
 
       function renderRideCard(ride) {
         return `
