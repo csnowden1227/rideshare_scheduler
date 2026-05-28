@@ -5,19 +5,19 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Saved Payment Methods</title>
   <style>
-    :root { --ink: #0f172a; --muted: #64748b; --line: rgba(148,163,184,.22); --panel: rgba(255,255,255,.95); --shadow: 0 24px 48px rgba(15,23,42,.08); }
+    :root { --ink: #0f172a; --muted: #64748b; --line: rgba(148,163,184,.22); --panel: rgba(255,255,255,.95); --shadow: 0 24px 48px rgba(15,23,42,.08); --brand-primary: #082f49; --brand-secondary: #0f766e; --brand-accent: #ecfeff; }
     * { box-sizing: border-box; }
     body { margin: 0; font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif; color: var(--ink); background: linear-gradient(180deg, #f8fafc 0%, #ffffff 44%, #eef2f7 100%); }
     .shell { max-width: 1100px; margin: 0 auto; padding: 24px 16px 42px; }
     .hero, .panel, .method-card { border-radius: 28px; box-shadow: var(--shadow); }
-    .hero { padding: 28px; color: #fff; background: linear-gradient(135deg, #172554 0%, #1e293b 48%, #334155 100%); }
+    .hero { padding: 28px; color: #fff; background: linear-gradient(135deg, var(--brand-primary) 0%, color-mix(in srgb, var(--brand-primary) 74%, #1e293b 26%) 48%, var(--brand-secondary) 100%); }
     .hero h1 { margin: 0; font-size: clamp(32px, 5vw, 50px); line-height: 1.02; letter-spacing: -.04em; }
     .hero p { margin: 12px 0 0; line-height: 1.8; color: rgba(255,255,255,.88); max-width: 760px; }
     .hero-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 18px; }
     .btn { display: inline-flex; align-items: center; justify-content: center; min-height: 48px; padding: 12px 16px; border-radius: 16px; border: 0; cursor: pointer; font-size: 14px; font-weight: 800; text-decoration: none; }
     .btn.primary { background: #fff; color: #172554; }
     .btn.secondary { background: rgba(255,255,255,.12); color: #fff; border: 1px solid rgba(255,255,255,.18); }
-    .btn.dark { background: #172554; color: #fff; }
+    .btn.dark { background: var(--brand-primary); color: #fff; }
     .panel { margin-top: 20px; background: var(--panel); border: 1px solid var(--line); padding: 22px; }
     .panel h2 { margin: 0; font-size: 24px; letter-spacing: -.03em; color: #172554; }
     .panel p { margin: 10px 0 0; color: #475569; line-height: 1.8; }
@@ -27,8 +27,8 @@
     .method-card.default { border-color: rgba(15,118,110,.32); background: linear-gradient(180deg, rgba(240,253,250,.96), rgba(255,255,255,.98)); }
     .method-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
     .method-head h3 { margin: 0; font-size: 20px; letter-spacing: -.03em; color: #172554; }
-    .pill { display: inline-flex; padding: 8px 10px; border-radius: 999px; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .1em; background: rgba(76,29,149,.12); color: #5b21b6; }
-    .pill.default { background: rgba(15,118,110,.12); color: #0f766e; }
+    .pill { display: inline-flex; padding: 8px 10px; border-radius: 999px; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .1em; background: color-mix(in srgb, var(--brand-secondary) 16%, white 84%); color: var(--brand-primary); }
+    .pill.default { background: color-mix(in srgb, var(--brand-secondary) 16%, white 84%); color: var(--brand-secondary); }
     .meta { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 14px; }
     .meta-block { padding: 14px; border-radius: 18px; background: rgba(248,250,252,.92); border: 1px solid rgba(148,163,184,.16); }
     .meta-block span { display: block; margin-bottom: 8px; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); }
@@ -74,6 +74,13 @@
     (function () {
       const query = new URLSearchParams(window.location.search);
       const locationId = String(query.get("location_id") || "").trim();
+
+      function applyBranding(branding = {}) {
+        const root = document.documentElement;
+        if (branding.brand_color_primary) root.style.setProperty("--brand-primary", branding.brand_color_primary);
+        if (branding.brand_color_secondary) root.style.setProperty("--brand-secondary", branding.brand_color_secondary);
+        if (branding.brand_color_accent) root.style.setProperty("--brand-accent", branding.brand_color_accent);
+      }
 
       function escapeHtml(value) {
         return String(value || "")
@@ -133,6 +140,7 @@
       async function loadPaymentMethods() {
         try {
           const data = await fetchJson("/api/customer-account/payment-methods");
+          applyBranding(data.branding || {});
           const methods = Array.isArray(data.methods) ? data.methods : [];
           document.getElementById("method-list").innerHTML = methods.map(renderMethodCard).join("");
           document.getElementById("empty-state").style.display = methods.length ? "none" : "block";

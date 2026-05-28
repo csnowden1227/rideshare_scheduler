@@ -5,12 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Customer Ride History</title>
   <style>
-    :root { --ink: #0f172a; --muted: #64748b; --line: rgba(148,163,184,.22); --panel: rgba(255,255,255,.95); --shadow: 0 24px 48px rgba(15,23,42,.08); }
+    :root { --ink: #0f172a; --muted: #64748b; --line: rgba(148,163,184,.22); --panel: rgba(255,255,255,.95); --shadow: 0 24px 48px rgba(15,23,42,.08); --brand-primary: #082f49; --brand-secondary: #0f766e; --brand-accent: #ecfeff; }
     * { box-sizing: border-box; }
     body { margin: 0; font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif; color: var(--ink); background: linear-gradient(180deg, #f8fafc 0%, #ffffff 44%, #eef2f7 100%); }
     .shell { max-width: 1120px; margin: 0 auto; padding: 24px 16px 42px; }
     .hero, .panel, .ride-card { border-radius: 28px; box-shadow: var(--shadow); }
-    .hero { padding: 28px; color: #fff; background: linear-gradient(135deg, #172554 0%, #1e293b 48%, #334155 100%); }
+    .hero { padding: 28px; color: #fff; background: linear-gradient(135deg, var(--brand-primary) 0%, color-mix(in srgb, var(--brand-primary) 74%, #1e293b 26%) 48%, var(--brand-secondary) 100%); }
     .hero h1 { margin: 0; font-size: clamp(32px, 5vw, 50px); line-height: 1.02; letter-spacing: -.04em; }
     .hero p { margin: 12px 0 0; line-height: 1.8; color: rgba(255,255,255,.88); max-width: 720px; }
     .hero-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 18px; }
@@ -26,7 +26,7 @@
     .ride-card.cancelled { background: linear-gradient(180deg, rgba(254,242,242,.96), rgba(255,255,255,.98)); border-color: rgba(239,68,68,.18); }
     .ride-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
     .ride-head h3 { margin: 0; font-size: 20px; letter-spacing: -.03em; }
-    .pill { display: inline-flex; padding: 8px 10px; border-radius: 999px; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .1em; background: rgba(76,29,149,.12); color: #5b21b6; }
+    .pill { display: inline-flex; padding: 8px 10px; border-radius: 999px; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .1em; background: color-mix(in srgb, var(--brand-secondary) 16%, white 84%); color: var(--brand-primary); }
     .pill.cancelled { background: rgba(239,68,68,.12); color: #b91c1c; }
     .meta { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 14px; }
     .meta-block { padding: 14px; border-radius: 18px; background: rgba(248,250,252,.92); border: 1px solid rgba(148,163,184,.16); }
@@ -66,6 +66,13 @@
     (function () {
       const query = new URLSearchParams(window.location.search);
       const locationId = String(query.get("location_id") || "").trim();
+
+      function applyBranding(branding = {}) {
+        const root = document.documentElement;
+        if (branding.brand_color_primary) root.style.setProperty("--brand-primary", branding.brand_color_primary);
+        if (branding.brand_color_secondary) root.style.setProperty("--brand-secondary", branding.brand_color_secondary);
+        if (branding.brand_color_accent) root.style.setProperty("--brand-accent", branding.brand_color_accent);
+      }
 
       function escapeHtml(value) {
         return String(value || "")
@@ -141,6 +148,7 @@
       async function loadRideHistory() {
         try {
           const data = await fetchJson("/api/customer-account/ride-history");
+          applyBranding(data.branding || {});
           const rides = Array.isArray(data.ride_history) ? data.ride_history : [];
           const rideList = document.getElementById("ride-list");
           const emptyState = document.getElementById("empty-state");

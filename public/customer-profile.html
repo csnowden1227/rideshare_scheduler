@@ -5,10 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Customer Profile</title>
   <style>
+    :root { --brand-primary: #082f49; --brand-secondary: #0f766e; --brand-accent: #ecfeff; }
     body { margin: 0; font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif; background: linear-gradient(180deg, #f8fafc 0%, #ffffff 44%, #eef2f7 100%); color: #0f172a; }
     .shell { max-width: 920px; margin: 0 auto; padding: 24px 16px 42px; }
     .hero, .card { border-radius: 28px; box-shadow: 0 24px 48px rgba(15,23,42,.08); }
-    .hero { padding: 28px; color: #fff; background: linear-gradient(135deg, #172554 0%, #1e293b 48%, #334155 100%); }
+    .hero { padding: 28px; color: #fff; background: linear-gradient(135deg, var(--brand-primary) 0%, color-mix(in srgb, var(--brand-primary) 74%, #1e293b 26%) 48%, var(--brand-secondary) 100%); }
     .hero h1 { margin: 0; font-size: clamp(32px, 5vw, 50px); line-height: 1.02; letter-spacing: -.04em; }
     .hero p { margin: 12px 0 0; line-height: 1.8; color: rgba(255,255,255,.88); max-width: 720px; }
     .hero-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 18px; }
@@ -21,7 +22,7 @@
     .field label { display: block; margin-bottom: 6px; font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: .12em; color: #475569; }
     .field input { width: 100%; padding: 14px 15px; border-radius: 16px; border: 1px solid #cbd5e1; background: #fff; font-size: 14px; }
     .actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 20px; }
-    .actions .btn.primary { background: #172554; color: #fff; }
+    .actions .btn.primary { background: var(--brand-primary); color: #fff; }
     .message { display: none; margin-top: 14px; padding: 12px 14px; border-radius: 14px; font-size: 14px; line-height: 1.7; }
     .message.error { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
     .message.success { background: #ecfdf5; color: #166534; border: 1px solid #bbf7d0; }
@@ -61,6 +62,13 @@
       const query = new URLSearchParams(window.location.search);
       const locationId = String(query.get("location_id") || "").trim();
 
+      function applyBranding(branding = {}) {
+        const root = document.documentElement;
+        if (branding.brand_color_primary) root.style.setProperty("--brand-primary", branding.brand_color_primary);
+        if (branding.brand_color_secondary) root.style.setProperty("--brand-secondary", branding.brand_color_secondary);
+        if (branding.brand_color_accent) root.style.setProperty("--brand-accent", branding.brand_color_accent);
+      }
+
       function redirectToLogin() {
         const suffix = locationId ? `?location_id=${encodeURIComponent(locationId)}` : "";
         window.location.href = `/customer-login${suffix}`;
@@ -94,6 +102,7 @@
       async function loadProfile() {
         try {
           const data = await fetchJson("/api/customer-account/profile");
+          applyBranding(data.branding || {});
           fillProfile(data.account || {});
         } catch (error) {
           if (error.message === "redirect") return;

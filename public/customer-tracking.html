@@ -41,6 +41,33 @@
       margin: 0;
       line-height: 1.8;
     }
+    .hero-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 18px;
+    }
+    .hero-button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 46px;
+      padding: 12px 16px;
+      border-radius: 16px;
+      text-decoration: none;
+      font-size: 14px;
+      font-weight: 800;
+      border: 1px solid transparent;
+    }
+    .hero-button.primary {
+      background: #fff;
+      color: #082f49;
+    }
+    .hero-button.secondary {
+      background: rgba(255,255,255,0.12);
+      border-color: rgba(255,255,255,0.16);
+      color: #fff;
+    }
     .card {
       margin-top: 20px;
       background: #fff;
@@ -297,6 +324,10 @@
     <div class="hero">
       <h1>Track Your Driver</h1>
       <p>Use this secure tracking page to view your driver, vehicle, live route, and current trip status for this reservation.</p>
+      <div class="hero-actions">
+        <a id="home-portal-button" class="hero-button primary" href="/customer-dashboard">Home Portal</a>
+        <a id="dashboard-button" class="hero-button secondary" href="/customer-dashboard#dashboard-panel">Dashboard</a>
+      </div>
     </div>
 
     <div class="card">
@@ -368,6 +399,7 @@
 
   <script>
     const query = new URLSearchParams(window.location.search);
+    const locationId = (query.get("location_id") || "").trim();
     const pathSegments = window.location.pathname.split("/").filter(Boolean);
     const routeIndex = Math.max(pathSegments.lastIndexOf("customer-tracking"), pathSegments.lastIndexOf("customertracking"));
     const pathToken = routeIndex >= 0 ? decodeURIComponent(pathSegments[routeIndex + 1] || "") : "";
@@ -386,6 +418,16 @@
     let activeShareUrl = "";
     let activeBusinessName = "";
     let activeCustomerName = "";
+
+    function withLocation(path, hashValue = "") {
+      const url = new URL(path, window.location.origin);
+      if (locationId) url.searchParams.set("location_id", locationId);
+      if (hashValue) url.hash = hashValue;
+      return url.toString();
+    }
+
+    document.getElementById("home-portal-button").href = withLocation("/customer-dashboard");
+    document.getElementById("dashboard-button").href = withLocation("/customer-dashboard", "dashboard-panel");
 
     function setText(id, value) {
       const el = document.getElementById(id);

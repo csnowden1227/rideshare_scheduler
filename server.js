@@ -2496,6 +2496,64 @@ function buildCustomerAccountShape(account) {
   };
 }
 
+async function getCustomerPortalBranding(locationId) {
+  const profileIdColumn = await getProfileIdColumn();
+  const profileResult = await pool.query(
+    `SELECT
+       business_name,
+       business_logo,
+       brand_color_primary,
+       brand_color_secondary,
+       brand_color_accent,
+       widget_tagline,
+       plan_name,
+       addon_branding_unlocked,
+       addon_funnel_unlocked,
+       addon_tracking_unlocked,
+       addon_extra_vehicle_count
+     FROM profiles
+     WHERE ${profileIdColumn} = $1
+     LIMIT 1`,
+    [locationId]
+  );
+  const profile = profileResult.rows[0];
+  if (!profile) {
+    return {
+      business_name: "",
+      business_logo: "",
+      brand_color_primary: DEFAULT_BRAND_COLORS.primary,
+      brand_color_secondary: DEFAULT_BRAND_COLORS.secondary,
+      brand_color_accent: DEFAULT_BRAND_COLORS.accent,
+      widget_tagline: "",
+    };
+  }
+
+  const entitlements = buildPlanEntitlements({
+    planName: profile.plan_name || "starter",
+    addonBrandingUnlocked: profile.addon_branding_unlocked,
+    addonFunnelUnlocked: profile.addon_funnel_unlocked,
+    addonTrackingUnlocked: profile.addon_tracking_unlocked,
+    addonExtraVehicleCount: profile.addon_extra_vehicle_count,
+  });
+  const sanitizedBranding = sanitizeBrandingByEntitlements({
+    businessLogo: profile.business_logo,
+    brandColorPrimary: profile.brand_color_primary,
+    brandColorSecondary: profile.brand_color_secondary,
+    brandColorAccent: profile.brand_color_accent,
+    widgetTagline: profile.widget_tagline,
+    entitlements,
+  });
+
+  return {
+    business_name: profile.business_name || "",
+    business_logo: sanitizedBranding.business_logo || "",
+    brand_color_primary: sanitizedBranding.brand_color_primary || DEFAULT_BRAND_COLORS.primary,
+    brand_color_secondary: sanitizedBranding.brand_color_secondary || DEFAULT_BRAND_COLORS.secondary,
+    brand_color_accent: sanitizedBranding.brand_color_accent || DEFAULT_BRAND_COLORS.accent,
+    widget_tagline: sanitizedBranding.widget_tagline || "",
+  };
+}
+
 async function getStripeBillingConfigForCustomerAccount(locationId) {
   const paymentProfile = await getPaymentProfileForLocation(locationId);
   if (normalizePaymentProvider(paymentProfile.provider) !== "stripe" || !paymentProfile.stripeSecretKey) {
@@ -2718,9 +2776,20 @@ async function fetchCustomerRidesForIdentity({
        b.balance_due,
        b.crm_contact_id,
        p.business_name,
-       p.fleet
+       p.fleet,
+       p.public_app_url,
+       ts.id AS tracking_session_id,
+       ts.customer_token AS tracking_customer_token,
+       ts.status AS tracking_status
      FROM bookings b
      LEFT JOIN profiles p ON p.${profileIdColumn} = b.location_id
+     LEFT JOIN LATERAL (
+       SELECT s.id, s.customer_token, s.status, s.updated_at, s.created_at
+       FROM trip_tracking_sessions s
+       WHERE s.booking_id = b.id
+       ORDER BY s.updated_at DESC NULLS LAST, s.created_at DESC NULLS LAST, s.id DESC
+       LIMIT 1
+     ) ts ON TRUE
      WHERE b.location_id = $1
        AND (
          ($2 <> '' AND COALESCE(b.crm_contact_id, '') = $2)
@@ -2738,6 +2807,12 @@ async function fetchCustomerRidesForIdentity({
       vehicle_slot_id: ride.vehicle_slot_id,
       fleet: ride.fleet,
     });
+    const trackingUrls = ride.tracking_customer_token
+      ? buildTrackingUrls(null, "", ride.tracking_customer_token, ride.public_app_url)
+      : { customer_url: null, follow_up_url: null };
+    const portalUrls = ride.tracking_customer_token
+      ? buildCustomerPortalUrls(null, ride.location_id, ride.tracking_customer_token, ride.public_app_url)
+      : { ride_inbox_url: null, ride_hub_url: null };
     const startTime = ride.start_time ? new Date(ride.start_time) : null;
     const startTimeMs = startTime && !Number.isNaN(startTime.getTime()) ? startTime.getTime() : null;
     const normalizedStatus = String(ride.status || "").trim().toLowerCase();
@@ -2762,8 +2837,15 @@ async function fetchCustomerRidesForIdentity({
       deposit_percent: Number(ride.deposit_percent || 0),
       balance_due: Number(ride.balance_due || 0),
       payment_status: paymentStatus,
+      business_name: ride.business_name || "",
       vehicle_slot_id: ride.vehicle_slot_id || "",
       vehicle_display_name: buildVehicleDisplayName(vehicleRecord, ride.vehicle_slot_id || ""),
+      tracking_session_id: ride.tracking_session_id || null,
+      tracking_status: String(ride.tracking_status || "").trim().toLowerCase() || null,
+      customer_tracking_url: trackingUrls.customer_url || null,
+      ride_inbox_url: portalUrls.ride_inbox_url || null,
+      ride_hub_url: portalUrls.ride_hub_url || null,
+      review_and_tip_url: trackingUrls.follow_up_url || null,
       customer: {
         first_name: ride.first_name || "",
         last_name: ride.last_name || "",
@@ -4320,7 +4402,7 @@ function buildCustomerPostRideFollowupSmsMessage({
     "Thank you for riding with us.",
   ];
   if (followUpUrl) {
-    lines.push(`Review and tip here: ${followUpUrl}`);
+    lines.push(`Please leave a review and feel free to leave a tip if you received great service: ${followUpUrl}`);
   }
   if (planName === "pro" && portalUrl) {
     lines.push(`Manage your rides here: ${portalUrl}`);
@@ -13846,9 +13928,11 @@ app.get("/api/customer-account/session", async (req, res) => {
       return res.status(401).json({ error: "Customer login required." });
     }
     const planName = await getLocationPlanName(session.location_id);
+    const branding = await getCustomerPortalBranding(session.location_id);
     return res.json({
       success: true,
       plan_name: planName,
+      branding,
       account: buildCustomerAccountShape(session),
     });
   } catch (err) {
@@ -13959,6 +14043,7 @@ app.get("/api/customer-account/upcoming-rides", async (req, res) => {
     const session = await requireCustomerAccountSession(req, res);
     if (!session) return;
     await assertProCustomerAccountAccess(session.location_id);
+    const branding = await getCustomerPortalBranding(session.location_id);
     const rides = await fetchCustomerRidesForIdentity({
       locationId: session.location_id,
       email: session.email,
@@ -13967,6 +14052,7 @@ app.get("/api/customer-account/upcoming-rides", async (req, res) => {
     });
     return res.json({
       success: true,
+      branding,
       rides: rides.filter((ride) => ride.is_upcoming),
     });
   } catch (err) {
@@ -13980,6 +14066,7 @@ app.get("/api/customer-account/ride-history", async (req, res) => {
     const session = await requireCustomerAccountSession(req, res);
     if (!session) return;
     await assertProCustomerAccountAccess(session.location_id);
+    const branding = await getCustomerPortalBranding(session.location_id);
     const rides = await fetchCustomerRidesForIdentity({
       locationId: session.location_id,
       email: session.email,
@@ -13988,6 +14075,7 @@ app.get("/api/customer-account/ride-history", async (req, res) => {
     });
     return res.json({
       success: true,
+      branding,
       upcoming_rides: rides.filter((ride) => ride.is_upcoming),
       ride_history: rides.filter((ride) => !ride.is_upcoming),
       rides,
@@ -14003,9 +14091,11 @@ app.get("/api/customer-account/profile", async (req, res) => {
     const session = await requireCustomerAccountSession(req, res);
     if (!session) return;
     const planName = await assertProCustomerAccountAccess(session.location_id);
+    const branding = await getCustomerPortalBranding(session.location_id);
     return res.json({
       success: true,
       plan_name: planName,
+      branding,
       account: buildCustomerAccountShape(session),
     });
   } catch (err) {
@@ -14070,10 +14160,12 @@ app.get("/api/customer-account/payment-methods", async (req, res) => {
     const session = await requireCustomerAccountSession(req, res);
     if (!session) return;
     await assertProCustomerAccountAccess(session.location_id);
+    const branding = await getCustomerPortalBranding(session.location_id);
     const paymentProfile = await getStripeBillingConfigForCustomerAccount(session.location_id);
     const summary = await listStripeSavedPaymentMethodsForCustomerAccount(session);
     return res.json({
       success: true,
+      branding,
       payment_provider: normalizePaymentProvider(paymentProfile.provider),
       ...summary,
     });
