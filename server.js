@@ -182,6 +182,7 @@ let profilePricingColumnsReady = null;
 let profileEntitlementColumnsReady = null;
 let profilePaymentProviderColumnsReady = null;
 let profileServiceAreaColumnsReady = null;
+let profileOnDemandNurtureColumnReady = null;
 let saasAddonPurchasesTableReady = null;
 let dispatchTablesReady = null;
 let tripTrackingTablesReady = null;
@@ -890,6 +891,17 @@ const DEFAULT_INSTANT_BOOKING_END_TIME = "22:00";
 const DEFAULT_NON_INSTANT_NOTICE_HOURS = 4;
 const INSTANT_BOOKING_NOTIFICATION_KIND_TOGGLE = "toggle";
 const INSTANT_BOOKING_NOTIFICATION_KIND_DAILY = "daily";
+const INSTANT_BOOKING_DAILY_REMINDER_MINUTES = 18 * 60 + 30;
+const INSTANT_BOOKING_DAILY_REMINDER_WEEKDAYS = new Set([1, 4]);
+const INSTANT_BOOKING_WEEKDAY_NAME_MAP = {
+  0: "sunday",
+  1: "monday",
+  2: "tuesday",
+  3: "wednesday",
+  4: "thursday",
+  5: "friday",
+  6: "saturday",
+};
 
 function normalizeTrackingStatus(value) {
   const normalized = String(value || "").trim().toLowerCase();
@@ -1014,6 +1026,24 @@ function formatTimeLabel(value, fallback = "") {
   const meridiem = hours >= 12 ? "PM" : "AM";
   const displayHour = hours % 12 || 12;
   return `${displayHour}:${String(minutes).padStart(2, "0")} ${meridiem}`;
+}
+
+function normalizeOnDemandNurtureConfig(config = {}) {
+  const rawWeekdays = Array.isArray(config?.send_weekdays) ? config.send_weekdays : [];
+  const normalizedWeekdays = rawWeekdays
+    .map((value) => String(value || "").trim().toLowerCase())
+    .filter((value) => ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"].includes(value));
+
+  return {
+    enabled: normalizeBooleanish(config?.enabled, false),
+    message: String(config?.message || "").trim(),
+    send_weekdays: normalizedWeekdays.length ? normalizedWeekdays : ["monday", "thursday"],
+    send_time: normalizeTimeOfDay(config?.send_time, "18:30"),
+    start_date: String(config?.start_date || "").trim(),
+    end_date: String(config?.end_date || "").trim(),
+    promo_start_time: normalizeTimeOfDay(config?.promo_start_time, ""),
+    promo_end_time: normalizeTimeOfDay(config?.promo_end_time, ""),
+  };
 }
 
 function normalizeFleetBookingPolicy(slot = {}, profileDefaults = {}) {
@@ -1223,6 +1253,18 @@ async function ensureProfileServiceAreaColumns() {
     });
   }
   return profileServiceAreaColumnsReady;
+}
+
+async function ensureProfileOnDemandNurtureColumn() {
+  if (!profileOnDemandNurtureColumnReady) {
+    profileOnDemandNurtureColumnReady = (async () => {
+      await pool.query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS on_demand_nurture JSONB`);
+    })().catch((err) => {
+      profileOnDemandNurtureColumnReady = null;
+      throw err;
+    });
+  }
+  return profileOnDemandNurtureColumnReady;
 }
 
 function normalizeDriverName(value) {
@@ -4026,6 +4068,7 @@ function buildInstantBookingToggleNotification({
   changes = [],
   notificationKind = INSTANT_BOOKING_NOTIFICATION_KIND_TOGGLE,
   timeZone = BOOKING_DISPLAY_TIMEZONE,
+  nurtureConfig = null,
 }) {
   const companyName = String(businessName || "Your booking service").trim() || "Your booking service";
   const enabledChanges = changes.filter((change) => change.enabled);
@@ -4057,9 +4100,17 @@ function buildInstantBookingToggleNotification({
   let closing = `We'd be delighted to help with your next trip. Reserve while availability remains open.`;
 
   if (notificationKind === INSTANT_BOOKING_NOTIFICATION_KIND_DAILY && enabledChanges.length && windowLabels) {
-    subject = `${companyName} is available for on-demand booking today`;
-    intro = `${companyName} is available for on-demand booking from ${windowLabels.startLabel} until ${windowLabels.endLabel}.`;
-    sms = `${companyName} is available for on-demand booking today from ${formatTimeLabel(primaryChange?.start_time)} until ${formatTimeLabel(primaryChange?.end_time)}.`;
+    const customMessage = String(nurtureConfig?.message || "").trim();
+    const promoStartTime = nurtureConfig?.promo_start_time || primaryChange?.start_time;
+    const promoEndTime = nurtureConfig?.promo_end_time || primaryChange?.end_time;
+    subject = `Friendly Reminder: ${companyName} on-demand booking opens tomorrow`;
+    intro = customMessage
+      ? `${customMessage} Booking begins tomorrow at ${formatTimeLabel(promoStartTime)} and ends at ${formatTimeLabel(promoEndTime)}.`
+      : `Friendly reminder: ${companyName} on-demand booking begins tomorrow at ${formatTimeLabel(promoStartTime)} and ends at ${formatTimeLabel(promoEndTime)}.`;
+    sms = customMessage
+      ? `${customMessage} Booking begins tomorrow at ${formatTimeLabel(promoStartTime)} and ends at ${formatTimeLabel(promoEndTime)}.`
+      : `Friendly Reminder: ${companyName} on demand booking begins tomorrow at ${formatTimeLabel(promoStartTime)} and ends at ${formatTimeLabel(promoEndTime)}.`;
+    closing = `We look forward to welcoming your reservation. Book early to secure the ride time that works best for you.`;
   } else if (enabledChanges.length && windowLabels) {
     subject = `${companyName} is available for on-demand booking`;
     intro = `As of ${effectiveTimestampLabel}, ${companyName} is available for on-demand booking from ${windowLabels.startLabel} until ${windowLabels.endLabel}.`;
@@ -4250,13 +4301,45 @@ async function hasInstantBookingNotificationLog({
 
 let instantBookingDailyNotificationLoopRunning = false;
 
+function getLocalWeekdayNumber(timeZone = BOOKING_DISPLAY_TIMEZONE, date = new Date()) {
+  try {
+    const weekday = new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      weekday: "short",
+    }).format(date);
+    const map = {
+      Sun: 0,
+      Mon: 1,
+      Tue: 2,
+      Wed: 3,
+      Thu: 4,
+      Fri: 5,
+      Sat: 6,
+    };
+    return Number.isInteger(map[weekday]) ? map[weekday] : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function getTimeOfDayMinutes(value, fallbackMinutes = INSTANT_BOOKING_DAILY_REMINDER_MINUTES) {
+  const [hoursText, minutesText] = String(value || "").split(":");
+  const hours = Number(hoursText);
+  const minutes = Number(minutesText);
+  if (!Number.isInteger(hours) || !Number.isInteger(minutes) || hours < 0 || hours > 23 || minutes < 0 || minutes > 59) {
+    return fallbackMinutes;
+  }
+  return (hours * 60) + minutes;
+}
+
 async function processDailyInstantBookingNotifications() {
   if (instantBookingDailyNotificationLoopRunning) return;
   instantBookingDailyNotificationLoopRunning = true;
   try {
     await ensureInstantBookingNotificationTables();
+    await ensureProfileOnDemandNurtureColumn();
     const profilesResult = await pool.query(
-      `SELECT location_id, business_name, fleet
+      `SELECT location_id, business_name, fleet, on_demand_nurture
        FROM profiles
        WHERE COALESCE(fleet, '[]'::jsonb) <> '[]'::jsonb`
     );
@@ -4264,18 +4347,28 @@ async function processDailyInstantBookingNotifications() {
     const now = new Date();
     const sentForDate = getLocalCalendarDateString(now, BOOKING_DISPLAY_TIMEZONE);
     const currentMinutes = getInstantBookingCurrentMinutes(BOOKING_DISPLAY_TIMEZONE, now);
+    const localWeekday = getLocalWeekdayNumber(BOOKING_DISPLAY_TIMEZONE, now);
+    const tomorrowDate = getLocalCalendarDateString(new Date(now.getTime() + 24 * 60 * 60 * 1000), BOOKING_DISPLAY_TIMEZONE);
     if (!sentForDate || !Number.isFinite(currentMinutes)) return;
 
     for (const profile of profilesResult.rows) {
       const activeChanges = buildDailyInstantBookingChanges(safeParseJson(profile.fleet, []));
       if (!activeChanges.length) continue;
+      const nurtureConfig = normalizeOnDemandNurtureConfig(safeParseJson(profile.on_demand_nurture, profile.on_demand_nurture || {}));
+      if (!nurtureConfig.enabled) continue;
 
-      const anyWindowActive = activeChanges.some((change) => {
-        const startMinutes = parseTimeOfDayToMinutes(change.start_time);
-        const endMinutes = parseTimeOfDayToMinutes(change.end_time);
-        return isMinutesWithinWindow(currentMinutes, startMinutes, endMinutes);
-      });
-      if (!anyWindowActive) continue;
+      const allowedWeekdays = new Set(
+        nurtureConfig.send_weekdays
+          .map((name) => Object.entries(INSTANT_BOOKING_WEEKDAY_NAME_MAP).find(([, value]) => value === name)?.[0])
+          .map((value) => Number(value))
+          .filter(Number.isInteger)
+      );
+      if (!(allowedWeekdays.size ? allowedWeekdays : INSTANT_BOOKING_DAILY_REMINDER_WEEKDAYS).has(localWeekday)) continue;
+
+      const sendTimeMinutes = getTimeOfDayMinutes(nurtureConfig.send_time, INSTANT_BOOKING_DAILY_REMINDER_MINUTES);
+      if (currentMinutes < sendTimeMinutes) continue;
+      if (nurtureConfig.start_date && tomorrowDate < nurtureConfig.start_date) continue;
+      if (nurtureConfig.end_date && tomorrowDate > nurtureConfig.end_date) continue;
 
       const windowSignature = buildInstantBookingWindowSignature(activeChanges);
       const alreadySent = await hasInstantBookingNotificationLog({
@@ -4292,6 +4385,7 @@ async function processDailyInstantBookingNotifications() {
         changes: activeChanges,
         notificationKind: INSTANT_BOOKING_NOTIFICATION_KIND_DAILY,
         timeZone: BOOKING_DISPLAY_TIMEZONE,
+        nurtureConfig,
       });
 
       await recordInstantBookingNotificationLog({
@@ -6035,6 +6129,7 @@ async function saveConfigHandler(req, res) {
       service_fee_value,
       service_area_type,
       service_area_rules,
+      on_demand_nurture,
       service_lat,
       service_lng,
       service_radius,
@@ -6053,6 +6148,7 @@ async function saveConfigHandler(req, res) {
     await ensureProfileEntitlementColumns();
     await ensureProfilePaymentProviderColumns();
     await ensureProfileServiceAreaColumns();
+    await ensureProfileOnDemandNurtureColumn();
     await ensureInstantBookingNotificationTables();
     const profileColumns = await getTableColumns("profiles");
     const profileIdColumn = profileColumns.has("location_id") ? "location_id" : "id";
@@ -6079,6 +6175,7 @@ async function saveConfigHandler(req, res) {
       entitlements,
     });
     const sanitizedFleet = sanitizeFleetByEntitlements(fleet, entitlements);
+    const normalizedOnDemandNurture = normalizeOnDemandNurtureConfig(on_demand_nurture);
     const instantBookingToggleChanges = summarizeInstantBookingToggleChanges(previousFleet, sanitizedFleet);
 
     const fieldEntries = [];
@@ -6117,6 +6214,7 @@ async function saveConfigHandler(req, res) {
     pushProfileField("service_fee_value", parseOptionalRate(service_fee_value));
     pushProfileField("service_area_type", normalizeServiceAreaType(service_area_type));
     pushProfileField("service_area_rules", JSON.stringify(normalizeServiceAreaRules(service_area_rules)), "::jsonb");
+    pushProfileField("on_demand_nurture", JSON.stringify(normalizedOnDemandNurture), "::jsonb");
     pushProfileField("service_lat", service_lat);
     pushProfileField("service_lng", service_lng);
     pushProfileField("service_radius", service_radius);
@@ -12889,6 +12987,7 @@ res.json({
   brand_color_secondary: sanitizedBranding.brand_color_secondary || DEFAULT_BRAND_COLORS.secondary,
   brand_color_accent: sanitizedBranding.brand_color_accent || DEFAULT_BRAND_COLORS.accent,
   widget_tagline: sanitizedBranding.widget_tagline || "",
+  on_demand_nurture: normalizeOnDemandNurtureConfig(safeParseJson(profile.on_demand_nurture, profile.on_demand_nurture || {})),
   maps_api_key: profile.maps_api_key,
   crm_api_key: profile.crm_api_key || "",
   payment_provider: normalizePaymentProvider(profile.payment_provider),
