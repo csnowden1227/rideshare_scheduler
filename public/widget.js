@@ -179,6 +179,45 @@
     return state.config?.business_logo || "";
   }
 
+  function parseWidgetPromoDate(value) {
+    const raw = String(value || "").trim();
+    if (!raw) return null;
+    const parsed = new Date(`${raw}T00:00:00`);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+
+  function getActiveWidgetPromotion() {
+    const promo = state.config?.on_demand_nurture || {};
+    if (!promo || !promo.enabled) return null;
+    const message = String(promo.message || "").trim();
+    if (!message) return null;
+
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const startDate = parseWidgetPromoDate(promo.start_date);
+    const endDate = parseWidgetPromoDate(promo.end_date);
+    if (startDate && today < startDate) return null;
+    if (endDate && today > endDate) return null;
+
+    const startMinutes = parseTimeOfDayToMinutes(promo.promo_start_time);
+    const endMinutes = parseTimeOfDayToMinutes(promo.promo_end_time);
+    const currentMinutes = (now.getHours() * 60) + now.getMinutes();
+    const hasWindow = Number.isFinite(startMinutes) && Number.isFinite(endMinutes);
+    if (hasWindow && !isMinutesWithinWindow(currentMinutes, startMinutes, endMinutes)) {
+      return null;
+    }
+
+    const timeLabelParts = [];
+    if (promo.promo_start_time) timeLabelParts.push(formatTimeLabel(promo.promo_start_time));
+    if (promo.promo_end_time) timeLabelParts.push(formatTimeLabel(promo.promo_end_time));
+    const timeLabel = timeLabelParts.length === 2 ? `${timeLabelParts[0]} - ${timeLabelParts[1]}` : "";
+
+    return {
+      message,
+      timeLabel,
+    };
+  }
+
   function getProfileDepositDefaults() {
     return {
       percent: toNumber(state.config?.financials?.default_deposit_percent, 0),
@@ -904,6 +943,7 @@
     const proPlan = isProPlan();
     const businessLogo = getBusinessLogo();
     const tagline = state.config?.widget_tagline || "Luxury airport transfers, executive rides, and premium service tailored to every reservation.";
+    const activePromotion = getActiveWidgetPromotion();
     const vehiclePicker = renderVehiclePicker(fleet);
     const eventSelect = renderEventSelect();
     const fixedDestinationSelect = renderFixedDestinationSelect();
@@ -961,9 +1001,15 @@
                   ${isPracticeMode() ? `<div style="padding:6px 12px;border-radius:999px;background:${proPlan ? "rgba(255,255,255,.16)" : "#ffffff"};border:1px solid ${escapeHtml(colors.heroBorder)};font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:.16em;">Practice Mode</div>` : ``}
                 </div>
                 <h2 style="margin:6px 0 0;font-size:32px;line-height:1.1;font-weight:900;">${escapeHtml(state.config?.business_name || "Luxury Ride Reservations")}</h2>
-                <p style="margin:18px 0 0;font-size:15px;line-height:1.6;max-width:580px;color:${escapeHtml(colors.heroMuted)};">
+                <p style="margin:18px 0 0;font-size:17px;line-height:1.65;max-width:580px;color:${escapeHtml(colors.heroMuted)};font-weight:600;">
                 ${escapeHtml(tagline)}
                 </p>
+                ${activePromotion ? `
+                  <div style="margin-top:12px;padding:11px 14px;border-radius:16px;background:${proPlan ? "rgba(255,255,255,.14)" : "#ffffff"};border:1px solid ${escapeHtml(colors.heroBorder)};max-width:620px;">
+                    <div style="font-size:13px;line-height:1.6;color:${escapeHtml(colors.heroText)};font-weight:800;">${escapeHtml(activePromotion.message)}</div>
+                    ${activePromotion.timeLabel ? `<div style="margin-top:6px;font-size:12px;line-height:1.5;color:${escapeHtml(colors.heroMuted)};font-weight:700;">Available ${escapeHtml(activePromotion.timeLabel)}</div>` : ``}
+                  </div>
+                ` : ``}
               </div>
               <div id="cd_logo_wrap" style="display:flex;justify-content:flex-end;min-width:120px;">
                 ${businessLogo ? `<img src="${escapeHtml(businessLogo)}" alt="Business logo" style="max-width:120px;max-height:88px;object-fit:contain;border-radius:16px;background:rgba(255,255,255,.94);padding:10px;border:1px solid ${escapeHtml(colors.heroBorder)};" />` : ``}

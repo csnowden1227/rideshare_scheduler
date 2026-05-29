@@ -204,6 +204,56 @@
                     <label class="block text-[10px] font-bold mb-2 uppercase text-slate-400">Widget Slogan / Promotion</label>
                     <input type="text" id="widget_tagline" class="input-mini" value="Luxury airport transfers, executive rides, and premium service tailored to every reservation." placeholder="Seasonal offer, slogan, or customer-facing marketing message">
                 </div>
+                <div class="mt-6 border border-slate-200 rounded-2xl bg-slate-50 p-5">
+                    <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                        <div>
+                            <h3 class="text-sm font-black uppercase tracking-[0.18em] text-slate-700">Weekly On-Demand Nurture / Promotion</h3>
+                            <p class="text-[12px] text-slate-500 mt-2 leading-relaxed">Set a weekly nurture notification for on-demand booking and mirror the same promotion in the top block of the booking widget under the logo and slogan.</p>
+                        </div>
+                        <label class="inline-flex items-center gap-2 text-sm font-semibold text-slate-700">
+                            <input type="checkbox" id="on_demand_nurture_enabled" class="h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500">
+                            Enable Promotion
+                        </label>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-5">
+                        <div class="md:col-span-2">
+                            <label class="block text-[10px] font-bold mb-2 uppercase text-slate-400">Promotion / Nurture Message</label>
+                            <textarea id="on_demand_nurture_message" class="input-mini min-h-[110px]" placeholder="Example: Friendly Reminder: Chauffeur Deluxe on demand booking begins tomorrow at 6:00 AM and ends at 11:30 AM."></textarea>
+                        </div>
+                        <div>
+                            <label class="block text-[10px] font-bold mb-2 uppercase text-slate-400">Notification Send Time</label>
+                            <input type="time" id="on_demand_nurture_send_time" class="input-mini" value="18:30">
+                        </div>
+                        <div>
+                            <label class="block text-[10px] font-bold mb-2 uppercase text-slate-400">Promotion Start Time</label>
+                            <input type="time" id="on_demand_nurture_promo_start_time" class="input-mini" value="06:00">
+                        </div>
+                        <div>
+                            <label class="block text-[10px] font-bold mb-2 uppercase text-slate-400">Promotion End Time</label>
+                            <input type="time" id="on_demand_nurture_promo_end_time" class="input-mini" value="11:30">
+                        </div>
+                        <div>
+                            <label class="block text-[10px] font-bold mb-2 uppercase text-slate-400">Start Date</label>
+                            <input type="date" id="on_demand_nurture_start_date" class="input-mini">
+                        </div>
+                        <div>
+                            <label class="block text-[10px] font-bold mb-2 uppercase text-slate-400">End Date</label>
+                            <input type="date" id="on_demand_nurture_end_date" class="input-mini">
+                        </div>
+                    </div>
+                    <div class="mt-5">
+                        <label class="block text-[10px] font-bold mb-2 uppercase text-slate-400">Send On These Weekdays</label>
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs font-semibold text-slate-700">
+                            <label class="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2"><input type="checkbox" class="on-demand-weekday" value="monday" checked> Monday</label>
+                            <label class="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2"><input type="checkbox" class="on-demand-weekday" value="tuesday"> Tuesday</label>
+                            <label class="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2"><input type="checkbox" class="on-demand-weekday" value="wednesday"> Wednesday</label>
+                            <label class="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2"><input type="checkbox" class="on-demand-weekday" value="thursday" checked> Thursday</label>
+                            <label class="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2"><input type="checkbox" class="on-demand-weekday" value="friday"> Friday</label>
+                            <label class="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2"><input type="checkbox" class="on-demand-weekday" value="saturday"> Saturday</label>
+                            <label class="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2"><input type="checkbox" class="on-demand-weekday" value="sunday"> Sunday</label>
+                        </div>
+                    </div>
+                </div>
             </div>
             <div class="card">
                 <h2 class="section-header">SECTION: CREDENTIALS</h2>
@@ -220,13 +270,16 @@
                     </div>
                     <div>
                         <label class="block text-[10px] font-bold mb-2 uppercase text-slate-400">Payment Provider</label>
-                        <select id="payment_provider" class="input-mini">
+                        <select id="payment_provider" class="input-mini" title="Stripe supports automated partner payouts through Stripe Connect. Square and Authorize.Net partners can still join the dispatch network and use split tracking, but payouts must be settled manually for now.">
                             <option value="stripe">Stripe</option>
                             <option value="square">Square</option>
                             <option value="paypal">PayPal</option>
                             <option value="authorize_net">Authorize.Net</option>
                             <option value="crm_invoice_only">CRM Invoice Only</option>
                         </select>
+                        <p class="text-[11px] text-slate-500 mt-2 leading-relaxed">
+                            Stripe supports automated partner payouts through Stripe Connect. Square and Authorize.Net can still use dispatch and split tracking, but partner payouts are manual for now.
+                        </p>
                     </div>
                     <div>
                         <label class="block text-[10px] font-bold mb-2 uppercase text-slate-400">Stripe Live Secret Key</label>
@@ -290,6 +343,12 @@
                             <br><strong>Square:</strong> use Square sandbox access token and sandbox location ID.
                             <br><strong>PayPal:</strong> use PayPal sandbox client ID and secret with a sandbox buyer account.
                             <br><strong>Authorize.Net:</strong> use sandbox API Login ID and transaction key with sandbox card data.
+                        </div>
+                    </div>
+                    <div class="md:col-span-2 xl:col-span-4" style="margin-top:4px;">
+                        <div style="border:1px solid #bfdbfe; background:#eff6ff; border-radius:16px; padding:14px 16px; color:#1e3a8a; font-size:13px; line-height:1.7;">
+                            <strong style="display:block; color:#1d4ed8; margin-bottom:6px;">Dispatch Network Payouts</strong>
+                            If you use <strong>Stripe</strong>, you can automate partner payouts through Stripe Connect after inviting a partner and setting a split agreement. If you use <strong>Square</strong> or <strong>Authorize.Net</strong>, you can still farm out rides and track partner splits, but you’ll need to pay partners manually outside the platform for now.
                         </div>
                     </div>
                     <div>
@@ -1165,6 +1224,14 @@ function setBrandingPlanMessage(planName = 'starter') {
         document.getElementById('brand_color_secondary'),
         document.getElementById('brand_color_accent'),
         document.getElementById('widget_tagline'),
+        document.getElementById('on_demand_nurture_enabled'),
+        document.getElementById('on_demand_nurture_message'),
+        document.getElementById('on_demand_nurture_send_time'),
+        document.getElementById('on_demand_nurture_promo_start_time'),
+        document.getElementById('on_demand_nurture_promo_end_time'),
+        document.getElementById('on_demand_nurture_start_date'),
+        document.getElementById('on_demand_nurture_end_date'),
+        ...Array.from(document.querySelectorAll('.on-demand-weekday')),
     ];
 
     if (note) {
@@ -1198,6 +1265,50 @@ function setBrandingPlanMessage(planName = 'starter') {
             ? "Logo upload is enabled on this account."
             : "Logo upload is locked on this account.";
     }
+}
+
+function getOnDemandNurturePayload() {
+    return {
+        enabled: !!document.getElementById('on_demand_nurture_enabled')?.checked,
+        message: document.getElementById('on_demand_nurture_message')?.value.trim() || '',
+        send_weekdays: Array.from(document.querySelectorAll('.on-demand-weekday:checked')).map((input) => input.value),
+        send_time: document.getElementById('on_demand_nurture_send_time')?.value || '18:30',
+        start_date: document.getElementById('on_demand_nurture_start_date')?.value || '',
+        end_date: document.getElementById('on_demand_nurture_end_date')?.value || '',
+        promo_start_time: document.getElementById('on_demand_nurture_promo_start_time')?.value || '',
+        promo_end_time: document.getElementById('on_demand_nurture_promo_end_time')?.value || '',
+    };
+}
+
+function applyOnDemandNurtureToWizard(config = {}) {
+    const normalized = {
+        enabled: !!config?.enabled,
+        message: config?.message || '',
+        send_weekdays: Array.isArray(config?.send_weekdays) ? config.send_weekdays : ['monday', 'thursday'],
+        send_time: config?.send_time || '18:30',
+        start_date: config?.start_date || '',
+        end_date: config?.end_date || '',
+        promo_start_time: config?.promo_start_time || '06:00',
+        promo_end_time: config?.promo_end_time || '11:30',
+    };
+    const enabledInput = document.getElementById('on_demand_nurture_enabled');
+    if (enabledInput) enabledInput.checked = normalized.enabled;
+    const messageInput = document.getElementById('on_demand_nurture_message');
+    if (messageInput) messageInput.value = normalized.message;
+    const sendTimeInput = document.getElementById('on_demand_nurture_send_time');
+    if (sendTimeInput) sendTimeInput.value = normalized.send_time;
+    const promoStartInput = document.getElementById('on_demand_nurture_promo_start_time');
+    if (promoStartInput) promoStartInput.value = normalized.promo_start_time;
+    const promoEndInput = document.getElementById('on_demand_nurture_promo_end_time');
+    if (promoEndInput) promoEndInput.value = normalized.promo_end_time;
+    const startDateInput = document.getElementById('on_demand_nurture_start_date');
+    if (startDateInput) startDateInput.value = normalized.start_date;
+    const endDateInput = document.getElementById('on_demand_nurture_end_date');
+    if (endDateInput) endDateInput.value = normalized.end_date;
+    const weekdaySet = new Set(normalized.send_weekdays.map((day) => String(day || '').toLowerCase()));
+    document.querySelectorAll('.on-demand-weekday').forEach((input) => {
+        input.checked = weekdaySet.has(String(input.value || '').toLowerCase());
+    });
 }
 
 function createNormalizedServiceAreaRuleState(rules = {}) {
@@ -1786,6 +1897,7 @@ function applyProfileToWizard(data = {}, { allowSensitive = true } = {}) {
     document.getElementById('brand_color_secondary').value = data.brand_color_secondary || '#0f766e';
     document.getElementById('brand_color_accent').value = data.brand_color_accent || '#ecfeff';
     document.getElementById('widget_tagline').value = data.widget_tagline || 'Luxury airport transfers, executive rides, and premium service tailored to every reservation.';
+    applyOnDemandNurtureToWizard(data.on_demand_nurture || {});
     document.getElementById('webhook_url').value = data.crm_webhook_url || '';
     document.getElementById('maps_key').value = data.maps_api_key || '';
     document.getElementById('crm_api_key').value = data.crm_api_key || '';
@@ -2054,6 +2166,7 @@ async function saveToBackend() {
         brand_color_secondary: currentEntitlements.branding_enabled ? document.getElementById('brand_color_secondary').value.trim() : '#0f766e',
         brand_color_accent: currentEntitlements.branding_enabled ? document.getElementById('brand_color_accent').value.trim() : '#ecfeff',
         widget_tagline: currentEntitlements.branding_enabled ? document.getElementById('widget_tagline').value.trim() : '',
+        on_demand_nurture: currentEntitlements.branding_enabled ? getOnDemandNurturePayload() : { enabled: false, message: '', send_weekdays: [], send_time: '18:30', start_date: '', end_date: '', promo_start_time: '', promo_end_time: '' },
         crm_webhook_url: webhookUrl,
         maps_api_key: mapsKey,
         crm_api_key: crmApiKey.trim(),
@@ -2241,6 +2354,7 @@ function collectWizardPayload() {
         brand_color_secondary: currentEntitlements.branding_enabled ? document.getElementById('brand_color_secondary').value.trim() : '#0f766e',
         brand_color_accent: currentEntitlements.branding_enabled ? document.getElementById('brand_color_accent').value.trim() : '#ecfeff',
         widget_tagline: currentEntitlements.branding_enabled ? document.getElementById('widget_tagline').value.trim() : '',
+        on_demand_nurture: currentEntitlements.branding_enabled ? getOnDemandNurturePayload() : { enabled: false, message: '', send_weekdays: [], send_time: '18:30', start_date: '', end_date: '', promo_start_time: '', promo_end_time: '' },
         crm_webhook_url: webhookUrl,
         maps_api_key: mapsKey,
         crm_api_key: crmApiKey.trim(),
