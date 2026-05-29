@@ -23,8 +23,8 @@
       color: var(--ink);
       background: linear-gradient(180deg, #eef4fb 0%, #ffffff 44%, #edf4fb 100%);
     }
-    .shell { max-width: 820px; margin: 0 auto; padding: 18px 14px 32px; }
-    .hero, .card, .history-card {
+    .shell { max-width: 860px; margin: 0 auto; padding: 18px 14px 32px; }
+    .hero, .card, .section-panel, .method-card {
       border-radius: 30px;
       box-shadow: var(--shadow);
     }
@@ -59,36 +59,39 @@
       gap: 12px;
       margin-top: 18px;
     }
-    .button {
+    .button, .toggle-button, .mini-button {
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      min-height: 50px;
+      min-height: 48px;
       width: 100%;
-      padding: 14px 18px;
+      padding: 13px 16px;
       border-radius: 18px;
       text-decoration: none;
       font-size: 14px;
       font-weight: 800;
       border: 1px solid transparent;
       cursor: pointer;
+      transition: transform .15s ease, box-shadow .15s ease, background .15s ease;
     }
+    .button:hover, .toggle-button:hover, .mini-button:hover { transform: translateY(-1px); }
     .button.primary { background: #fff; color: var(--brand-primary); }
     .button.secondary { background: rgba(255,255,255,.12); color: #fff; border-color: rgba(255,255,255,.16); }
-    .button.dark { background: var(--brand-primary); color: #fff; }
+    .button.dark, .mini-button.dark { background: var(--brand-primary); color: #fff; }
     .card {
       margin-top: 18px;
       padding: 22px 20px;
       background: var(--panel);
       border: 1px solid var(--line);
     }
-    .card h2 {
+    .card h2, .section-panel h3 {
       margin: 0;
-      font-size: 26px;
-      letter-spacing: -.04em;
       color: #172554;
+      letter-spacing: -.04em;
     }
-    .card p {
+    .card h2 { font-size: 26px; }
+    .section-panel h3 { font-size: 20px; }
+    .card p, .section-panel p {
       margin: 10px 0 0;
       color: #475569;
       line-height: 1.82;
@@ -99,27 +102,69 @@
       gap: 10px;
       margin-top: 18px;
     }
-    .dashboard-link {
-      display: flex;
-      align-items: center;
+    .toggle-button {
       justify-content: space-between;
-      gap: 12px;
-      padding: 15px 16px;
-      border-radius: 18px;
-      text-decoration: none;
-      color: #172554;
       background: rgba(248,250,252,.96);
       border: 1px solid rgba(148,163,184,.18);
-      font-size: 14px;
-      font-weight: 800;
+      color: #172554;
+      text-align: left;
     }
-    .dashboard-link.disabled {
-      pointer-events: none;
-      opacity: .6;
-      background: #e2e8f0;
+    .toggle-button span:last-child {
+      font-size: 18px;
+      line-height: 1;
       color: #64748b;
     }
-    .dashboard-link span:last-child { color: #64748b; font-size: 12px; }
+    .toggle-button.active {
+      background: color-mix(in srgb, var(--brand-accent) 68%, white 32%);
+      border-color: color-mix(in srgb, var(--brand-secondary) 24%, white 76%);
+    }
+    .section-panel {
+      display: none;
+      margin-top: 12px;
+      padding: 18px 16px;
+      background: linear-gradient(180deg, rgba(255,255,255,.98), rgba(248,250,252,.98));
+      border: 1px solid rgba(148,163,184,.18);
+    }
+    .section-panel.open { display: block; }
+    .field-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+      margin-top: 16px;
+    }
+    .field label {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: .12em;
+      color: #475569;
+    }
+    .field input {
+      width: 100%;
+      padding: 14px 15px;
+      border-radius: 16px;
+      border: 1px solid #cbd5e1;
+      background: #fff;
+      font-size: 14px;
+    }
+    .panel-actions, .method-actions, .next-ride-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 14px;
+    }
+    .mini-button {
+      width: auto;
+      min-height: 40px;
+      padding: 10px 12px;
+      border-radius: 14px;
+      border-color: rgba(148,163,184,.26);
+      background: #fff;
+      color: #172554;
+      font-size: 13px;
+    }
     .next-ride-panel {
       margin-top: 18px;
       padding: 16px;
@@ -139,32 +184,29 @@
       line-height: 1.75;
       font-size: 14px;
     }
-    .next-ride-actions {
-      margin-top: 14px;
-    }
-    .history-list {
+    .method-list {
       display: grid;
       gap: 12px;
-      margin-top: 18px;
+      margin-top: 16px;
     }
-    .history-card {
+    .method-card {
       padding: 16px;
       background: linear-gradient(180deg, rgba(255,255,255,.98), rgba(248,250,252,.98));
       border: 1px solid rgba(148,163,184,.18);
     }
-    .history-card h3 {
+    .method-card h4 {
       margin: 0;
       font-size: 17px;
       color: #172554;
       letter-spacing: -.03em;
     }
-    .history-card p {
+    .method-card p {
       margin: 8px 0 0;
       font-size: 14px;
       line-height: 1.7;
       color: #475569;
     }
-    .history-pill {
+    .method-pill {
       display: inline-flex;
       margin-top: 12px;
       padding: 8px 10px;
@@ -176,21 +218,20 @@
       letter-spacing: .1em;
       text-transform: uppercase;
     }
-    .history-pill.cancelled {
-      background: rgba(239,68,68,.12);
-      color: #b91c1c;
-    }
-    .empty, .error {
-      margin-top: 16px;
+    .message, .empty, .error, .success, .info {
+      margin-top: 14px;
       padding: 14px 15px;
       border-radius: 18px;
       line-height: 1.75;
       font-size: 14px;
     }
     .empty { background: #f8fafc; border: 1px dashed #cbd5e1; color: #64748b; }
-    .error { display: none; background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; }
-    @media (max-width: 540px) {
+    .error, .message.error { display: none; background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; }
+    .success, .message.success { display: none; background: #ecfdf5; border: 1px solid #bbf7d0; color: #166534; }
+    .info { display: none; background: #eff6ff; border: 1px solid #bfdbfe; color: #1d4ed8; }
+    @media (max-width: 640px) {
       .hero-actions { grid-template-columns: 1fr; }
+      .field-grid { grid-template-columns: 1fr; }
     }
   </style>
 </head>
@@ -199,7 +240,7 @@
     <section class="hero">
       <p class="eyebrow">Customer Dashboard</p>
       <h1 id="hero-title">Dashboard</h1>
-      <p>Use this page for profile updates, payment methods, ride history, ride inbox notifications, and quick rebooking from your next reservation.</p>
+      <p>Update your profile and payment method here, then use the dashboard buttons to open ride history and ride inbox details.</p>
       <div class="hero-actions">
         <a id="home-button" class="button primary" href="/customer-dashboard">Home Portal</a>
         <a id="upcoming-button" class="button secondary" href="/customer-upcoming-rides">Upcoming Rides</a>
@@ -208,12 +249,41 @@
 
     <section class="card">
       <h2>Account Tools</h2>
-      <p>Open the customer tools you need most often from one dashboard page.</p>
+      <p>Profile and payment tools stay on this page. Ride history and ride inbox open from the quick links below.</p>
       <div class="dashboard-actions">
-        <a id="profile-link" class="dashboard-link" href="/customer-profile"><span>Create/Update Profile</span><span>Manage rider details</span></a>
-        <a id="payment-link" class="dashboard-link" href="/customer-payment-methods"><span>Save Payment Method</span><span>Manage cards on file</span></a>
-        <a id="history-link" class="dashboard-link" href="/customer-ride-history"><span>Ride History</span><span>Open full reservation history</span></a>
-        <a id="inbox-link" class="dashboard-link" href="/ride-hub-notifications"><span>Ride Inbox Notifications</span><span>Open booking and trip updates</span></a>
+        <button class="toggle-button" type="button" data-section="profile-section"><span>Create/Update Profile</span><span>+</span></button>
+        <div id="profile-section" class="section-panel">
+          <h3>Update Your Profile</h3>
+          <p>Keep your rider details ready for upcoming rides, ride history, and fast rebooking.</p>
+          <div class="field-grid">
+            <div class="field"><label for="first-name">First Name</label><input id="first-name" placeholder="First name" /></div>
+            <div class="field"><label for="last-name">Last Name</label><input id="last-name" placeholder="Last name" /></div>
+            <div class="field"><label for="email">Email</label><input id="email" type="email" placeholder="Email address" /></div>
+            <div class="field"><label for="phone">Phone</label><input id="phone" type="tel" placeholder="Mobile phone" /></div>
+          </div>
+          <div class="panel-actions">
+            <button id="save-profile-button" class="mini-button dark" type="button">Save Profile</button>
+          </div>
+          <div id="profile-error" class="message error"></div>
+          <div id="profile-success" class="message success"></div>
+        </div>
+
+        <button class="toggle-button" type="button" data-section="payment-section"><span>Save Payment Method</span><span>+</span></button>
+        <div id="payment-section" class="section-panel">
+          <h3>Saved Payment Methods</h3>
+          <p>Cards are stored securely by Stripe. You can add, remove, and choose a default card here.</p>
+          <div class="panel-actions">
+            <button id="add-card-button" class="mini-button dark" type="button">Add Payment Method</button>
+          </div>
+          <div id="setup-info" class="info"></div>
+          <div id="payment-success" class="success"></div>
+          <div id="payment-error" class="error"></div>
+          <div id="method-list" class="method-list"></div>
+          <div id="payment-empty" class="empty" style="display:none;">No payment methods have been saved yet.</div>
+        </div>
+
+        <a id="history-link" class="toggle-button" href="/customer-ride-history"><span>Ride History</span><span>Open</span></a>
+        <a id="inbox-link" class="toggle-button" href="/ride-hub-notifications"><span>Ride Inbox Notifications</span><span>Open</span></a>
       </div>
 
       <div class="next-ride-panel">
@@ -223,13 +293,6 @@
           <a id="book-again-button" class="button dark" href="/ride-hub-portal">Book Again</a>
         </div>
       </div>
-    </section>
-
-    <section class="card">
-      <h2>Ride History</h2>
-      <p>Your recent completed and cancelled reservations stay visible here inside the dashboard.</p>
-      <div id="history-list" class="history-list"></div>
-      <div id="history-empty" class="empty" style="display:none;">No ride history is available yet. Once completed or cancelled reservations land on your account, they will appear here.</div>
       <div id="dashboard-error" class="error"></div>
     </section>
   </div>
@@ -238,6 +301,7 @@
     (function () {
       const query = new URLSearchParams(window.location.search);
       const locationId = String(query.get("location_id") || "").trim();
+      const isFilePreview = window.location.protocol === "file:";
 
       function applyBranding(branding = {}) {
         const root = document.documentElement;
@@ -261,19 +325,33 @@
         return Number.isNaN(date.getTime()) ? "Time not available" : date.toLocaleString();
       }
 
-      function formatCurrency(value) {
-        return new Intl.NumberFormat(undefined, { style: "currency", currency: "USD" }).format(Number(value || 0));
-      }
-
       function redirectToLogin() {
-        const suffix = locationId ? `?location_id=${encodeURIComponent(locationId)}` : "";
-        window.location.href = `/customer-login${suffix}`;
+        window.location.href = buildPortalUrl("/customer-login", "customer-login.html");
       }
 
-      function withLocation(path) {
-        const url = new URL(path, window.location.origin);
+      function buildPortalUrl(routePath, fileName, extra = {}) {
+        const url = isFilePreview
+          ? new URL(fileName, window.location.href)
+          : new URL(routePath, window.location.origin);
         if (locationId) url.searchParams.set("location_id", locationId);
+        Object.entries(extra).forEach(([key, value]) => {
+          if (value !== null && value !== undefined && String(value) !== "") {
+            url.searchParams.set(key, value);
+          }
+        });
         return url.toString();
+      }
+
+      function setHref(id, path, fileName, extra = {}) {
+        const el = document.getElementById(id);
+        if (el) el.href = buildPortalUrl(path, fileName, extra);
+      }
+
+      function setMessage(id, text) {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.textContent = text;
+        el.style.display = text ? "block" : "none";
       }
 
       async function fetchJson(url, options = {}) {
@@ -287,75 +365,128 @@
         return data;
       }
 
+      function fillProfile(account) {
+        document.getElementById("first-name").value = account.first_name || "";
+        document.getElementById("last-name").value = account.last_name || "";
+        document.getElementById("email").value = account.email || "";
+        document.getElementById("phone").value = account.phone || "";
+      }
+
       function buildRebookUrl(ride) {
-        const url = new URL(window.location.origin + "/ride-hub-portal");
-        url.searchParams.set("first_name", ride.customer?.first_name || "");
-        url.searchParams.set("last_name", ride.customer?.last_name || "");
-        url.searchParams.set("email", ride.customer?.email || "");
-        url.searchParams.set("phone", ride.customer?.phone || "");
-        url.searchParams.set("pickup_address", ride.pickup_address || "");
-        url.searchParams.set("dropoff_address", ride.dropoff_address || "");
-        url.searchParams.set("vehicle_slot_id", ride.vehicle_slot_id || "");
-        url.searchParams.set("rebook", "1");
-        if (locationId) url.searchParams.set("location_id", locationId);
-        return url.toString();
+        return buildPortalUrl("/ride-hub-portal", "ride-hub-portal.html", {
+          first_name: ride.customer?.first_name || "",
+          last_name: ride.customer?.last_name || "",
+          email: ride.customer?.email || "",
+          phone: ride.customer?.phone || "",
+          pickup_address: ride.pickup_address || "",
+          dropoff_address: ride.dropoff_address || "",
+          vehicle_slot_id: ride.vehicle_slot_id || "",
+          rebook: "1",
+        });
       }
 
-      function setHref(id, path) {
-        const el = document.getElementById(id);
-        if (el) el.href = withLocation(path);
-      }
-
-      function setOptionalLink(id, value) {
-        const el = document.getElementById(id);
-        if (!el) return;
-        if (value) {
-          el.href = withLocation(value);
-          el.classList.remove("disabled");
-        } else {
-          el.removeAttribute("href");
-          el.classList.add("disabled");
-        }
-      }
-
-      function renderHistoryCard(ride) {
-        const cancelled = Boolean(ride.is_cancelled);
+      function renderMethodCard(method) {
+        const isDefault = Boolean(method.is_default);
+        const expiry = method.exp_month && method.exp_year ? `${method.exp_month}/${method.exp_year}` : "Not available";
         return `
-          <article class="history-card">
-            <h3>${escapeHtml(ride.vehicle_display_name || "Ride Reservation")}</h3>
-            <p><strong>${escapeHtml(formatDateTime(ride.start_time))}</strong><br />${escapeHtml(ride.pickup_address || "")}<br />${escapeHtml(ride.dropoff_address || "")}</p>
-            <p>${escapeHtml(formatCurrency(ride.total_price))}</p>
-            <span class="history-pill ${cancelled ? "cancelled" : ""}">${escapeHtml(cancelled ? "Cancelled" : "Completed")}</span>
+          <article class="method-card">
+            <h4>${escapeHtml((method.brand || "card").toUpperCase())} ending in ${escapeHtml(method.last4 || "----")}</h4>
+            <p>Expires ${escapeHtml(expiry)}${method.billing_name ? ` | ${escapeHtml(method.billing_name)}` : ""}</p>
+            <span class="method-pill">${escapeHtml(isDefault ? "Default Card" : "Saved Card")}</span>
+            <div class="method-actions">
+              ${isDefault ? "" : `<button class="mini-button" type="button" data-action="default" data-method-id="${escapeHtml(method.id)}">Set Default</button>`}
+              <button class="mini-button" type="button" data-action="remove" data-method-id="${escapeHtml(method.id)}">Remove</button>
+            </div>
           </article>
         `;
       }
 
+      function bindToggles() {
+        document.querySelectorAll(".toggle-button").forEach((button) => {
+          if (button.tagName === "A") return;
+          button.addEventListener("click", () => {
+            const sectionId = button.getAttribute("data-section");
+            const section = document.getElementById(sectionId);
+            if (!section) return;
+            const isOpen = section.classList.toggle("open");
+            button.classList.toggle("active", isOpen);
+            button.querySelector("span:last-child").textContent = isOpen ? "-" : "+";
+          });
+        });
+      }
+
+      async function loadPaymentMethods() {
+        try {
+          const data = await fetchJson("/api/customer-account/payment-methods");
+          const methods = Array.isArray(data.methods) ? data.methods : [];
+          document.getElementById("method-list").innerHTML = methods.map(renderMethodCard).join("");
+          document.getElementById("payment-empty").style.display = methods.length ? "none" : "block";
+        } catch (error) {
+          if (error.message !== "redirect") {
+            setMessage("payment-error", error.message || "Unable to load saved payment methods.");
+          }
+        }
+      }
+
+      async function handleSetupReturn() {
+        const setupState = String(query.get("setup") || "").trim();
+        const sessionId = String(query.get("session_id") || "").trim();
+        if (!setupState) return;
+
+        if (setupState === "cancel") {
+          setMessage("setup-info", "Adding a payment method was canceled before Stripe saved the card.");
+          return;
+        }
+
+        if (setupState === "success" && sessionId) {
+          try {
+            const status = await fetchJson(`/api/customer-account/payment-methods/setup-session-status?session_id=${encodeURIComponent(sessionId)}`);
+            if (status.complete) {
+              setMessage("payment-success", "Your payment method has been saved successfully.");
+            }
+          } catch (error) {
+            if (error.message !== "redirect") {
+              setMessage("payment-error", error.message || "Saved card verification failed.");
+            }
+          } finally {
+            const cleanUrl = new URL(window.location.href);
+            cleanUrl.searchParams.delete("setup");
+            cleanUrl.searchParams.delete("session_id");
+            window.history.replaceState({}, document.title, cleanUrl.toString());
+          }
+        }
+      }
+
       async function loadDashboardPage() {
         try {
-          const [sessionData, historyData] = await Promise.all([
+          const [sessionData, profileData, rideData] = await Promise.all([
             fetchJson("/api/customer-account/session"),
+            fetchJson("/api/customer-account/profile"),
             fetchJson("/api/customer-account/ride-history"),
           ]);
 
-          const account = sessionData.account || {};
-          applyBranding(sessionData.branding || historyData.branding || {});
-          const upcoming = Array.isArray(historyData.upcoming_rides) ? historyData.upcoming_rides : [];
-          const history = Array.isArray(historyData.ride_history) ? historyData.ride_history : [];
+          const account = profileData.account || sessionData.account || {};
+          applyBranding(sessionData.branding || rideData.branding || profileData.branding || {});
+          fillProfile(account);
+
+          const upcoming = Array.isArray(rideData.upcoming_rides) ? rideData.upcoming_rides : [];
+          const history = Array.isArray(rideData.ride_history) ? rideData.ride_history : [];
           const focusRide = upcoming[0] || history[0] || null;
           const inboxRide = upcoming.find((ride) => ride.ride_inbox_url) || history.find((ride) => ride.ride_inbox_url) || null;
-          const historyPreview = history.slice(0, 6);
 
           document.getElementById("hero-title").textContent = `${account.first_name || "Customer"} Dashboard`;
           document.getElementById("summary-next-ride-copy").textContent = focusRide
-            ? `${formatDateTime(focusRide.start_time)} • ${focusRide.pickup_address || ""}`
+            ? `${formatDateTime(focusRide.start_time)} | ${focusRide.pickup_address || ""}`
             : "No reservation is active right now. Use Book Again when you are ready to schedule another ride.";
-          document.getElementById("book-again-button").href = focusRide ? buildRebookUrl(focusRide) : withLocation("/ride-hub-portal");
-          setOptionalLink("inbox-link", inboxRide?.ride_inbox_url || "");
+          document.getElementById("book-again-button").href = focusRide
+            ? buildRebookUrl(focusRide)
+            : buildPortalUrl("/ride-hub-portal", "ride-hub-portal.html");
 
-          const historyList = document.getElementById("history-list");
-          const historyEmpty = document.getElementById("history-empty");
-          historyList.innerHTML = historyPreview.map(renderHistoryCard).join("");
-          historyEmpty.style.display = historyPreview.length ? "none" : "block";
+          if (inboxRide?.ride_inbox_url) {
+            document.getElementById("inbox-link").href = inboxRide.ride_inbox_url;
+          }
+
+          await loadPaymentMethods();
         } catch (error) {
           if (error.message === "redirect") return;
           const errorBox = document.getElementById("dashboard-error");
@@ -364,13 +495,86 @@
         }
       }
 
-      setHref("home-button", "/customer-dashboard");
-      setHref("upcoming-button", "/customer-upcoming-rides");
-      setHref("profile-link", "/customer-profile");
-      setHref("payment-link", "/customer-payment-methods");
-      setHref("history-link", "/customer-ride-history");
+      document.getElementById("save-profile-button")?.addEventListener("click", async () => {
+        setMessage("profile-error", "");
+        setMessage("profile-success", "");
+        try {
+          const data = await fetchJson("/api/customer-account/profile", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              first_name: document.getElementById("first-name").value.trim(),
+              last_name: document.getElementById("last-name").value.trim(),
+              email: document.getElementById("email").value.trim(),
+              phone: document.getElementById("phone").value.trim(),
+            }),
+          });
+          fillProfile(data.account || {});
+          setMessage("profile-success", "Profile saved successfully.");
+        } catch (error) {
+          if (error.message !== "redirect") {
+            setMessage("profile-error", error.message || "Unable to save your profile.");
+          }
+        }
+      });
 
-      loadDashboardPage();
+      document.getElementById("add-card-button")?.addEventListener("click", async () => {
+        setMessage("payment-error", "");
+        setMessage("payment-success", "");
+        setMessage("setup-info", "");
+        try {
+          const data = await fetchJson("/api/customer-account/payment-methods/setup-session", { method: "POST" });
+          if (!data.checkout_url) throw new Error("Stripe did not return a setup session URL.");
+          window.location.href = data.checkout_url;
+        } catch (error) {
+          if (error.message !== "redirect") {
+            setMessage("payment-error", error.message || "Unable to start the saved payment setup.");
+          }
+        }
+      });
+
+      document.getElementById("method-list")?.addEventListener("click", async (event) => {
+        const action = event.target?.getAttribute("data-action");
+        const methodId = event.target?.getAttribute("data-method-id");
+        if (!action || !methodId) return;
+
+        setMessage("payment-error", "");
+        setMessage("payment-success", "");
+
+        try {
+          if (action === "default") {
+            await fetchJson("/api/customer-account/payment-methods/default", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ payment_method_id: methodId }),
+            });
+            setMessage("payment-success", "Default payment method updated.");
+          } else if (action === "remove") {
+            await fetchJson("/api/customer-account/payment-methods/detach", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ payment_method_id: methodId }),
+            });
+            setMessage("payment-success", "Saved payment method removed.");
+          }
+          await loadPaymentMethods();
+        } catch (error) {
+          if (error.message !== "redirect") {
+            setMessage("payment-error", error.message || "Unable to update the saved payment method.");
+          }
+        }
+      });
+
+      setHref("home-button", "/customer-dashboard", "customer-dashboard.html");
+      setHref("upcoming-button", "/customer-upcoming-rides", "customer-upcoming-rides.html");
+      setHref("history-link", "/customer-ride-history", "customer-ride-history.html");
+      setHref("inbox-link", "/ride-hub-notifications", "ride-hub-notifications.html");
+      bindToggles();
+
+      (async function init() {
+        await handleSetupReturn();
+        await loadDashboardPage();
+      })();
     })();
   </script>
 </body>
