@@ -942,7 +942,7 @@
     const colors = getBrandColors();
     const proPlan = isProPlan();
     const businessLogo = getBusinessLogo();
-    const tagline = state.config?.widget_tagline || "Luxury airport transfers, executive rides, and premium service tailored to every reservation.";
+    const tagline = state.config?.widget_tagline || "Here Is Our Service Menu. Reserve Your Spot Today!";
     const activePromotion = getActiveWidgetPromotion();
     const vehiclePicker = renderVehiclePicker(fleet);
     const eventSelect = renderEventSelect();
@@ -997,10 +997,9 @@
             <div id="cd_hero_header" style="display:flex;align-items:flex-start;justify-content:space-between;gap:18px;">
               <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;min-height:150px;">
                 <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:10px;">
-                  <div style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.18em;opacity:.85;">Premium Booking Console</div>
                   ${isPracticeMode() ? `<div style="padding:6px 12px;border-radius:999px;background:${proPlan ? "rgba(255,255,255,.16)" : "#ffffff"};border:1px solid ${escapeHtml(colors.heroBorder)};font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:.16em;">Practice Mode</div>` : ``}
                 </div>
-                <h2 style="margin:6px 0 0;font-size:32px;line-height:1.1;font-weight:900;">${escapeHtml(state.config?.business_name || "Luxury Ride Reservations")}</h2>
+                <h2 style="margin:6px 0 0;font-size:32px;line-height:1.1;font-weight:900;">${escapeHtml(state.config?.business_name || "Luxe Studio Makes The Difference")}</h2>
                 <p style="margin:18px 0 0;font-size:17px;line-height:1.65;max-width:580px;color:${escapeHtml(colors.heroMuted)};font-weight:600;">
                 ${escapeHtml(tagline)}
                 </p>

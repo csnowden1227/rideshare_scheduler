@@ -167,7 +167,7 @@
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
                     <div>
                         <label class="block text-[10px] font-bold mb-2 uppercase text-slate-400">Business Name</label>
-                        <input type="text" id="business_name" class="input-mini" placeholder="e.g. Your Luxury Transportation Brand">
+                        <input type="text" id="business_name" class="input-mini" value="Luxe Studio Makes The Difference" placeholder="e.g. Your Luxury Transportation Brand">
                         <div class="mt-4">
                             <label class="block text-[10px] font-bold mb-2 uppercase text-slate-400">Public App URL</label>
                             <input type="text" id="public_app_url" class="input-mini" placeholder="e.g. https://chauffeur.crmonesource.com">
@@ -202,7 +202,7 @@
                 </div>
                 <div class="mt-6">
                     <label class="block text-[10px] font-bold mb-2 uppercase text-slate-400">Widget Slogan / Promotion</label>
-                    <input type="text" id="widget_tagline" class="input-mini" value="Luxury airport transfers, executive rides, and premium service tailored to every reservation." placeholder="Seasonal offer, slogan, or customer-facing marketing message">
+                    <input type="text" id="widget_tagline" class="input-mini" value="Here Is Our Service Menu. Reserve Your Spot Today!" placeholder="Seasonal offer, slogan, or customer-facing marketing message">
                 </div>
                 <div class="mt-6 border border-slate-200 rounded-2xl bg-slate-50 p-5">
                     <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
@@ -1896,7 +1896,7 @@ function applyProfileToWizard(data = {}, { allowSensitive = true } = {}) {
     document.getElementById('brand_color_primary').value = data.brand_color_primary || '#082f49';
     document.getElementById('brand_color_secondary').value = data.brand_color_secondary || '#0f766e';
     document.getElementById('brand_color_accent').value = data.brand_color_accent || '#ecfeff';
-    document.getElementById('widget_tagline').value = data.widget_tagline || 'Luxury airport transfers, executive rides, and premium service tailored to every reservation.';
+    document.getElementById('widget_tagline').value = data.widget_tagline || 'Here Is Our Service Menu. Reserve Your Spot Today!';
     applyOnDemandNurtureToWizard(data.on_demand_nurture || {});
     document.getElementById('webhook_url').value = data.crm_webhook_url || '';
     document.getElementById('maps_key').value = data.maps_api_key || '';
