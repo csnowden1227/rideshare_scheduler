@@ -72,6 +72,7 @@
     (function () {
       const query = new URLSearchParams(window.location.search);
       const locationId = String(query.get("location_id") || "").trim();
+      const customerToken = String(query.get("customer_token") || "").trim();
       const returnTo = String(query.get("return_to") || "/customer-dashboard").trim();
 
       ["login-location", "signup-location"].forEach((id) => {
@@ -81,6 +82,47 @@
       const forgotLink = document.getElementById("forgot-link");
       if (forgotLink && locationId) {
         forgotLink.href = `/customer-forgot-password?location_id=${encodeURIComponent(locationId)}`;
+      }
+
+      async function fetchJson(url) {
+        const response = await fetch(url, { credentials: "same-origin" });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.error || "Request failed.");
+        return data;
+      }
+
+      async function prefillCustomerFromToken() {
+        if (!customerToken) return;
+        try {
+          const data = await fetchJson(`/api/tracking/session/customer?token=${encodeURIComponent(customerToken)}`);
+          const session = data.session || {};
+          const nameParts = String(session.customer_name || "").trim().split(/\s+/).filter(Boolean);
+          const firstName = nameParts.shift() || "";
+          const lastName = nameParts.join(" ");
+          const email = String(session.customer_email || "").trim();
+          const phone = String(session.customer_phone || "").trim();
+
+          if (email) {
+            const loginEmail = document.getElementById("login-email");
+            const signupEmail = document.getElementById("signup-email");
+            if (loginEmail) loginEmail.value = email;
+            if (signupEmail) signupEmail.value = email;
+          }
+          if (phone) {
+            const signupPhone = document.getElementById("signup-phone");
+            if (signupPhone) signupPhone.value = phone;
+          }
+          if (firstName) {
+            const signupFirst = document.getElementById("signup-first-name");
+            if (signupFirst) signupFirst.value = firstName;
+          }
+          if (lastName) {
+            const signupLast = document.getElementById("signup-last-name");
+            if (signupLast) signupLast.value = lastName;
+          }
+        } catch (error) {
+          console.warn("Customer token prefill failed:", error.message);
+        }
       }
 
       function showMessage(id, message) {
@@ -101,6 +143,8 @@
         if (!response.ok) throw new Error(data.error || "Request failed.");
         return data;
       }
+
+      prefillCustomerFromToken();
 
       document.getElementById("login-button")?.addEventListener("click", async () => {
         showMessage("login-error", "");

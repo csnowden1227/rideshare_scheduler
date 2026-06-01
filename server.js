@@ -384,12 +384,73 @@ async function ensureBookingSyncColumns() {
       await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS driver_paid_in_full_sms_sent_at TIMESTAMPTZ`);
       await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS driver_sms_last_attempt_at TIMESTAMPTZ`);
       await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS driver_sms_last_error TEXT`);
+      await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS customer_confirmation_sms_sent_at TIMESTAMPTZ`);
+      await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS customer_confirmation_email_sent_at TIMESTAMPTZ`);
+      await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS customer_completed_sms_sent_at TIMESTAMPTZ`);
+      await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS customer_completed_email_sent_at TIMESTAMPTZ`);
+      await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS customer_confirmation_sms_last_attempt_at TIMESTAMPTZ`);
+      await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS customer_confirmation_sms_last_error TEXT`);
+      await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS customer_confirmation_email_last_attempt_at TIMESTAMPTZ`);
+      await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS customer_confirmation_email_last_error TEXT`);
+      await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS customer_completed_sms_last_attempt_at TIMESTAMPTZ`);
+      await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS customer_completed_sms_last_error TEXT`);
+      await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS customer_completed_email_last_attempt_at TIMESTAMPTZ`);
+      await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS customer_completed_email_last_error TEXT`);
     })().catch((err) => {
       bookingSyncColumnsReady = null;
       throw err;
     });
   }
   return bookingSyncColumnsReady;
+}
+
+function logCustomerNotificationAudit(eventName, details = {}) {
+  console.log(`[customer-notify] ${eventName}`, {
+    bookingId: details.bookingId || null,
+    trackingSessionId: details.trackingSessionId || null,
+    locationId: details.locationId || null,
+    notificationType: details.notificationType || null,
+    target: details.target || null,
+    provider: details.provider || null,
+    attempted: details.attempted ?? null,
+    skipped: details.skipped ?? null,
+    success: details.success ?? null,
+    status: details.status || null,
+    reason: details.reason || null,
+    error: details.error || null,
+    triggerSource: details.triggerSource || null,
+  });
+}
+
+async function recordBookingCustomerNotificationAudit({
+  bookingId,
+  sentAtColumn,
+  lastAttemptColumn,
+  lastErrorColumn,
+  success = false,
+  error = null,
+}) {
+  if (!bookingId || !lastAttemptColumn) return;
+  await ensureBookingSyncColumns();
+
+  const assignments = [`${lastAttemptColumn} = NOW()`];
+  if (lastErrorColumn) {
+    assignments.push(`${lastErrorColumn} = $2`);
+  }
+  if (success && sentAtColumn) {
+    assignments.push(`${sentAtColumn} = NOW()`);
+  }
+
+  const params = [bookingId];
+  if (lastErrorColumn) {
+    params.push(error ? String(error).slice(0, 1000) : null);
+  }
+  await pool.query(
+    `UPDATE bookings
+     SET ${assignments.join(", ")}
+     WHERE id = $1`,
+    params
+  );
 }
 
 async function ensureCrmLocationTokenTable() {
@@ -1592,9 +1653,10 @@ function buildCustomerPortalUrls(req, locationId, customerToken, publicAppUrl = 
   if (locationId) segments.push(encodeURIComponent(String(locationId || "").trim()));
   if (customerToken) segments.push(encodeURIComponent(String(customerToken || "").trim()));
   const suffix = segments.length ? `/${segments.join("/")}` : "";
-  const loginQuery = locationId
-    ? `?location_id=${encodeURIComponent(String(locationId || "").trim())}`
-    : "";
+  const loginParams = new URLSearchParams();
+  if (locationId) loginParams.set("location_id", String(locationId || "").trim());
+  if (customerToken) loginParams.set("customer_token", String(customerToken || "").trim());
+  const loginQuery = loginParams.toString() ? `?${loginParams.toString()}` : "";
   return {
     customer_login_url: `${baseUrl}/customer-login${loginQuery}`,
     ride_hub_url: `${baseUrl}/ride-hub-portal${suffix}`,
@@ -2008,6 +2070,10 @@ async function buildTrackingStatusWebhookPayload({ req, session, status }) {
       customer_login_url: shortUrls.portal.customer_login_url || portalUrls.customer_login_url || null,
       ride_hub_url: shortUrls.portal.ride_hub_url,
     },
+    follow_up: {
+      review_and_tip_url: shortUrls.follow_up.review_and_tip_url || shortUrls.tracking.follow_up_url || trackingUrls.follow_up_url || null,
+      review_and_tip_short_url: shortUrls.follow_up.review_and_tip_short_url || shortUrls.tracking.follow_up_short_url || null,
+    },
     created_at: new Date().toISOString(),
   };
 }
@@ -2063,7 +2129,7 @@ async function triggerTrackingStatusWebhook({ req, trackingSessionId, status }) 
     status: response.status,
     response_preview: responseText.slice(0, 300) || null,
     customer_tracking_url: payload.tracking.customer_tracking_url,
-    follow_up_url: payload.follow_up.review_and_tip_url,
+    follow_up_url: payload.follow_up?.review_and_tip_url || null,
   };
 }
 
@@ -4472,13 +4538,13 @@ function buildCustomerTrackingStatusSmsMessage({
       ? "Your chauffeur has arrived at the pickup location."
       : "Your chauffeur is on the way."
   ];
-  if (trackingUrl) {
+  if (planName === "premium" && portalUrl) {
+    lines.push(`Open Ride Hub: ${portalUrl}`);
+  } else if (trackingUrl) {
     lines.push(`Track your driver here: ${trackingUrl}`);
   }
   if (planName === "pro" && portalUrl) {
     lines.push(`Manage your rides here: ${portalUrl}`);
-  } else if (planName === "premium" && portalUrl) {
-    lines.push(`Open Ride Hub: ${portalUrl}`);
   }
   if (session?.start_time) {
     lines.push(`Pickup Time: ${formatDisplayDateTime(session.start_time) || session.start_time}`);
@@ -4507,6 +4573,473 @@ function buildCustomerPostRideFollowupSmsMessage({
     lines.push(`Ride Completed: ${formatDisplayDateTime(session.end_time) || session.end_time}`);
   }
   return lines.join("\n");
+}
+
+function buildCustomerBookingConfirmationSmsMessage({
+  booking,
+  businessName,
+  portalUrl,
+  planName,
+  includePlanIdentifier = false,
+}) {
+  const normalizedPlan = String(planName || "starter").trim().toLowerCase();
+  const planLabel = normalizedPlan ? normalizedPlan.toUpperCase() : "STARTER";
+  const lines = [];
+  if (includePlanIdentifier) {
+    lines.push(`[PLAN: ${planLabel}]`);
+  }
+  lines.push(`${businessName || "Your chauffeur service"} has confirmed your reservation.`);
+  if (booking?.start_time) {
+    lines.push(`Pickup Time: ${formatDisplayDateTime(booking.start_time) || booking.start_time}`);
+  }
+  if (booking?.pickup_address) {
+    lines.push(`Pickup: ${booking.pickup_address}`);
+  }
+  if (booking?.dropoff_address) {
+    lines.push(`Dropoff: ${booking.dropoff_address}`);
+  }
+  if (planName === "pro" && portalUrl) {
+    lines.push(`Manage your rides here: ${portalUrl}`);
+  } else if (planName === "premium" && portalUrl) {
+    lines.push(`Open Ride Hub: ${portalUrl}`);
+  }
+  return lines.join("\n");
+}
+
+function buildCustomerBookingConfirmationEmailContent({
+  booking,
+  businessName,
+  portalUrl,
+  planName,
+  includePlanIdentifier = false,
+}) {
+  const normalizedPlan = String(planName || "starter").trim().toLowerCase();
+  const planLabel = normalizedPlan ? normalizedPlan.toUpperCase() : "STARTER";
+  const subjectPrefix = includePlanIdentifier ? `[${planLabel}] ` : "";
+  const subject = `${subjectPrefix}${businessName || "Your chauffeur service"} reservation confirmed`;
+  const lines = [];
+  if (includePlanIdentifier) {
+    lines.push(`Plan: ${planLabel}`);
+  }
+  lines.push(`Your reservation with ${businessName || "our chauffeur service"} is confirmed.`);
+  if (booking?.start_time) {
+    lines.push(`Pickup Time: ${formatDisplayDateTime(booking.start_time) || booking.start_time}`);
+  }
+  if (booking?.pickup_address) {
+    lines.push(`Pickup: ${booking.pickup_address}`);
+  }
+  if (booking?.dropoff_address) {
+    lines.push(`Dropoff: ${booking.dropoff_address}`);
+  }
+  if (portalUrl) {
+    lines.push(planName === "pro" ? `Customer Portal: ${portalUrl}` : `Ride Hub: ${portalUrl}`);
+  }
+
+  const html = `
+    <div style="font-family:Segoe UI,Tahoma,Geneva,Verdana,sans-serif;color:#0f172a;line-height:1.7;">
+      ${includePlanIdentifier ? `<p style="margin:0 0 8px;color:#475569;font-size:12px;font-weight:700;letter-spacing:0.08em;">PLAN: ${escapeHtml(planLabel)}</p>` : ""}
+      <h2 style="margin:0 0 12px;">Reservation Confirmed</h2>
+      <p style="margin:0 0 12px;">Your reservation with <strong>${escapeHtml(businessName || "our chauffeur service")}</strong> is confirmed.</p>
+      <p style="margin:0 0 6px;"><strong>Pickup Time:</strong> ${escapeHtml(formatDisplayDateTime(booking?.start_time) || booking?.start_time || "TBD")}</p>
+      <p style="margin:0 0 6px;"><strong>Pickup:</strong> ${escapeHtml(booking?.pickup_address || "TBD")}</p>
+      <p style="margin:0 0 16px;"><strong>Dropoff:</strong> ${escapeHtml(booking?.dropoff_address || "TBD")}</p>
+      ${portalUrl ? `<p style="margin:0;"><a href="${escapeHtml(portalUrl)}" style="color:#1d4ed8;font-weight:700;text-decoration:none;">${escapeHtml(planName === "pro" ? "Open your customer portal" : "Open Ride Hub")}</a></p>` : ""}
+    </div>
+  `;
+
+  return {
+    subject,
+    message: lines.join("\n"),
+    html,
+  };
+}
+
+function buildCustomerCompletedFollowupEmailContent({
+  session,
+  businessName,
+  followUpUrl,
+  portalUrl,
+  planName,
+}) {
+  const subject = `${businessName || "Your chauffeur service"} thanks you for riding with us`;
+  const lines = [
+    "Thank you for riding with us.",
+  ];
+  if (followUpUrl) {
+    lines.push(`Please leave a review and feel free to leave a tip if you received great service: ${followUpUrl}`);
+  }
+  if (portalUrl) {
+    lines.push(planName === "pro" ? `Manage your rides here: ${portalUrl}` : `Open Ride Hub: ${portalUrl}`);
+  }
+  if (session?.end_time) {
+    lines.push(`Ride Completed: ${formatDisplayDateTime(session.end_time) || session.end_time}`);
+  }
+
+  const html = `
+    <div style="font-family:Segoe UI,Tahoma,Geneva,Verdana,sans-serif;color:#0f172a;line-height:1.7;">
+      <h2 style="margin:0 0 12px;">Thank You for Riding With Us</h2>
+      <p style="margin:0 0 12px;">We appreciate your reservation with <strong>${escapeHtml(businessName || "our chauffeur service")}</strong>.</p>
+      ${followUpUrl ? `<p style="margin:0 0 12px;"><a href="${escapeHtml(followUpUrl)}" style="color:#1d4ed8;font-weight:700;text-decoration:none;">Please leave a review and feel free to leave a tip if you received great service.</a></p>` : ""}
+      ${portalUrl ? `<p style="margin:0 0 12px;"><a href="${escapeHtml(portalUrl)}" style="color:#1d4ed8;font-weight:700;text-decoration:none;">${escapeHtml(planName === "pro" ? "Open your customer portal" : "Open Ride Hub")}</a></p>` : ""}
+      ${session?.end_time ? `<p style="margin:0;"><strong>Ride Completed:</strong> ${escapeHtml(formatDisplayDateTime(session.end_time) || session.end_time)}</p>` : ""}
+    </div>
+  `;
+
+  return {
+    subject,
+    message: lines.join("\n"),
+    html,
+  };
+}
+
+async function buildCustomerNotificationContextForBooking({
+  bookingId,
+  req = null,
+}) {
+  if (!bookingId) {
+    throw new Error("bookingId is required.");
+  }
+
+  await ensureBookingSyncColumns();
+  const profileIdColumn = await getProfileIdColumn();
+  const result = await pool.query(
+    `SELECT
+      b.id,
+      b.location_id,
+      b.first_name,
+      b.last_name,
+      b.customer_email,
+      b.customer_phone,
+      b.pickup_address,
+      b.dropoff_address,
+      b.start_time,
+      b.end_time,
+      b.status,
+      b.booking_mode,
+      b.total_price,
+      b.deposit_amount,
+      b.balance_due,
+      b.vehicle_slot_id,
+      b.crm_contact_id,
+      p.business_name,
+      p.plan_name,
+      p.addon_branding_unlocked,
+      p.addon_funnel_unlocked,
+      p.addon_tracking_unlocked,
+      p.addon_extra_vehicle_count,
+      p.public_app_url,
+      t.id AS tracking_session_id,
+      t.driver_token,
+      t.customer_token
+     FROM bookings b
+     LEFT JOIN profiles p ON p.${profileIdColumn} = b.location_id
+     LEFT JOIN trip_tracking_sessions t ON t.booking_id = b.id
+     WHERE b.id = $1
+     LIMIT 1`,
+    [bookingId]
+  );
+
+  const row = result.rows[0];
+  if (!row) {
+    throw new Error("Booking not found.");
+  }
+
+  const normalizedPlanName = normalizePlanName(row.plan_name || "starter");
+  const portalUrls = buildCustomerPortalUrls(req, row.location_id, row.customer_token, row.public_app_url);
+  const trackingUrls = row.customer_token
+    ? buildTrackingUrls(req, row.driver_token, row.customer_token, row.public_app_url)
+    : { driver_url: null, customer_url: null, follow_up_url: null };
+  const shortUrls = await buildShortPublicUrls({
+    req,
+    locationId: row.location_id,
+    bookingId: row.id,
+    trackingSessionId: row.tracking_session_id || null,
+    tracking: {
+      customer_tracking_url: trackingUrls.customer_url || null,
+      driver_tracking_url: trackingUrls.driver_url || null,
+      follow_up_url: trackingUrls.follow_up_url || null,
+    },
+    portal: {
+      customer_login_url: portalUrls.customer_login_url || null,
+      ride_hub_url: portalUrls.ride_hub_url || null,
+      ride_inbox_url: portalUrls.ride_inbox_url || null,
+    },
+    followUp: {
+      review_and_tip_url: trackingUrls.follow_up_url || null,
+    },
+  });
+
+  const normalizedCustomerPhone = normalizePhoneNumber(row.customer_phone || "");
+  let crmContactId = row.crm_contact_id || null;
+  if (!crmContactId && (normalizedCustomerPhone || row.customer_email)) {
+    crmContactId = await upsertCrmContact({
+      locationId: row.location_id,
+      firstName: row.first_name,
+      lastName: row.last_name,
+      email: row.customer_email || undefined,
+      phone: normalizedCustomerPhone || undefined,
+    });
+  }
+
+  return {
+    booking: row,
+    locationId: row.location_id,
+    businessName: row.business_name || "Your chauffeur service",
+    planName: normalizedPlanName,
+    crmContactId,
+    customerPhone: normalizedCustomerPhone || null,
+    customerEmail: String(row.customer_email || "").trim() || null,
+    portalUrl: normalizedPlanName === "pro"
+      ? (shortUrls.portal.customer_login_url || portalUrls.customer_login_url || null)
+      : normalizedPlanName === "premium"
+        ? (shortUrls.portal.ride_hub_url || portalUrls.ride_hub_url || null)
+        : null,
+    rideInboxUrl: shortUrls.portal.ride_inbox_url || portalUrls.ride_inbox_url || null,
+    trackingUrl: shortUrls.tracking.customer_tracking_url || trackingUrls.customer_url || null,
+    followUpUrl: shortUrls.follow_up.review_and_tip_url || shortUrls.tracking.follow_up_url || trackingUrls.follow_up_url || null,
+    shortUrls,
+  };
+}
+
+async function sendCustomerBookingConfirmationSms({
+  bookingId,
+  req = null,
+  includePlanIdentifier = false,
+}) {
+  const context = await buildCustomerNotificationContextForBooking({ bookingId, req });
+  if (!context.crmContactId) {
+    return { success: false, skipped: true, reason: "Unable to resolve CRM customer contact." };
+  }
+
+  const message = buildCustomerBookingConfirmationSmsMessage({
+    booking: context.booking,
+    businessName: context.businessName,
+    portalUrl: context.portalUrl,
+    planName: context.planName,
+    includePlanIdentifier,
+  });
+
+  logCustomerNotificationAudit("booking_confirmation_sms_service_start", {
+    bookingId,
+    locationId: context.locationId,
+    notificationType: "booking_confirmation_sms",
+    target: "customer",
+    provider: "crm_sms",
+    attempted: true,
+    triggerSource: "sendCustomerBookingConfirmationSms",
+  });
+
+  const sendResult = await sendCrmSmsToContact({
+    locationId: context.locationId,
+    contactId: context.crmContactId,
+    message,
+  });
+
+  await recordBookingCustomerNotificationAudit({
+    bookingId,
+    sentAtColumn: "customer_confirmation_sms_sent_at",
+    lastAttemptColumn: "customer_confirmation_sms_last_attempt_at",
+    lastErrorColumn: "customer_confirmation_sms_last_error",
+    success: Boolean(sendResult?.success),
+    error: sendResult?.error || sendResult?.reason || null,
+  });
+
+  logCustomerNotificationAudit("booking_confirmation_sms_service_result", {
+    bookingId,
+    locationId: context.locationId,
+    notificationType: "booking_confirmation_sms",
+    target: "customer",
+    provider: "crm_sms",
+    attempted: true,
+    skipped: Boolean(sendResult?.skipped),
+    success: Boolean(sendResult?.success),
+    status: sendResult?.status || null,
+    reason: sendResult?.reason || null,
+    error: sendResult?.error || null,
+    triggerSource: "sendCustomerBookingConfirmationSms",
+  });
+
+  return {
+    ...sendResult,
+    booking_id: bookingId,
+    portal_url: context.portalUrl,
+    tracking_url: context.trackingUrl,
+    ride_inbox_url: context.rideInboxUrl,
+    plan_name: context.planName,
+  };
+}
+
+async function sendCustomerBookingConfirmationEmail({
+  bookingId,
+  req = null,
+  includePlanIdentifier = false,
+}) {
+  const context = await buildCustomerNotificationContextForBooking({ bookingId, req });
+  if (!context.crmContactId) {
+    return { success: false, skipped: true, reason: "Unable to resolve CRM customer contact." };
+  }
+
+  const emailContent = buildCustomerBookingConfirmationEmailContent({
+    booking: context.booking,
+    businessName: context.businessName,
+    portalUrl: context.portalUrl,
+    planName: context.planName,
+    includePlanIdentifier,
+  });
+
+  logCustomerNotificationAudit("booking_confirmation_email_service_start", {
+    bookingId,
+    locationId: context.locationId,
+    notificationType: "booking_confirmation_email",
+    target: "customer",
+    provider: "crm_email",
+    attempted: true,
+    triggerSource: "sendCustomerBookingConfirmationEmail",
+  });
+
+  const sendResult = await sendCrmEmailToContact({
+    locationId: context.locationId,
+    contactId: context.crmContactId,
+    subject: emailContent.subject,
+    message: emailContent.message,
+    html: emailContent.html,
+  });
+
+  await recordBookingCustomerNotificationAudit({
+    bookingId,
+    sentAtColumn: "customer_confirmation_email_sent_at",
+    lastAttemptColumn: "customer_confirmation_email_last_attempt_at",
+    lastErrorColumn: "customer_confirmation_email_last_error",
+    success: Boolean(sendResult?.success),
+    error: sendResult?.error || sendResult?.reason || null,
+  });
+
+  logCustomerNotificationAudit("booking_confirmation_email_service_result", {
+    bookingId,
+    locationId: context.locationId,
+    notificationType: "booking_confirmation_email",
+    target: "customer",
+    provider: "crm_email",
+    attempted: true,
+    skipped: Boolean(sendResult?.skipped),
+    success: Boolean(sendResult?.success),
+    status: sendResult?.status || null,
+    reason: sendResult?.reason || null,
+    error: sendResult?.error || null,
+    triggerSource: "sendCustomerBookingConfirmationEmail",
+  });
+
+  return {
+    ...sendResult,
+    booking_id: bookingId,
+    portal_url: context.portalUrl,
+    tracking_url: context.trackingUrl,
+    ride_inbox_url: context.rideInboxUrl,
+    plan_name: context.planName,
+  };
+}
+
+async function sendCustomerCompletedFollowupEmail({
+  trackingSessionId,
+  req = null,
+}) {
+  if (!trackingSessionId) {
+    return { success: false, skipped: true, reason: "trackingSessionId is required." };
+  }
+
+  const session = await getTrackingSessionById(trackingSessionId);
+  if (!session) {
+    return { success: false, skipped: true, reason: "Tracking session not found." };
+  }
+
+  const normalizedCustomerPhone = normalizePhoneNumber(session.customer_phone || "");
+  let customerContactId = session.crm_contact_id || await upsertCrmContact({
+    locationId: session.location_id,
+    firstName: session.first_name,
+    lastName: session.last_name,
+    email: undefined,
+    phone: normalizedCustomerPhone || undefined,
+  });
+
+  if (!customerContactId && (session.customer_email || normalizedCustomerPhone)) {
+    customerContactId = await upsertCrmContact({
+      locationId: session.location_id,
+      firstName: session.first_name,
+      lastName: session.last_name,
+      email: session.customer_email || undefined,
+      phone: normalizedCustomerPhone || undefined,
+    });
+  }
+
+  if (!customerContactId) {
+    return { success: false, skipped: true, reason: "Unable to resolve CRM customer contact." };
+  }
+
+  const trackingUrls = buildTrackingUrls(req, session.driver_token, session.customer_token, session.public_app_url);
+  const portalUrls = buildCustomerPortalUrls(req, session.location_id, session.customer_token, session.public_app_url);
+  const shortUrls = await buildShortPublicUrls({
+    req,
+    locationId: session.location_id,
+    bookingId: session.booking_id,
+    trackingSessionId: session.id,
+    tracking: {
+      customer_tracking_url: trackingUrls.customer_url,
+      driver_tracking_url: trackingUrls.driver_url,
+      follow_up_url: trackingUrls.follow_up_url,
+    },
+    portal: {
+      customer_login_url: portalUrls.customer_login_url || null,
+      ride_hub_url: portalUrls.ride_hub_url || null,
+      ride_inbox_url: portalUrls.ride_inbox_url || null,
+    },
+    followUp: {
+      review_and_tip_url: trackingUrls.follow_up_url,
+    },
+  });
+
+  const normalizedPlanName = normalizePlanName(session.plan_name || "starter");
+  const portalLink = normalizedPlanName === "pro"
+    ? (shortUrls.portal.customer_login_url || portalUrls.customer_login_url || null)
+    : (shortUrls.portal.ride_hub_url || portalUrls.ride_hub_url || null);
+  const followUpLink = shortUrls.follow_up.review_and_tip_url
+    || shortUrls.tracking.follow_up_url
+    || trackingUrls.follow_up_url
+    || null;
+
+  const emailContent = buildCustomerCompletedFollowupEmailContent({
+    session,
+    businessName: session.business_name || "Your chauffeur service",
+    followUpUrl: followUpLink,
+    portalUrl: portalLink,
+    planName: normalizedPlanName,
+  });
+
+  logCustomerNotificationAudit("completed_followup_email_service_start", {
+    bookingId: session.booking_id,
+    trackingSessionId: session.id,
+    locationId: session.location_id,
+    notificationType: "completed_followup_email",
+    target: "customer",
+    provider: "crm_email",
+    attempted: true,
+    triggerSource: "sendCustomerCompletedFollowupEmail",
+  });
+
+  const sendResult = await sendCrmEmailToContact({
+    locationId: session.location_id,
+    contactId: customerContactId,
+    subject: emailContent.subject,
+    message: emailContent.message,
+    html: emailContent.html,
+  });
+
+  return {
+    ...sendResult,
+    contactId: customerContactId,
+    follow_up_url: followUpLink,
+    portal_url: portalLink,
+    plan_name: normalizedPlanName,
+  };
 }
 
 async function sendCustomerEnRouteTrackingSms({
@@ -4653,6 +5186,17 @@ async function sendCustomerPostRideFollowupSms({
     return { success: false, skipped: true, reason: "Unable to resolve CRM customer contact." };
   }
 
+  logCustomerNotificationAudit("completed_followup_sms_start", {
+    bookingId: session.booking_id,
+    trackingSessionId: session.id,
+    locationId: session.location_id,
+    notificationType: "completed_followup_sms",
+    target: "customer",
+    provider: "crm_sms",
+    attempted: true,
+    triggerSource: "sendCustomerPostRideFollowupSms",
+  });
+
   const trackingUrls = buildTrackingUrls(req, session.driver_token, session.customer_token, session.public_app_url);
   const portalUrls = buildCustomerPortalUrls(req, session.location_id, session.customer_token, session.public_app_url);
   const shortUrls = await buildShortPublicUrls({
@@ -4696,6 +5240,31 @@ async function sendCustomerPostRideFollowupSms({
     contactId: customerContactId,
     message,
     crmAuthOptions,
+  });
+
+  await recordBookingCustomerNotificationAudit({
+    bookingId: session.booking_id,
+    sentAtColumn: "customer_completed_sms_sent_at",
+    lastAttemptColumn: "customer_completed_sms_last_attempt_at",
+    lastErrorColumn: "customer_completed_sms_last_error",
+    success: Boolean(sendResult?.success),
+    error: sendResult?.error || sendResult?.reason || null,
+  });
+
+  logCustomerNotificationAudit("completed_followup_sms_result", {
+    bookingId: session.booking_id,
+    trackingSessionId: session.id,
+    locationId: session.location_id,
+    notificationType: "completed_followup_sms",
+    target: "customer",
+    provider: "crm_sms",
+    attempted: true,
+    skipped: Boolean(sendResult?.skipped),
+    success: Boolean(sendResult?.success),
+    status: sendResult?.status || null,
+    reason: sendResult?.reason || null,
+    error: sendResult?.error || null,
+    triggerSource: "sendCustomerPostRideFollowupSms",
   });
 
   return {
@@ -6556,6 +7125,8 @@ async function ensureFleetSettingsBookingPolicyColumns(db = pool) {
 function buildWizardSampleBookingPayload({
   locationId,
   businessName,
+  planName,
+  publicAppUrl,
   paymentProvider,
   taxRate,
   serviceLat,
@@ -6605,6 +7176,10 @@ function buildWizardSampleBookingPayload({
   const dropoffLat = pickupLat != null ? Number((pickupLat + 0.015).toFixed(6)) : null;
   const dropoffLng = pickupLng != null ? Number((pickupLng + 0.02).toFixed(6)) : null;
   const sampleBookingId = Number(`9${String(Date.now()).slice(-8)}`);
+  const sampleDriverToken = `sample-driver-${sampleBookingId}`;
+  const sampleCustomerToken = `sample-customer-${sampleBookingId}`;
+  const trackingUrls = buildTrackingUrls(null, sampleDriverToken, sampleCustomerToken, publicAppUrl);
+  const portalUrls = buildCustomerPortalUrls(null, locationId, sampleCustomerToken, publicAppUrl);
 
   return buildCrmBookingPayload({
     webhookType: "webhook_bookings",
@@ -6643,6 +7218,24 @@ function buildWizardSampleBookingPayload({
       calendar_id: primaryVehicle?.calendar_id || null
     },
     assignedDriver: primaryDriver,
+    tracking: {
+      tracking_session_id: `sample-tracking-${sampleBookingId}`,
+      customer_tracking_token: sampleCustomerToken,
+      customer_tracking_url: trackingUrls.customer_url,
+      customer_tracking_short_url: null,
+      driver_tracking_token: sampleDriverToken,
+      driver_tracking_url: trackingUrls.driver_url,
+      driver_tracking_short_url: null,
+      follow_up_url: trackingUrls.follow_up_url,
+      follow_up_short_url: null,
+    },
+    portal: {
+      customer_login_url: portalUrls.customer_login_url,
+      ride_hub_url: portalUrls.ride_hub_url,
+      ride_hub_short_url: null,
+      ride_inbox_url: portalUrls.ride_inbox_url,
+      ride_inbox_short_url: null,
+    },
     financials: {
       quoted_price: quotedPrice,
       addon_total: addonTotal,
@@ -6667,6 +7260,7 @@ function buildWizardSampleBookingPayload({
     meta: {
       source: "wizard_sample_payload",
       payment_provider: normalizePaymentProvider(paymentProvider || "stripe"),
+      plan_name: normalizePlanName(planName || "starter"),
       pricing_label: fixedDestination ? "Fixed Destination Quote" : "Standard Booking Quote",
       fixed_rate_name: fixedDestination,
       peak_multiplier: 1,
@@ -6700,6 +7294,8 @@ app.post("/api/crm-webhook/sample", requireWizardToken, async (req, res) => {
     const payload = buildWizardSampleBookingPayload({
       locationId,
       businessName,
+      planName: req.body.plan_name,
+      publicAppUrl: req.body.public_app_url,
       paymentProvider: req.body.payment_provider,
       taxRate: req.body.tax_rate,
       serviceLat: req.body.service_lat,
@@ -8295,6 +8891,9 @@ app.post("/api/confirm-booking-payment", async (req, res) => {
       totalPrice: total_price,
       depositAmount: deposit_amount,
       depositPercent: deposit_percent,
+      req,
+      practiceConfirmationNotifications:
+        req.body.practice_mode === true || String(req.body.practice_mode || "").trim() === "1",
     });
 
     return res.json({ success: true, booking: confirmation });
@@ -10896,6 +11495,7 @@ function buildCrmBookingPayload({
   const normalizedPlanName = normalizePlanName(meta.plan_name || "starter");
   const premiumClientPortalEnabled = normalizedPlanName === "premium" || normalizedPlanName === "pro";
   const proMobileAppEnabled = normalizedPlanName === "pro";
+  const premiumRideHubOnly = normalizedPlanName === "premium";
   const normalizedBookingMode = String(booking.booking_mode || "standard").trim().toLowerCase() === "practice_widget"
     ? "standard"
     : (booking.booking_mode || "standard");
@@ -10975,20 +11575,20 @@ function buildCrmBookingPayload({
     tracking: {
       tracking_session_id: tracking.tracking_session_id || null,
       customer_tracking_token: tracking.customer_tracking_token || null,
-      customer_tracking_url: tracking.customer_tracking_url || null,
-      customer_tracking_short_url: tracking.customer_tracking_short_url || null,
+      customer_tracking_url: premiumRideHubOnly ? null : (tracking.customer_tracking_url || null),
+      customer_tracking_short_url: premiumRideHubOnly ? null : (tracking.customer_tracking_short_url || null),
       driver_tracking_token: tracking.driver_tracking_token || null,
       driver_tracking_url: tracking.driver_tracking_url || null,
       driver_tracking_short_url: tracking.driver_tracking_short_url || null,
-      follow_up_url: tracking.follow_up_url || null,
-      follow_up_short_url: tracking.follow_up_short_url || null,
+      follow_up_url: premiumRideHubOnly ? null : (tracking.follow_up_url || null),
+      follow_up_short_url: premiumRideHubOnly ? null : (tracking.follow_up_short_url || null),
     },
     portal: {
-      customer_login_url: portal.customer_login_url || null,
+      customer_login_url: premiumRideHubOnly ? null : (portal.customer_login_url || null),
       ride_hub_url: portal.ride_hub_url || null,
       ride_hub_short_url: portal.ride_hub_short_url || null,
-      ride_inbox_url: portal.ride_inbox_url || null,
-      ride_inbox_short_url: portal.ride_inbox_short_url || null,
+      ride_inbox_url: premiumRideHubOnly ? null : (portal.ride_inbox_url || null),
+      ride_inbox_short_url: premiumRideHubOnly ? null : (portal.ride_inbox_short_url || null),
       premium_client_portal_enabled: premiumClientPortalEnabled,
       pro_mobile_app_enabled: proMobileAppEnabled,
     },
@@ -11133,6 +11733,8 @@ async function updateBookingConfirmation({
   depositAmount,
   depositPercent,
   totalPrice,
+  req = null,
+  practiceConfirmationNotifications = false,
 }) {
   console.log("[driver-sms] updateBookingConfirmation invoked", {
     bookingId,
@@ -11146,7 +11748,9 @@ async function updateBookingConfirmation({
 
   const existingBookingResult = await pool.query(
     `SELECT id, location_id, balance_due, total_price, deposit_amount, deposit_percent,
-            driver_assignment_sms_sent_at, driver_paid_in_full_sms_sent_at
+            driver_assignment_sms_sent_at, driver_paid_in_full_sms_sent_at,
+            customer_confirmation_sms_sent_at, customer_confirmation_email_sent_at,
+            customer_completed_sms_sent_at, customer_completed_email_sent_at
      FROM bookings
      WHERE id = $1
      LIMIT 1`,
@@ -11197,7 +11801,125 @@ async function updateBookingConfirmation({
     console.error("CRM calendar sync error after confirmation:", calendarErr);
   }
 
-  await triggerCrmWebhook(result.rows[0].location_id, result.rows[0].id);
+  try {
+    logCustomerNotificationAudit("booking_confirmation_crm_webhook_start", {
+      bookingId,
+      locationId: result.rows[0].location_id,
+      notificationType: "booking_confirmation",
+      target: "customer",
+      provider: "crm_webhook",
+      attempted: true,
+      triggerSource: "updateBookingConfirmation",
+    });
+    await triggerCrmWebhook(result.rows[0].location_id, result.rows[0].id);
+    logCustomerNotificationAudit("booking_confirmation_crm_webhook_result", {
+      bookingId,
+      locationId: result.rows[0].location_id,
+      notificationType: "booking_confirmation",
+      target: "customer",
+      provider: "crm_webhook",
+      attempted: true,
+      success: true,
+      triggerSource: "updateBookingConfirmation",
+      reason: "CRM webhook accepted booking confirmation payload.",
+    });
+    console.log("[customer-notify] booking confirmation marker state", {
+      bookingId,
+      locationId: result.rows[0].location_id,
+      customer_confirmation_sms_sent_at: existingBooking?.customer_confirmation_sms_sent_at || null,
+      customer_confirmation_email_sent_at: existingBooking?.customer_confirmation_email_sent_at || null,
+    });
+  } catch (customerWebhookErr) {
+    logCustomerNotificationAudit("booking_confirmation_crm_webhook_error", {
+      bookingId,
+      locationId: result.rows[0].location_id,
+      notificationType: "booking_confirmation",
+      target: "customer",
+      provider: "crm_webhook",
+      attempted: true,
+      success: false,
+      triggerSource: "updateBookingConfirmation",
+      error: customerWebhookErr?.message || "CRM webhook trigger failed.",
+    });
+    throw customerWebhookErr;
+  }
+
+  if (practiceConfirmationNotifications) {
+    console.log("[customer-notify] practice booking confirmation direct notifications enabled", {
+      bookingId,
+      locationId: result.rows[0].location_id,
+      customer_confirmation_sms_sent_at: existingBooking?.customer_confirmation_sms_sent_at || null,
+      customer_confirmation_email_sent_at: existingBooking?.customer_confirmation_email_sent_at || null,
+    });
+
+    if (!existingBooking?.customer_confirmation_sms_sent_at) {
+      try {
+        await sendCustomerBookingConfirmationSms({
+          bookingId,
+          req,
+          includePlanIdentifier: true,
+        });
+      } catch (practiceSmsErr) {
+        logCustomerNotificationAudit("booking_confirmation_sms_practice_error", {
+          bookingId,
+          locationId: result.rows[0].location_id,
+          notificationType: "booking_confirmation_sms",
+          target: "customer",
+          provider: "crm_sms",
+          attempted: true,
+          success: false,
+          triggerSource: "updateBookingConfirmation.practice",
+          error: practiceSmsErr?.message || "Practice confirmation SMS send failed.",
+        });
+      }
+    } else {
+      logCustomerNotificationAudit("booking_confirmation_sms_practice_skip", {
+        bookingId,
+        locationId: result.rows[0].location_id,
+        notificationType: "booking_confirmation_sms",
+        target: "customer",
+        provider: "crm_sms",
+        attempted: false,
+        skipped: true,
+        triggerSource: "updateBookingConfirmation.practice",
+        reason: "Customer confirmation SMS marker already exists on the booking.",
+      });
+    }
+
+    if (!existingBooking?.customer_confirmation_email_sent_at) {
+      try {
+        await sendCustomerBookingConfirmationEmail({
+          bookingId,
+          req,
+          includePlanIdentifier: true,
+        });
+      } catch (practiceEmailErr) {
+        logCustomerNotificationAudit("booking_confirmation_email_practice_error", {
+          bookingId,
+          locationId: result.rows[0].location_id,
+          notificationType: "booking_confirmation_email",
+          target: "customer",
+          provider: "crm_email",
+          attempted: true,
+          success: false,
+          triggerSource: "updateBookingConfirmation.practice",
+          error: practiceEmailErr?.message || "Practice confirmation email send failed.",
+        });
+      }
+    } else {
+      logCustomerNotificationAudit("booking_confirmation_email_practice_skip", {
+        bookingId,
+        locationId: result.rows[0].location_id,
+        notificationType: "booking_confirmation_email",
+        target: "customer",
+        provider: "crm_email",
+        attempted: false,
+        skipped: true,
+        triggerSource: "updateBookingConfirmation.practice",
+        reason: "Customer confirmation email marker already exists on the booking.",
+      });
+    }
+  }
 
   try {
     const driverSmsResult = await maybeSendDriverAssignmentSmsAfterConfirmation({
@@ -11461,6 +12183,11 @@ async function createBookingRecord(input, { paymentLink = null, triggerWebhook =
       "public_app_url",
       "fleet",
       "payment_provider",
+      "plan_name",
+      "addon_branding_unlocked",
+      "addon_funnel_unlocked",
+      "addon_tracking_unlocked",
+      "addon_extra_vehicle_count",
       "peak_windows",
       "open_time",
       "close_time",
@@ -11746,6 +12473,13 @@ async function createBookingRecord(input, { paymentLink = null, triggerWebhook =
         booking_buffer_minutes: booking_buffer_minutes ?? (generalBufferMinutes + additionalTrafficBufferMinutes),
         booking_duration_minutes: booking_duration_minutes ?? bookingDurationMinutes,
         timing_source: timing_source || routeMetrics.source,
+        plan_name: buildPlanEntitlements({
+          planName: profile.plan_name || "starter",
+          addonBrandingUnlocked: profile.addon_branding_unlocked,
+          addonFunnelUnlocked: profile.addon_funnel_unlocked,
+          addonTrackingUnlocked: profile.addon_tracking_unlocked,
+          addonExtraVehicleCount: profile.addon_extra_vehicle_count,
+        }).plan_name,
       },
     });
 
@@ -11756,6 +12490,30 @@ async function createBookingRecord(input, { paymentLink = null, triggerWebhook =
     }).catch((e) => {
       console.error("Webhook Failed:", e);
     });
+  }
+
+  if (isBookingConfirmed && booking_id) {
+    try {
+      const driverSmsResult = await maybeSendDriverAssignmentSmsAfterConfirmation({
+        bookingId: booking_id,
+        locationId: location_id,
+        paymentStatus: paymentState.paymentStatus,
+      });
+      console.log("[driver-sms] booking creation result", {
+        bookingId: booking_id,
+        locationId: location_id,
+        paymentStatus: paymentState.paymentStatus,
+        attempted: Boolean(driverSmsResult?.attempted),
+        skipped: Boolean(driverSmsResult?.skipped),
+        success: Boolean(driverSmsResult?.success),
+        reason: driverSmsResult?.reason || null,
+        error: driverSmsResult?.error || null,
+        status: driverSmsResult?.status || null,
+        tokenSource: driverSmsResult?.tokenSource || null,
+      });
+    } catch (driverSmsErr) {
+      console.error("Driver assignment SMS error during booking creation:", driverSmsErr);
+    }
   }
 
   return {
@@ -12342,6 +13100,8 @@ app.get("/api/checkout-session-status", async (req, res) => {
         totalPrice: bookingRow.total_price,
         depositAmount: bookingRow.total_price,
         depositPercent: 100,
+        req,
+        practiceConfirmationNotifications: true,
       });
       return res.json({
         success: true,
@@ -12378,6 +13138,8 @@ app.get("/api/checkout-session-status", async (req, res) => {
         totalPrice: bookingRow.total_price,
         depositAmount: bookingRow.total_price,
         depositPercent: 100,
+        req,
+        practiceConfirmationNotifications: true,
       });
       return res.json({
         success: true,
@@ -12413,6 +13175,8 @@ app.get("/api/checkout-session-status", async (req, res) => {
         totalPrice,
         depositAmount,
         depositPercent,
+        req,
+        practiceConfirmationNotifications: practiceMode,
       });
 
       const bookingLookup = await pool.query(
