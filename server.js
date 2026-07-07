@@ -211,7 +211,7 @@ const PLAN_RULES = {
     logoIncluded: false,
   },
   premium: {
-    includedFleet: 1,
+    includedFleet: 2,
     maxFleet: 6,
     brandingIncluded: true,
     funnelIncluded: false,

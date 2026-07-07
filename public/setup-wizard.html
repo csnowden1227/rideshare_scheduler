@@ -1872,8 +1872,8 @@ function applyLocalPlanFallback(planName = planOverride || currentPlanName || 's
     currentEntitlements = {
         ...currentEntitlements,
         plan_name: fallbackPlan,
-        allowed_fleet_count: fallbackPlan === 'pro' ? 3 : 1,
-        included_fleet_count: fallbackPlan === 'pro' ? 3 : 1,
+        allowed_fleet_count: fallbackPlan === 'pro' ? 3 : (fallbackPlan === 'premium' ? 2 : 1),
+        included_fleet_count: fallbackPlan === 'pro' ? 3 : (fallbackPlan === 'premium' ? 2 : 1),
         max_fleet_count: 6,
         branding_enabled: fallbackPlan === 'premium' || fallbackPlan === 'pro',
         logo_enabled: fallbackPlan === 'premium' || fallbackPlan === 'pro',
