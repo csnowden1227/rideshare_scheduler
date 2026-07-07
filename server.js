@@ -1382,10 +1382,16 @@ function getVehicleRecordForSession(session) {
 
 function buildVehicleDisplayName(vehicleRecord = null, fallbackType = "") {
   if (!vehicleRecord) return String(fallbackType || "").trim();
+  const make = String(vehicleRecord.vehicle_make || "").trim();
+  const model = String(vehicleRecord.vehicle_model || "").trim();
+  const useMakeModelLabel = String(vehicleRecord.use_make_model_label || "").toLowerCase() === "true" || vehicleRecord.use_make_model_label === true;
+  if (useMakeModelLabel && [make, model].filter(Boolean).length) {
+    return [make, model].filter(Boolean).join(" ").trim();
+  }
   const parts = [
     String(vehicleRecord.vehicle_year || "").trim(),
-    String(vehicleRecord.vehicle_make || "").trim(),
-    String(vehicleRecord.vehicle_model || "").trim()
+    make,
+    model
   ].filter(Boolean);
   if (parts.length) return parts.join(" ");
   return String(vehicleRecord.vehicle_type || fallbackType || "").trim();
@@ -4594,6 +4600,7 @@ function buildCustomerPostRideFollowupSmsMessage({
 
 function buildCustomerBookingConfirmationSmsMessage({
   booking,
+  vehicle = null,
   businessName,
   portalUrl,
   planName,
@@ -4606,6 +4613,10 @@ function buildCustomerBookingConfirmationSmsMessage({
     lines.push(`[PLAN: ${planLabel}]`);
   }
   lines.push(`${businessName || "Your chauffeur service"} has confirmed your reservation.`);
+  const vehicleName = buildVehicleDisplayName(vehicle, booking?.vehicle_type || "");
+  if (vehicleName) {
+    lines.push(`Vehicle: ${vehicleName}`);
+  }
   if (booking?.start_time) {
     lines.push(`Pickup Time: ${formatDisplayDateTime(booking.start_time) || booking.start_time}`);
   }
@@ -4625,6 +4636,7 @@ function buildCustomerBookingConfirmationSmsMessage({
 
 function buildCustomerBookingConfirmationEmailContent({
   booking,
+  vehicle = null,
   businessName,
   portalUrl,
   planName,
@@ -4639,6 +4651,10 @@ function buildCustomerBookingConfirmationEmailContent({
     lines.push(`Plan: ${planLabel}`);
   }
   lines.push(`Your reservation with ${businessName || "our chauffeur service"} is confirmed.`);
+  const vehicleName = buildVehicleDisplayName(vehicle, booking?.vehicle_type || "");
+  if (vehicleName) {
+    lines.push(`Vehicle: ${vehicleName}`);
+  }
   if (booking?.start_time) {
     lines.push(`Pickup Time: ${formatDisplayDateTime(booking.start_time) || booking.start_time}`);
   }
@@ -4657,6 +4673,7 @@ function buildCustomerBookingConfirmationEmailContent({
       ${includePlanIdentifier ? `<p style="margin:0 0 8px;color:#475569;font-size:12px;font-weight:700;letter-spacing:0.08em;">PLAN: ${escapeHtml(planLabel)}</p>` : ""}
       <h2 style="margin:0 0 12px;">Reservation Confirmed</h2>
       <p style="margin:0 0 12px;">Your reservation with <strong>${escapeHtml(businessName || "our chauffeur service")}</strong> is confirmed.</p>
+      ${buildVehicleDisplayName(vehicle, booking?.vehicle_type || "") ? `<p style="margin:0 0 6px;"><strong>Vehicle:</strong> ${escapeHtml(buildVehicleDisplayName(vehicle, booking?.vehicle_type || ""))}</p>` : ""}
       <p style="margin:0 0 6px;"><strong>Pickup Time:</strong> ${escapeHtml(formatDisplayDateTime(booking?.start_time) || booking?.start_time || "TBD")}</p>
       <p style="margin:0 0 6px;"><strong>Pickup:</strong> ${escapeHtml(booking?.pickup_address || "TBD")}</p>
       <p style="margin:0 0 16px;"><strong>Dropoff:</strong> ${escapeHtml(booking?.dropoff_address || "TBD")}</p>
@@ -4745,6 +4762,7 @@ async function buildCustomerNotificationContextForBooking({
       p.addon_tracking_unlocked,
       p.addon_extra_vehicle_count,
       p.public_app_url,
+      p.fleet,
       t.id AS tracking_session_id,
       t.driver_token,
       t.customer_token
@@ -4822,8 +4840,14 @@ async function buildCustomerNotificationContextForBooking({
     }
   }
 
+  const profileFleet = normalizeFleetRecords(safeParseJson(row.fleet));
+  const vehicle = profileFleet.find(
+    (vehicleRow) => String(vehicleRow?.vehicle_slot_id || "").trim() === String(row.vehicle_slot_id || "").trim()
+  ) || null;
+
   return {
     booking: row,
+    vehicle,
     locationId: row.location_id,
     businessName: row.business_name || "Your chauffeur service",
     planName: normalizedPlanName,
@@ -4854,6 +4878,7 @@ async function sendCustomerBookingConfirmationSms({
 
   const message = buildCustomerBookingConfirmationSmsMessage({
     booking: context.booking,
+    vehicle: context.vehicle,
     businessName: context.businessName,
     portalUrl: context.portalUrl,
     planName: context.planName,
@@ -4922,6 +4947,7 @@ async function sendCustomerBookingConfirmationEmail({
 
   const emailContent = buildCustomerBookingConfirmationEmailContent({
     booking: context.booking,
+    vehicle: context.vehicle,
     businessName: context.businessName,
     portalUrl: context.portalUrl,
     planName: context.planName,

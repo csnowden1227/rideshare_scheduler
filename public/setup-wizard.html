@@ -71,6 +71,7 @@
         .fleet-year-cell { width: 8%; min-width: 88px; }
         .fleet-make-cell { width: 12%; min-width: 130px; }
         .fleet-model-cell { width: 12%; min-width: 130px; }
+        .fleet-label-mode-cell { width: 12%; min-width: 160px; }
         .fleet-driver-name-cell { width: 11%; min-width: 140px; }
         .fleet-driver-phone-cell { width: 11%; min-width: 140px; }
         .fleet-driver-email-cell { width: 13%; min-width: 170px; }
@@ -455,6 +456,7 @@
                             <th>Year</th>
                             <th>Make</th>
                             <th>Model</th>
+                            <th>Use Make/Model Label</th>
                             <th>Driver Name</th>
                             <th>Driver Phone</th>
                             <th>Driver Email</th>
@@ -1194,7 +1196,9 @@ function updateRouteMap() {
 // --- RENDERERS ---
 function setFleetPlanMessage(planName = 'starter') {
     const badge = document.getElementById('plan-badge');
-    const plan = String(planName || 'starter').toLowerCase();
+    const plan = ['premium', 'pro'].includes(String(planName || 'starter').toLowerCase())
+        ? String(planName || 'starter').toLowerCase()
+        : 'starter';
     const planLabel = plan.charAt(0).toUpperCase() + plan.slice(1);
     currentPlanName = plan;
 
@@ -1764,6 +1768,12 @@ function addFleetRow(data = {}, shouldRenumber = true) {
         <td class="py-2 px-1 fleet-year-cell"><input type="text" class="v-year input-mini fleet-input-compact" placeholder="2024" value="${data.vehicle_year || ''}"></td>
         <td class="py-2 px-1 fleet-make-cell"><input type="text" class="v-make input-mini fleet-input-compact" placeholder="Cadillac" value="${data.vehicle_make || ''}"></td>
         <td class="py-2 px-1 fleet-model-cell"><input type="text" class="v-model input-mini fleet-input-compact" placeholder="Escalade" value="${data.vehicle_model || ''}"></td>
+        <td class="py-2 px-1 fleet-label-mode-cell">
+            <label class="flex items-center justify-center gap-2 text-xs font-semibold text-slate-600 leading-tight text-center">
+                <input type="checkbox" class="v-use-make-model-label" ${String(data.use_make_model_label ?? 'false').toLowerCase() === 'true' ? 'checked' : ''}>
+                <span>Replace type with make/model</span>
+            </label>
+        </td>
         <td class="py-2 px-1 fleet-driver-name-cell"><input type="text" class="v-driver-name input-mini fleet-input-compact" placeholder="Driver Name" value="${data.driver_name || ''}"></td>
         <td class="py-2 px-1 fleet-driver-phone-cell"><input type="text" class="v-driver-phone input-mini fleet-input-compact" placeholder="Driver Phone" value="${data.driver_phone || ''}"></td>
         <td class="py-2 px-1 fleet-driver-email-cell"><input type="email" class="v-driver-email input-mini fleet-input-compact" placeholder="Driver Email" value="${data.driver_email || ''}"></td>
@@ -2199,6 +2209,7 @@ async function saveToBackend() {
             vehicle_year: tr.querySelector('.v-year')?.value.trim() || '',
             vehicle_make: tr.querySelector('.v-make')?.value.trim() || '',
             vehicle_model: tr.querySelector('.v-model')?.value.trim() || '',
+            use_make_model_label: !!tr.querySelector('.v-use-make-model-label')?.checked,
             driver_name: tr.querySelector('.v-driver-name')?.value.trim() || '',
             driver_phone: formatPhoneForUi(tr.querySelector('.v-driver-phone')?.value.trim() || ''),
             driver_email: tr.querySelector('.v-driver-email')?.value.trim() || '',

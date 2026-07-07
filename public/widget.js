@@ -269,11 +269,32 @@
   }
 
   function vehicleDisplayName(vehicle = {}) {
+    const make = String(vehicle.vehicle_make || "").trim();
+    const model = String(vehicle.vehicle_model || "").trim();
+    const makeModel = [make, model].filter(Boolean).join(" ").trim();
+    const useMakeModelLabel = String(vehicle.use_make_model_label || "").toLowerCase() === "true" || vehicle.use_make_model_label === true;
+    if (useMakeModelLabel && makeModel) {
+      return makeModel;
+    }
     return String(vehicle.vehicle_type || vehicle.name || vehicle.vehicle_slot_id || "Vehicle").trim();
   }
 
+  function vehicleLabelModeNote(vehicle = {}) {
+    const make = String(vehicle.vehicle_make || "").trim();
+    const model = String(vehicle.vehicle_model || "").trim();
+    const useMakeModelLabel = String(vehicle.use_make_model_label || "").toLowerCase() === "true" || vehicle.use_make_model_label === true;
+    if (useMakeModelLabel && [make, model].filter(Boolean).length) {
+      return "Make/model label enabled";
+    }
+    return "";
+  }
+
   function compactVehicleLabel(vehicle = {}) {
-    return vehicleDisplayName(vehicle)
+    const make = String(vehicle.vehicle_make || "").trim();
+    const model = String(vehicle.vehicle_model || "").trim();
+    const useMakeModelLabel = String(vehicle.use_make_model_label || "").toLowerCase() === "true" || vehicle.use_make_model_label === true;
+    const displayName = useMakeModelLabel && [make, model].filter(Boolean).length ? [make, model].filter(Boolean).join(" ").trim() : vehicleDisplayName(vehicle);
+    return displayName
       .replace(/^vehicle[_\s-]*/i, "")
       .replace(/\s+/g, " ")
       .trim();
@@ -458,10 +479,16 @@
   }
 
   function vehicleMetaLine(vehicle = {}) {
+    const make = String(vehicle.vehicle_make || "").trim();
+    const model = String(vehicle.vehicle_model || "").trim();
+    const useMakeModelLabel = String(vehicle.use_make_model_label || "").toLowerCase() === "true" || vehicle.use_make_model_label === true;
+    if (useMakeModelLabel) {
+      return [make, model].filter(Boolean).join(" ").trim();
+    }
     const details = [
       String(vehicle.vehicle_year || "").trim(),
-      String(vehicle.vehicle_make || "").trim(),
-      String(vehicle.vehicle_model || "").trim(),
+      make,
+      model,
     ].filter(Boolean);
     return details.join(" ");
   }
@@ -475,6 +502,7 @@
 
     const cards = orderedFleet.map((vehicle, index) => {
       const label = vehicleDisplayName(vehicle);
+      const labelNote = vehicleLabelModeNote(vehicle);
       const imageSrc = vehicleImageSource(vehicle);
       return `
         <button
@@ -485,6 +513,7 @@
           style="display:grid;grid-template-rows:auto 1fr;gap:8px;flex:0 0 156px;width:156px;min-height:176px;padding:10px 10px 12px;border:1.5px solid #111111;border-radius:0;background:#fff;cursor:pointer;text-align:center;transition:all .18s ease;box-shadow:none;"
         >
           <span style="font-size:12px;font-weight:700;color:#111827;line-height:1.2;">${escapeHtml(label)}</span>
+          ${labelNote ? `<span style="display:inline-flex;justify-content:center;align-self:center;padding:4px 8px;border-radius:999px;background:#ecfeff;color:#155e75;font-size:10px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;">${escapeHtml(labelNote)}</span>` : ""}
           <div style="display:flex;align-items:center;justify-content:center;min-height:110px;">
             <img src="${escapeHtml(imageSrc)}" alt="${escapeHtml(label)}" style="width:100%;max-width:${label.toLowerCase().includes("xl") ? "210px" : label.toLowerCase().includes("suv") ? "184px" : "162px"};height:104px;object-fit:contain;display:block;" />
           </div>
