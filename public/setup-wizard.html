@@ -2102,15 +2102,26 @@ async function loadFromBackend() {
     document.getElementById('embed-box').innerText = `<div id="chauffeur-booking-widget"></div>\n<script src="${BACKEND_URL}/widget.js?loc=${location_id}${wizardSuffix}${cacheBuster}"><\/script>`;
     
     try {
+        const widgetProfileRes = await fetch(`${BACKEND_URL}/api/get-profile-widget/${location_id}`, { cache: 'no-store' });
+        const widgetProfile = await widgetProfileRes.json().catch(() => ({}));
         const profileUrl = wizardToken
             ? `${BACKEND_URL}/api/get-profile/${location_id}?token=${encodeURIComponent(wizardToken)}`
             : `${BACKEND_URL}/api/get-profile/${location_id}`;
         const res = await fetch(profileUrl, {
+            cache: 'no-store',
             headers: wizardToken ? { 'X-Setup-Wizard-Token': wizardToken } : {}
         });
         const data = await res.json();
         
         console.log("Database says:", data);
+        if (widgetProfile && !widgetProfile.error && widgetProfile.plan_name && !data.plan_name) {
+            data.plan_name = widgetProfile.plan_name;
+        } else if (widgetProfile && !widgetProfile.error && widgetProfile.plan_name) {
+            data.plan_name = widgetProfile.plan_name;
+        }
+        if (widgetProfile && !widgetProfile.error && widgetProfile.entitlements) {
+            data.entitlements = widgetProfile.entitlements;
+        }
         
         if (applyProfileToWizard(data, { allowSensitive: true })) {
             await ensureGoogleMapsLoaded(data.maps_api_key || '');
