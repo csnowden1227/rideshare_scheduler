@@ -358,7 +358,8 @@
       <div class="hero-login-note">
         After purchasing a plan, the next step is to <strong>log in at app.crmonesource.com</strong>, complete your
         profile, get your <strong>location ID</strong>, and finish setup inside your custom wizard by connecting
-        calendars, API keys, branding, payments, and integrations.
+        calendars, API keys, branding, payments, and integrations. The CRM should open the wizard with
+        <code>location_id</code>, <code>token</code>, and <code>plan</code> so the correct tier loads immediately.
       </div>
       <div class="hero-actions">
         <a class="btn btn-primary" href="#plans">Compare Plans</a>
@@ -615,7 +616,8 @@
       <h2>What Happens After Purchase</h2>
       <p style="margin: 0; max-width: 920px;">
         Buying the SaaS is step one. After that, the operator still needs to log in at <strong>app.crmonesource.com</strong>
-        and finish setup so the app can actually run for their business.
+        and finish setup so the app can actually run for their business. The wizard link should include the live
+        <code>plan</code> value from the CRM account so the setup screen opens on the correct tier every time.
       </p>
       <div class="steps">
         <div class="step">
