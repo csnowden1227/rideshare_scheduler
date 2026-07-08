@@ -8042,6 +8042,52 @@ if (fleet && fleet.length > 0) {
 
 app.post('/api/update-profile-full', requireWizardToken, saveConfigHandler);
 
+app.post("/api/ensure-profile/:location_id", requireWizardToken, async (req, res) => {
+  try {
+    await ensureProfileEntitlementColumns();
+    await ensureProfilePaymentProviderColumns();
+    await ensureProfileServiceAreaColumns();
+    await ensureProfileOnDemandNurtureColumn();
+    await ensureProfilePublicAppUrlColumn();
+    await ensureProfilePricingColumns();
+
+    const location_id = String(req.params.location_id || "").trim();
+    const plan_name = normalizePlanName(req.body?.plan_name || req.query?.plan || "starter");
+    if (!location_id) {
+      return res.status(400).json({ error: "location_id is required." });
+    }
+
+    const profileIdColumn = await getProfileIdColumn();
+    const lookup = await pool.query(
+      `SELECT ${profileIdColumn} AS profile_id, plan_name
+       FROM profiles
+       WHERE ${profileIdColumn} = $1
+       LIMIT 1`,
+      [location_id]
+    );
+
+    if (!lookup.rows.length) {
+      await pool.query(
+        `INSERT INTO profiles (${profileIdColumn}, plan_name, created_at, updated_at)
+         VALUES ($1, $2, NOW(), NOW())`,
+        [location_id, plan_name]
+      );
+    } else if (normalizePlanName(lookup.rows[0].plan_name || "starter") !== plan_name) {
+      await pool.query(
+        `UPDATE profiles
+         SET plan_name = $2, updated_at = NOW()
+         WHERE ${profileIdColumn} = $1`,
+        [location_id, plan_name]
+      );
+    }
+
+    return res.json({ success: true, location_id, plan_name });
+  } catch (err) {
+    console.error("Ensure profile error:", err);
+    return res.status(500).json({ error: err.message || "Failed to ensure profile." });
+  }
+});
+
 app.post("/api/create-payment-intent", async (req, res) => {
   try {
     if (!stripe) {

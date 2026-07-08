@@ -2110,6 +2110,17 @@ async function loadFromBackend() {
     document.getElementById('embed-box').innerText = `<div id="chauffeur-booking-widget"></div>\n<script src="${BACKEND_URL}/widget.js?loc=${location_id}${wizardSuffix}${cacheBuster}"><\/script>`;
     
     try {
+        if (planOverride) {
+            await fetch(`${BACKEND_URL}/api/ensure-profile/${encodeURIComponent(location_id)}?plan=${encodeURIComponent(planOverride)}`, {
+                method: 'POST',
+                cache: 'no-store',
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...(wizardToken ? { 'X-Setup-Wizard-Token': wizardToken } : {})
+                },
+                body: JSON.stringify({ plan_name: planOverride })
+            }).catch(() => null);
+        }
         const widgetProfileRes = await fetch(`${BACKEND_URL}/api/get-profile-widget/${location_id}`, { cache: 'no-store' });
         const widgetProfile = await widgetProfileRes.json().catch(() => ({}));
         const profileUrl = wizardToken
@@ -2122,7 +2133,7 @@ async function loadFromBackend() {
         const data = await res.json();
         
         console.log("Database says:", data);
-        const livePlanName = widgetProfile?.plan_name_alias || widgetProfile?.plan_name;
+        const livePlanName = planOverride || widgetProfile?.plan_name_alias || widgetProfile?.plan_name;
         if (widgetProfile && !widgetProfile.error && livePlanName && !data.plan_name) {
             data.plan_name = livePlanName;
         } else if (widgetProfile && !widgetProfile.error && livePlanName) {
