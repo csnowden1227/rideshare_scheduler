@@ -6246,6 +6246,42 @@ app.get("/setup-wizard.html", requireWizardToken, (req, res) => {
 app.get("/setup-wizard", requireWizardToken, (req, res) => {
   res.sendFile(path.join(__dirname, "public", "setup-wizard.html"));
 });
+app.get("/api/setup-wizard-redirect/:location_id", requireWizardToken, async (req, res) => {
+  try {
+    const locationId = String(req.params.location_id || "").trim();
+    if (!locationId) {
+      return res.status(400).send("location_id is required.");
+    }
+
+    await ensureProfileEntitlementColumns();
+    await ensureProfilePaymentProviderColumns();
+    await ensureProfileServiceAreaColumns();
+    await ensureProfileOnDemandNurtureColumn();
+    await ensureProfilePublicAppUrlColumn();
+    await ensureProfilePricingColumns();
+
+    const profileIdColumn = await getProfileIdColumn();
+    const planQuery = await pool.query(
+      `SELECT plan_name
+       FROM profiles
+       WHERE ${profileIdColumn} = $1
+       LIMIT 1`,
+      [locationId]
+    );
+    const normalizedPlan = normalizePlanName(planQuery.rows[0]?.plan_name || "starter");
+    const token = String(req.query.token || "").trim();
+    const params = new URLSearchParams();
+    params.set("location_id", locationId);
+    if (token) params.set("token", token);
+    if (["starter", "premium", "pro"].includes(normalizedPlan)) {
+      params.set("plan", normalizedPlan);
+    }
+    return res.redirect(`/setup-wizard.html?${params.toString()}`);
+  } catch (err) {
+    console.error("Setup wizard redirect error:", err);
+    return res.status(500).send(err.message || "Failed to resolve setup wizard link.");
+  }
+});
 app.get("/insurance-manager.html", requireWizardToken, (req, res) => {
   res.sendFile(path.join(__dirname, "public", "insurance-manager.html"));
 });

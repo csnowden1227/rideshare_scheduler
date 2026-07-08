@@ -470,8 +470,8 @@
   const resolvedLink = locationId
     ? fallbackLink.replace("LOCATION_ID", encodeURIComponent(locationId))
     : fallbackLink;
-  const resolvedPlanLink = planName && ["starter", "premium", "pro"].includes(planName)
-    ? `${resolvedLink}${resolvedLink.includes("?") ? "&" : "?"}plan=${encodeURIComponent(planName)}`
+  const resolvedPlanLink = locationId
+    ? `/api/setup-wizard-redirect/${encodeURIComponent(locationId)}${planName ? `?plan=${encodeURIComponent(planName)}` : ""}`
     : resolvedLink;
 
   locationIdEl.textContent = locationId || "Missing location_id";
