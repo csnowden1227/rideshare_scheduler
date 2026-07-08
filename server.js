@@ -8104,14 +8104,14 @@ app.post("/api/ensure-profile/:location_id", requireWizardToken, async (req, res
 
     if (!lookup.rows.length) {
       await pool.query(
-        `INSERT INTO profiles (${profileIdColumn}, plan_name, created_at, updated_at)
-         VALUES ($1, $2, NOW(), NOW())`,
+        `INSERT INTO profiles (${profileIdColumn}, plan_name)
+         VALUES ($1, $2)`,
         [location_id, plan_name]
       );
     } else if (normalizePlanName(lookup.rows[0].plan_name || "starter") !== plan_name) {
       await pool.query(
         `UPDATE profiles
-         SET plan_name = $2, updated_at = NOW()
+         SET plan_name = $2
          WHERE ${profileIdColumn} = $1`,
         [location_id, plan_name]
       );
