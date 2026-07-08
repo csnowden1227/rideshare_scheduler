@@ -2122,10 +2122,11 @@ async function loadFromBackend() {
         const data = await res.json();
         
         console.log("Database says:", data);
-        if (widgetProfile && !widgetProfile.error && widgetProfile.plan_name && !data.plan_name) {
-            data.plan_name = widgetProfile.plan_name;
-        } else if (widgetProfile && !widgetProfile.error && widgetProfile.plan_name) {
-            data.plan_name = widgetProfile.plan_name;
+        const livePlanName = widgetProfile?.plan_name_alias || widgetProfile?.plan_name;
+        if (widgetProfile && !widgetProfile.error && livePlanName && !data.plan_name) {
+            data.plan_name = livePlanName;
+        } else if (widgetProfile && !widgetProfile.error && livePlanName) {
+            data.plan_name = livePlanName;
         }
         if (widgetProfile && !widgetProfile.error && widgetProfile.entitlements) {
             data.entitlements = widgetProfile.entitlements;

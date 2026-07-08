@@ -14832,6 +14832,7 @@ app.get("/api/get-profile-widget/:location_id", async (req, res) => {
 
       return res.json({
         plan_name: entitlements.plan_name,
+        plan_name_alias: entitlements.plan_name,
         entitlements,
         business_name: p.business_name || "",
         public_app_url: p.public_app_url || "",
