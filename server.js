@@ -6773,6 +6773,7 @@ async function saveConfigHandler(req, res) {
       fleet = [],
       fixed_rates = [],
       peak_windows = [],
+      hourly_bookings = [],
       events = [],
       addons = []
     } = req.body;
@@ -6858,6 +6859,7 @@ async function saveConfigHandler(req, res) {
     pushProfileField("service_radius_miles", service_radius);
     pushProfileField("fleet", JSON.stringify(sanitizedFleet), "::jsonb");
     pushProfileField("peak_windows", JSON.stringify(peak_windows), "::jsonb");
+    pushProfileField("hourly_bookings", JSON.stringify(hourly_bookings), "::jsonb");
     pushProfileField("events", JSON.stringify(events), "::jsonb");
     pushProfileField("special_events", JSON.stringify(events), "::jsonb");
     pushProfileField("addons", JSON.stringify(addons), "::jsonb");
@@ -6997,6 +6999,7 @@ async function saveConfigHandler(req, res) {
         fleet: sanitizedFleet,
         fixedRates: fixed_rates,
         peakWindows: peak_windows,
+        hourlyBookings: hourly_bookings,
         events,
         addons
       });
@@ -7044,6 +7047,7 @@ function buildWizardSyncPayload({
   fleet = [],
   fixedRates = [],
   peakWindows = [],
+  hourlyBookings = [],
   events = [],
   addons = []
 }) {
@@ -7078,6 +7082,7 @@ function buildWizardSyncPayload({
         fleet_slots: Array.isArray(fleet) ? fleet.length : 0,
         fixed_rate_zones: Array.isArray(fixedRates) ? fixedRates.length : 0,
         peak_windows: Array.isArray(peakWindows) ? peakWindows.length : 0,
+        hourly_bookings: Array.isArray(hourlyBookings) ? hourlyBookings.length : 0,
         events: Array.isArray(events) ? events.length : 0,
         addons: Array.isArray(addons) ? addons.length : 0
       },
@@ -7154,6 +7159,7 @@ async function sendWizardSyncWebhook({
       fleet,
       fixedRates,
       peakWindows,
+      hourlyBookings,
       events,
       addons
     });

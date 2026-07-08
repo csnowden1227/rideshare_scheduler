@@ -722,6 +722,33 @@
     return zone?.location_name || zone?.route_name || "";
   }
 
+  function hourlyBookingByName(name) {
+    if (!name) return null;
+    return (state.config?.hourly_bookings || []).find((row) => String(row.booking_description || "") === String(name || "")) || null;
+  }
+
+  function renderHourlyBookingSelect() {
+    const hourlyBookings = Array.isArray(state.config?.hourly_bookings) ? state.config.hourly_bookings : [];
+    if (!hourlyBookings.length) return "";
+
+    const options = [
+      `<option value="">Select hourly reservation</option>`,
+      ...hourlyBookings.map((row) => {
+        const label = `${row.booking_description || "Hourly Booking"}${row.vehicle_make || row.vehicle_model ? ` - ${[row.vehicle_make, row.vehicle_model].filter(Boolean).join(" ")}` : ""}`;
+        return `<option value="${escapeHtml(row.booking_description || "")}">${escapeHtml(label)}</option>`;
+      }),
+    ];
+
+    return `
+      <div id="cd_hourly_booking_wrap" style="display:none;">
+        <label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Hourly Booking Reservations</label>
+        <select id="cd_hourly_booking" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;">
+          ${options.join("")}
+        </select>
+      </div>
+    `;
+  }
+
   function matchesPeakWindow(windowConfig, startDate) {
     const dayName = getDayLabel(startDate);
     const day = (windowConfig.day || "Everyday").toLowerCase();
@@ -955,14 +982,18 @@
     const mode = selectedBookingMode();
     const eventWrap = document.getElementById("cd_event_wrap");
     const fixedWrap = document.getElementById("cd_fixed_destination_wrap");
+    const hourlyWrap = document.getElementById("cd_hourly_booking_wrap");
     const eventSelect = document.getElementById("cd_special_event");
     const fixedSelect = document.getElementById("cd_fixed_destination");
+    const hourlySelect = document.getElementById("cd_hourly_booking");
 
     if (eventWrap) eventWrap.style.display = mode === "event" ? "block" : "none";
     if (fixedWrap) fixedWrap.style.display = mode === "fixed" ? "block" : "none";
+    if (hourlyWrap) hourlyWrap.style.display = mode === "hourly" ? "block" : "none";
 
     if (mode !== "event" && eventSelect) eventSelect.value = "";
     if (mode !== "fixed" && fixedSelect) fixedSelect.value = "";
+    if (mode !== "hourly" && hourlySelect) hourlySelect.value = "";
   }
 
   function render() {
@@ -975,6 +1006,7 @@
     const activePromotion = getActiveWidgetPromotion();
     const vehiclePicker = renderVehiclePicker(fleet);
     const eventSelect = renderEventSelect();
+    const hourlyBookingSelect = renderHourlyBookingSelect();
     const fixedDestinationSelect = renderFixedDestinationSelect();
     const serviceRadius = toNumber(state.config?.service_radius, 0);
     const addonTitle = "Addons (car seat, wheelchair, food & beverage, etc)";
@@ -1070,11 +1102,15 @@
                   <div style="max-width:220px;"><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:8px;"># of Passengers</label><input id="cd_passenger_count" type="number" min="1" value="1" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" /></div>
                 </div>
                 <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-top:12px;">
-                  <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Route Option</label><select id="cd_booking_mode" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;"><option value="standard">Standard Booking</option><option value="fixed">Fixed Destinations</option><option value="event">Events</option></select></div>
+                  <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Route/Service Option</label><select id="cd_booking_mode" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;"><option value="standard">Standard Booking</option><option value="fixed">Fixed Destinations</option><option value="event">Events</option><option value="hourly">Hourly Booking Reservations</option></select></div>
                 </div>
                 <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-top:12px;">
                   <div id="cd_event_wrap" style="display:none;">${eventSelect || ""}</div>
+                  ${hourlyBookingSelect || ""}
                   ${fixedDestinationSelect}
+                </div>
+                <div id="cd_hourly_hours_wrap" style="display:none;grid-template-columns:1fr;gap:12px;margin-top:12px;">
+                  <div style="max-width:220px;"><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Hours Needed</label><input id="cd_hourly_hours" type="number" min="1" step="1" value="1" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" /></div>
                 </div>
                 <div id="cd_datetime_grid" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px;">
                   <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Pickup Date & Time</label><input id="cd_start_time" type="datetime-local" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" /></div>
@@ -1163,7 +1199,7 @@
       if (state.quote) getQuote();
     });
 
-    document.querySelectorAll('input[name="cd_addons"], #cd_passenger_count, #cd_special_event, #cd_fixed_destination').forEach((input) => {
+    document.querySelectorAll('input[name="cd_addons"], #cd_passenger_count, #cd_special_event, #cd_fixed_destination, #cd_hourly_booking, #cd_hourly_hours').forEach((input) => {
       input?.addEventListener("change", () => {
         if (state.quote) getQuote();
       });
@@ -1234,6 +1270,8 @@
       passenger_count: toNumber(document.getElementById("cd_passenger_count")?.value, 1),
       selected_event_name: document.getElementById("cd_special_event")?.value || null,
       selected_fixed_destination: document.getElementById("cd_fixed_destination")?.value || null,
+      selected_hourly_booking: document.getElementById("cd_hourly_booking")?.value || null,
+      hourly_hours: toNumber(document.getElementById("cd_hourly_hours")?.value, 1),
       selected_addons: selectedAddons(),
       accepted_terms: !!document.getElementById("cd_accept_terms")?.checked,
       carry_on_count: toNumber(document.getElementById("cd_carry_on_count")?.value, 0),
@@ -1349,6 +1387,8 @@
 
     const eventConfig = payload.booking_mode === "event" ? eventByName(payload.selected_event_name) : null;
     const selectedFixedName = payload.booking_mode === "fixed" ? String(payload.selected_fixed_destination || "").trim() : "";
+    const hourlyConfig = payload.booking_mode === "hourly" ? hourlyBookingByName(payload.selected_hourly_booking) : null;
+    const hourlyHours = Math.max(1, toNumber(payload.hourly_hours, 1));
     const matchedFixedRate = payload.booking_mode === "fixed" ? resolveFixedRate(route, selectedFixedName, vehicle) : resolveFixedRate(route, "", vehicle);
     const fixedRate = payload.booking_mode === "fixed" ? matchedFixedRate : null;
     const peakMultiplier = getPeakMultiplier(startDate);
@@ -1372,6 +1412,10 @@
       }
     }
 
+    if (payload.booking_mode === "hourly" && !hourlyConfig) {
+      throw new Error("Select an hourly reservation option to continue.");
+    }
+
     let baseRate = toNumber(vehicle.base_rate, 0);
     let mileRate = toNumber(vehicle.mile_rate, 0);
     let pricingLabel = `${vehicle.vehicle_type || "Selected vehicle"} standard pricing`;
@@ -1386,6 +1430,12 @@
     if (fixedRate) {
       rideSubtotal = toNumber(fixedRate.fixed_price, rideSubtotal);
       pricingLabel = `${fixedRate.location_name || "Fixed zone"} flat rate`;
+    }
+
+    if (hourlyConfig) {
+      const hourlyRate = toNumber(hourlyConfig.hourly_rate, 0);
+      rideSubtotal = hourlyRate * hourlyHours;
+      pricingLabel = `${hourlyConfig.booking_description || "Hourly reservation"} at ${money(hourlyRate)}/hr for ${hourlyHours} hour${hourlyHours === 1 ? "" : "s"}`;
     }
 
     if (fixedRate && fixedSurcharge > 0) {
@@ -1424,9 +1474,11 @@
       miles: route.miles,
       pricing_label: pricingLabel,
       fixed_rate_name: fixedRate?.location_name || null,
+      hourly_booking_name: hourlyConfig?.booking_description || null,
       peak_multiplier: peakMultiplier,
       fixed_surcharge: fixedRate ? fixedSurcharge : 0,
       booking_mode: payload.booking_mode,
+      hourly_hours: hourlyConfig ? hourlyHours : null,
     };
 
     return state.quote;

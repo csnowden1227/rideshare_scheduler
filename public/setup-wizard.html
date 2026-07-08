@@ -497,6 +497,26 @@
             </div>
 
             <div class="card">
+                <div class="flex justify-between items-center mb-6">
+                    <div>
+                        <h2 class="section-header !mb-2 !border-0">SECTION: HOURLY BOOKING</h2>
+                        <p class="text-xs text-slate-500">Hourly reservation options are tied to a vehicle make/model and use a fixed hourly rate multiplied by the number of hours entered in the widget.</p>
+                    </div>
+                    <button type="button" onclick="addHourlyBookingRow()" class="wizard-btn-accent text-xs font-bold px-4 py-2 rounded-lg">+ Add Hourly Booking</button>
+                </div>
+                <div class="wizard-table-scroll">
+                <table class="w-full">
+                    <thead>
+                        <tr class="text-[10px] uppercase text-gray-400">
+                            <th>Booking Description</th><th>Vehicle Make</th><th>Vehicle Model</th><th>Default Hours</th><th>Price / Hour</th><th></th>
+                        </tr>
+                    </thead>
+                    <tbody id="hourly-booking-body"></tbody>
+                </table>
+                </div>
+            </div>
+
+            <div class="card">
                 <div class="flex flex-col gap-3 mb-6">
                     <h2 class="section-header !mb-0 !border-0">SECTION: SERVICE AREA & GEOFENCING</h2>
                     <p class="text-xs text-slate-500 leading-relaxed">Choose how you want the service boundary enforced. Radius is fastest. City / County / ZIP gives you real territory control. Custom zones can be layered in later for more advanced coverage.</p>
@@ -1862,6 +1882,20 @@ function addEventRow(data = {}) {
     document.getElementById('event-body').appendChild(tr);
 }
 
+function addHourlyBookingRow(data = {}) {
+    const tr = document.createElement('tr');
+    tr.className = "hourly-booking-row border-b border-slate-50";
+    tr.innerHTML = `
+        <td class="py-3"><input type="text" class="h-desc input-mini" value="${data.booking_description || ''}" placeholder="e.g. Corporate shuttle"></td>
+        <td class="py-3"><input type="text" class="h-make input-mini" value="${data.vehicle_make || ''}" placeholder="Cadillac"></td>
+        <td class="py-3"><input type="text" class="h-model input-mini" value="${data.vehicle_model || ''}" placeholder="Escalade"></td>
+        <td class="py-3"><input type="number" min="1" step="1" class="h-hours input-mini" value="${data.default_hours || 3}"></td>
+        <td class="py-3"><input type="number" min="0" step="0.01" class="h-rate input-mini" value="${data.hourly_rate || 0}"></td>
+        <td><button onclick="this.closest('tr').remove()" class="text-red-400">&times;</button></td>
+    `;
+    document.getElementById('hourly-booking-body').appendChild(tr);
+}
+
 function addAddonRow(data = {}) {
     const tr = document.createElement('tr');
     tr.className = "addon-row border-b border-slate-50";
@@ -2253,6 +2287,13 @@ async function saveToBackend() {
                 fixed_surcharge: parseFloat(r.querySelector('.p-fixed-addon').value) || 0
             }))
         ],
+        hourly_bookings: Array.from(document.querySelectorAll('.hourly-booking-row')).map(r => ({
+            booking_description: r.querySelector('.h-desc').value,
+            vehicle_make: r.querySelector('.h-make').value,
+            vehicle_model: r.querySelector('.h-model').value,
+            default_hours: parseInt(r.querySelector('.h-hours').value, 10) || 1,
+            hourly_rate: parseFloat(r.querySelector('.h-rate').value) || 0
+        })),
 
         fixed_rates: Array.from(document.querySelectorAll('.route-row')).map(r => ({
             location_name: r.querySelector('.r-name').value,
@@ -2452,6 +2493,13 @@ function collectWizardPayload() {
                 fixed_surcharge: parseFloat(r.querySelector('.p-fixed-addon').value) || 0
             }))
         ],
+        hourly_bookings: Array.from(document.querySelectorAll('.hourly-booking-row')).map(r => ({
+            booking_description: r.querySelector('.h-desc').value,
+            vehicle_make: r.querySelector('.h-make').value,
+            vehicle_model: r.querySelector('.h-model').value,
+            default_hours: parseInt(r.querySelector('.h-hours').value, 10) || 1,
+            hourly_rate: parseFloat(r.querySelector('.h-rate').value) || 0
+        })),
         fixed_rates: Array.from(document.querySelectorAll('.route-row')).map(r => ({
             location_name: r.querySelector('.r-name').value,
             lat: parseFloat(r.querySelector('.r-lat').value) || 0,
