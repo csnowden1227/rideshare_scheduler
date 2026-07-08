@@ -2567,6 +2567,13 @@ function normalizePlanName(value = "") {
   return "starter";
 }
 
+function getCrmPlanLabel(planName = "starter") {
+  const normalized = normalizePlanName(planName);
+  if (normalized === "pro") return "CRM One Source Rideshare App (Pro)";
+  if (normalized === "premium") return "CRM One Source Rideshare App (Premium)";
+  return "CRM One Source Rideshare App (Starter)";
+}
+
 function isProStylePlan(planName = "") {
   const normalized = normalizePlanName(planName);
   return normalized === "premium" || normalized === "pro";
@@ -6280,6 +6287,33 @@ app.get("/api/setup-wizard-redirect/:location_id", requireWizardToken, async (re
   } catch (err) {
     console.error("Setup wizard redirect error:", err);
     return res.status(500).send(err.message || "Failed to resolve setup wizard link.");
+  }
+});
+app.get("/api/get-plan/:location_id", requireWizardToken, async (req, res) => {
+  try {
+    const locationId = String(req.params.location_id || "").trim();
+    if (!locationId) {
+      return res.status(400).json({ error: "location_id is required." });
+    }
+
+    const profileIdColumn = await getProfileIdColumn();
+    const planQuery = await pool.query(
+      `SELECT plan_name
+       FROM profiles
+       WHERE ${profileIdColumn} = $1
+       LIMIT 1`,
+      [locationId]
+    );
+    const planName = normalizePlanName(planQuery.rows[0]?.plan_name || "starter");
+    return res.json({
+      success: true,
+      location_id: locationId,
+      plan_name: planName,
+      plan_label: getCrmPlanLabel(planName),
+    });
+  } catch (err) {
+    console.error("Get plan error:", err);
+    return res.status(500).json({ error: err.message || "Failed to load plan." });
   }
 });
 app.get("/insurance-manager.html", requireWizardToken, (req, res) => {
