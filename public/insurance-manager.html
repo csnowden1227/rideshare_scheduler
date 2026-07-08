@@ -376,6 +376,10 @@
         const params = new URLSearchParams();
         if (locationId) params.set("location_id", locationId);
         if (token) params.set("token", token);
+        const planName = String(currentSettings?.plan_name || query.get("plan") || "").trim().toLowerCase();
+        if (["starter", "premium", "pro"].includes(planName)) {
+          params.set("plan", planName);
+        }
         wizardLink.href = `/setup-wizard.html${params.toString() ? `?${params.toString()}` : ""}`;
       }
 

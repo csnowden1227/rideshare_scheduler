@@ -14114,6 +14114,7 @@ app.get("/api/insurance/settings/:location_id", requireWizardToken, async (req, 
       success: true,
       location_id: locationId,
       business_name: profile.business_name || null,
+      plan_name: normalizePlanName(profile.plan_name || "starter"),
       settings: buildInsuranceSettingsShape(profile),
       webhook_url: `${getPublicAppUrl(req)}/api/insurance/webhook/${encodeURIComponent(locationId)}`,
     });

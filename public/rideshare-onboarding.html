@@ -460,6 +460,7 @@
 <script>
   const query = new URLSearchParams(window.location.search);
   const locationId = (query.get("location_id") || query.get("locationId") || "").trim();
+  const planName = (query.get("plan") || "").trim().toLowerCase();
   const setupLink = document.getElementById("open-setup-wizard-link");
   const statusBox = document.getElementById("cos-status");
   const locationIdEl = document.getElementById("cos-location-id");
@@ -469,12 +470,15 @@
   const resolvedLink = locationId
     ? fallbackLink.replace("LOCATION_ID", encodeURIComponent(locationId))
     : fallbackLink;
+  const resolvedPlanLink = planName && ["starter", "premium", "pro"].includes(planName)
+    ? `${resolvedLink}${resolvedLink.includes("?") ? "&" : "?"}plan=${encodeURIComponent(planName)}`
+    : resolvedLink;
 
   locationIdEl.textContent = locationId || "Missing location_id";
-  wizardUrlEl.textContent = resolvedLink;
+  wizardUrlEl.textContent = resolvedPlanLink;
 
   if (locationId) {
-    setupLink.setAttribute("href", resolvedLink);
+    setupLink.setAttribute("href", resolvedPlanLink);
     statusBox.textContent = "Location ID detected. Open Setup Wizard will route to the setup wizard link for this account.";
     statusBox.classList.add("success");
   } else {
