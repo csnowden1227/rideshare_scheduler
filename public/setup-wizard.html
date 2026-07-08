@@ -729,8 +729,16 @@
 const urlParams = new URLSearchParams(window.location.search);
 const location_id = urlParams.get('location_id') || 'VXE0UY17p7wnxdZ3sOLc';
 const wizardToken = urlParams.get('token') || '';
-const requestedPlan = String(urlParams.get('plan') || '').trim().toLowerCase();
-const planOverride = ['starter', 'premium', 'pro'].includes(requestedPlan) ? requestedPlan : '';
+function normalizePlanOverride(value = '') {
+    const normalized = String(value || '').trim().toLowerCase();
+    if (!normalized) return '';
+    if (normalized.includes('pro')) return 'pro';
+    if (normalized.includes('premium')) return 'premium';
+    if (normalized.includes('starter')) return 'starter';
+    return ['starter', 'premium', 'pro'].includes(normalized) ? normalized : '';
+}
+const requestedPlan = String(urlParams.get('plan') || '').trim();
+const planOverride = normalizePlanOverride(requestedPlan);
 const BACKEND_URL = "https://rideshare-scheduler-axx6.onrender.com";
 let map, circle, marker, autocomplete, routeMap;
 let routeCircles = []; 
