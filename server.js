@@ -7126,7 +7126,8 @@ async function sendWizardSyncWebhook({
     attempted: false,
     success: false,
     status: null,
-    error: null
+    error: null,
+    retry_attempted: false
   };
 
   const normalizedWebhookUrl = String(webhookUrl || "").trim();
@@ -7157,11 +7158,30 @@ async function sendWizardSyncWebhook({
       addons
     });
 
-    const response = await fetch(normalizedWebhookUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload)
-    });
+    const attemptWebhook = async () => {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000);
+      try {
+        return await fetch(normalizedWebhookUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(timeoutId);
+      }
+    };
+
+    let response = await attemptWebhook();
+    if (!response.ok) {
+      result.retry_attempted = true;
+      console.warn("Wizard sync webhook retrying once after non-2xx response", {
+        location_id: locationId,
+        status: response.status
+      });
+      response = await attemptWebhook();
+    }
 
     result.status = response.status;
     result.success = response.ok;
@@ -7172,9 +7192,39 @@ async function sendWizardSyncWebhook({
     console.log("Wizard sync webhook result:", {
       location_id: locationId,
       status: response.status,
-      success: response.ok
+      success: response.ok,
+      retry_attempted: result.retry_attempted
     });
   } catch (err) {
+    if (!result.retry_attempted) {
+      try {
+        result.retry_attempted = true;
+        console.warn("Wizard sync webhook retrying once after error", {
+          location_id: locationId,
+          error: err?.message || err
+        });
+        const retryController = new AbortController();
+        const timeoutId = setTimeout(() => retryController.abort(), 30000);
+        try {
+          const retryResponse = await fetch(normalizedWebhookUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+            signal: retryController.signal,
+          });
+          result.status = retryResponse.status;
+          result.success = retryResponse.ok;
+          if (!retryResponse.ok) {
+            result.error = (await retryResponse.text()).slice(0, 300);
+          }
+          return result;
+        } finally {
+          clearTimeout(timeoutId);
+        }
+      } catch (retryErr) {
+        err = retryErr;
+      }
+    }
     result.error = err?.message || "Wizard sync webhook failed.";
     console.error("Wizard sync webhook error:", err);
   }
