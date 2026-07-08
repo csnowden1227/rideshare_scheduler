@@ -373,13 +373,10 @@
       function updateWizardLink() {
         const wizardLink = byId("open-wizard-link");
         if (!wizardLink) return;
-        const planName = String(currentSettings?.plan_name || query.get("plan") || "").trim().toLowerCase();
         const params = new URLSearchParams();
+        if (locationId) params.set("location_id", locationId);
         if (token) params.set("token", token);
-        if (["starter", "premium", "pro"].includes(planName)) params.set("plan", planName);
-        wizardLink.href = locationId
-          ? `/api/setup-wizard-redirect/${encodeURIComponent(locationId)}${params.toString() ? `?${params.toString()}` : ""}`
-          : `/setup-wizard.html`;
+        wizardLink.href = `/setup-wizard.html${params.toString() ? `?${params.toString()}` : ""}`;
       }
 
       function fillSettings(settings, webhookUrl) {
