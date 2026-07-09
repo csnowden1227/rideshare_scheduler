@@ -6267,6 +6267,7 @@ app.get("/api/setup-wizard-redirect/:location_id", requireWizardToken, async (re
     await ensureProfilePublicAppUrlColumn();
     await ensureProfilePricingColumns();
 
+    const queryPlanName = normalizePlanName(req.query.plan || "");
     const profileIdColumn = await getProfileIdColumn();
     const planQuery = await pool.query(
       `SELECT plan_name
@@ -6275,7 +6276,9 @@ app.get("/api/setup-wizard-redirect/:location_id", requireWizardToken, async (re
        LIMIT 1`,
       [locationId]
     );
-    const normalizedPlan = normalizePlanName(planQuery.rows[0]?.plan_name || "starter");
+    const normalizedPlan = queryPlanName !== "starter"
+      ? queryPlanName
+      : normalizePlanName(planQuery.rows[0]?.plan_name || "starter");
     const token = String(req.query.token || "").trim();
     const params = new URLSearchParams();
     params.set("location_id", locationId);
@@ -6296,6 +6299,7 @@ app.get("/api/get-plan/:location_id", requireWizardToken, async (req, res) => {
       return res.status(400).json({ error: "location_id is required." });
     }
 
+    const queryPlanName = normalizePlanName(req.query.plan || "");
     const profileIdColumn = await getProfileIdColumn();
     const planQuery = await pool.query(
       `SELECT plan_name
@@ -6304,7 +6308,9 @@ app.get("/api/get-plan/:location_id", requireWizardToken, async (req, res) => {
        LIMIT 1`,
       [locationId]
     );
-    const planName = normalizePlanName(planQuery.rows[0]?.plan_name || "starter");
+    const planName = queryPlanName !== "starter"
+      ? queryPlanName
+      : normalizePlanName(planQuery.rows[0]?.plan_name || "starter");
     return res.json({
       success: true,
       location_id: locationId,
@@ -6323,6 +6329,7 @@ app.get("/api/get-plan-redirect/:location_id", requireWizardToken, async (req, r
       return res.status(400).json({ error: "location_id is required." });
     }
 
+    const queryPlanName = normalizePlanName(req.query.plan || "");
     const profileIdColumn = await getProfileIdColumn();
     const planQuery = await pool.query(
       `SELECT plan_name
@@ -6331,7 +6338,9 @@ app.get("/api/get-plan-redirect/:location_id", requireWizardToken, async (req, r
        LIMIT 1`,
       [locationId]
     );
-    const planName = normalizePlanName(planQuery.rows[0]?.plan_name || "starter");
+    const planName = queryPlanName !== "starter"
+      ? queryPlanName
+      : normalizePlanName(planQuery.rows[0]?.plan_name || "starter");
     const token = String(req.query.token || "").trim();
     const params = new URLSearchParams();
     params.set("location_id", locationId);
