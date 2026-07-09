@@ -6316,6 +6316,43 @@ app.get("/api/get-plan/:location_id", requireWizardToken, async (req, res) => {
     return res.status(500).json({ error: err.message || "Failed to load plan." });
   }
 });
+app.get("/api/get-plan-redirect/:location_id", requireWizardToken, async (req, res) => {
+  try {
+    const locationId = String(req.params.location_id || "").trim();
+    if (!locationId) {
+      return res.status(400).json({ error: "location_id is required." });
+    }
+
+    const profileIdColumn = await getProfileIdColumn();
+    const planQuery = await pool.query(
+      `SELECT plan_name
+       FROM profiles
+       WHERE ${profileIdColumn} = $1
+       LIMIT 1`,
+      [locationId]
+    );
+    const planName = normalizePlanName(planQuery.rows[0]?.plan_name || "starter");
+    const token = String(req.query.token || "").trim();
+    const params = new URLSearchParams();
+    params.set("location_id", locationId);
+    if (token) params.set("token", token);
+    if (["starter", "premium", "pro"].includes(planName)) {
+      params.set("plan", planName);
+    }
+
+    return res.json({
+      success: true,
+      location_id: locationId,
+      plan_name: planName,
+      plan_label: getCrmPlanLabel(planName),
+      redirect_url: `/setup-wizard.html?${params.toString()}`,
+      redirect_path: `/setup-wizard.html?${params.toString()}`,
+    });
+  } catch (err) {
+    console.error("Get plan redirect error:", err);
+    return res.status(500).json({ error: err.message || "Failed to load plan redirect." });
+  }
+});
 app.get("/insurance-manager.html", requireWizardToken, (req, res) => {
   res.sendFile(path.join(__dirname, "public", "insurance-manager.html"));
 });
