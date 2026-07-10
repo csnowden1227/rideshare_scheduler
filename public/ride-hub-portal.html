@@ -590,7 +590,21 @@
       const locationId = (query.get("location_id") || pathLocationId || "").trim();
       const token = (query.get("token") || pathToken || "").trim();
       const mode = String(query.get("mode") || "live").toLowerCase() === "practice" ? "practice" : "live";
-      const backendUrl = window.location.origin;
+      const explicitBackendUrl = (query.get("backend_url") || "").trim();
+      const inferredBackendUrl = (() => {
+        const script = document.currentScript;
+        try {
+          if (script?.src) {
+            return new URL(script.src).origin;
+          }
+        } catch {}
+        try {
+          const origin = new URL(window.location.href).origin;
+          if (origin.includes("rideshare-scheduler-axx6.onrender.com")) return origin;
+        } catch {}
+        return "https://rideshare-scheduler-axx6.onrender.com";
+      })();
+      const backendUrl = explicitBackendUrl || inferredBackendUrl;
       const DEFAULT_BRAND = {
         name: "Chauffeur Deluxe",
         tagline: "Private ride updates, booking, and tracking in one customer portal experience.",
@@ -624,7 +638,16 @@
         return fetch(url).then(async (response) => {
           const data = await response.json().catch(() => ({}));
           if (!response.ok) {
-            throw new Error(data.error || "Request failed.");
+            throw new Error(data.error || `Request failed with ${response.status}.`);
+          }
+          return data;
+        }).catch(async (error) => {
+          await new Promise((resolve) => setTimeout(resolve, 1200));
+          const retry = await fetch(url).catch(() => null);
+          if (!retry) throw error;
+          const data = await retry.json().catch(() => ({}));
+          if (!retry.ok) {
+            throw new Error(data.error || `Request failed with ${retry.status}.`);
           }
           return data;
         });
