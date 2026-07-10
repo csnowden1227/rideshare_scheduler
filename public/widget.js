@@ -852,9 +852,14 @@
   }
 
   async function loadConfig() {
-    const res = await fetchJsonWithRetry(`${BACKEND_URL}/api/get-profile-widget/${locationId}`, {}, 2, 1500);
-    if (!res.ok) throw new Error("Failed to load booking config");
-    state.config = await res.json();
+    try {
+      const res = await fetchJsonWithRetry(`${BACKEND_URL}/api/get-profile-widget/${locationId}`, {}, 2, 1500);
+      if (!res.ok) throw new Error("Failed to load booking config");
+      state.config = await res.json();
+    } catch (fetchError) {
+      state.config = await loadConfigViaScript();
+      if (!state.config) throw fetchError;
+    }
 
     const mapsKey = String(state.config.maps_api_key || "").trim();
     if (!mapsKey) return;
@@ -876,6 +881,40 @@
       script.async = true;
       document.head.appendChild(script);
     }
+  }
+
+  function loadConfigViaScript() {
+    return new Promise((resolve) => {
+      const callbackName = `__widgetConfig_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+      const timeout = window.setTimeout(() => {
+        cleanup();
+        resolve(null);
+      }, 8000);
+
+      function cleanup() {
+        try {
+          delete window[callbackName];
+        } catch {
+          window[callbackName] = undefined;
+        }
+        if (script.parentNode) script.parentNode.removeChild(script);
+        window.clearTimeout(timeout);
+      }
+
+      window[callbackName] = (payload) => {
+        cleanup();
+        resolve(payload || null);
+      };
+
+      const script = document.createElement("script");
+      script.async = true;
+      script.src = `${BACKEND_URL}/api/get-profile-widget-script/${encodeURIComponent(locationId)}?callback=${encodeURIComponent(callbackName)}`;
+      script.onerror = () => {
+        cleanup();
+        resolve(null);
+      };
+      document.head.appendChild(script);
+    });
   }
 
   function initAutocomplete() {

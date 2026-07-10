@@ -15039,6 +15039,94 @@ app.get("/api/get-profile-widget/:location_id", async (req, res) => {
   }
 });
 
+app.get("/api/get-profile-widget-script/:location_id", async (req, res) => {
+  try {
+    const callback = String(req.query.callback || "").trim();
+    if (!/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(callback)) {
+      return res.status(400).type("application/javascript").send("console.error('Invalid widget callback.');");
+    }
+
+    const location_id = String(req.params.location_id || "").trim();
+    await ensureProfileEntitlementColumns();
+    await ensureProfilePaymentProviderColumns();
+    await ensureProfileServiceAreaColumns();
+    const profileIdColumn = await getProfileIdColumn();
+
+    const profileRes = await pool.query(
+      `SELECT * FROM profiles WHERE ${profileIdColumn} = $1`,
+      [location_id]
+    );
+
+    if (profileRes.rows.length === 0) {
+      return res.status(404).type("application/javascript").send(`${callback}(${JSON.stringify({ error: "Location Not Found" })});`);
+    }
+
+    const p = profileRes.rows[0];
+    let fixedRates = safeParseJson(p.fixed_rates);
+    if (await tableExists("fixed_rates")) {
+      const fixedRatesColumns = await getTableColumns("fixed_rates");
+      const fixedRatesIdColumn = fixedRatesColumns.has("location_id")
+        ? "location_id"
+        : (fixedRatesColumns.has("user_id") ? "user_id" : null);
+      if (fixedRatesIdColumn) {
+        const fixedRatesRes = await pool.query(
+          `SELECT * FROM fixed_rates WHERE ${fixedRatesIdColumn} = $1 AND COALESCE(is_active, true) = true`,
+          [location_id]
+        );
+        fixedRates = fixedRatesRes.rows;
+      }
+    }
+
+    const entitlements = buildPlanEntitlements({
+      planName: p.plan_name || "starter",
+      addonBrandingUnlocked: p.addon_branding_unlocked,
+      addonFunnelUnlocked: p.addon_funnel_unlocked,
+      addonTrackingUnlocked: p.addon_tracking_unlocked,
+      addonExtraVehicleCount: p.addon_extra_vehicle_count,
+    });
+    const sanitizedBranding = sanitizeBrandingByEntitlements({
+      businessLogo: p.business_logo,
+      brandColorPrimary: p.brand_color_primary,
+      brandColorSecondary: p.brand_color_secondary,
+      brandColorAccent: p.brand_color_accent,
+      widgetTagline: p.widget_tagline,
+      entitlements,
+    });
+    const sanitizedFleet = sanitizeFleetByEntitlements(safeParseJson(p.fleet), entitlements);
+
+    return res
+      .type("application/javascript")
+      .send(`${callback}(${JSON.stringify({
+        plan_name: entitlements.plan_name,
+        entitlements,
+        business_name: p.business_name || "",
+        public_app_url: p.public_app_url || "",
+        business_logo: sanitizedBranding.business_logo || "",
+        brand_color_primary: sanitizedBranding.brand_color_primary || DEFAULT_BRAND_COLORS.primary,
+        brand_color_secondary: sanitizedBranding.brand_color_secondary || DEFAULT_BRAND_COLORS.secondary,
+        brand_color_accent: sanitizedBranding.brand_color_accent || DEFAULT_BRAND_COLORS.accent,
+        widget_tagline: sanitizedBranding.widget_tagline || "",
+        maps_api_key: p.maps_api_key,
+        maps_key: p.maps_api_key,
+        payment_provider: normalizePaymentProvider(p.payment_provider),
+        tax_rate: p.tax_rate != null ? parseFloat(p.tax_rate) : null,
+        service_fee_type: normalizeServiceFeeType(p.service_fee_type),
+        service_fee_value: p.service_fee_value != null ? parseFloat(p.service_fee_value) : null,
+        service_area_type: normalizeServiceAreaType(p.service_area_type),
+        service_area_rules: normalizeServiceAreaRules(p.service_area_rules),
+        fleet: sanitizedFleet,
+        general_buffer_min: sanitizedFleet[0]?.outbound_buffer_min ?? BOOKING_BUFFER_MINUTES,
+        fixed_rates: fixedRates,
+        peak_windows: safeParseJson(p.peak_windows),
+        events: safeParseJson(p.events),
+        addons: safeParseJson(p.addons)
+      })});`);
+  } catch (err) {
+    console.error("Widget script error:", err);
+    return res.status(500).type("application/javascript").send(`console.error(${JSON.stringify(err.message || "Widget script failed.")});`);
+  }
+});
+
 app.post("/api/customer-account/signup", async (req, res) => {
   try {
     await ensureCustomerAccountTables();
