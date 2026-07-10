@@ -100,6 +100,24 @@
     return new Promise((resolve) => window.setTimeout(resolve, ms));
   }
 
+  async function fetchJsonWithRetry(url, options = {}, attempts = 2, delayMs = 1200) {
+    let lastError = null;
+
+    for (let attempt = 1; attempt <= attempts; attempt += 1) {
+      try {
+        const response = await fetch(url, options);
+        return response;
+      } catch (error) {
+        lastError = error;
+        if (attempt < attempts) {
+          await wait(delayMs);
+        }
+      }
+    }
+
+    throw lastError || new Error("Failed to fetch");
+  }
+
   function money(value) {
     return `$${Number(value || 0).toFixed(2)}`;
   }
@@ -834,7 +852,7 @@
   }
 
   async function loadConfig() {
-    const res = await fetch(`${BACKEND_URL}/api/get-profile-widget/${locationId}`);
+    const res = await fetchJsonWithRetry(`${BACKEND_URL}/api/get-profile-widget/${locationId}`, {}, 2, 1500);
     if (!res.ok) throw new Error("Failed to load booking config");
     state.config = await res.json();
 
@@ -1857,6 +1875,14 @@
   (async function init() {
     try {
       if (!locationId) throw new Error("Missing location id.");
+      const root = getRoot();
+      if (root) {
+        root.innerHTML = `
+          <div style="padding:18px;color:#334155;background:#f8fafc;border:1px solid #cbd5e1;border-radius:16px;font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;">
+            <strong>Loading booking widget...</strong> Please wait a moment while we connect your booking settings.
+          </div>
+        `;
+      }
       await loadConfig();
       await waitForGoogleMaps();
       try {
@@ -1876,6 +1902,9 @@
         root.innerHTML = `
           <div style="padding:18px;color:#991b1b;background:#fef2f2;border:1px solid #fecaca;border-radius:16px;font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;">
             <strong>Booking widget unavailable:</strong> ${escapeHtml(error.message || "Please try again shortly.")}
+            <div style="margin-top:8px;color:#7f1d1d;font-size:13px;line-height:1.5;">
+              We retried the booking settings request once automatically. If this keeps happening, the backend may be waking up or the location may be missing a live profile.
+            </div>
           </div>
         `;
       }
