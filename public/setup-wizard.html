@@ -791,6 +791,12 @@ const SERVICE_AREA_BOUNDARY_COLORS = {
 };
 const VEHICLE_LIST = ["Standard Sedan", "Luxury Sedan", "Standard SUV", "Luxury SUV", "Standard XL SUV", "Luxury XL SUV"];
 
+if (planOverride) {
+    document.addEventListener('DOMContentLoaded', () => {
+        applyPlanAuthority(planOverride);
+    });
+}
+
 // --- UI NOTIFICATION HELPER ---
 function showNotification(message, isSuccess = true) {
     const toast = document.createElement('div');
@@ -1254,6 +1260,25 @@ function setFleetPlanMessage(planName = 'starter') {
     currentPlanName = plan;
 
     if (badge) badge.innerText = `${planLabel} Plan`;
+}
+
+function applyPlanAuthority(planName = 'starter') {
+    const normalizedPlan = ['starter', 'premium', 'pro'].includes(String(planName || 'starter').toLowerCase())
+        ? String(planName || 'starter').toLowerCase()
+        : 'starter';
+
+    setFleetPlanMessage(normalizedPlan);
+    currentEntitlements = {
+        ...currentEntitlements,
+        plan_name: normalizedPlan,
+        allowed_fleet_count: normalizedPlan === 'pro' ? 3 : (normalizedPlan === 'premium' ? 2 : 1),
+        included_fleet_count: normalizedPlan === 'pro' ? 3 : (normalizedPlan === 'premium' ? 2 : 1),
+        branding_enabled: normalizedPlan === 'premium' || normalizedPlan === 'pro',
+        logo_enabled: normalizedPlan === 'premium' || normalizedPlan === 'pro',
+        funnel_enabled: normalizedPlan === 'pro',
+    };
+    setBrandingPlanMessage(normalizedPlan);
+    return normalizedPlan;
 }
 
 function getPlanFleetBaseline() {
@@ -2123,6 +2148,17 @@ async function loadFromBackend() {
     document.getElementById('embed-box').innerText = `<div id="chauffeur-booking-widget"></div>\n<script src="${BACKEND_URL}/widget.js?loc=${location_id}${wizardSuffix}${cacheBuster}"><\/script>`;
     
     try {
+        const planRes = await fetch(`${BACKEND_URL}/api/get-plan/${encodeURIComponent(location_id)}${wizardToken ? `?token=${encodeURIComponent(wizardToken)}${planOverride ? `&plan=${encodeURIComponent(planOverride)}` : ''}` : `${planOverride ? `?plan=${encodeURIComponent(planOverride)}` : ''}`}`, {
+            cache: 'no-store',
+            headers: wizardToken ? { 'X-Setup-Wizard-Token': wizardToken } : {}
+        });
+        const planData = await planRes.json().catch(() => ({}));
+        if (planRes.ok && planData?.plan_name) {
+            applyPlanAuthority(planData.plan_name);
+        } else if (planOverride) {
+            applyPlanAuthority(planOverride);
+        }
+
         if (planOverride) {
             await fetch(`${BACKEND_URL}/api/ensure-profile/${encodeURIComponent(location_id)}?plan=${encodeURIComponent(planOverride)}`, {
                 method: 'POST',
@@ -2154,6 +2190,9 @@ async function loadFromBackend() {
         }
         if (widgetProfile && !widgetProfile.error && widgetProfile.entitlements) {
             data.entitlements = widgetProfile.entitlements;
+        }
+        if (planData?.plan_name) {
+            data.plan_name = planData.plan_name;
         }
         
         if (applyProfileToWizard(data, { allowSensitive: true })) {

@@ -6253,6 +6253,31 @@ app.get("/setup-wizard.html", requireWizardToken, (req, res) => {
 app.get("/setup-wizard", requireWizardToken, (req, res) => {
   res.sendFile(path.join(__dirname, "public", "setup-wizard.html"));
 });
+function buildWizardUrl(locationId, token, planName) {
+  const params = new URLSearchParams();
+  params.set("location_id", locationId);
+  if (token) params.set("token", token);
+  if (["starter", "premium", "pro"].includes(planName)) {
+    params.set("plan", planName);
+  }
+  return `/setup-wizard.html?${params.toString()}`;
+}
+
+function buildPlanLockedWizardRoute(planName) {
+  return (req, res) => {
+    const locationId = String(req.query.location_id || req.params.location_id || "").trim();
+    if (!locationId) {
+      return res.status(400).send("location_id is required.");
+    }
+
+    const token = String(req.query.token || "").trim();
+    return res.redirect(buildWizardUrl(locationId, token, planName));
+  };
+}
+
+app.get("/setup-wizard/starter", requireWizardToken, buildPlanLockedWizardRoute("starter"));
+app.get("/setup-wizard/premium", requireWizardToken, buildPlanLockedWizardRoute("premium"));
+app.get("/setup-wizard/pro", requireWizardToken, buildPlanLockedWizardRoute("pro"));
 app.get("/api/setup-wizard-redirect/:location_id", requireWizardToken, async (req, res) => {
   try {
     const locationId = String(req.params.location_id || "").trim();
@@ -6280,13 +6305,7 @@ app.get("/api/setup-wizard-redirect/:location_id", requireWizardToken, async (re
       ? queryPlanName
       : normalizePlanName(planQuery.rows[0]?.plan_name || "starter");
     const token = String(req.query.token || "").trim();
-    const params = new URLSearchParams();
-    params.set("location_id", locationId);
-    if (token) params.set("token", token);
-    if (["starter", "premium", "pro"].includes(normalizedPlan)) {
-      params.set("plan", normalizedPlan);
-    }
-    return res.redirect(`/setup-wizard.html?${params.toString()}`);
+    return res.redirect(buildWizardUrl(locationId, token, normalizedPlan));
   } catch (err) {
     console.error("Setup wizard redirect error:", err);
     return res.status(500).send(err.message || "Failed to resolve setup wizard link.");
@@ -6342,20 +6361,14 @@ app.get("/api/get-plan-redirect/:location_id", requireWizardToken, async (req, r
       ? queryPlanName
       : normalizePlanName(planQuery.rows[0]?.plan_name || "starter");
     const token = String(req.query.token || "").trim();
-    const params = new URLSearchParams();
-    params.set("location_id", locationId);
-    if (token) params.set("token", token);
-    if (["starter", "premium", "pro"].includes(planName)) {
-      params.set("plan", planName);
-    }
-
+    const redirectUrl = buildWizardUrl(locationId, token, planName);
     return res.json({
       success: true,
       location_id: locationId,
       plan_name: planName,
       plan_label: getCrmPlanLabel(planName),
-      redirect_url: `/setup-wizard.html?${params.toString()}`,
-      redirect_path: `/setup-wizard.html?${params.toString()}`,
+      redirect_url: redirectUrl,
+      redirect_path: redirectUrl,
     });
   } catch (err) {
     console.error("Get plan redirect error:", err);
