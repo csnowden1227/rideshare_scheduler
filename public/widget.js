@@ -767,7 +767,45 @@
         <select id="cd_hourly_booking" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;">
           ${options.join("")}
         </select>
+        <div id="cd_hourly_booking_details" style="display:none;margin-top:10px;padding:12px 14px;border-radius:14px;border:1px solid #dbe4f0;background:#f8fafc;font-size:13px;line-height:1.55;color:#334155;"></div>
       </div>
+    `;
+  }
+
+  function getHourlyBookingDetails(slotId = "") {
+    const hourlyConfig = hourlyBookingBySlotId(slotId);
+    if (!hourlyConfig) return null;
+    const vehicle = selectedVehicle() || {};
+    const vehicleLabel = [vehicle.vehicle_type, [vehicle.vehicle_make, vehicle.vehicle_model].filter(Boolean).join(" ")].filter(Boolean).join(" - ");
+    return {
+      description: hourlyConfig.booking_description || "Hourly reservation",
+      vehicleLabel: vehicleLabel || "Selected vehicle",
+      rate: toNumber(hourlyConfig.hourly_rate, 0),
+    };
+  }
+
+  function updateHourlyBookingDetails() {
+    const detailsEl = document.getElementById("cd_hourly_booking_details");
+    const hourlySelect = document.getElementById("cd_hourly_booking");
+    const hoursInput = document.getElementById("cd_hourly_hours");
+    if (!detailsEl || !hourlySelect) return;
+
+    const slotId = hourlySelect.value || "";
+    const details = getHourlyBookingDetails(slotId);
+    if (!details) {
+      detailsEl.style.display = "none";
+      detailsEl.textContent = "";
+      return;
+    }
+
+    const hours = Math.max(1, toNumber(hoursInput?.value, 1));
+    const total = details.rate * hours;
+    detailsEl.style.display = "block";
+    detailsEl.innerHTML = `
+      <div><strong>${escapeHtml(details.description)}</strong></div>
+      <div>Vehicle: ${escapeHtml(details.vehicleLabel)}</div>
+      <div>Rate: ${money(details.rate)}/hr</div>
+      <div>Estimated hourly total: <strong>${money(total)}</strong></div>
     `;
   }
 
@@ -1044,6 +1082,8 @@
     const eventWrap = document.getElementById("cd_event_wrap");
     const fixedWrap = document.getElementById("cd_fixed_destination_wrap");
     const hourlyWrap = document.getElementById("cd_hourly_booking_wrap");
+    const hourlyHoursWrap = document.getElementById("cd_hourly_hours_wrap");
+    const hourlyDetails = document.getElementById("cd_hourly_booking_details");
     const eventSelect = document.getElementById("cd_special_event");
     const fixedSelect = document.getElementById("cd_fixed_destination");
     const hourlySelect = document.getElementById("cd_hourly_booking");
@@ -1051,10 +1091,13 @@
     if (eventWrap) eventWrap.style.display = mode === "event" ? "block" : "none";
     if (fixedWrap) fixedWrap.style.display = mode === "fixed" ? "block" : "none";
     if (hourlyWrap) hourlyWrap.style.display = mode === "hourly" ? "block" : "none";
+    if (hourlyHoursWrap) hourlyHoursWrap.style.display = mode === "hourly" ? "grid" : "none";
+    if (hourlyDetails) hourlyDetails.style.display = mode === "hourly" ? "block" : "none";
 
     if (mode !== "event" && eventSelect) eventSelect.value = "";
     if (mode !== "fixed" && fixedSelect) fixedSelect.value = "";
     if (mode !== "hourly" && hourlySelect) hourlySelect.value = "";
+    updateHourlyBookingDetails();
   }
 
   function render() {
@@ -1281,7 +1324,14 @@
     document.querySelectorAll('input[name="cd_addons"], #cd_passenger_count, #cd_special_event, #cd_fixed_destination, #cd_hourly_booking, #cd_hourly_hours').forEach((input) => {
       input?.addEventListener("change", () => {
         if (state.quote) getQuote();
+        if (input.id === "cd_hourly_booking" || input.id === "cd_hourly_hours") updateHourlyBookingDetails();
       });
+      if (input.id === "cd_hourly_booking" || input.id === "cd_hourly_hours") {
+        input?.addEventListener("input", () => {
+          updateHourlyBookingDetails();
+          if (state.quote) getQuote();
+        });
+      }
     });
     document.querySelectorAll('input[name="cd_payment_choice"]').forEach((input) => {
       input?.addEventListener("change", () => {
