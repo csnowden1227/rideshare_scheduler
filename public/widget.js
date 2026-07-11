@@ -527,11 +527,11 @@
           class="cd_vehicle_card"
           data-vehicle-slot-id="${escapeHtml(vehicle.vehicle_slot_id)}"
           aria-pressed="${index === 0 ? "true" : "false"}"
-          style="display:grid;grid-template-rows:auto 1fr;gap:0;width:100%;min-height:150px;padding:5px 5px 0;border:1.5px solid #111111;border-radius:0;background:#fff;cursor:pointer;text-align:center;transition:all .18s ease;box-shadow:none;"
+          style="display:grid;grid-template-rows:auto 1fr;gap:0;width:100%;aspect-ratio:1 / 1;padding:6px 6px 4px;border:1.5px solid #111111;border-radius:0;background:#fff;cursor:pointer;text-align:center;transition:all .18s ease;box-shadow:none;"
         >
           <span style="font-size:13px;font-weight:700;color:#111827;line-height:1;margin-bottom:-4px;">${escapeHtml(label)}</span>
-          <div style="display:flex;align-items:center;justify-content:center;min-height:82px;margin-bottom:0;padding-bottom:0;">
-            <img class="cd_vehicle_image" src="${escapeHtml(imageSrc)}" alt="${escapeHtml(label)}" style="width:100%;max-width:${label.toLowerCase().includes("xl") ? "208px" : label.toLowerCase().includes("suv") ? "176px" : "148px"};height:78px;object-fit:contain;display:block;" />
+          <div style="display:flex;align-items:center;justify-content:center;min-height:0;margin-bottom:0;padding-bottom:0;">
+            <img class="cd_vehicle_image" src="${escapeHtml(imageSrc)}" alt="${escapeHtml(label)}" style="width:100%;max-width:${label.toLowerCase().includes("xl") ? "210px" : label.toLowerCase().includes("suv") ? "178px" : "150px"};height:auto;max-height:calc(100% - 26px);object-fit:contain;display:block;" />
           </div>
         </button>
       `;
@@ -1107,11 +1107,13 @@
               width: 100% !important;
             }
             #${rootId} .cd_vehicle_card {
-              min-height: 158px !important;
-              padding: 5px 2px 0 !important;
+              aspect-ratio: 1 / 1 !important;
+              min-height: 0 !important;
+              padding: 6px 3px 4px !important;
             }
             #${rootId} .cd_vehicle_image {
-              height: 84px !important;
+              height: auto !important;
+              max-height: calc(100% - 26px) !important;
             }
             #${rootId} #cd_actions_col {
               align-content: stretch !important;
