@@ -527,11 +527,11 @@
           class="cd_vehicle_card"
           data-vehicle-slot-id="${escapeHtml(vehicle.vehicle_slot_id)}"
           aria-pressed="${index === 0 ? "true" : "false"}"
-          style="display:grid;grid-template-rows:auto 1fr;gap:0;width:100%;aspect-ratio:1 / 1;padding:6px 6px 4px;border:1.5px solid #111111;border-radius:0;background:#fff;cursor:pointer;text-align:center;transition:all .18s ease;box-shadow:none;"
+          style="display:grid;grid-template-rows:18px 1fr;gap:0;width:100%;aspect-ratio:1 / 1;padding:0;border:1.5px solid #111111;border-radius:0;background:#fff;cursor:pointer;text-align:center;transition:all .18s ease;box-shadow:none;overflow:hidden;"
         >
-          <span style="font-size:13px;font-weight:700;color:#111827;line-height:1;margin-bottom:-4px;">${escapeHtml(label)}</span>
-          <div style="display:flex;align-items:center;justify-content:center;min-height:0;margin-bottom:0;padding-bottom:0;">
-            <img class="cd_vehicle_image" src="${escapeHtml(imageSrc)}" alt="${escapeHtml(label)}" style="width:100%;max-width:none;height:auto;max-height:calc(100% - 22px);object-fit:contain;display:block;" />
+          <span style="font-size:11px;font-weight:700;color:#111827;line-height:1;padding:2px 4px 0;margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(label)}</span>
+          <div style="display:flex;align-items:stretch;justify-content:center;min-height:0;margin:0;padding:0;">
+            <img class="cd_vehicle_image" src="${escapeHtml(imageSrc)}" alt="${escapeHtml(label)}" style="width:100%;max-width:none;height:100%;max-height:none;object-fit:contain;display:block;" />
           </div>
         </button>
       `;
@@ -1109,11 +1109,11 @@
             #${rootId} .cd_vehicle_card {
               aspect-ratio: 1 / 1 !important;
               min-height: 0 !important;
-              padding: 6px 3px 4px !important;
+              padding: 0 !important;
             }
             #${rootId} .cd_vehicle_image {
-              height: auto !important;
-              max-height: calc(100% - 22px) !important;
+              height: 100% !important;
+              max-height: none !important;
               max-width: none !important;
             }
             #${rootId} #cd_actions_col {
