@@ -880,8 +880,9 @@
       const script = document.createElement("script");
       script.id = "cd-google-maps";
       script.dataset.mapsKey = mapsKey;
-      script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(mapsKey)}&libraries=places,geometry`;
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(mapsKey)}&libraries=places,geometry&callback=__cdInitAutocomplete`;
       script.async = true;
+      window.__cdInitAutocomplete = initAutocomplete;
       document.head.appendChild(script);
     }
   }
@@ -1143,9 +1144,9 @@
                 <div id="cd_datetime_grid" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px;">
                   <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Pickup Date & Time</label><input id="cd_start_time" type="datetime-local" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" /></div>
                 </div>
-                <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-top:12px;position:relative;z-index:20;overflow:visible;">
-                  <div style="position:relative;z-index:21;overflow:visible;"><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Pickup Address</label><input id="cd_pickup" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" inputmode="text" placeholder="Street address or airport terminal" style="width:100%;position:relative;z-index:22;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;pointer-events:auto;" /></div>
-                  <div style="position:relative;z-index:21;overflow:visible;"><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Dropoff Address</label><input id="cd_dropoff" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" inputmode="text" placeholder="Destination address" style="width:100%;position:relative;z-index:22;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;pointer-events:auto;" /></div>
+                <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-top:12px;">
+                  <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Pickup Address</label><input id="cd_pickup" placeholder="Pickup address" style="width:100%;padding:12px;border:1px solid #cbd5e1;border-radius:12px;background:#fff;" /></div>
+                  <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Dropoff Address</label><input id="cd_dropoff" placeholder="Dropoff address" style="width:100%;padding:12px;border:1px solid #cbd5e1;border-radius:12px;background:#fff;" /></div>
                 </div>
               </div>
 
@@ -1908,7 +1909,6 @@
       showError("Loading booking widget...");
       await loadConfig();
       showError("Loading booking options...");
-      await waitForGoogleMaps();
       try {
         const handledCheckout = await handleCheckoutReturn();
         if (!handledCheckout) {
