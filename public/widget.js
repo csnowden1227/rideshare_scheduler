@@ -566,6 +566,7 @@
         if (!slotId) return;
         hiddenInput.value = slotId;
         syncVehiclePickerSelection(slotId);
+        syncHourlyDefaults();
         if (state.quote) getQuote();
       });
     });
@@ -802,10 +803,10 @@
     const total = details.rate * hours;
     detailsEl.style.display = "block";
     detailsEl.innerHTML = `
-      <div><strong>${escapeHtml(details.description)}</strong></div>
-      <div>Vehicle: ${escapeHtml(details.vehicleLabel)}</div>
-      <div>Hourly rate: ${money(details.rate)}/hr</div>
-      <div>Estimated total: <strong>${money(total)}</strong></div>
+      <div style="font-weight:800;color:#0f172a;">${escapeHtml(details.description)}</div>
+      <div>Vehicle slot: <strong>${escapeHtml(details.vehicleLabel)}</strong></div>
+      <div>Rate: <strong>${money(details.rate)}/hr</strong></div>
+      <div>Formula: <strong>${hours} x ${money(details.rate)} = ${money(total)}</strong></div>
     `;
   }
 
@@ -826,10 +827,6 @@
   }
 
   function syncHourlyDefaults() {
-    const hoursInput = document.getElementById("cd_hourly_hours");
-    if (hoursInput && Number(hoursInput.value) < 4) {
-      hoursInput.value = 4;
-    }
     updateHourlyBookingDetails();
     updateHourlyTotalField();
   }
@@ -1264,9 +1261,13 @@
                   ${hourlyBookingSelect || ""}
                   ${fixedDestinationSelect}
                 </div>
-                <div id="cd_hourly_hours_wrap" style="display:none;grid-template-columns:1fr auto;gap:12px;align-items:end;margin-top:12px;">
-                  <div style="max-width:220px;"><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Hours Needed</label><select id="cd_hourly_hours" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;">${Array.from({ length: 17 }, (_, i) => 4 + i).map((hour) => `<option value="${hour}">${hour}</option>`).join("")}</select></div>
-                  <div style="min-width:180px;"><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Hourly Total</label><input id="cd_hourly_total" type="text" readonly value="$0.00" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#f8fafc;color:#334155;font-weight:800;" /></div>
+                <div id="cd_hourly_hours_wrap" style="display:none;grid-template-columns:minmax(220px,1fr) minmax(180px,220px);gap:12px;align-items:end;margin-top:12px;">
+                  <div>
+                    <label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Hours Needed</label>
+                    <input id="cd_hourly_hours" type="number" min="4" step="1" inputmode="numeric" placeholder="Enter hours" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" />
+                    <div style="margin-top:6px;display:inline-flex;align-items:center;gap:6px;padding:4px 8px;border-radius:999px;background:#eef2ff;color:#4338ca;font-size:12px;font-weight:800;">4 hour minimum</div>
+                  </div>
+                  <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Hourly Total</label><input id="cd_hourly_total" type="text" readonly value="$0.00" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#f8fafc;color:#334155;font-weight:800;" /></div>
                 </div>
                 <div id="cd_datetime_grid" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px;">
                   <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Pickup Date & Time</label><input id="cd_start_time" type="datetime-local" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" /></div>
@@ -1516,6 +1517,40 @@
     if (!vehicle) throw new Error("Select a vehicle first.");
     if (!payload.pickup_address || !payload.dropoff_address || !payload.start_time) {
       throw new Error("Enter pickup, dropoff, and pickup date/time first.");
+    }
+
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/widget-quote`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          location_id: locationId,
+          vehicle_slot_id: payload.vehicle_slot_id,
+          booking_mode: payload.booking_mode,
+          pickup_address: payload.pickup_address,
+          dropoff_address: payload.dropoff_address,
+          start_time: payload.start_time,
+          passenger_count: payload.passenger_count,
+          selected_event_name: payload.selected_event_name,
+          selected_fixed_destination: payload.selected_fixed_destination,
+          selected_hourly_booking: payload.selected_hourly_booking,
+          hourly_hours: payload.hourly_hours,
+          selected_addons: payload.selected_addons,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data?.success) {
+        throw new Error(data?.error || "Unable to calculate quote.");
+      }
+      state.route = {
+        pickupCoords: { formattedAddress: payload.pickup_address, lat: null, lng: null },
+        dropoffCoords: { formattedAddress: payload.dropoff_address, lat: null, lng: null },
+        miles: Number(data.miles || 0),
+      };
+      state.quote = data;
+      return;
+    } catch (serverError) {
+      console.warn("Widget quote preview fallback:", serverError);
     }
 
     const [pickupCoords, dropoffCoords] = await Promise.all([

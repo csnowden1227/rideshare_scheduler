@@ -509,7 +509,7 @@
                 <table class="w-full">
                     <thead>
                         <tr class="text-[10px] uppercase text-gray-400">
-                            <th>Booking Description</th><th>Slot ID</th><th>Default Hours</th><th>Price / Hour</th><th></th>
+                            <th>Booking Description</th><th>Slot ID</th><th>Default Hours</th><th>Price / Hour</th><th>Formula</th><th></th>
                         </tr>
                     </thead>
                     <tbody id="hourly-booking-body"></tbody>
@@ -1951,6 +1951,7 @@ function addHourlyBookingRow(data = {}) {
         <td class="py-3"><select class="h-slot-id input-mini">${getFleetSlotOptionsHTML(hourlySlotId)}</select></td>
         <td class="py-3"><input type="number" min="1" step="1" class="h-hours input-mini" value="${data.default_hours || 3}"></td>
         <td class="py-3"><input type="number" min="0" step="0.01" class="h-rate input-mini" value="${data.hourly_rate || 0}"></td>
+        <td class="py-3"><div class="h-formula text-xs font-semibold text-slate-600">-</div></td>
         <td><button onclick="this.closest('tr').remove()" class="text-red-400">&times;</button></td>
     `;
     document.getElementById('hourly-booking-body').appendChild(tr);
@@ -1972,6 +1973,18 @@ function addHourlyBookingRow(data = {}) {
     };
     slotSelect?.addEventListener('change', syncSlot);
     syncSlot();
+    const refreshFormula = () => {
+        const hours = parseInt(tr.querySelector('.h-hours')?.value, 10) || 0;
+        const rate = parseFloat(tr.querySelector('.h-rate')?.value) || 0;
+        const formulaEl = tr.querySelector('.h-formula');
+        if (!formulaEl) return;
+        formulaEl.textContent = hours > 0 && rate > 0
+            ? `${hours} × $${rate.toFixed(2)} = $${(hours * rate).toFixed(2)}`
+            : '$0.00';
+    };
+    tr.querySelector('.h-hours')?.addEventListener('input', refreshFormula);
+    tr.querySelector('.h-rate')?.addEventListener('input', refreshFormula);
+    refreshFormula();
 }
 
 function addAddonRow(data = {}) {

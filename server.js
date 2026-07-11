@@ -7965,6 +7965,67 @@ function getPeakMultiplier(dateISO, customMultiplier) {
   return 1.0;
 }
 
+function toNumber(value, fallback = 0) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function computeAddonTotal(addons = [], selectedAddonIds = []) {
+  const selectedIds = Array.isArray(selectedAddonIds)
+    ? selectedAddonIds.map((id) => String(id || "").trim()).filter(Boolean)
+    : [];
+  if (!selectedIds.length || !Array.isArray(addons) || !addons.length) return 0;
+  return Number(addons.reduce((sum, addon = {}, index) => {
+    const addonId = String(addon.id || `addon_${index}`).trim();
+    if (!selectedIds.includes(addonId)) return sum;
+    return sum + toNumber(addon.price, 0);
+  }, 0).toFixed(2));
+}
+
+function computeDeposit(total, vehicle = {}) {
+  const vehicleDepositType = String(vehicle.deposit_type || "").trim().toLowerCase();
+  const vehicleDepositValue = toNumber(vehicle.deposit_value, 0);
+  const vehiclePercent = vehicleDepositType === "percent" ? vehicleDepositValue : 0;
+  const vehicleFlat = vehicleDepositType === "flat" ? vehicleDepositValue : 0;
+  const percentDeposit = vehiclePercent > 0 ? total * (vehiclePercent / 100) : 0;
+  const depositAmount = Number(Math.min(vehicleFlat > 0 ? vehicleFlat : percentDeposit, total).toFixed(2));
+  const depositPercent = total > 0 ? Number(((depositAmount / total) * 100).toFixed(2)) : 0;
+  return { depositAmount, depositPercent };
+}
+
+function computePaymentPolicy(startDate, total, depositAmount) {
+  const hoursUntilRide = Math.max(0, (new Date(startDate).getTime() - Date.now()) / 36e5);
+  const depositEligible = hoursUntilRide >= 72 && depositAmount > 0 && depositAmount < total;
+  const balanceDueDeadline = new Date(new Date(startDate).getTime() - (48 * 60 * 60 * 1000)).toISOString();
+  return {
+    hoursUntilRide: Number(hoursUntilRide.toFixed(2)),
+    depositEligible,
+    minimumDueNow: depositEligible ? depositAmount : total,
+    balanceDueDeadline,
+  };
+}
+
+function resolveHourlyBookingBySlotId(hourlyBookings = [], slotId = "") {
+  if (!slotId) return null;
+  return Array.isArray(hourlyBookings)
+    ? hourlyBookings.find((row) => String(row.vehicle_slot_id || "") === String(slotId || "")) || null
+    : null;
+}
+
+function resolveFixedRateByName(fixedRates = [], selectedName = "") {
+  const target = String(selectedName || "").trim().toLowerCase();
+  if (!target) return null;
+  return (Array.isArray(fixedRates) ? fixedRates : []).find((row = {}) => {
+    const label = String(row.location_name || "").trim().toLowerCase();
+    return label === target;
+  }) || null;
+}
+
+function resolveEventByName(events = [], name = "") {
+  const target = String(name || "").trim().toLowerCase();
+  return (Array.isArray(events) ? events : []).find((event = {}) => String(event.event_name || "").trim().toLowerCase() === target) || null;
+}
+
 async function checkFixedRate(location_id, pickupAddr, dropoffAddr) {
   // 1. Fetch all fixed routes for this specific location
   const result = await pool.query(
@@ -14944,6 +15005,145 @@ app.post('/api/get-quote', async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 }); // <--- Correctly closes get-quote
+
+app.post("/api/widget-quote", async (req, res) => {
+  try {
+    const {
+      location_id,
+      vehicle_slot_id,
+      booking_mode,
+      pickup_address,
+      dropoff_address,
+      start_time,
+      passenger_count,
+      selected_event_name,
+      selected_fixed_destination,
+      selected_hourly_booking,
+      hourly_hours,
+      selected_addons = [],
+    } = req.body || {};
+
+    if (!location_id) {
+      return res.status(400).json({ error: "location_id is required." });
+    }
+
+    await ensureProfileEntitlementColumns();
+    await ensureProfilePaymentProviderColumns();
+    await ensureProfileServiceAreaColumns();
+    const profileIdColumn = await getProfileIdColumn();
+    const profileRes = await pool.query(`SELECT * FROM profiles WHERE ${profileIdColumn} = $1`, [location_id]);
+    if (profileRes.rows.length === 0) {
+      return res.status(404).json({ error: "Location Not Found" });
+    }
+
+    const profile = profileRes.rows[0];
+    const fleet = safeParseJson(profile.fleet);
+    const fixedRates = safeParseJson(profile.fixed_rates);
+    const events = safeParseJson(profile.events);
+    const peakWindows = safeParseJson(profile.peak_windows);
+    const addons = safeParseJson(profile.addons);
+    const vehicle = (Array.isArray(fleet) ? fleet : []).find((row = {}) => String(row.vehicle_slot_id || "") === String(vehicle_slot_id || "")) || {};
+    if (!vehicle_slot_id) {
+      return res.status(400).json({ error: "Select a vehicle first." });
+    }
+    if (!vehicle || !vehicle.vehicle_slot_id) {
+      return res.status(404).json({ error: "Selected vehicle not found." });
+    }
+
+    const startDate = new Date(start_time);
+    if (Number.isNaN(startDate.getTime())) {
+      return res.status(400).json({ error: "Choose a valid pickup date and time." });
+    }
+
+    const route = await computeRoute({ origin: pickup_address, destination: dropoff_address, departureISO: start_time });
+    const miles = Number((route.distanceMeters / 1609.34).toFixed(2));
+    const eventConfig = booking_mode === "event" ? resolveEventByName(events, selected_event_name) : null;
+    const selectedFixedName = booking_mode === "fixed" ? String(selected_fixed_destination || "").trim() : "";
+    const hourlyConfig = booking_mode === "hourly" ? resolveHourlyBookingBySlotId(safeParseJson(profile.hourly_bookings), selected_hourly_booking || vehicle_slot_id) : null;
+    const hourlyHours = Math.max(4, toNumber(hourly_hours, 4));
+    const fixedRate = booking_mode === "fixed" ? resolveFixedRateByName(fixedRates, selectedFixedName) : null;
+    const passengerCount = Math.max(1, toNumber(passenger_count, 1));
+    const addonTotal = computeAddonTotal(addons, selected_addons);
+
+    if (booking_mode === "event" && !eventConfig) {
+      return res.status(400).json({ error: "Select an event option to continue." });
+    }
+    if (booking_mode === "fixed" && selectedFixedName && !fixedRate) {
+      return res.status(400).json({ error: "Select a valid fixed destination option to continue." });
+    }
+    if (booking_mode === "hourly" && !hourlyConfig) {
+      return res.status(400).json({ error: "Select an hourly reservation option to continue." });
+    }
+
+    let baseRate = toNumber(vehicle.base_rate, 0);
+    let mileRate = toNumber(vehicle.mile_rate, 0);
+    let pricingLabel = `${vehicle.vehicle_type || "Selected vehicle"} standard pricing`;
+
+    if (eventConfig) {
+      mileRate = toNumber(eventConfig.mile_rate, mileRate);
+      pricingLabel = `${eventConfig.event_name || "Event"} pricing using ${vehicle.vehicle_type || "selected vehicle"} base rate`;
+    }
+
+    let rideSubtotal = baseRate + (miles * mileRate);
+
+    if (fixedRate) {
+      rideSubtotal = toNumber(fixedRate.fixed_price, rideSubtotal);
+      pricingLabel = `${fixedRate.location_name || "Fixed zone"} flat rate`;
+    }
+
+    if (hourlyConfig) {
+      const hourlyRate = toNumber(hourlyConfig.hourly_rate, 0);
+      rideSubtotal = hourlyRate * hourlyHours;
+      pricingLabel = `${hourlyConfig.booking_description || "Hourly reservation"} at ${money(hourlyRate)}/hr for ${hourlyHours} hour${hourlyHours === 1 ? "" : "s"}`;
+    }
+
+    const peakMultiplier = getPeakMultiplier(startDate.toISOString(), peakWindows?.[0]?.multiplier);
+    const fixedSurcharge = 0;
+    if (!fixedRate && peakMultiplier > 1) {
+      rideSubtotal *= peakMultiplier;
+      pricingLabel = `${pricingLabel} with peak multiplier ${peakMultiplier.toFixed(2)}x`;
+    }
+
+    const taxAmount = (rideSubtotal + addonTotal) * (toNumber(profile.tax_rate, 0) / 100);
+    const total = rideSubtotal + addonTotal + taxAmount;
+    const deposit = computeDeposit(total, vehicle);
+    const paymentPolicy = computePaymentPolicy(startDate, Number(total.toFixed(2)), deposit.depositAmount);
+    const paymentChoice = paymentPolicy.depositEligible ? "deposit" : "full";
+    const amountDueNow = paymentChoice === "full"
+      ? Number(total.toFixed(2))
+      : Number(paymentPolicy.minimumDueNow.toFixed(2));
+    const balanceDue = Number((Number(total.toFixed(2)) - amountDueNow).toFixed(2));
+
+    return res.json({
+      success: true,
+      location_id,
+      vehicle_slot_id,
+      booking_mode,
+      miles,
+      quoted_price: Number(rideSubtotal.toFixed(2)),
+      addon_total: Number(addonTotal.toFixed(2)),
+      tax_amount: Number(taxAmount.toFixed(2)),
+      total: Number(total.toFixed(2)),
+      deposit_percent: deposit.depositPercent,
+      deposit_amount: deposit.depositAmount,
+      amount_due_now: amountDueNow,
+      balance_due: balanceDue,
+      payment_choice: paymentChoice,
+      hours_until_ride: paymentPolicy.hoursUntilRide,
+      balance_due_deadline: paymentPolicy.balanceDueDeadline,
+      pricing_label: pricingLabel,
+      hourly_booking_name: hourlyConfig?.booking_description || null,
+      hourly_booking_slot_id: hourlyConfig?.vehicle_slot_id || null,
+      hourly_hours: hourlyConfig ? hourlyHours : null,
+      fixed_rate_name: fixedRate?.location_name || null,
+      peak_multiplier: Number(peakMultiplier.toFixed(2)),
+      fixed_surcharge: Number(fixedSurcharge.toFixed(2)),
+      selected_addons,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // 3. DB Check Route
 app.get("/api/db-check", async (req, res) => {
