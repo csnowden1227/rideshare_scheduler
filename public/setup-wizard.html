@@ -2005,6 +2005,28 @@ function addAddonRow(data = {}) {
     document.getElementById('addon-body').appendChild(tr);
 }
 
+function collectHourlyBookingRows() {
+    const fleetSlots = Array.from(document.querySelectorAll('#fleet-body tr'))
+        .map((tr) => tr.dataset.vehicleSlotId || tr.querySelector('.fleet-slot-pill')?.textContent.trim() || '')
+        .filter(Boolean);
+    const fallbackSlot = fleetSlots[0] || '';
+
+    return Array.from(document.querySelectorAll('.hourly-booking-row')).map((row) => {
+        const slotSelect = row.querySelector('.h-slot-id');
+        const selectedSlot = String(slotSelect?.value || '').trim();
+        const resolvedSlot = selectedSlot || fallbackSlot;
+        if (!slotSelect?.value && resolvedSlot) {
+            slotSelect.value = resolvedSlot;
+        }
+        return {
+            booking_description: row.querySelector('.h-desc').value,
+            vehicle_slot_id: resolvedSlot,
+            default_hours: parseInt(row.querySelector('.h-hours').value, 10) || 1,
+            hourly_rate: parseFloat(row.querySelector('.h-rate').value) || 0
+        };
+    });
+}
+
 function applyLocalPlanFallback(planName = planOverride || currentPlanName || 'starter') {
     const normalizedPlan = String(planName || 'starter').trim().toLowerCase();
     const fallbackPlan = ['starter', 'premium', 'pro'].includes(normalizedPlan) ? normalizedPlan : 'starter';
@@ -2436,12 +2458,7 @@ async function saveToBackend() {
                 fixed_surcharge: parseFloat(r.querySelector('.p-fixed-addon').value) || 0
             }))
         ],
-        hourly_bookings: Array.from(document.querySelectorAll('.hourly-booking-row')).map(r => ({
-            booking_description: r.querySelector('.h-desc').value,
-            vehicle_slot_id: r.querySelector('.h-slot-id')?.value || '',
-            default_hours: parseInt(r.querySelector('.h-hours').value, 10) || 1,
-            hourly_rate: parseFloat(r.querySelector('.h-rate').value) || 0
-        })),
+        hourly_bookings: collectHourlyBookingRows(),
 
         fixed_rates: Array.from(document.querySelectorAll('.route-row')).map(r => ({
             location_name: r.querySelector('.r-name').value,
@@ -2661,12 +2678,7 @@ function collectWizardPayload() {
                 fixed_surcharge: parseFloat(r.querySelector('.p-fixed-addon').value) || 0
             }))
         ],
-        hourly_bookings: Array.from(document.querySelectorAll('.hourly-booking-row')).map(r => ({
-            booking_description: r.querySelector('.h-desc').value,
-            vehicle_slot_id: r.querySelector('.h-slot-id')?.value || '',
-            default_hours: parseInt(r.querySelector('.h-hours').value, 10) || 1,
-            hourly_rate: parseFloat(r.querySelector('.h-rate').value) || 0
-        })),
+        hourly_bookings: collectHourlyBookingRows(),
         fixed_rates: Array.from(document.querySelectorAll('.route-row')).map(r => ({
             location_name: r.querySelector('.r-name').value,
             lat: parseFloat(r.querySelector('.r-lat').value) || 0,
