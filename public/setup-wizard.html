@@ -1948,12 +1948,11 @@ function addHourlyBookingRow(data = {}) {
     const hourlySlotId = data.vehicle_slot_id || document.querySelector('#fleet-body tr')?.dataset.vehicleSlotId || document.querySelector('#fleet-body tr .fleet-slot-pill')?.textContent.trim() || '';
     tr.innerHTML = `
         <td class="py-3"><input type="text" class="h-desc input-mini" value="${data.booking_description || ''}" placeholder="e.g. Corporate shuttle"></td>
-        <td class="py-3">
-            <input type="text" class="h-slot-label input-mini" value="${hourlySlotId}" readonly>
-            <input type="hidden" class="h-slot" value="${hourlySlotId}">
-        </td>
         <td class="py-3"><input type="number" min="1" step="1" class="h-hours input-mini" value="${data.default_hours || 3}"></td>
         <td class="py-3"><input type="number" min="0" step="0.01" class="h-rate input-mini" value="${data.hourly_rate || 0}"></td>
+        <td class="py-3">
+            <input type="hidden" class="h-slot" value="${hourlySlotId}">
+        </td>
         <td class="py-3" style="display:none;">
             <input type="text" class="h-calendar input-mini" value="${data.calendar_id || ''}" placeholder="Calendar ID" readonly>
         </td>
@@ -1961,7 +1960,6 @@ function addHourlyBookingRow(data = {}) {
     `;
     document.getElementById('hourly-booking-body').appendChild(tr);
     const calendarInput = tr.querySelector('.h-calendar');
-    const slotLabel = tr.querySelector('.h-slot-label');
     const slotInput = tr.querySelector('.h-slot');
     const syncCalendar = () => {
         const vehicleSlotId = String(slotInput?.value || '').trim();
