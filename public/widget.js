@@ -626,13 +626,15 @@
     const profileClose = state.config?.close_time || "22:00";
     const instantBookingEnabled = normalizeBooleanish(vehicle?.instant_booking_enabled, true);
     const configuredNoticeMin = parseInt(vehicle?.min_notice_min, 10);
+    const vehicleTypeText = String(vehicle?.vehicle_type || vehicle?.name || vehicle?.vehicle_slot_id || "").trim().toLowerCase();
+    const isLuxuryVehicle = vehicleTypeText.includes("luxury");
     return {
       instant_booking_enabled: instantBookingEnabled,
       instant_booking_start_time: normalizeTimeOfDay(vehicle?.instant_booking_start_time, normalizeTimeOfDay(profileOpen, "06:00")),
       instant_booking_end_time: normalizeTimeOfDay(vehicle?.instant_booking_end_time, normalizeTimeOfDay(profileClose, "22:00")),
       min_notice_min: Number.isFinite(configuredNoticeMin)
         ? Math.max(0, configuredNoticeMin)
-        : (instantBookingEnabled ? 0 : 240),
+        : (instantBookingEnabled ? 0 : ((isLuxuryVehicle ? 24 : 4) * 60)),
     };
   }
 
@@ -652,7 +654,7 @@
     const configuredNoticeHours = Math.max(0, Number(policy.min_notice_min || 0) / 60);
     const minimumNoticeHours = policy.instant_booking_enabled
       ? configuredNoticeHours
-      : Math.max(4, configuredNoticeHours || 0);
+      : Math.max((String(vehicle?.vehicle_type || vehicle?.name || vehicle?.vehicle_slot_id || "").toLowerCase().includes("luxury") ? 24 : 4), configuredNoticeHours || 0);
 
     if (minimumNoticeHours > 0 && hoursUntilRide < minimumNoticeHours) {
       const noticeText = Number.isInteger(minimumNoticeHours)

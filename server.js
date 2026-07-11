@@ -1110,7 +1110,11 @@ function normalizeOnDemandNurtureConfig(config = {}) {
 function normalizeFleetBookingPolicy(slot = {}, profileDefaults = {}) {
   const instantBookingEnabled = normalizeBooleanish(slot?.instant_booking_enabled, true);
   const configuredNoticeMin = Number.parseInt(slot?.min_notice_min, 10);
-  const fallbackNoticeMin = instantBookingEnabled ? 0 : (DEFAULT_NON_INSTANT_NOTICE_HOURS * 60);
+  const vehicleTypeText = String(slot?.vehicle_type || slot?.name || slot?.vehicle_slot_id || "").trim().toLowerCase();
+  const isLuxuryVehicle = vehicleTypeText.includes("luxury");
+  const fallbackNoticeMin = instantBookingEnabled
+    ? 0
+    : ((isLuxuryVehicle ? 24 : 4) * 60);
   const normalizedNoticeMin = Number.isFinite(configuredNoticeMin)
     ? Math.max(0, configuredNoticeMin)
     : fallbackNoticeMin;
