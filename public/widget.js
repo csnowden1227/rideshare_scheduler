@@ -566,7 +566,7 @@
         if (!slotId) return;
         hiddenInput.value = slotId;
         syncVehiclePickerSelection(slotId);
-        syncHourlyDefaults();
+        syncHourlySelectionToVehicle(slotId);
         if (state.quote) getQuote();
       });
     });
@@ -824,6 +824,20 @@
 
     const hours = Math.max(4, toNumber(hoursInput.value, 4));
     totalField.value = money(details.rate * hours);
+  }
+
+  function syncHourlySelectionToVehicle(slotId = "") {
+    const hourlySelect = document.getElementById("cd_hourly_booking");
+    if (!hourlySelect || selectedBookingMode() !== "hourly") return;
+    const options = Array.from(hourlySelect.options || []);
+    const matchingOption = options.find((option) => String(option.value || "") === String(slotId || "").trim());
+    const fallbackOption = options.find((option) => option.value);
+    if (matchingOption) {
+      hourlySelect.value = matchingOption.value;
+    } else if (!hourlySelect.value && fallbackOption) {
+      hourlySelect.value = fallbackOption.value;
+    }
+    syncHourlyDefaults();
   }
 
   function syncHourlyDefaults() {
@@ -1119,6 +1133,10 @@
     if (mode !== "event" && eventSelect) eventSelect.value = "";
     if (mode !== "fixed" && fixedSelect) fixedSelect.value = "";
     if (mode !== "hourly" && hourlySelect) hourlySelect.value = "";
+    if (mode === "hourly" && hourlySelect && !hourlySelect.value) {
+      const fallbackOption = Array.from(hourlySelect.options || []).find((option) => option.value);
+      if (fallbackOption) hourlySelect.value = fallbackOption.value;
+    }
     syncHourlyDefaults();
   }
 
@@ -1272,9 +1290,9 @@
                 <div id="cd_datetime_grid" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px;">
                   <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Pickup Date & Time</label><input id="cd_start_time" type="datetime-local" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" /></div>
                 </div>
-                <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-top:12px;">
-                  <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Pickup Address</label><input id="cd_pickup" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" inputmode="text" placeholder="Street address or airport terminal" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;pointer-events:auto;" /></div>
-                  <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Dropoff Address</label><input id="cd_dropoff" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" inputmode="text" placeholder="Destination address" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;pointer-events:auto;" /></div>
+                <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-top:12px;position:relative;z-index:20;overflow:visible;">
+                  <div style="position:relative;z-index:20;"><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Pickup Address</label><input id="cd_pickup" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" inputmode="text" placeholder="Street address or airport terminal" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;pointer-events:auto;position:relative;z-index:21;" /></div>
+                  <div style="position:relative;z-index:20;"><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Dropoff Address</label><input id="cd_dropoff" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" inputmode="text" placeholder="Destination address" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;pointer-events:auto;position:relative;z-index:21;" /></div>
                 </div>
               </div>
 
