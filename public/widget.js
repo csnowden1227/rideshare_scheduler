@@ -804,8 +804,8 @@
     detailsEl.innerHTML = `
       <div><strong>${escapeHtml(details.description)}</strong></div>
       <div>Vehicle: ${escapeHtml(details.vehicleLabel)}</div>
-      <div>Rate: ${money(details.rate)}/hr</div>
-      <div>Estimated hourly total: <strong>${money(total)}</strong></div>
+      <div>Hourly rate: ${money(details.rate)}/hr</div>
+      <div>Estimated total: <strong>${money(total)}</strong></div>
     `;
   }
 
@@ -1232,7 +1232,7 @@
                   ${fixedDestinationSelect}
                 </div>
                 <div id="cd_hourly_hours_wrap" style="display:none;grid-template-columns:1fr;gap:12px;margin-top:12px;">
-                  <div style="max-width:220px;"><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Hours Needed</label><input id="cd_hourly_hours" type="number" min="1" step="1" value="1" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" /></div>
+                  <div style="max-width:220px;"><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Hours Needed</label><input id="cd_hourly_hours" type="number" min="4" step="1" value="4" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" /></div>
                 </div>
                 <div id="cd_datetime_grid" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px;">
                   <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Pickup Date & Time</label><input id="cd_start_time" type="datetime-local" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" /></div>
@@ -1517,7 +1517,7 @@
     const eventConfig = payload.booking_mode === "event" ? eventByName(payload.selected_event_name) : null;
     const selectedFixedName = payload.booking_mode === "fixed" ? String(payload.selected_fixed_destination || "").trim() : "";
     const hourlyConfig = payload.booking_mode === "hourly" ? hourlyBookingBySlotId(payload.selected_hourly_booking) : null;
-    const hourlyHours = Math.max(1, toNumber(payload.hourly_hours, 1));
+    const hourlyHours = Math.max(4, toNumber(payload.hourly_hours, 4));
     const matchedFixedRate = payload.booking_mode === "fixed" ? resolveFixedRate(route, selectedFixedName, vehicle) : resolveFixedRate(route, "", vehicle);
     const fixedRate = payload.booking_mode === "fixed" ? matchedFixedRate : null;
     const peakMultiplier = getPeakMultiplier(startDate);
