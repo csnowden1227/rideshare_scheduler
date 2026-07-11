@@ -1808,6 +1808,17 @@ function normalizeWizardTime(value, fallback = '06:00') {
     return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
 }
 
+function getFleetSlotOptionsHTML(selectedSlotId = '') {
+    return Array.from(document.querySelectorAll('#fleet-body tr')).map((tr) => {
+        const slotId = tr.dataset.vehicleSlotId || tr.querySelector('.fleet-slot-pill')?.textContent.trim() || '';
+        const vehicleType = tr.querySelector('.v-type')?.value || '';
+        const calendarId = tr.querySelector('.v-cal')?.value || '';
+        const selected = String(selectedSlotId || '').trim() === String(slotId || '').trim() ? 'selected' : '';
+        const labelBits = [slotId, vehicleType, calendarId ? `Cal: ${calendarId}` : ''].filter(Boolean);
+        return `<option value="${slotId}" data-calendar-id="${calendarId}" ${selected}>${labelBits.join(' • ')}</option>`;
+    }).join('');
+}
+
 function renderFleet(count, savedFleet = []) {
     const tbody = document.getElementById('fleet-body');
     tbody.innerHTML = "";
@@ -1934,13 +1945,26 @@ function addHourlyBookingRow(data = {}) {
     tr.className = "hourly-booking-row border-b border-slate-50";
     tr.innerHTML = `
         <td class="py-3"><input type="text" class="h-desc input-mini" value="${data.booking_description || ''}" placeholder="e.g. Corporate shuttle"></td>
-        <td class="py-3"><input type="text" class="h-make input-mini" value="${data.vehicle_make || ''}" placeholder="Cadillac"></td>
-        <td class="py-3"><input type="text" class="h-model input-mini" value="${data.vehicle_model || ''}" placeholder="Escalade"></td>
+        <td class="py-3">
+            <select class="h-slot input-mini" style="min-width:220px;">${getFleetSlotOptionsHTML(data.vehicle_slot_id || '')}</select>
+        </td>
+        <td class="py-3">
+            <input type="text" class="h-calendar input-mini" value="${data.calendar_id || ''}" placeholder="Calendar ID" readonly>
+        </td>
         <td class="py-3"><input type="number" min="1" step="1" class="h-hours input-mini" value="${data.default_hours || 3}"></td>
         <td class="py-3"><input type="number" min="0" step="0.01" class="h-rate input-mini" value="${data.hourly_rate || 0}"></td>
         <td><button onclick="this.closest('tr').remove()" class="text-red-400">&times;</button></td>
     `;
     document.getElementById('hourly-booking-body').appendChild(tr);
+    const slotSelect = tr.querySelector('.h-slot');
+    const calendarInput = tr.querySelector('.h-calendar');
+    const syncCalendar = () => {
+        const option = slotSelect?.selectedOptions?.[0];
+        const calendarId = option?.dataset?.calendarId || '';
+        if (calendarInput) calendarInput.value = calendarId;
+    };
+    slotSelect?.addEventListener('change', syncCalendar);
+    syncCalendar();
 }
 
 function addAddonRow(data = {}) {
@@ -2032,6 +2056,9 @@ function applyProfileToWizard(data = {}, { allowSensitive = true } = {}) {
     setBrandingPlanMessage(data.plan_name || 'starter');
     const fleetCount = Math.max((data.fleet || []).length, getEffectiveFleetLimit());
     renderFleet(fleetCount, data.fleet || []);
+    const hourlyBody = document.getElementById('hourly-booking-body');
+    if (hourlyBody) hourlyBody.innerHTML = '';
+    (data.hourly_bookings || []).forEach(h => addHourlyBookingRow(h));
 
     if (data.fixed_rates) data.fixed_rates.forEach(r => addRouteRow(r));
     if (data.peak_windows) {
@@ -2385,8 +2412,8 @@ async function saveToBackend() {
         ],
         hourly_bookings: Array.from(document.querySelectorAll('.hourly-booking-row')).map(r => ({
             booking_description: r.querySelector('.h-desc').value,
-            vehicle_make: r.querySelector('.h-make').value,
-            vehicle_model: r.querySelector('.h-model').value,
+            vehicle_slot_id: r.querySelector('.h-slot')?.value || '',
+            calendar_id: r.querySelector('.h-calendar')?.value || '',
             default_hours: parseInt(r.querySelector('.h-hours').value, 10) || 1,
             hourly_rate: parseFloat(r.querySelector('.h-rate').value) || 0
         })),
@@ -2609,8 +2636,8 @@ function collectWizardPayload() {
         ],
         hourly_bookings: Array.from(document.querySelectorAll('.hourly-booking-row')).map(r => ({
             booking_description: r.querySelector('.h-desc').value,
-            vehicle_make: r.querySelector('.h-make').value,
-            vehicle_model: r.querySelector('.h-model').value,
+            vehicle_slot_id: r.querySelector('.h-slot')?.value || '',
+            calendar_id: r.querySelector('.h-calendar')?.value || '',
             default_hours: parseInt(r.querySelector('.h-hours').value, 10) || 1,
             hourly_rate: parseFloat(r.querySelector('.h-rate').value) || 0
         })),
