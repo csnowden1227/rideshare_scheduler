@@ -1970,6 +1970,12 @@ function addHourlyBookingRow(data = {}) {
             option.textContent = selected;
             option.title = [vehicleType, [vehicleMake, vehicleModel].filter(Boolean).join(' ')].filter(Boolean).join(' - ');
         }
+        if (!slotSelect?.value) {
+            const fallback = Array.from(slotSelect?.options || []).find((opt) => opt.value);
+            if (fallback) {
+                slotSelect.value = fallback.value;
+            }
+        }
     };
     slotSelect?.addEventListener('change', syncSlot);
     syncSlot();
@@ -2503,6 +2509,8 @@ async function saveToBackend() {
         if (res && res.ok) {
             loadedStripeSecretKeyRaw = stripeSecretKey.trim();
             const responseBody = await res.json();
+            console.log("Wizard save payload hourly bookings:", payload.hourly_bookings);
+            console.log("Wizard save response:", responseBody);
             showNotification("Profile saved. CRM sync is running in the background...");
             setSyncStatus("Saved locally. CRM sync is running in the background.", true);
             if (responseBody?.webhook_sync?.attempted) {
