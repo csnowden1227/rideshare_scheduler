@@ -7259,6 +7259,7 @@ async function sendWizardSyncWebhook({
   fleet,
   fixedRates,
   peakWindows,
+  hourlyBookings,
   events,
   addons
 }) {
