@@ -8149,6 +8149,7 @@ app.post('/api/update-profile-full-legacy', async (req, res) => {
         fleet,
         fixed_rates,
         peak_windows,
+        hourly_bookings,
         events,
         addons
     } = req.body;
@@ -8163,8 +8164,8 @@ app.post('/api/update-profile-full-legacy', async (req, res) => {
         // 1. UPSERT THE MAIN PROFILE
         await client.query(
             `INSERT INTO profiles (
-                location_id, business_name, public_app_url, crm_webhook_url, maps_api_key, tax_rate, service_lat, service_lng, service_radius, fleet, fixed_rates, events, peak_windows, addons
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+                location_id, business_name, public_app_url, crm_webhook_url, maps_api_key, tax_rate, service_lat, service_lng, service_radius, fleet, fixed_rates, hourly_bookings, events, peak_windows, addons
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
             ON CONFLICT (location_id) 
             DO UPDATE SET 
                 business_name = EXCLUDED.business_name,
@@ -8177,6 +8178,7 @@ app.post('/api/update-profile-full-legacy', async (req, res) => {
                 service_radius = EXCLUDED.service_radius,
                 fleet = EXCLUDED.fleet,
                 fixed_rates = EXCLUDED.fixed_rates,
+                hourly_bookings = EXCLUDED.hourly_bookings,
                 events = EXCLUDED.events,
                 peak_windows = EXCLUDED.peak_windows,
                 addons = EXCLUDED.addons`,
@@ -8192,6 +8194,7 @@ app.post('/api/update-profile-full-legacy', async (req, res) => {
                 service_radius || null,
                 JSON.stringify(fleet || []),
                 JSON.stringify(fixed_rates || []),
+                JSON.stringify(hourly_bookings || []),
                 JSON.stringify(events || []),
                 JSON.stringify(peak_windows || []),
                 JSON.stringify(addons || []),
