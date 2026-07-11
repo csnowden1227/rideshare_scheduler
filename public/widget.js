@@ -100,24 +100,6 @@
     return new Promise((resolve) => window.setTimeout(resolve, ms));
   }
 
-  async function fetchJsonWithRetry(url, options = {}, attempts = 2, delayMs = 1200) {
-    let lastError = null;
-
-    for (let attempt = 1; attempt <= attempts; attempt += 1) {
-      try {
-        const response = await fetch(url, options);
-        return response;
-      } catch (error) {
-        lastError = error;
-        if (attempt < attempts) {
-          await wait(delayMs);
-        }
-      }
-    }
-
-    throw lastError || new Error("Failed to fetch");
-  }
-
   function money(value) {
     return `$${Number(value || 0).toFixed(2)}`;
   }
@@ -287,32 +269,11 @@
   }
 
   function vehicleDisplayName(vehicle = {}) {
-    const make = String(vehicle.vehicle_make || "").trim();
-    const model = String(vehicle.vehicle_model || "").trim();
-    const makeModel = [make, model].filter(Boolean).join(" ").trim();
-    const useMakeModelLabel = String(vehicle.use_make_model_label || "").toLowerCase() === "true" || vehicle.use_make_model_label === true;
-    if (useMakeModelLabel && makeModel) {
-      return makeModel;
-    }
     return String(vehicle.vehicle_type || vehicle.name || vehicle.vehicle_slot_id || "Vehicle").trim();
   }
 
-  function vehicleLabelModeNote(vehicle = {}) {
-    const make = String(vehicle.vehicle_make || "").trim();
-    const model = String(vehicle.vehicle_model || "").trim();
-    const useMakeModelLabel = String(vehicle.use_make_model_label || "").toLowerCase() === "true" || vehicle.use_make_model_label === true;
-    if (useMakeModelLabel && [make, model].filter(Boolean).length) {
-      return "Make/model label enabled";
-    }
-    return "";
-  }
-
   function compactVehicleLabel(vehicle = {}) {
-    const make = String(vehicle.vehicle_make || "").trim();
-    const model = String(vehicle.vehicle_model || "").trim();
-    const useMakeModelLabel = String(vehicle.use_make_model_label || "").toLowerCase() === "true" || vehicle.use_make_model_label === true;
-    const displayName = useMakeModelLabel && [make, model].filter(Boolean).length ? [make, model].filter(Boolean).join(" ").trim() : vehicleDisplayName(vehicle);
-    return displayName
+    return vehicleDisplayName(vehicle)
       .replace(/^vehicle[_\s-]*/i, "")
       .replace(/\s+/g, " ")
       .trim();
@@ -497,16 +458,10 @@
   }
 
   function vehicleMetaLine(vehicle = {}) {
-    const make = String(vehicle.vehicle_make || "").trim();
-    const model = String(vehicle.vehicle_model || "").trim();
-    const useMakeModelLabel = String(vehicle.use_make_model_label || "").toLowerCase() === "true" || vehicle.use_make_model_label === true;
-    if (useMakeModelLabel) {
-      return [make, model].filter(Boolean).join(" ").trim();
-    }
     const details = [
       String(vehicle.vehicle_year || "").trim(),
-      make,
-      model,
+      String(vehicle.vehicle_make || "").trim(),
+      String(vehicle.vehicle_model || "").trim(),
     ].filter(Boolean);
     return details.join(" ");
   }
@@ -527,11 +482,11 @@
           class="cd_vehicle_card"
           data-vehicle-slot-id="${escapeHtml(vehicle.vehicle_slot_id)}"
           aria-pressed="${index === 0 ? "true" : "false"}"
-          style="display:grid;grid-template-rows:34px 1fr;gap:0;width:100%;aspect-ratio:1 / 1;padding:0;border:1.5px solid #111111;border-radius:0;background:#fff;cursor:pointer;text-align:center;transition:all .18s ease;box-shadow:none;overflow:hidden;"
+          style="display:grid;grid-template-rows:auto 1fr;gap:8px;flex:0 0 156px;width:156px;min-height:176px;padding:10px 10px 12px;border:1.5px solid #111111;border-radius:0;background:#fff;cursor:pointer;text-align:center;transition:all .18s ease;box-shadow:none;"
         >
-          <span style="font-size:11px;font-weight:700;color:#111827;line-height:1.05;padding:2px 4px 0;margin:0;white-space:normal;overflow:hidden;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;">${escapeHtml(label)}</span>
-          <div style="display:flex;align-items:stretch;justify-content:center;min-height:0;margin:0;padding:0;line-height:0;">
-            <img class="cd_vehicle_image" src="${escapeHtml(imageSrc)}" alt="${escapeHtml(label)}" style="width:100%;max-width:none;height:100%;max-height:none;object-fit:contain;display:block;" />
+          <span style="font-size:12px;font-weight:700;color:#111827;line-height:1.2;">${escapeHtml(label)}</span>
+          <div style="display:flex;align-items:center;justify-content:center;min-height:110px;">
+            <img src="${escapeHtml(imageSrc)}" alt="${escapeHtml(label)}" style="width:100%;max-width:${label.toLowerCase().includes("xl") ? "210px" : label.toLowerCase().includes("suv") ? "184px" : "162px"};height:104px;object-fit:contain;display:block;" />
           </div>
         </button>
       `;
@@ -539,7 +494,7 @@
 
     return `
       <input id="cd_vehicle_slot_id" type="hidden" value="${escapeHtml(orderedFleet[0]?.vehicle_slot_id || "")}" />
-      <div id="cd_vehicle_picker" style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;max-width:1040px;margin:0 auto;padding-bottom:0;">
+      <div id="cd_vehicle_picker" style="display:flex;flex-wrap:wrap;justify-content:center;gap:0;max-width:936px;margin:0 auto;padding-bottom:2px;">
         ${cards}
       </div>
     `;
@@ -566,7 +521,6 @@
         if (!slotId) return;
         hiddenInput.value = slotId;
         syncVehiclePickerSelection(slotId);
-        syncHourlySelectionToVehicle(slotId);
         if (state.quote) getQuote();
       });
     });
@@ -627,15 +581,13 @@
     const profileClose = state.config?.close_time || "22:00";
     const instantBookingEnabled = normalizeBooleanish(vehicle?.instant_booking_enabled, true);
     const configuredNoticeMin = parseInt(vehicle?.min_notice_min, 10);
-    const vehicleTypeText = String(vehicle?.vehicle_type || vehicle?.name || vehicle?.vehicle_slot_id || "").trim().toLowerCase();
-    const isLuxuryVehicle = vehicleTypeText.includes("luxury");
     return {
       instant_booking_enabled: instantBookingEnabled,
       instant_booking_start_time: normalizeTimeOfDay(vehicle?.instant_booking_start_time, normalizeTimeOfDay(profileOpen, "06:00")),
       instant_booking_end_time: normalizeTimeOfDay(vehicle?.instant_booking_end_time, normalizeTimeOfDay(profileClose, "22:00")),
       min_notice_min: Number.isFinite(configuredNoticeMin)
         ? Math.max(0, configuredNoticeMin)
-        : (instantBookingEnabled ? 0 : ((isLuxuryVehicle ? 24 : 4) * 60)),
+        : (instantBookingEnabled ? 0 : 240),
     };
   }
 
@@ -651,6 +603,19 @@
 
   function validateVehicleBookingPolicy(vehicle, startDate, rawStartTime) {
     const policy = getVehicleBookingPolicy(vehicle);
+    const hoursUntilRide = getHoursUntilStart(startDate);
+    const configuredNoticeHours = Math.max(0, Number(policy.min_notice_min || 0) / 60);
+    const minimumNoticeHours = policy.instant_booking_enabled
+      ? configuredNoticeHours
+      : Math.max(4, configuredNoticeHours || 0);
+
+    if (minimumNoticeHours > 0 && hoursUntilRide < minimumNoticeHours) {
+      const noticeText = Number.isInteger(minimumNoticeHours)
+        ? `${minimumNoticeHours}`
+        : minimumNoticeHours.toFixed(1);
+      throw new Error(`This vehicle requires at least ${noticeText} hours notice before pickup.`);
+    }
+
     if (policy.instant_booking_enabled) {
       const localMatch = String(rawStartTime || "").match(/T(\d{2}):(\d{2})/);
       const pickupMinutes = localMatch
@@ -726,91 +691,6 @@
 
   function fixedRateLabel(zone) {
     return zone?.location_name || zone?.route_name || "";
-  }
-
-  function hourlyBookingBySlotId(slotId) {
-    if (!slotId) return null;
-    return (state.config?.hourly_bookings || []).find((row) => String(row.vehicle_slot_id || "") === String(slotId || "")) || null;
-  }
-
-  function renderHourlyBookingSelect() {
-    const hourlyBookings = Array.isArray(state.config?.hourly_bookings) ? state.config.hourly_bookings : [];
-    if (!hourlyBookings.length) return "";
-
-    const options = [
-      `<option value="">Select hourly reservation</option>`,
-      ...hourlyBookings.map((row) => {
-        const bookingDescription = String(row.booking_description || "Hourly Booking")
-          .replace(/ouXMpSTMKm4kREXw3kzP/g, "")
-          .replace(/\s{2,}/g, " ")
-          .trim() || "Hourly Booking";
-        const label = bookingDescription;
-        return `<option value="${escapeHtml(row.vehicle_slot_id || "")}">${escapeHtml(label)}</option>`;
-      }),
-    ];
-
-    return `
-      <div id="cd_hourly_booking_wrap" style="display:none;">
-        <label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Hourly Booking Reservations</label>
-        <select id="cd_hourly_booking" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;">
-          ${options.join("")}
-        </select>
-        <div id="cd_hourly_booking_details" style="display:none;margin-top:10px;padding:12px 14px;border-radius:14px;border:1px solid #dbe4f0;background:#f8fafc;font-size:13px;line-height:1.55;color:#334155;"></div>
-      </div>
-    `;
-  }
-
-  function getHourlyBookingDetails(slotId = "") {
-    const hourlyConfig = hourlyBookingBySlotId(slotId);
-    if (!hourlyConfig) return null;
-    const vehicle = selectedVehicle() || {};
-    const vehicleLabel = [vehicle.vehicle_type, [vehicle.vehicle_make, vehicle.vehicle_model].filter(Boolean).join(" ")].filter(Boolean).join(" - ");
-    return {
-      description: hourlyConfig.booking_description || "Hourly reservation",
-      vehicleLabel: vehicleLabel || "Selected vehicle",
-      rate: toNumber(hourlyConfig.hourly_rate, 0),
-    };
-  }
-
-  function updateHourlyBookingDetails() {
-    const detailsEl = document.getElementById("cd_hourly_booking_details");
-    const hourlySelect = document.getElementById("cd_hourly_booking");
-    const hoursInput = document.getElementById("cd_hourly_hours");
-    if (!detailsEl || !hourlySelect) return;
-
-    const slotId = hourlySelect.value || "";
-    const details = getHourlyBookingDetails(slotId);
-    if (!details) {
-      detailsEl.style.display = "none";
-      detailsEl.textContent = "";
-      return;
-    }
-
-    const hours = Math.max(4, toNumber(hoursInput?.value, 4));
-    detailsEl.style.display = "block";
-    detailsEl.innerHTML = `
-      <div style="font-weight:800;color:#0f172a;">${escapeHtml(details.description)}</div>
-      <div>Vehicle slot: <strong>${escapeHtml(details.vehicleLabel)}</strong></div>
-      <div>Rate: <strong>${money(details.rate)}/hr</strong></div>
-    `;
-  }
-
-  function syncHourlySelectionToVehicle(slotId = "") {
-    const hourlySelect = document.getElementById("cd_hourly_booking");
-    if (!hourlySelect || selectedBookingMode() !== "hourly") return;
-    const options = Array.from(hourlySelect.options || []);
-    const matchingOption = options.find((option) => String(option.value || "") === String(slotId || "").trim());
-    const fallbackOption = options.find((option) => option.value);
-    if (matchingOption) {
-      hourlySelect.value = matchingOption.value;
-    } else if (!hourlySelect.value && fallbackOption) {
-      hourlySelect.value = fallbackOption.value;
-    }
-    syncHourlyDefaults();
-  }
-
-  function syncHourlyDefaults() {
-    updateHourlyBookingDetails();
   }
 
   function matchesPeakWindow(windowConfig, startDate) {
@@ -898,14 +778,9 @@
   }
 
   async function loadConfig() {
-    try {
-      const res = await fetchJsonWithRetry(`${BACKEND_URL}/api/get-profile-widget/${locationId}`, {}, 2, 1500);
-      if (!res.ok) throw new Error("Failed to load booking config");
-      state.config = await res.json();
-    } catch (fetchError) {
-      state.config = await loadConfigViaScript();
-      if (!state.config) throw fetchError;
-    }
+    const res = await fetch(`${BACKEND_URL}/api/get-profile-widget/${locationId}`);
+    if (!res.ok) throw new Error("Failed to load booking config");
+    state.config = await res.json();
 
     const mapsKey = String(state.config.maps_api_key || "").trim();
     if (!mapsKey) return;
@@ -927,40 +802,6 @@
       script.async = true;
       document.head.appendChild(script);
     }
-  }
-
-  function loadConfigViaScript() {
-    return new Promise((resolve) => {
-      const callbackName = `__widgetConfig_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-      const timeout = window.setTimeout(() => {
-        cleanup();
-        resolve(null);
-      }, 8000);
-
-      function cleanup() {
-        try {
-          delete window[callbackName];
-        } catch {
-          window[callbackName] = undefined;
-        }
-        if (script.parentNode) script.parentNode.removeChild(script);
-        window.clearTimeout(timeout);
-      }
-
-      window[callbackName] = (payload) => {
-        cleanup();
-        resolve(payload || null);
-      };
-
-      const script = document.createElement("script");
-      script.async = true;
-      script.src = `${BACKEND_URL}/api/get-profile-widget-script/${encodeURIComponent(locationId)}?callback=${encodeURIComponent(callbackName)}`;
-      script.onerror = () => {
-        cleanup();
-        resolve(null);
-      };
-      document.head.appendChild(script);
-    });
   }
 
   function initAutocomplete() {
@@ -1085,27 +926,14 @@
     const mode = selectedBookingMode();
     const eventWrap = document.getElementById("cd_event_wrap");
     const fixedWrap = document.getElementById("cd_fixed_destination_wrap");
-    const hourlyWrap = document.getElementById("cd_hourly_booking_wrap");
-    const hourlyHoursWrap = document.getElementById("cd_hourly_hours_wrap");
-    const hourlyDetails = document.getElementById("cd_hourly_booking_details");
     const eventSelect = document.getElementById("cd_special_event");
     const fixedSelect = document.getElementById("cd_fixed_destination");
-    const hourlySelect = document.getElementById("cd_hourly_booking");
 
     if (eventWrap) eventWrap.style.display = mode === "event" ? "block" : "none";
     if (fixedWrap) fixedWrap.style.display = mode === "fixed" ? "block" : "none";
-    if (hourlyWrap) hourlyWrap.style.display = mode === "hourly" ? "block" : "none";
-    if (hourlyHoursWrap) hourlyHoursWrap.style.display = mode === "hourly" ? "grid" : "none";
-    if (hourlyDetails) hourlyDetails.style.display = mode === "hourly" ? "block" : "none";
 
     if (mode !== "event" && eventSelect) eventSelect.value = "";
     if (mode !== "fixed" && fixedSelect) fixedSelect.value = "";
-    if (mode !== "hourly" && hourlySelect) hourlySelect.value = "";
-    if (mode === "hourly" && hourlySelect && !hourlySelect.value) {
-      const fallbackOption = Array.from(hourlySelect.options || []).find((option) => option.value);
-      if (fallbackOption) hourlySelect.value = fallbackOption.value;
-    }
-    syncHourlyDefaults();
   }
 
   function render() {
@@ -1118,18 +946,14 @@
     const activePromotion = getActiveWidgetPromotion();
     const vehiclePicker = renderVehiclePicker(fleet);
     const eventSelect = renderEventSelect();
-    const hourlyBookingSelect = renderHourlyBookingSelect();
     const fixedDestinationSelect = renderFixedDestinationSelect();
     const serviceRadius = toNumber(state.config?.service_radius, 0);
     const addonTitle = "Addons (car seat, wheelchair, food & beverage, etc)";
 
     root.innerHTML = `
-      <div id="cd_shell" style="max-width:1800px;margin:0 auto;font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;color:#0f172a;">
+      <div style="max-width:1080px;margin:0 auto;font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;color:#0f172a;">
         <style>
           #${rootId}, #${rootId} * { box-sizing: border-box; }
-          #${rootId} .pac-container {
-            z-index: 2147483647 !important;
-          }
           @media (max-width: 767px) {
             #${rootId} #cd_main_grid,
             #${rootId} #cd_name_grid,
@@ -1145,9 +969,6 @@
             #${rootId} #cd_hero_panel {
               padding: 20px !important;
             }
-            #${rootId} #cd_shell {
-              padding: 0 !important;
-            }
             #${rootId} #cd_hero_header {
               flex-direction: column !important;
               align-items: center !important;
@@ -1160,21 +981,6 @@
             #${rootId} #cd_logo_wrap img {
               max-width: 140px !important;
               max-height: 80px !important;
-            }
-            #${rootId} #cd_vehicle_picker {
-              gap: 0 !important;
-              margin: 0 !important;
-              width: 100% !important;
-            }
-            #${rootId} .cd_vehicle_card {
-              aspect-ratio: 1 / 1 !important;
-              min-height: 0 !important;
-              padding: 0 !important;
-            }
-            #${rootId} .cd_vehicle_image {
-              height: 100% !important;
-              max-height: none !important;
-              max-width: none !important;
             }
             #${rootId} #cd_actions_col {
               align-content: stretch !important;
@@ -1235,26 +1041,18 @@
                   <div style="max-width:220px;"><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:8px;"># of Passengers</label><input id="cd_passenger_count" type="number" min="1" value="1" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" /></div>
                 </div>
                 <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-top:12px;">
-                  <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Route/Service Option</label><select id="cd_booking_mode" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;"><option value="standard">Standard Booking</option><option value="fixed">Fixed Destinations</option><option value="event">Events</option><option value="hourly">Hourly Booking Reservations</option></select></div>
+                  <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Route Option</label><select id="cd_booking_mode" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;"><option value="standard">Standard Booking</option><option value="fixed">Fixed Destinations</option><option value="event">Events</option></select></div>
                 </div>
                 <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-top:12px;">
                   <div id="cd_event_wrap" style="display:none;">${eventSelect || ""}</div>
-                  ${hourlyBookingSelect || ""}
                   ${fixedDestinationSelect}
-                </div>
-                <div id="cd_hourly_hours_wrap" style="display:none;grid-template-columns:minmax(220px,1fr);gap:12px;align-items:end;margin-top:12px;">
-                  <div>
-                    <label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Hours Needed</label>
-                    <input id="cd_hourly_hours" type="number" min="4" step="1" inputmode="numeric" placeholder="Enter hours" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" />
-                    <div style="margin-top:6px;display:inline-flex;align-items:center;gap:6px;padding:4px 8px;border-radius:999px;background:#eef2ff;color:#4338ca;font-size:12px;font-weight:800;">4 hour minimum</div>
-                  </div>
                 </div>
                 <div id="cd_datetime_grid" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px;">
                   <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Pickup Date & Time</label><input id="cd_start_time" type="datetime-local" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" /></div>
                 </div>
                 <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-top:12px;">
-                  <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Pickup Address</label><input id="cd_pickup" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" inputmode="text" placeholder="Street address or airport terminal" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" /></div>
-                  <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Dropoff Address</label><input id="cd_dropoff" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" inputmode="text" placeholder="Destination address" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" /></div>
+                  <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Pickup Address</label><input id="cd_pickup" placeholder="Street address or airport terminal" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" /></div>
+                  <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Dropoff Address</label><input id="cd_dropoff" placeholder="Destination address" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" /></div>
                 </div>
               </div>
 
@@ -1336,17 +1134,10 @@
       if (state.quote) getQuote();
     });
 
-    document.querySelectorAll('input[name="cd_addons"], #cd_passenger_count, #cd_special_event, #cd_fixed_destination, #cd_hourly_booking, #cd_hourly_hours').forEach((input) => {
+    document.querySelectorAll('input[name="cd_addons"], #cd_passenger_count, #cd_special_event, #cd_fixed_destination').forEach((input) => {
       input?.addEventListener("change", () => {
         if (state.quote) getQuote();
-        if (input.id === "cd_hourly_booking" || input.id === "cd_hourly_hours") syncHourlyDefaults();
       });
-      if (input.id === "cd_hourly_booking" || input.id === "cd_hourly_hours") {
-        input?.addEventListener("input", () => {
-          syncHourlyDefaults();
-          if (state.quote) getQuote();
-        });
-      }
     });
     document.querySelectorAll('input[name="cd_payment_choice"]').forEach((input) => {
       input?.addEventListener("change", () => {
@@ -1414,8 +1205,6 @@
       passenger_count: toNumber(document.getElementById("cd_passenger_count")?.value, 1),
       selected_event_name: document.getElementById("cd_special_event")?.value || null,
       selected_fixed_destination: document.getElementById("cd_fixed_destination")?.value || null,
-      selected_hourly_booking: document.getElementById("cd_hourly_booking")?.value || null,
-      hourly_hours: toNumber(document.getElementById("cd_hourly_hours")?.value, 1),
       selected_addons: selectedAddons(),
       accepted_terms: !!document.getElementById("cd_accept_terms")?.checked,
       carry_on_count: toNumber(document.getElementById("cd_carry_on_count")?.value, 0),
@@ -1499,40 +1288,6 @@
       throw new Error("Enter pickup, dropoff, and pickup date/time first.");
     }
 
-    try {
-      const response = await fetch(`${BACKEND_URL}/api/widget-quote`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          location_id: locationId,
-          vehicle_slot_id: payload.vehicle_slot_id,
-          booking_mode: payload.booking_mode,
-          pickup_address: payload.pickup_address,
-          dropoff_address: payload.dropoff_address,
-          start_time: payload.start_time,
-          passenger_count: payload.passenger_count,
-          selected_event_name: payload.selected_event_name,
-          selected_fixed_destination: payload.selected_fixed_destination,
-          selected_hourly_booking: payload.selected_hourly_booking,
-          hourly_hours: payload.hourly_hours,
-          selected_addons: payload.selected_addons,
-        }),
-      });
-      const data = await response.json();
-      if (!response.ok || !data?.success) {
-        throw new Error(data?.error || "Unable to calculate quote.");
-      }
-      state.route = {
-        pickupCoords: { formattedAddress: payload.pickup_address, lat: null, lng: null },
-        dropoffCoords: { formattedAddress: payload.dropoff_address, lat: null, lng: null },
-        miles: Number(data.miles || 0),
-      };
-      state.quote = data;
-      return;
-    } catch (serverError) {
-      console.warn("Widget quote preview fallback:", serverError);
-    }
-
     const [pickupCoords, dropoffCoords] = await Promise.all([
       geocodeInput(payload.pickup_address, "pickup"),
       geocodeInput(payload.dropoff_address, "dropoff"),
@@ -1565,8 +1320,6 @@
 
     const eventConfig = payload.booking_mode === "event" ? eventByName(payload.selected_event_name) : null;
     const selectedFixedName = payload.booking_mode === "fixed" ? String(payload.selected_fixed_destination || "").trim() : "";
-    const hourlyConfig = payload.booking_mode === "hourly" ? hourlyBookingBySlotId(payload.selected_hourly_booking) : null;
-    const hourlyHours = Math.max(4, toNumber(payload.hourly_hours, 4));
     const matchedFixedRate = payload.booking_mode === "fixed" ? resolveFixedRate(route, selectedFixedName, vehicle) : resolveFixedRate(route, "", vehicle);
     const fixedRate = payload.booking_mode === "fixed" ? matchedFixedRate : null;
     const peakMultiplier = getPeakMultiplier(startDate);
@@ -1590,10 +1343,6 @@
       }
     }
 
-    if (payload.booking_mode === "hourly" && !hourlyConfig) {
-      throw new Error("Select an hourly reservation option to continue.");
-    }
-
     let baseRate = toNumber(vehicle.base_rate, 0);
     let mileRate = toNumber(vehicle.mile_rate, 0);
     let pricingLabel = `${vehicle.vehicle_type || "Selected vehicle"} standard pricing`;
@@ -1608,12 +1357,6 @@
     if (fixedRate) {
       rideSubtotal = toNumber(fixedRate.fixed_price, rideSubtotal);
       pricingLabel = `${fixedRate.location_name || "Fixed zone"} flat rate`;
-    }
-
-    if (hourlyConfig) {
-      const hourlyRate = toNumber(hourlyConfig.hourly_rate, 0);
-      rideSubtotal = hourlyRate * hourlyHours;
-      pricingLabel = `${hourlyConfig.booking_description || "Hourly reservation"} at ${money(hourlyRate)}/hr for ${hourlyHours} hour${hourlyHours === 1 ? "" : "s"}`;
     }
 
     if (fixedRate && fixedSurcharge > 0) {
@@ -1652,12 +1395,9 @@
       miles: route.miles,
       pricing_label: pricingLabel,
       fixed_rate_name: fixedRate?.location_name || null,
-      hourly_booking_name: hourlyConfig?.booking_description || null,
-      hourly_booking_slot_id: hourlyConfig?.vehicle_slot_id || null,
       peak_multiplier: peakMultiplier,
       fixed_surcharge: fixedRate ? fixedSurcharge : 0,
       booking_mode: payload.booking_mode,
-      hourly_hours: hourlyConfig ? hourlyHours : null,
     };
 
     return state.quote;
@@ -1760,21 +1500,19 @@
         ? `Minimum deposit due today: ${money(state.quote.amount_due_now)}. Remaining balance will be invoiced 48 hours before pickup.`
         : `Full payment due today: ${money(state.quote.amount_due_now)}.`
     );
-    if (state.quote.booking_mode === "hourly") {
-      notes.push(`Hourly total: ${money(state.quote.total)} for ${state.quote.hourly_hours || 4} hours.`);
-    }
     setRouteStatus(notes.join(" "));
 
     const payNow = Number(state.quote.amount_due_now || state.quote.total || 0);
     const button = document.getElementById("cd_btn_book");
     if (button) {
-      const totalButtonText = state.quote.booking_mode === "hourly"
-        ? `Confirm Hourly Booking (${money(state.quote.total)})`
-        : `Confirm Booking (${money(state.quote.total)})`;
       if (providerSupportsDirectCheckout()) {
-        button.textContent = totalButtonText;
+        button.textContent = payNow < Number(state.quote.total || 0)
+          ? `Pay Deposit & Confirm Booking (${money(payNow)})`
+          : `Pay & Confirm Booking (${money(payNow)})`;
       } else {
-        button.textContent = totalButtonText;
+        button.textContent = payNow < Number(state.quote.total || 0)
+          ? `Request Deposit Follow-Up (${money(payNow)})`
+          : `Request Booking Follow-Up (${money(payNow)})`;
       }
     }
   }
@@ -2038,14 +1776,6 @@
   (async function init() {
     try {
       if (!locationId) throw new Error("Missing location id.");
-      const root = getRoot();
-      if (root) {
-        root.innerHTML = `
-          <div style="padding:18px;color:#334155;background:#f8fafc;border:1px solid #cbd5e1;border-radius:16px;font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;">
-            <strong>Loading booking widget...</strong> Please wait a moment while we connect your booking settings.
-          </div>
-        `;
-      }
       await loadConfig();
       await waitForGoogleMaps();
       try {
@@ -2065,13 +1795,9 @@
         root.innerHTML = `
           <div style="padding:18px;color:#991b1b;background:#fef2f2;border:1px solid #fecaca;border-radius:16px;font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;">
             <strong>Booking widget unavailable:</strong> ${escapeHtml(error.message || "Please try again shortly.")}
-            <div style="margin-top:8px;color:#7f1d1d;font-size:13px;line-height:1.5;">
-              We retried the booking settings request once automatically. If this keeps happening, the backend may be waking up or the location may be missing a live profile.
-            </div>
           </div>
         `;
       }
     }
   })();
 })();
-
