@@ -527,11 +527,11 @@
           class="cd_vehicle_card"
           data-vehicle-slot-id="${escapeHtml(vehicle.vehicle_slot_id)}"
           aria-pressed="${index === 0 ? "true" : "false"}"
-          style="display:grid;grid-template-rows:auto 1fr;gap:4px;width:100%;min-height:188px;padding:10px 12px 10px;border:1.5px solid #111111;border-radius:0;background:#fff;cursor:pointer;text-align:center;transition:all .18s ease;box-shadow:none;"
+          style="display:grid;grid-template-rows:auto 1fr;gap:2px;width:100%;min-height:176px;padding:9px 12px 8px;border:1.5px solid #111111;border-radius:0;background:#fff;cursor:pointer;text-align:center;transition:all .18s ease;box-shadow:none;"
         >
-          <span style="font-size:13px;font-weight:700;color:#111827;line-height:1.05;">${escapeHtml(label)}</span>
-          <div style="display:flex;align-items:center;justify-content:center;min-height:122px;">
-            <img class="cd_vehicle_image" src="${escapeHtml(imageSrc)}" alt="${escapeHtml(label)}" style="width:100%;max-width:${label.toLowerCase().includes("xl") ? "240px" : label.toLowerCase().includes("suv") ? "208px" : "182px"};height:118px;object-fit:contain;display:block;" />
+          <span style="font-size:13px;font-weight:700;color:#111827;line-height:1;">${escapeHtml(label)}</span>
+          <div style="display:flex;align-items:center;justify-content:center;min-height:112px;">
+            <img class="cd_vehicle_image" src="${escapeHtml(imageSrc)}" alt="${escapeHtml(label)}" style="width:100%;max-width:${label.toLowerCase().includes("xl") ? "232px" : label.toLowerCase().includes("suv") ? "200px" : "172px"};height:108px;object-fit:contain;display:block;" />
           </div>
         </button>
       `;
@@ -539,7 +539,7 @@
 
     return `
       <input id="cd_vehicle_slot_id" type="hidden" value="${escapeHtml(orderedFleet[0]?.vehicle_slot_id || "")}" />
-      <div id="cd_vehicle_picker" style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;max-width:1040px;margin:0 auto;padding-bottom:2px;">
+      <div id="cd_vehicle_picker" style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;max-width:1040px;margin:0 auto;padding-bottom:2px;">
         ${cards}
       </div>
     `;
@@ -1099,14 +1099,16 @@
               max-height: 80px !important;
             }
             #${rootId} #cd_vehicle_picker {
-              gap: 14px !important;
+              gap: 0 !important;
+              margin: 0 !important;
+              width: 100% !important;
             }
             #${rootId} .cd_vehicle_card {
-              min-height: 204px !important;
-              padding: 12px 14px 12px !important;
+              min-height: 192px !important;
+              padding: 9px 6px 8px !important;
             }
             #${rootId} .cd_vehicle_image {
-              height: 132px !important;
+              height: 118px !important;
             }
             #${rootId} #cd_actions_col {
               align-content: stretch !important;
