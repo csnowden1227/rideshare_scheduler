@@ -825,6 +825,15 @@
     totalField.value = money(details.rate * hours);
   }
 
+  function syncHourlyDefaults() {
+    const hoursInput = document.getElementById("cd_hourly_hours");
+    if (hoursInput && Number(hoursInput.value) < 4) {
+      hoursInput.value = 4;
+    }
+    updateHourlyBookingDetails();
+    updateHourlyTotalField();
+  }
+
   function matchesPeakWindow(windowConfig, startDate) {
     const dayName = getDayLabel(startDate);
     const day = (windowConfig.day || "Everyday").toLowerCase();
@@ -1113,8 +1122,7 @@
     if (mode !== "event" && eventSelect) eventSelect.value = "";
     if (mode !== "fixed" && fixedSelect) fixedSelect.value = "";
     if (mode !== "hourly" && hourlySelect) hourlySelect.value = "";
-    updateHourlyBookingDetails();
-    updateHourlyTotalField();
+    syncHourlyDefaults();
   }
 
   function render() {
@@ -1342,13 +1350,11 @@
     document.querySelectorAll('input[name="cd_addons"], #cd_passenger_count, #cd_special_event, #cd_fixed_destination, #cd_hourly_booking, #cd_hourly_hours').forEach((input) => {
       input?.addEventListener("change", () => {
         if (state.quote) getQuote();
-        if (input.id === "cd_hourly_booking" || input.id === "cd_hourly_hours") updateHourlyBookingDetails();
-        if (input.id === "cd_hourly_booking" || input.id === "cd_hourly_hours") updateHourlyTotalField();
+        if (input.id === "cd_hourly_booking" || input.id === "cd_hourly_hours") syncHourlyDefaults();
       });
       if (input.id === "cd_hourly_booking" || input.id === "cd_hourly_hours") {
         input?.addEventListener("input", () => {
-          updateHourlyBookingDetails();
-          updateHourlyTotalField();
+          syncHourlyDefaults();
           if (state.quote) getQuote();
         });
       }
@@ -1731,19 +1737,21 @@
         ? `Minimum deposit due today: ${money(state.quote.amount_due_now)}. Remaining balance will be invoiced 48 hours before pickup.`
         : `Full payment due today: ${money(state.quote.amount_due_now)}.`
     );
+    if (state.quote.booking_mode === "hourly") {
+      notes.push(`Hourly total: ${money(state.quote.total)} for ${state.quote.hourly_hours || 4} hours.`);
+    }
     setRouteStatus(notes.join(" "));
 
     const payNow = Number(state.quote.amount_due_now || state.quote.total || 0);
     const button = document.getElementById("cd_btn_book");
     if (button) {
+      const totalButtonText = state.quote.booking_mode === "hourly"
+        ? `Confirm Hourly Booking (${money(state.quote.total)})`
+        : `Confirm Booking (${money(state.quote.total)})`;
       if (providerSupportsDirectCheckout()) {
-        button.textContent = payNow < Number(state.quote.total || 0)
-          ? `Pay Deposit & Confirm Booking (${money(payNow)})`
-          : `Pay & Confirm Booking (${money(payNow)})`;
+        button.textContent = totalButtonText;
       } else {
-        button.textContent = payNow < Number(state.quote.total || 0)
-          ? `Request Deposit Follow-Up (${money(payNow)})`
-          : `Request Booking Follow-Up (${money(payNow)})`;
+        button.textContent = totalButtonText;
       }
     }
   }
