@@ -527,9 +527,9 @@
           class="cd_vehicle_card"
           data-vehicle-slot-id="${escapeHtml(vehicle.vehicle_slot_id)}"
           aria-pressed="${index === 0 ? "true" : "false"}"
-          style="display:grid;grid-template-rows:auto 1fr;gap:1px;width:100%;min-height:164px;padding:7px 10px 6px;border:1.5px solid #111111;border-radius:0;background:#fff;cursor:pointer;text-align:center;transition:all .18s ease;box-shadow:none;"
+          style="display:grid;grid-template-rows:auto 1fr;gap:0;width:100%;min-height:164px;padding:7px 8px 6px;border:1.5px solid #111111;border-radius:0;background:#fff;cursor:pointer;text-align:center;transition:all .18s ease;box-shadow:none;"
         >
-          <span style="font-size:13px;font-weight:700;color:#111827;line-height:1;">${escapeHtml(label)}</span>
+          <span style="font-size:13px;font-weight:700;color:#111827;line-height:1;margin-bottom:-2px;">${escapeHtml(label)}</span>
           <div style="display:flex;align-items:center;justify-content:center;min-height:96px;">
             <img class="cd_vehicle_image" src="${escapeHtml(imageSrc)}" alt="${escapeHtml(label)}" style="width:100%;max-width:${label.toLowerCase().includes("xl") ? "220px" : label.toLowerCase().includes("suv") ? "188px" : "160px"};height:92px;object-fit:contain;display:block;" />
           </div>
@@ -1086,7 +1086,7 @@
               padding: 20px !important;
             }
             #${rootId} #cd_shell {
-              padding: 0 6px !important;
+              padding: 0 !important;
             }
             #${rootId} #cd_hero_header {
               flex-direction: column !important;
@@ -1108,7 +1108,7 @@
             }
             #${rootId} .cd_vehicle_card {
               min-height: 184px !important;
-              padding: 8px 6px 7px !important;
+              padding: 8px 4px 7px !important;
             }
             #${rootId} .cd_vehicle_image {
               height: 108px !important;
