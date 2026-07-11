@@ -985,22 +985,7 @@
   }
 
   function initAutocomplete() {
-    if (!window.google?.maps?.places) return;
-
-    const pickup = document.getElementById("cd_pickup");
-    const dropoff = document.getElementById("cd_dropoff");
-    if (!pickup || !dropoff) return;
-
-    const pickupAutocomplete = new google.maps.places.Autocomplete(pickup, { types: ["address"] });
-    const dropoffAutocomplete = new google.maps.places.Autocomplete(dropoff, { types: ["address"] });
-
-    pickupAutocomplete.addListener("place_changed", () => {
-      state.places.pickup = pickupAutocomplete.getPlace();
-    });
-
-    dropoffAutocomplete.addListener("place_changed", () => {
-      state.places.dropoff = dropoffAutocomplete.getPlace();
-    });
+    return;
   }
 
   async function waitForGoogleMaps() {
@@ -1257,7 +1242,7 @@
                   ${fixedDestinationSelect}
                 </div>
                 <div id="cd_hourly_hours_wrap" style="display:none;grid-template-columns:1fr auto;gap:12px;align-items:end;margin-top:12px;">
-                  <div style="max-width:220px;"><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Hours Needed</label><input id="cd_hourly_hours" type="number" min="4" step="1" value="4" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" /></div>
+                  <div style="max-width:220px;"><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Hours Needed</label><select id="cd_hourly_hours" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;">${Array.from({ length: 17 }, (_, i) => 4 + i).map((hour) => `<option value="${hour}">${hour}</option>`).join("")}</select></div>
                   <div style="min-width:180px;"><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Hourly Total</label><input id="cd_hourly_total" type="text" readonly value="$0.00" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#f8fafc;color:#334155;font-weight:800;" /></div>
                 </div>
                 <div id="cd_datetime_grid" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px;">
