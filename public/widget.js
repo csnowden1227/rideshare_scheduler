@@ -11,6 +11,10 @@
     config: null,
     quote: null,
     route: null,
+    maps: {
+      authFailed: false,
+      autocompleteReady: false,
+    },
     places: {
       pickup: null,
       dropoff: null,
@@ -877,33 +881,102 @@
     }
 
     if (!window.google && !document.getElementById("cd-google-maps")) {
+      window.gm_authFailure = () => {
+        state.maps.authFailed = true;
+        state.maps.autocompleteReady = false;
+        console.warn("Google Maps authentication failed; falling back to manual address entry.");
+        updateAddressHelperState();
+      };
+      window.__cdInitAutocomplete = () => {
+        if (state.maps.authFailed) return;
+        initAutocomplete()
+          .then((initialized) => {
+            state.maps.autocompleteReady = Boolean(initialized);
+            updateAddressHelperState();
+          })
+          .catch((error) => {
+            console.warn("Google Maps autocomplete could not initialize.", error);
+            state.maps.authFailed = true;
+            state.maps.autocompleteReady = false;
+            updateAddressHelperState();
+          });
+      };
+
       const script = document.createElement("script");
       script.id = "cd-google-maps";
       script.dataset.mapsKey = mapsKey;
-      script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(mapsKey)}&libraries=places,geometry&callback=__cdInitAutocomplete`;
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(mapsKey)}&libraries=geometry&callback=__cdInitAutocomplete`;
       script.async = true;
-      window.__cdInitAutocomplete = initAutocomplete;
       document.head.appendChild(script);
     }
   }
 
-  function initAutocomplete() {
-    if (!window.google?.maps?.places) return;
+  async function initAutocomplete() {
+    if (state.maps.authFailed) return;
+    if (!window.google?.maps?.importLibrary) return false;
 
     const pickup = document.getElementById("cd_pickup");
     const dropoff = document.getElementById("cd_dropoff");
-    if (!pickup || !dropoff) return;
+    if (!pickup || !dropoff) return false;
 
-    const pickupAutocomplete = new google.maps.places.Autocomplete(pickup, { types: ["address"] });
-    const dropoffAutocomplete = new google.maps.places.Autocomplete(dropoff, { types: ["address"] });
+    const { PlaceAutocompleteElement } = await google.maps.importLibrary("places");
+    if (typeof PlaceAutocompleteElement !== "function") return false;
 
-    pickupAutocomplete.addListener("place_changed", () => {
-      state.places.pickup = pickupAutocomplete.getPlace();
-    });
+    const configureAutocomplete = (element, kind) => {
+      if (!element) return;
+      element.addEventListener("gmp-select", async (event) => {
+        const placePrediction = event?.placePrediction;
+        if (!placePrediction) return;
+        const place = placePrediction.toPlace();
+        try {
+          await place.fetchFields({ fields: ["formattedAddress", "location", "displayName"] });
+        } catch (error) {
+          console.warn(`Google Places details fetch failed for ${kind}.`, error);
+        }
+        state.places[kind] = place;
+        if (place?.formattedAddress) {
+          element.value = place.formattedAddress;
+        }
+      });
 
-    dropoffAutocomplete.addListener("place_changed", () => {
-      state.places.dropoff = dropoffAutocomplete.getPlace();
-    });
+      element.addEventListener("input", () => {
+        state.places[kind] = null;
+      });
+    };
+
+    if (pickup instanceof PlaceAutocompleteElement) {
+      configureAutocomplete(pickup, "pickup");
+    }
+    if (dropoff instanceof PlaceAutocompleteElement) {
+      configureAutocomplete(dropoff, "dropoff");
+    }
+
+    return true;
+  }
+
+  function updateAddressHelperState() {
+    const helper = document.getElementById("cd_address_helper");
+    if (!helper) return;
+
+    if (state.maps.authFailed) {
+      helper.textContent = "Address autocomplete is unavailable right now, but pickup and dropoff can still be typed manually.";
+      helper.style.display = "block";
+      helper.style.color = "#9a3412";
+      helper.style.background = "#fff7ed";
+      helper.style.border = "1px solid #fed7aa";
+      return;
+    }
+
+    if (!state.maps.autocompleteReady) {
+      helper.textContent = "Loading address autocomplete...";
+      helper.style.display = "block";
+      helper.style.color = "#475569";
+      helper.style.background = "#f8fafc";
+      helper.style.border = "1px solid #e2e8f0";
+      return;
+    }
+
+    helper.style.display = "none";
   }
 
   async function waitForGoogleMaps() {
@@ -1145,8 +1218,9 @@
                   <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Pickup Date & Time</label><input id="cd_start_time" type="datetime-local" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" /></div>
                 </div>
                 <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-top:12px;">
-                  <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Pickup Address</label><input id="cd_pickup" placeholder="Pickup address" style="width:100%;padding:12px;border:1px solid #cbd5e1;border-radius:12px;background:#fff;" /></div>
-                  <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Dropoff Address</label><input id="cd_dropoff" placeholder="Dropoff address" style="width:100%;padding:12px;border:1px solid #cbd5e1;border-radius:12px;background:#fff;" /></div>
+                  <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Pickup Address</label><gmp-place-autocomplete id="cd_pickup" placeholder="Pickup address" style="width:100%;display:block;min-height:48px;"></gmp-place-autocomplete></div>
+                  <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Dropoff Address</label><gmp-place-autocomplete id="cd_dropoff" placeholder="Dropoff address" style="width:100%;display:block;min-height:48px;"></gmp-place-autocomplete></div>
+                  <div id="cd_address_helper" style="display:none;padding:10px 12px;border-radius:12px;font-size:12px;line-height:1.5;"></div>
                 </div>
               </div>
 
@@ -1256,8 +1330,8 @@
 
     bindVehiclePicker();
     updateBookingModeUI();
-    initAutocomplete();
     applyPrefillFromPageQuery();
+    updateAddressHelperState();
   }
 
   function showError(message) {
