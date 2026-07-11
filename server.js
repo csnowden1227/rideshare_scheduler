@@ -1299,6 +1299,7 @@ async function ensureProfilePricingColumns() {
     profilePricingColumnsReady = (async () => {
       await pool.query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS service_fee_type TEXT`);
       await pool.query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS service_fee_value NUMERIC`);
+      await pool.query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS hourly_bookings JSONB`);
     })().catch((err) => {
       profilePricingColumnsReady = null;
       throw err;
