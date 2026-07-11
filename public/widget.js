@@ -527,11 +527,11 @@
           class="cd_vehicle_card"
           data-vehicle-slot-id="${escapeHtml(vehicle.vehicle_slot_id)}"
           aria-pressed="${index === 0 ? "true" : "false"}"
-          style="display:grid;grid-template-rows:auto 1fr;gap:8px;width:100%;min-height:176px;padding:10px 10px 12px;border:1.5px solid #111111;border-radius:0;background:#fff;cursor:pointer;text-align:center;transition:all .18s ease;box-shadow:none;"
+          style="display:grid;grid-template-rows:auto 1fr;gap:10px;width:100%;min-height:208px;padding:12px 12px 14px;border:1.5px solid #111111;border-radius:0;background:#fff;cursor:pointer;text-align:center;transition:all .18s ease;box-shadow:none;"
         >
-          <span style="font-size:12px;font-weight:700;color:#111827;line-height:1.2;">${escapeHtml(label)}</span>
-          <div style="display:flex;align-items:center;justify-content:center;min-height:110px;">
-            <img src="${escapeHtml(imageSrc)}" alt="${escapeHtml(label)}" style="width:100%;max-width:${label.toLowerCase().includes("xl") ? "210px" : label.toLowerCase().includes("suv") ? "184px" : "162px"};height:104px;object-fit:contain;display:block;" />
+          <span style="font-size:13px;font-weight:700;color:#111827;line-height:1.2;">${escapeHtml(label)}</span>
+          <div style="display:flex;align-items:center;justify-content:center;min-height:138px;">
+            <img src="${escapeHtml(imageSrc)}" alt="${escapeHtml(label)}" style="width:100%;max-width:${label.toLowerCase().includes("xl") ? "250px" : label.toLowerCase().includes("suv") ? "220px" : "192px"};height:132px;object-fit:contain;display:block;" />
           </div>
         </button>
       `;
@@ -539,7 +539,7 @@
 
     return `
       <input id="cd_vehicle_slot_id" type="hidden" value="${escapeHtml(orderedFleet[0]?.vehicle_slot_id || "")}" />
-      <div id="cd_vehicle_picker" style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;max-width:960px;margin:0 auto;padding-bottom:2px;">
+      <div id="cd_vehicle_picker" style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;max-width:1040px;margin:0 auto;padding-bottom:2px;">
         ${cards}
       </div>
     `;
@@ -1067,7 +1067,7 @@
     const addonTitle = "Addons (car seat, wheelchair, food & beverage, etc)";
 
     root.innerHTML = `
-      <div style="max-width:1220px;margin:0 auto;font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;color:#0f172a;">
+      <div style="max-width:1360px;margin:0 auto;font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;color:#0f172a;">
         <style>
           #${rootId}, #${rootId} * { box-sizing: border-box; }
           @media (max-width: 767px) {
@@ -1135,7 +1135,7 @@
           ${proPlan ? "" : `<div style="margin-top:18px;text-align:center;font-size:12px;color:#475569;font-weight:700;">Powered by CRM ONE SOURCE - Your all-in-one digital solution for any business.</div>`}
         </div>
 
-        <div id="cd_main_grid" style="margin-top:20px;display:grid;grid-template-columns:minmax(0,1.55fr) minmax(340px,1fr);gap:24px;">
+        <div id="cd_main_grid" style="margin-top:20px;display:grid;grid-template-columns:minmax(0,1.6fr) minmax(360px,1fr);gap:26px;">
           <div style="background:#fff;border:1px solid #e2e8f0;border-radius:24px;box-shadow:0 24px 50px rgba(15,23,42,.08);padding:24px;">
             <div style="display:grid;gap:18px;">
               <div>
