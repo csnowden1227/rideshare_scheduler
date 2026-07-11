@@ -501,7 +501,7 @@
                 <div class="flex justify-between items-center mb-6">
                     <div>
                         <h2 class="section-header !mb-2 !border-0">SECTION: HOURLY BOOKING</h2>
-                        <p class="text-xs text-slate-500">Hourly reservation options are tied to a vehicle make/model and use a fixed hourly rate multiplied by the number of hours entered in the widget.</p>
+                        <p class="text-xs text-slate-500">Hourly reservation options inherit the selected fleet vehicle slot and its calendar. Use a fixed hourly rate multiplied by the number of hours entered in the widget.</p>
                     </div>
                     <button type="button" onclick="addHourlyBookingRow()" class="wizard-btn-accent text-xs font-bold px-4 py-2 rounded-lg">+ Add Hourly Booking</button>
                 </div>
@@ -509,7 +509,7 @@
                 <table class="w-full">
                     <thead>
                         <tr class="text-[10px] uppercase text-gray-400">
-                            <th>Booking Description</th><th>Vehicle Make</th><th>Vehicle Model</th><th>Default Hours</th><th>Price / Hour</th><th></th>
+                            <th>Booking Description</th><th>Default Hours</th><th>Price / Hour</th><th></th>
                         </tr>
                     </thead>
                     <tbody id="hourly-booking-body"></tbody>
