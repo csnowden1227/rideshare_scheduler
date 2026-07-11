@@ -752,7 +752,7 @@
     const options = [
       `<option value="">Select hourly reservation</option>`,
       ...hourlyBookings.map((row) => {
-        const label = `${row.booking_description || "Hourly Booking"}${row.vehicle_slot_id ? ` - ${row.vehicle_slot_id}` : ""}`;
+        const label = row.booking_description || "Hourly Booking";
         return `<option value="${escapeHtml(row.vehicle_slot_id || "")}">${escapeHtml(label)}</option>`;
       }),
     ];
