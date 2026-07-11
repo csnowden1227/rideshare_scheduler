@@ -905,19 +905,6 @@
     });
   }
 
-  function scheduleAutocompleteInit() {
-    const started = Date.now();
-    const tryInit = () => {
-      if (window.google?.maps?.places) {
-        initAutocomplete();
-        return;
-      }
-      if (Date.now() - started > 10000) return;
-      window.setTimeout(tryInit, 150);
-    };
-    tryInit();
-  }
-
   async function waitForGoogleMaps() {
     if (!state.config?.maps_api_key) return;
 
@@ -1153,8 +1140,8 @@
                   <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Pickup Date & Time</label><input id="cd_start_time" type="datetime-local" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" /></div>
                 </div>
                 <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-top:12px;">
-                  <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Pickup Address</label><input id="cd_pickup" name="pickup_address" autocomplete="street-address" autocapitalize="words" spellcheck="false" placeholder="Street address or airport terminal" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;position:relative;z-index:2;pointer-events:auto;" /></div>
-                  <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Dropoff Address</label><input id="cd_dropoff" name="dropoff_address" autocomplete="street-address" autocapitalize="words" spellcheck="false" placeholder="Destination address" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;position:relative;z-index:2;pointer-events:auto;" /></div>
+                  <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Pickup Address</label><input id="cd_pickup" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" inputmode="text" placeholder="Street address or airport terminal" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;pointer-events:auto;" /></div>
+                  <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Dropoff Address</label><input id="cd_dropoff" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" inputmode="text" placeholder="Destination address" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;pointer-events:auto;" /></div>
                 </div>
               </div>
 
@@ -1917,18 +1904,17 @@
       showError("Loading booking widget...");
       await loadConfig();
       showError("Loading booking options...");
+      await waitForGoogleMaps();
       try {
         const handledCheckout = await handleCheckoutReturn();
         if (!handledCheckout) {
           render();
           clearError();
-          scheduleAutocompleteInit();
         }
       } catch (checkoutError) {
         console.error("Checkout Return Error:", checkoutError);
         render();
         showError(checkoutError.message || "We couldn't verify the checkout result. Please contact support if your card was charged.");
-        scheduleAutocompleteInit();
       }
     } catch (error) {
       console.error("Widget Init Error:", error);
