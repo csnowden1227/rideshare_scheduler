@@ -700,10 +700,9 @@
 
   function renderHourlyBookingSelect() {
     const hourlyBookings = Array.isArray(state.config?.hourly_bookings) ? state.config.hourly_bookings : [];
-    if (!hourlyBookings.length) return "";
 
     const options = [
-      `<option value="">Select executive luxury chauffeur</option>`,
+      `<option value="">${hourlyBookings.length ? "Select executive luxury chauffeur" : "No executive luxury chauffeur rates configured"}</option>`,
       ...hourlyBookings.map((row) => {
         const label = String(row.booking_description || "Executive Luxury Chauffeur").trim();
         return `<option value="${escapeHtml(row.vehicle_slot_id || "")}">${escapeHtml(label)}</option>`;
@@ -714,14 +713,16 @@
       <div id="cd_hourly_wrap" style="display:none;">
         <div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.14em;color:#475569;margin-bottom:8px;">SECTION: EXECUTIVE LUXURY CHAUFFEUR</div>
         <label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Executive Luxury Chauffeur</label>
-        <select id="cd_hourly_booking" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;">
+        <select id="cd_hourly_booking" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" ${hourlyBookings.length ? "" : "disabled"}>
           ${options.join("")}
         </select>
         <div style="margin-top:6px;display:inline-flex;align-items:center;gap:6px;padding:4px 8px;border-radius:999px;background:#eef2ff;color:#4338ca;font-size:12px;font-weight:800;">4 hour minimum</div>
+        ${hourlyBookings.length ? "" : `<div style="margin-top:8px;font-size:12px;color:#b45309;font-weight:700;">Add an Executive Luxury Chauffeur row in the wizard to set the hourly rate.</div>`}
       </div>
       <div id="cd_hourly_hours_wrap" style="display:none;margin-top:12px;max-width:220px;">
         <label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Hours Needed</label>
-        <input id="cd_hourly_hours" type="number" min="4" step="1" inputmode="numeric" placeholder="Enter hours" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" />
+        <input id="cd_hourly_hours" name="hourly_hours" type="number" min="4" step="1" inputmode="numeric" placeholder="Enter hours" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" />
+        <div style="margin-top:6px;font-size:12px;font-weight:700;color:#4338ca;">4 hour minimum</div>
       </div>
     `;
   }
@@ -902,6 +903,19 @@
     dropoffAutocomplete.addListener("place_changed", () => {
       state.places.dropoff = dropoffAutocomplete.getPlace();
     });
+  }
+
+  function scheduleAutocompleteInit() {
+    const started = Date.now();
+    const tryInit = () => {
+      if (window.google?.maps?.places) {
+        initAutocomplete();
+        return;
+      }
+      if (Date.now() - started > 10000) return;
+      window.setTimeout(tryInit, 150);
+    };
+    tryInit();
   }
 
   async function waitForGoogleMaps() {
@@ -1139,8 +1153,8 @@
                   <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Pickup Date & Time</label><input id="cd_start_time" type="datetime-local" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" /></div>
                 </div>
                 <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-top:12px;">
-                  <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Pickup Address</label><input id="cd_pickup" placeholder="Street address or airport terminal" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" /></div>
-                  <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Dropoff Address</label><input id="cd_dropoff" placeholder="Destination address" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" /></div>
+                  <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Pickup Address</label><input id="cd_pickup" name="pickup_address" autocomplete="street-address" autocapitalize="words" spellcheck="false" placeholder="Street address or airport terminal" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;position:relative;z-index:2;pointer-events:auto;" /></div>
+                  <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Dropoff Address</label><input id="cd_dropoff" name="dropoff_address" autocomplete="street-address" autocapitalize="words" spellcheck="false" placeholder="Destination address" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;position:relative;z-index:2;pointer-events:auto;" /></div>
                 </div>
               </div>
 
@@ -1903,17 +1917,18 @@
       showError("Loading booking widget...");
       await loadConfig();
       showError("Loading booking options...");
-      await waitForGoogleMaps();
       try {
         const handledCheckout = await handleCheckoutReturn();
         if (!handledCheckout) {
           render();
           clearError();
+          scheduleAutocompleteInit();
         }
       } catch (checkoutError) {
         console.error("Checkout Return Error:", checkoutError);
         render();
         showError(checkoutError.message || "We couldn't verify the checkout result. Please contact support if your card was charged.");
+        scheduleAutocompleteInit();
       }
     } catch (error) {
       console.error("Widget Init Error:", error);
