@@ -509,7 +509,7 @@
                 <table class="w-full">
                     <thead>
                         <tr class="text-[10px] uppercase text-gray-400">
-                            <th>Booking Description</th><th>Default Hours</th><th>Price / Hour</th><th></th>
+                            <th>Booking Description</th><th>Vehicle Slot</th><th>Default Hours</th><th>Price / Hour</th><th></th>
                         </tr>
                     </thead>
                     <tbody id="hourly-booking-body"></tbody>
@@ -1946,22 +1946,31 @@ function addHourlyBookingRow(data = {}) {
     const tr = document.createElement('tr');
     tr.className = "hourly-booking-row border-b border-slate-50";
     const hourlySlotId = data.vehicle_slot_id || document.querySelector('#fleet-body tr')?.dataset.vehicleSlotId || document.querySelector('#fleet-body tr .fleet-slot-pill')?.textContent.trim() || '';
-    const selectedFleetRow = Array.from(document.querySelectorAll('#fleet-body tr')).find((row) => {
-        const rowSlotId = String(row.dataset.vehicleSlotId || row.querySelector('.fleet-slot-pill')?.textContent.trim() || '').trim();
-        return rowSlotId === String(hourlySlotId || '').trim();
-    });
-    const shortSlotLabel = [
-        selectedFleetRow?.querySelector('.v-type')?.value || '',
-        [selectedFleetRow?.querySelector('.v-make')?.value || '', selectedFleetRow?.querySelector('.v-model')?.value || ''].filter(Boolean).join(' ')
-    ].filter(Boolean).join(' - ') || 'Selected Fleet Vehicle';
     tr.innerHTML = `
         <td class="py-3"><input type="text" class="h-desc input-mini" value="${data.booking_description || ''}" placeholder="e.g. Corporate shuttle"></td>
-        <td class="py-3"><input type="text" class="h-slot-id input-mini" value="${shortSlotLabel}" title="${hourlySlotId}" readonly></td>
+        <td class="py-3"><select class="h-slot-id input-mini">${getFleetSlotOptionsHTML(hourlySlotId)}</select></td>
         <td class="py-3"><input type="number" min="1" step="1" class="h-hours input-mini" value="${data.default_hours || 3}"></td>
         <td class="py-3"><input type="number" min="0" step="0.01" class="h-rate input-mini" value="${data.hourly_rate || 0}"></td>
         <td><button onclick="this.closest('tr').remove()" class="text-red-400">&times;</button></td>
     `;
     document.getElementById('hourly-booking-body').appendChild(tr);
+    const slotSelect = tr.querySelector('.h-slot-id');
+    const syncSlot = () => {
+        const selected = slotSelect?.value || '';
+        const option = Array.from(slotSelect?.options || []).find((opt) => opt.value === selected);
+        if (option && !option.textContent.includes('Cal:')) {
+            const fleetRow = Array.from(document.querySelectorAll('#fleet-body tr')).find((row) => {
+                const rowSlotId = String(row.dataset.vehicleSlotId || row.querySelector('.fleet-slot-pill')?.textContent.trim() || '').trim();
+                return rowSlotId === selected;
+            });
+            const vehicleType = fleetRow?.querySelector('.v-type')?.value || '';
+            const vehicleMake = fleetRow?.querySelector('.v-make')?.value || '';
+            const vehicleModel = fleetRow?.querySelector('.v-model')?.value || '';
+            option.textContent = [vehicleType, [vehicleMake, vehicleModel].filter(Boolean).join(' ')].filter(Boolean).join(' - ') || selected;
+        }
+    };
+    slotSelect?.addEventListener('change', syncSlot);
+    syncSlot();
 }
 
 function addAddonRow(data = {}) {
