@@ -159,7 +159,7 @@
             <h1 class="text-4xl font-black italic uppercase tracking-tighter text-slate-800">Fleet <span class="wizard-accent">Sync</span></h1>
             <p class="text-slate-500 font-medium">Location ID: <span id="display-loc-id" class="font-mono wizard-soft-pill px-2 py-0.5 rounded">---</span></p>
         </div>
-        <div id="plan-badge" class="bg-black text-white text-xs px-4 py-2 rounded-full font-bold uppercase tracking-widest shadow-lg">Starter Plan</div>
+        <div id="plan-badge" class="bg-black text-white text-xs px-4 py-2 rounded-full font-bold uppercase tracking-widest shadow-lg">Loading Plan...</div>
     </header>
 
     <div class="grid grid-cols-1 lg:grid-cols-4 gap-8">
@@ -2144,6 +2144,8 @@ async function startCrmOauthConnection() {
 // --- BACKEND OPS ---
 async function loadFromBackend() {
     document.getElementById('display-loc-id').innerText = location_id;
+    const badge = document.getElementById('plan-badge');
+    if (badge) badge.innerText = 'Loading Plan...';
     const wizardSuffix = wizardToken ? `&token=${wizardToken}` : '';
     const cacheBuster = `&v=${Date.now()}`;
     document.getElementById('embed-box').innerText = `<div id="chauffeur-booking-widget"></div>\n<script src="${BACKEND_URL}/widget.js?loc=${location_id}${wizardSuffix}${cacheBuster}"><\/script>`;
