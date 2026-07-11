@@ -985,7 +985,22 @@
   }
 
   function initAutocomplete() {
-    return;
+    if (!window.google?.maps?.places) return;
+
+    const pickup = document.getElementById("cd_pickup");
+    const dropoff = document.getElementById("cd_dropoff");
+    if (!pickup || !dropoff) return;
+
+    const pickupAutocomplete = new google.maps.places.Autocomplete(pickup, { types: ["address"] });
+    const dropoffAutocomplete = new google.maps.places.Autocomplete(dropoff, { types: ["address"] });
+
+    pickupAutocomplete.addListener("place_changed", () => {
+      state.places.pickup = pickupAutocomplete.getPlace();
+    });
+
+    dropoffAutocomplete.addListener("place_changed", () => {
+      state.places.dropoff = dropoffAutocomplete.getPlace();
+    });
   }
 
   async function waitForGoogleMaps() {
@@ -1129,6 +1144,14 @@
       <div id="cd_shell" style="max-width:1800px;margin:0 auto;font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;color:#0f172a;">
         <style>
           #${rootId}, #${rootId} * { box-sizing: border-box; }
+          #${rootId} .pac-container {
+            z-index: 2147483647 !important;
+          }
+          #${rootId} #cd_pickup,
+          #${rootId} #cd_dropoff {
+            position: relative;
+            z-index: 1;
+          }
           @media (max-width: 767px) {
             #${rootId} #cd_main_grid,
             #${rootId} #cd_name_grid,
