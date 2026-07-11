@@ -693,6 +693,84 @@
     return zone?.location_name || zone?.route_name || "";
   }
 
+  function hourlyBookingBySlotId(slotId) {
+    if (!slotId) return null;
+    return (state.config?.hourly_bookings || []).find((row) => String(row.vehicle_slot_id || "") === String(slotId || "")) || null;
+  }
+
+  function renderHourlyBookingSelect() {
+    const hourlyBookings = Array.isArray(state.config?.hourly_bookings) ? state.config.hourly_bookings : [];
+    if (!hourlyBookings.length) return "";
+
+    const options = [
+      `<option value="">Select executive luxury chauffeur</option>`,
+      ...hourlyBookings.map((row) => {
+        const label = String(row.booking_description || "Executive Luxury Chauffeur").trim();
+        return `<option value="${escapeHtml(row.vehicle_slot_id || "")}">${escapeHtml(label)}</option>`;
+      }),
+    ];
+
+    return `
+      <div id="cd_hourly_wrap" style="display:none;">
+        <label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Executive Luxury Chauffeur</label>
+        <select id="cd_hourly_booking" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;">
+          ${options.join("")}
+        </select>
+        <div style="margin-top:6px;display:inline-flex;align-items:center;gap:6px;padding:4px 8px;border-radius:999px;background:#eef2ff;color:#4338ca;font-size:12px;font-weight:800;">4 hour minimum</div>
+      </div>
+      <div id="cd_hourly_hours_wrap" style="display:none;margin-top:12px;max-width:220px;">
+        <label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Hours Needed</label>
+        <input id="cd_hourly_hours" type="number" min="4" step="1" inputmode="numeric" placeholder="Enter hours" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" />
+      </div>
+    `;
+  }
+
+  function hourlyBookingBySlotId(slotId) {
+    if (!slotId) return null;
+    return (state.config?.hourly_bookings || []).find((row) => String(row.vehicle_slot_id || "") === String(slotId || "")) || null;
+  }
+
+  function renderHourlyBookingSelect() {
+    const hourlyBookings = Array.isArray(state.config?.hourly_bookings) ? state.config.hourly_bookings : [];
+    if (!hourlyBookings.length) return "";
+
+    const options = [
+      `<option value="">Select executive luxury chauffeur</option>`,
+      ...hourlyBookings.map((row) => {
+        const label = String(row.booking_description || "Executive Luxury Chauffeur").trim();
+        return `<option value="${escapeHtml(row.vehicle_slot_id || "")}">${escapeHtml(label)}</option>`;
+      }),
+    ];
+
+    return `
+      <div id="cd_hourly_wrap" style="display:none;">
+        <label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Executive Luxury Chauffeur</label>
+        <select id="cd_hourly_booking" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;">
+          ${options.join("")}
+        </select>
+        <div style="margin-top:6px;display:inline-flex;align-items:center;gap:6px;padding:4px 8px;border-radius:999px;background:#eef2ff;color:#4338ca;font-size:12px;font-weight:800;">4 hour minimum</div>
+      </div>
+      <div id="cd_hourly_hours_wrap" style="display:none;margin-top:12px;max-width:220px;">
+        <label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Hours Needed</label>
+        <input id="cd_hourly_hours" type="number" min="4" step="1" inputmode="numeric" placeholder="Enter hours" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" />
+      </div>
+    `;
+  }
+
+  function syncHourlyBookingSelection() {
+    const bookingMode = selectedBookingMode();
+    const hourlySelect = document.getElementById("cd_hourly_booking");
+    const hourlyHoursWrap = document.getElementById("cd_hourly_hours_wrap");
+    const hourlyWrap = document.getElementById("cd_hourly_wrap");
+    if (hourlyWrap) hourlyWrap.style.display = bookingMode === "hourly" ? "block" : "none";
+    if (hourlyHoursWrap) hourlyHoursWrap.style.display = bookingMode === "hourly" ? "block" : "none";
+    if (bookingMode !== "hourly" && hourlySelect) hourlySelect.value = "";
+    if (bookingMode === "hourly" && hourlySelect && !hourlySelect.value) {
+      const fallback = Array.from(hourlySelect.options || []).find((option) => option.value);
+      if (fallback) hourlySelect.value = fallback.value;
+    }
+  }
+
   function matchesPeakWindow(windowConfig, startDate) {
     const dayName = getDayLabel(startDate);
     const day = (windowConfig.day || "Everyday").toLowerCase();
@@ -926,14 +1004,29 @@
     const mode = selectedBookingMode();
     const eventWrap = document.getElementById("cd_event_wrap");
     const fixedWrap = document.getElementById("cd_fixed_destination_wrap");
+    const hourlyWrap = document.getElementById("cd_hourly_wrap");
+    const hourlyHoursWrap = document.getElementById("cd_hourly_hours_wrap");
     const eventSelect = document.getElementById("cd_special_event");
     const fixedSelect = document.getElementById("cd_fixed_destination");
+    const hourlySelect = document.getElementById("cd_hourly_booking");
 
     if (eventWrap) eventWrap.style.display = mode === "event" ? "block" : "none";
     if (fixedWrap) fixedWrap.style.display = mode === "fixed" ? "block" : "none";
+    if (hourlyWrap) hourlyWrap.style.display = mode === "hourly" ? "block" : "none";
+    if (hourlyHoursWrap) hourlyHoursWrap.style.display = mode === "hourly" ? "block" : "none";
 
     if (mode !== "event" && eventSelect) eventSelect.value = "";
     if (mode !== "fixed" && fixedSelect) fixedSelect.value = "";
+    if (mode !== "hourly" && hourlySelect) hourlySelect.value = "";
+  }
+
+  function syncHourlyBookingSelection() {
+    const hourlySelect = document.getElementById("cd_hourly_booking");
+    if (!hourlySelect) return;
+    if (!hourlySelect.value) {
+      const fallback = Array.from(hourlySelect.options || []).find((option) => option.value);
+      if (fallback) hourlySelect.value = fallback.value;
+    }
   }
 
   function render() {
@@ -1041,10 +1134,11 @@
                   <div style="max-width:220px;"><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:8px;"># of Passengers</label><input id="cd_passenger_count" type="number" min="1" value="1" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" /></div>
                 </div>
                 <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-top:12px;">
-                  <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Route Option</label><select id="cd_booking_mode" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;"><option value="standard">Standard Booking</option><option value="fixed">Fixed Destinations</option><option value="event">Events</option></select></div>
+                  <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Route Option</label><select id="cd_booking_mode" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;"><option value="standard">Standard Booking</option><option value="fixed">Fixed Destinations</option><option value="event">Events</option><option value="hourly">Executive Luxury Chauffeur</option></select></div>
                 </div>
                 <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-top:12px;">
                   <div id="cd_event_wrap" style="display:none;">${eventSelect || ""}</div>
+                  ${renderHourlyBookingSelect() || ""}
                   ${fixedDestinationSelect}
                 </div>
                 <div id="cd_datetime_grid" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px;">
@@ -1134,10 +1228,17 @@
       if (state.quote) getQuote();
     });
 
-    document.querySelectorAll('input[name="cd_addons"], #cd_passenger_count, #cd_special_event, #cd_fixed_destination').forEach((input) => {
+    document.querySelectorAll('input[name="cd_addons"], #cd_passenger_count, #cd_special_event, #cd_fixed_destination, #cd_hourly_booking, #cd_hourly_hours').forEach((input) => {
       input?.addEventListener("change", () => {
+        if (input.id === "cd_hourly_booking" || input.id === "cd_hourly_hours") syncHourlyBookingSelection();
         if (state.quote) getQuote();
       });
+      if (input.id === "cd_hourly_booking" || input.id === "cd_hourly_hours") {
+        input?.addEventListener("input", () => {
+          syncHourlyBookingSelection();
+          if (state.quote) getQuote();
+        });
+      }
     });
     document.querySelectorAll('input[name="cd_payment_choice"]').forEach((input) => {
       input?.addEventListener("change", () => {
@@ -1205,6 +1306,8 @@
       passenger_count: toNumber(document.getElementById("cd_passenger_count")?.value, 1),
       selected_event_name: document.getElementById("cd_special_event")?.value || null,
       selected_fixed_destination: document.getElementById("cd_fixed_destination")?.value || null,
+      selected_hourly_booking: document.getElementById("cd_hourly_booking")?.value || null,
+      hourly_hours: toNumber(document.getElementById("cd_hourly_hours")?.value, 4),
       selected_addons: selectedAddons(),
       accepted_terms: !!document.getElementById("cd_accept_terms")?.checked,
       carry_on_count: toNumber(document.getElementById("cd_carry_on_count")?.value, 0),
@@ -1309,6 +1412,33 @@
     if (!isWithinServiceArea(route)) {
       throw new Error(`Pickup is outside the configured ${toNumber(state.config?.service_radius, 0)} mile service area.`);
     }
+
+    const serverQuoteResponse = await fetch(`${BACKEND_URL}/api/widget-quote`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        location_id: locationId,
+        vehicle_slot_id: payload.vehicle_slot_id,
+        booking_mode: payload.booking_mode,
+        pickup_address: payload.pickup_address,
+        dropoff_address: payload.dropoff_address,
+        start_time: payload.start_time,
+        passenger_count: payload.passenger_count,
+        selected_event_name: payload.selected_event_name,
+        selected_fixed_destination: payload.selected_fixed_destination,
+        selected_hourly_booking: payload.selected_hourly_booking,
+        hourly_hours: payload.hourly_hours,
+        selected_addons: payload.selected_addons,
+      }),
+    });
+    const serverQuote = await serverQuoteResponse.json();
+    if (!serverQuoteResponse.ok || !serverQuote?.success) {
+      throw new Error(serverQuote?.error || "Unable to calculate quote.");
+    }
+
+    state.route = route;
+    state.quote = serverQuote;
+    return;
 
     const startDate = new Date(payload.start_time);
     if (Number.isNaN(startDate.getTime())) throw new Error("Choose a valid pickup date and time.");
