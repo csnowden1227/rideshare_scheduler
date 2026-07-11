@@ -651,19 +651,6 @@
 
   function validateVehicleBookingPolicy(vehicle, startDate, rawStartTime) {
     const policy = getVehicleBookingPolicy(vehicle);
-    const hoursUntilRide = getHoursUntilStart(startDate);
-    const configuredNoticeHours = Math.max(0, Number(policy.min_notice_min || 0) / 60);
-    const minimumNoticeHours = policy.instant_booking_enabled
-      ? configuredNoticeHours
-      : Math.max((String(vehicle?.vehicle_type || vehicle?.name || vehicle?.vehicle_slot_id || "").toLowerCase().includes("luxury") ? 24 : 4), configuredNoticeHours || 0);
-
-    if (minimumNoticeHours > 0 && hoursUntilRide < minimumNoticeHours) {
-      const noticeText = Number.isInteger(minimumNoticeHours)
-        ? `${minimumNoticeHours}`
-        : minimumNoticeHours.toFixed(1);
-      throw new Error(`This vehicle requires at least ${noticeText} hours notice before pickup.`);
-    }
-
     if (policy.instant_booking_enabled) {
       const localMatch = String(rawStartTime || "").match(/T(\d{2}):(\d{2})/);
       const pickupMinutes = localMatch
@@ -1143,11 +1130,6 @@
           #${rootId} .pac-container {
             z-index: 2147483647 !important;
           }
-          #${rootId} #cd_pickup,
-          #${rootId} #cd_dropoff {
-            position: relative;
-            z-index: 1;
-          }
           @media (max-width: 767px) {
             #${rootId} #cd_main_grid,
             #${rootId} #cd_name_grid,
@@ -1231,8 +1213,8 @@
           ${proPlan ? "" : `<div style="margin-top:18px;text-align:center;font-size:12px;color:#475569;font-weight:700;">Powered by CRM ONE SOURCE - Your all-in-one digital solution for any business.</div>`}
         </div>
 
-        <div id="cd_main_grid" style="margin-top:20px;display:grid;grid-template-columns:minmax(0,1.6fr) minmax(360px,1fr);gap:26px;overflow:visible;position:relative;z-index:1;">
-          <div style="background:#fff;border:1px solid #e2e8f0;border-radius:24px;box-shadow:0 24px 50px rgba(15,23,42,.08);padding:24px;position:relative;z-index:2;overflow:visible;">
+        <div id="cd_main_grid" style="margin-top:20px;display:grid;grid-template-columns:minmax(0,1.45fr) minmax(320px,1fr);gap:22px;">
+          <div style="background:#fff;border:1px solid #e2e8f0;border-radius:24px;box-shadow:0 24px 50px rgba(15,23,42,.08);padding:24px;">
             <div style="display:grid;gap:18px;">
               <div>
                 <div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.14em;color:${escapeHtml(colors.secondary)};">Passenger Details</div>
@@ -1270,13 +1252,13 @@
                 <div id="cd_datetime_grid" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px;">
                   <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Pickup Date & Time</label><input id="cd_start_time" type="datetime-local" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" /></div>
                 </div>
-                <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-top:12px;position:relative;z-index:50;overflow:visible;">
-                  <div style="position:relative;z-index:51;"><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Pickup Address</label><input id="cd_pickup" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" inputmode="text" placeholder="Street address or airport terminal" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;position:relative;z-index:52;" /></div>
-                  <div style="position:relative;z-index:51;"><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Dropoff Address</label><input id="cd_dropoff" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" inputmode="text" placeholder="Destination address" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;position:relative;z-index:52;" /></div>
+                <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-top:12px;">
+                  <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Pickup Address</label><input id="cd_pickup" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" inputmode="text" placeholder="Street address or airport terminal" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" /></div>
+                  <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Dropoff Address</label><input id="cd_dropoff" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" inputmode="text" placeholder="Destination address" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" /></div>
                 </div>
               </div>
 
-              <div style="position:relative;z-index:2;overflow:visible;">
+              <div>
                 <div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.14em;color:${escapeHtml(colors.secondary)};">Luggage & Special Items</div>
                 <div id="cd_luggage_grid" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-top:12px;">
                   <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Carry-On Bags</label><input id="cd_carry_on_count" type="number" min="0" value="0" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" /></div>
