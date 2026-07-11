@@ -1812,10 +1812,12 @@ function getFleetSlotOptionsHTML(selectedSlotId = '') {
     return Array.from(document.querySelectorAll('#fleet-body tr')).map((tr) => {
         const slotId = tr.dataset.vehicleSlotId || tr.querySelector('.fleet-slot-pill')?.textContent.trim() || '';
         const vehicleType = tr.querySelector('.v-type')?.value || '';
+        const vehicleMake = tr.querySelector('.v-make')?.value || '';
+        const vehicleModel = tr.querySelector('.v-model')?.value || '';
         const calendarId = tr.querySelector('.v-cal')?.value || '';
         const selected = String(selectedSlotId || '').trim() === String(slotId || '').trim() ? 'selected' : '';
-        const labelBits = [slotId, vehicleType, calendarId ? `Cal: ${calendarId}` : ''].filter(Boolean);
-        return `<option value="${slotId}" data-calendar-id="${calendarId}" ${selected}>${labelBits.join(' • ')}</option>`;
+        const labelBits = [vehicleType, [vehicleMake, vehicleModel].filter(Boolean).join(' '), slotId].filter(Boolean);
+        return `<option value="${slotId}" data-calendar-id="${calendarId}" ${selected}>${labelBits.join(' - ')}</option>`;
     }).join('');
 }
 
@@ -1948,11 +1950,11 @@ function addHourlyBookingRow(data = {}) {
         <td class="py-3">
             <select class="h-slot input-mini" style="min-width:220px;">${getFleetSlotOptionsHTML(data.vehicle_slot_id || '')}</select>
         </td>
+        <td class="py-3"><input type="number" min="1" step="1" class="h-hours input-mini" value="${data.default_hours || 3}"></td>
+        <td class="py-3"><input type="number" min="0" step="0.01" class="h-rate input-mini" value="${data.hourly_rate || 0}"></td>
         <td class="py-3">
             <input type="text" class="h-calendar input-mini" value="${data.calendar_id || ''}" placeholder="Calendar ID" readonly>
         </td>
-        <td class="py-3"><input type="number" min="1" step="1" class="h-hours input-mini" value="${data.default_hours || 3}"></td>
-        <td class="py-3"><input type="number" min="0" step="0.01" class="h-rate input-mini" value="${data.hourly_rate || 0}"></td>
         <td><button onclick="this.closest('tr').remove()" class="text-red-400">&times;</button></td>
     `;
     document.getElementById('hourly-booking-body').appendChild(tr);
@@ -2768,3 +2770,4 @@ window.onload = loadFromBackend;
 </script>
 </body>
 </html>
+
