@@ -752,11 +752,11 @@
     const options = [
       `<option value="">Select hourly reservation</option>`,
       ...hourlyBookings.map((row) => {
-        const label = String(row.booking_description || "Hourly Booking")
+        const bookingDescription = String(row.booking_description || "Hourly Booking")
           .replace(/ouXMpSTMKm4kREXw3kzP/g, "")
           .replace(/\s{2,}/g, " ")
-          .replace(/\s*[-–—:]\s*$/, "")
           .trim() || "Hourly Booking";
+        const label = bookingDescription;
         return `<option value="${escapeHtml(row.vehicle_slot_id || "")}">${escapeHtml(label)}</option>`;
       }),
     ];
@@ -1973,3 +1973,4 @@
     }
   })();
 })();
+
