@@ -527,9 +527,9 @@
           class="cd_vehicle_card"
           data-vehicle-slot-id="${escapeHtml(vehicle.vehicle_slot_id)}"
           aria-pressed="${index === 0 ? "true" : "false"}"
-          style="display:grid;grid-template-rows:18px 1fr;gap:0;width:100%;aspect-ratio:1 / 1;padding:0;border:1.5px solid #111111;border-radius:0;background:#fff;cursor:pointer;text-align:center;transition:all .18s ease;box-shadow:none;overflow:hidden;"
+          style="display:grid;grid-template-rows:34px 1fr;gap:0;width:100%;aspect-ratio:1 / 1;padding:0;border:1.5px solid #111111;border-radius:0;background:#fff;cursor:pointer;text-align:center;transition:all .18s ease;box-shadow:none;overflow:hidden;"
         >
-          <span style="font-size:11px;font-weight:700;color:#111827;line-height:1;padding:2px 4px 0;margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(label)}</span>
+          <span style="font-size:11px;font-weight:700;color:#111827;line-height:1.1;padding:4px 4px 0;margin:0;white-space:normal;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;">${escapeHtml(label)}</span>
           <div style="display:flex;align-items:stretch;justify-content:center;min-height:0;margin:0;padding:0;">
             <img class="cd_vehicle_image" src="${escapeHtml(imageSrc)}" alt="${escapeHtml(label)}" style="width:100%;max-width:none;height:100%;max-height:none;object-fit:contain;display:block;" />
           </div>
