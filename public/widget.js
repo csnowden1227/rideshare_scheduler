@@ -528,7 +528,7 @@
           class="cd_vehicle_card"
           data-vehicle-slot-id="${escapeHtml(vehicle.vehicle_slot_id)}"
           aria-pressed="${index === 0 ? "true" : "false"}"
-          style="display:grid;grid-template-rows:auto 1fr;gap:8px;flex:0 0 156px;width:156px;min-height:176px;padding:10px 10px 12px;border:1.5px solid #111111;border-radius:0;background:#fff;cursor:pointer;text-align:center;transition:all .18s ease;box-shadow:none;"
+          style="display:grid;grid-template-rows:auto 1fr;gap:8px;width:100%;min-height:176px;padding:10px 10px 12px;border:1.5px solid #111111;border-radius:0;background:#fff;cursor:pointer;text-align:center;transition:all .18s ease;box-shadow:none;"
         >
           <span style="font-size:12px;font-weight:700;color:#111827;line-height:1.2;">${escapeHtml(label)}</span>
           ${labelNote ? `<span style="display:inline-flex;justify-content:center;align-self:center;padding:4px 8px;border-radius:999px;background:#ecfeff;color:#155e75;font-size:10px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;">${escapeHtml(labelNote)}</span>` : ""}
@@ -541,7 +541,7 @@
 
     return `
       <input id="cd_vehicle_slot_id" type="hidden" value="${escapeHtml(orderedFleet[0]?.vehicle_slot_id || "")}" />
-      <div id="cd_vehicle_picker" style="display:flex;flex-wrap:wrap;justify-content:center;gap:0;max-width:936px;margin:0 auto;padding-bottom:2px;">
+      <div id="cd_vehicle_picker" style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;max-width:960px;margin:0 auto;padding-bottom:2px;">
         ${cards}
       </div>
     `;
