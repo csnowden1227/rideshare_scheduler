@@ -15237,9 +15237,10 @@ app.get("/api/get-profile-widget/:location_id", async (req, res) => {
       service_fee_value: p.service_fee_value != null ? parseFloat(p.service_fee_value) : null,
       service_area_type: normalizeServiceAreaType(p.service_area_type),
       service_area_rules: normalizeServiceAreaRules(p.service_area_rules),
-      fleet: sanitizedFleet,
+        fleet: sanitizedFleet,
         general_buffer_min: sanitizedFleet[0]?.outbound_buffer_min ?? BOOKING_BUFFER_MINUTES,
         fixed_rates: fixedRates,
+        hourly_bookings: safeParseJson(p.hourly_bookings),
         peak_windows: safeParseJson(p.peak_windows),
         events: safeParseJson(p.events),
         addons: safeParseJson(p.addons)
@@ -15330,6 +15331,7 @@ app.get("/api/get-profile-widget-script/:location_id", async (req, res) => {
         fleet: sanitizedFleet,
         general_buffer_min: sanitizedFleet[0]?.outbound_buffer_min ?? BOOKING_BUFFER_MINUTES,
         fixed_rates: fixedRates,
+        hourly_bookings: safeParseJson(p.hourly_bookings),
         peak_windows: safeParseJson(p.peak_windows),
         events: safeParseJson(p.events),
         addons: safeParseJson(p.addons)

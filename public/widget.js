@@ -712,6 +712,7 @@
 
     return `
       <div id="cd_hourly_wrap" style="display:none;">
+        <div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.14em;color:#475569;margin-bottom:8px;">SECTION: EXECUTIVE LUXURY CHAUFFEUR</div>
         <label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Executive Luxury Chauffeur</label>
         <select id="cd_hourly_booking" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;">
           ${options.join("")}
@@ -1020,15 +1021,6 @@
     if (mode !== "event" && eventSelect) eventSelect.value = "";
     if (mode !== "fixed" && fixedSelect) fixedSelect.value = "";
     if (mode !== "hourly" && hourlySelect) hourlySelect.value = "";
-  }
-
-  function syncHourlyBookingSelection() {
-    const hourlySelect = document.getElementById("cd_hourly_booking");
-    if (!hourlySelect) return;
-    if (!hourlySelect.value) {
-      const fallback = Array.from(hourlySelect.options || []).find((option) => option.value);
-      if (fallback) hourlySelect.value = fallback.value;
-    }
   }
 
   function render() {
