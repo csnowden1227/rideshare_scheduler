@@ -2,7 +2,7 @@
   const scriptTag = document.currentScript;
   const params = new URL(scriptTag.src).searchParams;
   const pageQuery = new URLSearchParams(window.location.search);
-  const locationId = params.get("loc");
+  const locationId = params.get("loc") || pageQuery.get("location_id") || pageQuery.get("locationId") || "";
   const widgetMode = String(params.get("mode") || "live").toLowerCase() === "practice" ? "practice" : "live";
   const BACKEND_URL = scriptTag.src.split("/widget.js")[0];
   const rootId = "chauffeur-booking-widget";
