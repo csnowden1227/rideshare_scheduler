@@ -1945,10 +1945,12 @@ function addEventRow(data = {}) {
 function addHourlyBookingRow(data = {}) {
     const tr = document.createElement('tr');
     tr.className = "hourly-booking-row border-b border-slate-50";
+    const hourlySlotId = data.vehicle_slot_id || document.querySelector('#fleet-body tr')?.dataset.vehicleSlotId || document.querySelector('#fleet-body tr .fleet-slot-pill')?.textContent.trim() || '';
     tr.innerHTML = `
         <td class="py-3"><input type="text" class="h-desc input-mini" value="${data.booking_description || ''}" placeholder="e.g. Corporate shuttle"></td>
         <td class="py-3"><input type="number" min="1" step="1" class="h-hours input-mini" value="${data.default_hours || 3}"></td>
         <td class="py-3"><input type="number" min="0" step="0.01" class="h-rate input-mini" value="${data.hourly_rate || 0}"></td>
+        <td class="py-3" style="display:none;"><input type="hidden" class="h-slot-id" value="${hourlySlotId}"></td>
         <td><button onclick="this.closest('tr').remove()" class="text-red-400">&times;</button></td>
     `;
     document.getElementById('hourly-booking-body').appendChild(tr);
@@ -2399,6 +2401,7 @@ async function saveToBackend() {
         ],
         hourly_bookings: Array.from(document.querySelectorAll('.hourly-booking-row')).map(r => ({
             booking_description: r.querySelector('.h-desc').value,
+            vehicle_slot_id: r.querySelector('.h-slot-id')?.value || '',
             default_hours: parseInt(r.querySelector('.h-hours').value, 10) || 1,
             hourly_rate: parseFloat(r.querySelector('.h-rate').value) || 0
         })),
@@ -2621,6 +2624,7 @@ function collectWizardPayload() {
         ],
         hourly_bookings: Array.from(document.querySelectorAll('.hourly-booking-row')).map(r => ({
             booking_description: r.querySelector('.h-desc').value,
+            vehicle_slot_id: r.querySelector('.h-slot-id')?.value || '',
             default_hours: parseInt(r.querySelector('.h-hours').value, 10) || 1,
             hourly_rate: parseFloat(r.querySelector('.h-rate').value) || 0
         })),
