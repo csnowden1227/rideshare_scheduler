@@ -531,7 +531,7 @@
         >
           <span style="font-size:13px;font-weight:700;color:#111827;line-height:1;margin-bottom:-4px;">${escapeHtml(label)}</span>
           <div style="display:flex;align-items:center;justify-content:center;min-height:0;margin-bottom:0;padding-bottom:0;">
-            <img class="cd_vehicle_image" src="${escapeHtml(imageSrc)}" alt="${escapeHtml(label)}" style="width:100%;max-width:${label.toLowerCase().includes("xl") ? "210px" : label.toLowerCase().includes("suv") ? "178px" : "150px"};height:auto;max-height:calc(100% - 26px);object-fit:contain;display:block;" />
+            <img class="cd_vehicle_image" src="${escapeHtml(imageSrc)}" alt="${escapeHtml(label)}" style="width:100%;max-width:none;height:auto;max-height:calc(100% - 22px);object-fit:contain;display:block;" />
           </div>
         </button>
       `;
@@ -1113,7 +1113,8 @@
             }
             #${rootId} .cd_vehicle_image {
               height: auto !important;
-              max-height: calc(100% - 26px) !important;
+              max-height: calc(100% - 22px) !important;
+              max-width: none !important;
             }
             #${rootId} #cd_actions_col {
               align-content: stretch !important;
