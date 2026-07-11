@@ -2293,6 +2293,16 @@ async function saveToBackend() {
         return;
     }
 
+    const fetchWithTimeout = async (url, options = {}, timeoutMs = 30000) => {
+        const controller = new AbortController();
+        const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+        try {
+            return await fetch(url, { ...options, signal: controller.signal });
+        } finally {
+            window.clearTimeout(timer);
+        }
+    };
+
     const payload = {
         id: location_id,
         location_id,
@@ -2407,14 +2417,29 @@ async function saveToBackend() {
         let lastError = null;
 
         for (const endpoint of endpoints) {
-            res = await fetch(`${BACKEND_URL}${endpoint}`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    ...(wizardToken ? { 'X-Setup-Wizard-Token': wizardToken } : {})
-                },
-                body: JSON.stringify(payload)
-            });
+            let endpointError = null;
+            for (let attempt = 1; attempt <= 2; attempt += 1) {
+                try {
+                    res = await fetchWithTimeout(`${BACKEND_URL}${endpoint}`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            ...(wizardToken ? { 'X-Setup-Wizard-Token': wizardToken } : {})
+                        },
+                        body: JSON.stringify(payload)
+                    }, 30000);
+                    break;
+                } catch (fetchErr) {
+                    endpointError = fetchErr;
+                    if (attempt < 2) {
+                        setSyncStatus("Sync request timed out or disconnected. Retrying once...", false);
+                        await new Promise((resolve) => setTimeout(resolve, 1500));
+                    }
+                }
+            }
+            if (endpointError && !res) {
+                throw endpointError;
+            }
             if (res.ok) break;
 
             try {
@@ -2448,8 +2473,11 @@ async function saveToBackend() {
         }
     } catch (err) {
         console.error("Save sync connection error:", err);
-        showNotification(`Connection Error: ${err?.message || 'Ensure Render is active.'}`, false);
-        setSyncStatus(`Connection error while syncing: ${err?.message || 'Ensure Render is active.'}`, false);
+        const message = err?.name === "AbortError"
+            ? "Request timed out after 30 seconds. We retried once, then stopped."
+            : (err?.message || 'Ensure Render is active.');
+        showNotification(`Connection Error: ${message}`, false);
+        setSyncStatus(`Connection error while syncing: ${message}`, false);
     }
 }
 
