@@ -740,9 +740,9 @@
     return zone?.location_name || zone?.route_name || "";
   }
 
-  function hourlyBookingByName(name) {
-    if (!name) return null;
-    return (state.config?.hourly_bookings || []).find((row) => String(row.booking_description || "") === String(name || "")) || null;
+  function hourlyBookingBySlotId(slotId) {
+    if (!slotId) return null;
+    return (state.config?.hourly_bookings || []).find((row) => String(row.vehicle_slot_id || "") === String(slotId || "")) || null;
   }
 
   function renderHourlyBookingSelect() {
@@ -752,8 +752,8 @@
     const options = [
       `<option value="">Select hourly reservation</option>`,
       ...hourlyBookings.map((row) => {
-        const label = `${row.booking_description || "Hourly Booking"}${row.vehicle_make || row.vehicle_model ? ` - ${[row.vehicle_make, row.vehicle_model].filter(Boolean).join(" ")}` : ""}`;
-        return `<option value="${escapeHtml(row.booking_description || "")}">${escapeHtml(label)}</option>`;
+        const label = `${row.booking_description || "Hourly Booking"}${row.vehicle_slot_id ? ` - ${row.vehicle_slot_id}` : ""}`;
+        return `<option value="${escapeHtml(row.vehicle_slot_id || "")}">${escapeHtml(label)}</option>`;
       }),
     ];
 
@@ -1462,7 +1462,7 @@
 
     const eventConfig = payload.booking_mode === "event" ? eventByName(payload.selected_event_name) : null;
     const selectedFixedName = payload.booking_mode === "fixed" ? String(payload.selected_fixed_destination || "").trim() : "";
-    const hourlyConfig = payload.booking_mode === "hourly" ? hourlyBookingByName(payload.selected_hourly_booking) : null;
+    const hourlyConfig = payload.booking_mode === "hourly" ? hourlyBookingBySlotId(payload.selected_hourly_booking) : null;
     const hourlyHours = Math.max(1, toNumber(payload.hourly_hours, 1));
     const matchedFixedRate = payload.booking_mode === "fixed" ? resolveFixedRate(route, selectedFixedName, vehicle) : resolveFixedRate(route, "", vehicle);
     const fixedRate = payload.booking_mode === "fixed" ? matchedFixedRate : null;
@@ -1550,6 +1550,7 @@
       pricing_label: pricingLabel,
       fixed_rate_name: fixedRate?.location_name || null,
       hourly_booking_name: hourlyConfig?.booking_description || null,
+      hourly_booking_slot_id: hourlyConfig?.vehicle_slot_id || null,
       peak_multiplier: peakMultiplier,
       fixed_surcharge: fixedRate ? fixedSurcharge : 0,
       booking_mode: payload.booking_mode,
