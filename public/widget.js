@@ -825,7 +825,7 @@
 
   async function loadConfig() {
     const res = await fetch(`${BACKEND_URL}/api/get-profile-widget/${locationId}`);
-    if (!res.ok) throw new Error("Failed to load booking config");
+    if (!res.ok) throw new Error(`Config load failed (${res.status})`);
     state.config = await res.json();
 
     const mapsKey = String(state.config.maps_api_key || "").trim();
@@ -1874,12 +1874,15 @@
   (async function init() {
     try {
       if (!locationId) throw new Error("Missing location id.");
+      showError("Loading booking widget...");
       await loadConfig();
+      showError("Loading booking options...");
       await waitForGoogleMaps();
       try {
         const handledCheckout = await handleCheckoutReturn();
         if (!handledCheckout) {
           render();
+          clearError();
         }
       } catch (checkoutError) {
         console.error("Checkout Return Error:", checkoutError);
