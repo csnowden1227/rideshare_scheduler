@@ -527,11 +527,11 @@
           class="cd_vehicle_card"
           data-vehicle-slot-id="${escapeHtml(vehicle.vehicle_slot_id)}"
           aria-pressed="${index === 0 ? "true" : "false"}"
-          style="display:grid;grid-template-rows:auto 1fr;gap:10px;width:100%;min-height:208px;padding:12px 12px 14px;border:1.5px solid #111111;border-radius:0;background:#fff;cursor:pointer;text-align:center;transition:all .18s ease;box-shadow:none;"
+          style="display:grid;grid-template-rows:auto 1fr;gap:4px;width:100%;min-height:188px;padding:10px 12px 10px;border:1.5px solid #111111;border-radius:0;background:#fff;cursor:pointer;text-align:center;transition:all .18s ease;box-shadow:none;"
         >
-          <span style="font-size:13px;font-weight:700;color:#111827;line-height:1.2;">${escapeHtml(label)}</span>
-          <div style="display:flex;align-items:center;justify-content:center;min-height:138px;">
-            <img src="${escapeHtml(imageSrc)}" alt="${escapeHtml(label)}" style="width:100%;max-width:${label.toLowerCase().includes("xl") ? "250px" : label.toLowerCase().includes("suv") ? "220px" : "192px"};height:132px;object-fit:contain;display:block;" />
+          <span style="font-size:13px;font-weight:700;color:#111827;line-height:1.05;">${escapeHtml(label)}</span>
+          <div style="display:flex;align-items:center;justify-content:center;min-height:122px;">
+            <img class="cd_vehicle_image" src="${escapeHtml(imageSrc)}" alt="${escapeHtml(label)}" style="width:100%;max-width:${label.toLowerCase().includes("xl") ? "240px" : label.toLowerCase().includes("suv") ? "208px" : "182px"};height:118px;object-fit:contain;display:block;" />
           </div>
         </button>
       `;
@@ -1067,7 +1067,7 @@
     const addonTitle = "Addons (car seat, wheelchair, food & beverage, etc)";
 
     root.innerHTML = `
-      <div style="max-width:1360px;margin:0 auto;font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;color:#0f172a;">
+      <div style="max-width:1800px;margin:0 auto;font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;color:#0f172a;">
         <style>
           #${rootId}, #${rootId} * { box-sizing: border-box; }
           @media (max-width: 767px) {
@@ -1097,6 +1097,16 @@
             #${rootId} #cd_logo_wrap img {
               max-width: 140px !important;
               max-height: 80px !important;
+            }
+            #${rootId} #cd_vehicle_picker {
+              gap: 14px !important;
+            }
+            #${rootId} .cd_vehicle_card {
+              min-height: 204px !important;
+              padding: 12px 14px 12px !important;
+            }
+            #${rootId} .cd_vehicle_image {
+              height: 132px !important;
             }
             #${rootId} #cd_actions_col {
               align-content: stretch !important;
