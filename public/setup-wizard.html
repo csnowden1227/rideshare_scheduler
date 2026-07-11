@@ -1945,38 +1945,13 @@ function addEventRow(data = {}) {
 function addHourlyBookingRow(data = {}) {
     const tr = document.createElement('tr');
     tr.className = "hourly-booking-row border-b border-slate-50";
-    const hourlySlotId = data.vehicle_slot_id || document.querySelector('#fleet-body tr')?.dataset.vehicleSlotId || document.querySelector('#fleet-body tr .fleet-slot-pill')?.textContent.trim() || '';
     tr.innerHTML = `
         <td class="py-3"><input type="text" class="h-desc input-mini" value="${data.booking_description || ''}" placeholder="e.g. Corporate shuttle"></td>
         <td class="py-3"><input type="number" min="1" step="1" class="h-hours input-mini" value="${data.default_hours || 3}"></td>
         <td class="py-3"><input type="number" min="0" step="0.01" class="h-rate input-mini" value="${data.hourly_rate || 0}"></td>
-        <td class="py-3">
-            <input type="hidden" class="h-slot" value="${hourlySlotId}">
-        </td>
-        <td class="py-3" style="display:none;">
-            <input type="text" class="h-calendar input-mini" value="${data.calendar_id || ''}" placeholder="Calendar ID" readonly>
-        </td>
         <td><button onclick="this.closest('tr').remove()" class="text-red-400">&times;</button></td>
     `;
     document.getElementById('hourly-booking-body').appendChild(tr);
-    const calendarInput = tr.querySelector('.h-calendar');
-    const slotInput = tr.querySelector('.h-slot');
-    const syncCalendar = () => {
-        const vehicleSlotId = String(slotInput?.value || '').trim();
-        const fleetRow = Array.from(document.querySelectorAll('#fleet-body tr')).find((row) => {
-            const rowSlotId = String(row.dataset.vehicleSlotId || row.querySelector('.fleet-slot-pill')?.textContent.trim() || '').trim();
-            return rowSlotId === vehicleSlotId;
-        });
-        const calendarId = fleetRow?.querySelector('.v-cal')?.value || '';
-        const vehicleType = fleetRow?.querySelector('.v-type')?.value || '';
-        const vehicleMake = fleetRow?.querySelector('.v-make')?.value || '';
-        const vehicleModel = fleetRow?.querySelector('.v-model')?.value || '';
-        if (slotLabel) {
-            slotLabel.value = [vehicleType, [vehicleMake, vehicleModel].filter(Boolean).join(' '), vehicleSlotId].filter(Boolean).join(' - ');
-        }
-        if (calendarInput) calendarInput.value = calendarId;
-    };
-    syncCalendar();
 }
 
 function addAddonRow(data = {}) {
@@ -2424,8 +2399,6 @@ async function saveToBackend() {
         ],
         hourly_bookings: Array.from(document.querySelectorAll('.hourly-booking-row')).map(r => ({
             booking_description: r.querySelector('.h-desc').value,
-            vehicle_slot_id: r.querySelector('.h-slot')?.value || '',
-            calendar_id: r.querySelector('.h-calendar')?.value || '',
             default_hours: parseInt(r.querySelector('.h-hours').value, 10) || 1,
             hourly_rate: parseFloat(r.querySelector('.h-rate').value) || 0
         })),
@@ -2648,8 +2621,6 @@ function collectWizardPayload() {
         ],
         hourly_bookings: Array.from(document.querySelectorAll('.hourly-booking-row')).map(r => ({
             booking_description: r.querySelector('.h-desc').value,
-            vehicle_slot_id: r.querySelector('.h-slot')?.value || '',
-            calendar_id: r.querySelector('.h-calendar')?.value || '',
             default_hours: parseInt(r.querySelector('.h-hours').value, 10) || 1,
             hourly_rate: parseFloat(r.querySelector('.h-rate').value) || 0
         })),
