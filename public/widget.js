@@ -725,38 +725,6 @@
     `;
   }
 
-  function hourlyBookingBySlotId(slotId) {
-    if (!slotId) return null;
-    return (state.config?.hourly_bookings || []).find((row) => String(row.vehicle_slot_id || "") === String(slotId || "")) || null;
-  }
-
-  function renderHourlyBookingSelect() {
-    const hourlyBookings = Array.isArray(state.config?.hourly_bookings) ? state.config.hourly_bookings : [];
-    if (!hourlyBookings.length) return "";
-
-    const options = [
-      `<option value="">Select executive luxury chauffeur</option>`,
-      ...hourlyBookings.map((row) => {
-        const label = String(row.booking_description || "Executive Luxury Chauffeur").trim();
-        return `<option value="${escapeHtml(row.vehicle_slot_id || "")}">${escapeHtml(label)}</option>`;
-      }),
-    ];
-
-    return `
-      <div id="cd_hourly_wrap" style="display:none;">
-        <label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Executive Luxury Chauffeur</label>
-        <select id="cd_hourly_booking" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;">
-          ${options.join("")}
-        </select>
-        <div style="margin-top:6px;display:inline-flex;align-items:center;gap:6px;padding:4px 8px;border-radius:999px;background:#eef2ff;color:#4338ca;font-size:12px;font-weight:800;">4 hour minimum</div>
-      </div>
-      <div id="cd_hourly_hours_wrap" style="display:none;margin-top:12px;max-width:220px;">
-        <label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Hours Needed</label>
-        <input id="cd_hourly_hours" type="number" min="4" step="1" inputmode="numeric" placeholder="Enter hours" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" />
-      </div>
-    `;
-  }
-
   function syncHourlyBookingSelection() {
     const bookingMode = selectedBookingMode();
     const hourlySelect = document.getElementById("cd_hourly_booking");
