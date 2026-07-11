@@ -509,7 +509,7 @@
                 <table class="w-full">
                     <thead>
                         <tr class="text-[10px] uppercase text-gray-400">
-                            <th>Booking Description</th><th>Vehicle Slot</th><th>Default Hours</th><th>Price / Hour</th><th></th>
+                            <th>Booking Description</th><th>Slot ID</th><th>Default Hours</th><th>Price / Hour</th><th></th>
                         </tr>
                     </thead>
                     <tbody id="hourly-booking-body"></tbody>
@@ -1958,7 +1958,7 @@ function addHourlyBookingRow(data = {}) {
     const syncSlot = () => {
         const selected = slotSelect?.value || '';
         const option = Array.from(slotSelect?.options || []).find((opt) => opt.value === selected);
-        if (option && !option.textContent.includes('Cal:')) {
+        if (option) {
             const fleetRow = Array.from(document.querySelectorAll('#fleet-body tr')).find((row) => {
                 const rowSlotId = String(row.dataset.vehicleSlotId || row.querySelector('.fleet-slot-pill')?.textContent.trim() || '').trim();
                 return rowSlotId === selected;
@@ -1966,7 +1966,8 @@ function addHourlyBookingRow(data = {}) {
             const vehicleType = fleetRow?.querySelector('.v-type')?.value || '';
             const vehicleMake = fleetRow?.querySelector('.v-make')?.value || '';
             const vehicleModel = fleetRow?.querySelector('.v-model')?.value || '';
-            option.textContent = [vehicleType, [vehicleMake, vehicleModel].filter(Boolean).join(' ')].filter(Boolean).join(' - ') || selected;
+            option.textContent = selected;
+            option.title = [vehicleType, [vehicleMake, vehicleModel].filter(Boolean).join(' ')].filter(Boolean).join(' - ');
         }
     };
     slotSelect?.addEventListener('change', syncSlot);
