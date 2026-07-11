@@ -228,6 +228,15 @@ const PLAN_RULES = {
   },
 };
 
+const LOCATION_PLAN_RULE_OVERRIDES = {
+  ouXMpSTMKm4kREXw3kzP: {
+    pro: {
+      includedFleet: 3,
+      maxFleet: 9,
+    },
+  },
+};
+
 const SAAS_ADDON_CATALOG = {
   branding_unlock: {
     code: "branding_unlock",
@@ -2595,6 +2604,16 @@ async function getLocationPlanName(locationId) {
   return normalizePlanName(result.rows[0]?.plan_name || "starter");
 }
 
+async function getLocationPlanRuleSet(locationId, planName = "starter") {
+  const normalizedPlan = normalizePlanName(planName);
+  const baseRules = getPlanRuleSet(normalizedPlan);
+  const override = LOCATION_PLAN_RULE_OVERRIDES[String(locationId || "").trim()]?.[normalizedPlan];
+  return {
+    ...baseRules,
+    ...(override || {}),
+  };
+}
+
 async function assertProCustomerAccountAccess(locationId) {
   const planName = await getLocationPlanName(locationId);
   if (planName !== "pro") {
@@ -2984,13 +3003,16 @@ async function fetchCustomerRidesForIdentity({
 
 function buildPlanEntitlements({
   planName = "starter",
+  locationId = "",
   addonBrandingUnlocked = false,
   addonFunnelUnlocked = false,
   addonTrackingUnlocked = false,
   addonExtraVehicleCount = 0,
 } = {}) {
   const normalizedPlan = normalizePlanName(planName);
-  const rules = getPlanRuleSet(normalizedPlan);
+  const rules = LOCATION_PLAN_RULE_OVERRIDES[String(locationId || "").trim()]?.[normalizedPlan]
+    ? { ...getPlanRuleSet(normalizedPlan), ...LOCATION_PLAN_RULE_OVERRIDES[String(locationId || "").trim()][normalizedPlan] }
+    : getPlanRuleSet(normalizedPlan);
   const extraVehicles = Math.max(0, Number(addonExtraVehicleCount || 0));
   const allowedFleetCount = Math.min(
     rules.maxFleet,
@@ -3017,6 +3039,7 @@ function buildPlanEntitlements({
 function buildEntitlementsFromProfile(profile = {}) {
   return buildPlanEntitlements({
     planName: profile.plan_name || "starter",
+    locationId: profile.location_id || "",
     addonBrandingUnlocked: profile.addon_branding_unlocked,
     addonFunnelUnlocked: profile.addon_funnel_unlocked,
     addonTrackingUnlocked: profile.addon_tracking_unlocked,
@@ -6928,6 +6951,7 @@ async function saveConfigHandler(req, res) {
     const normalizedPlanName = normalizePlanName(plan_name || existingProfile.plan_name || "starter");
     const entitlements = buildPlanEntitlements({
       planName: normalizedPlanName,
+      locationId: location_id,
       addonBrandingUnlocked: existingProfile.addon_branding_unlocked,
       addonFunnelUnlocked: existingProfile.addon_funnel_unlocked,
       addonTrackingUnlocked: existingProfile.addon_tracking_unlocked,
@@ -9253,6 +9277,7 @@ app.post("/api/create-addon-checkout-session", async (req, res) => {
     const profile = profileRes.rows[0];
     const entitlements = buildPlanEntitlements({
       planName: profile.plan_name,
+      locationId: locationId,
       addonBrandingUnlocked: profile.addon_branding_unlocked,
       addonFunnelUnlocked: profile.addon_funnel_unlocked,
       addonTrackingUnlocked: profile.addon_tracking_unlocked,
@@ -15079,6 +15104,7 @@ app.get("/api/get-profile-widget-script/:location_id", async (req, res) => {
 
     const entitlements = buildPlanEntitlements({
       planName: p.plan_name || "starter",
+      locationId: location_id,
       addonBrandingUnlocked: p.addon_branding_unlocked,
       addonFunnelUnlocked: p.addon_funnel_unlocked,
       addonTrackingUnlocked: p.addon_tracking_unlocked,
