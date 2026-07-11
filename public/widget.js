@@ -800,30 +800,12 @@
     }
 
     const hours = Math.max(4, toNumber(hoursInput?.value, 4));
-    const total = details.rate * hours;
     detailsEl.style.display = "block";
     detailsEl.innerHTML = `
       <div style="font-weight:800;color:#0f172a;">${escapeHtml(details.description)}</div>
       <div>Vehicle slot: <strong>${escapeHtml(details.vehicleLabel)}</strong></div>
       <div>Rate: <strong>${money(details.rate)}/hr</strong></div>
-      <div>Formula: <strong>${hours} x ${money(details.rate)} = ${money(total)}</strong></div>
     `;
-  }
-
-  function updateHourlyTotalField() {
-    const hourlySelect = document.getElementById("cd_hourly_booking");
-    const hoursInput = document.getElementById("cd_hourly_hours");
-    const totalField = document.getElementById("cd_hourly_total");
-    if (!hourlySelect || !hoursInput || !totalField) return;
-
-    const details = getHourlyBookingDetails(hourlySelect.value || "");
-    if (!details) {
-      totalField.value = "$0.00";
-      return;
-    }
-
-    const hours = Math.max(4, toNumber(hoursInput.value, 4));
-    totalField.value = money(details.rate * hours);
   }
 
   function syncHourlySelectionToVehicle(slotId = "") {
@@ -842,7 +824,6 @@
 
   function syncHourlyDefaults() {
     updateHourlyBookingDetails();
-    updateHourlyTotalField();
   }
 
   function matchesPeakWindow(windowConfig, startDate) {
@@ -1279,20 +1260,19 @@
                   ${hourlyBookingSelect || ""}
                   ${fixedDestinationSelect}
                 </div>
-                <div id="cd_hourly_hours_wrap" style="display:none;grid-template-columns:minmax(220px,1fr) minmax(180px,220px);gap:12px;align-items:end;margin-top:12px;">
+                <div id="cd_hourly_hours_wrap" style="display:none;grid-template-columns:minmax(220px,1fr);gap:12px;align-items:end;margin-top:12px;">
                   <div>
                     <label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Hours Needed</label>
                     <input id="cd_hourly_hours" type="number" min="4" step="1" inputmode="numeric" placeholder="Enter hours" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" />
                     <div style="margin-top:6px;display:inline-flex;align-items:center;gap:6px;padding:4px 8px;border-radius:999px;background:#eef2ff;color:#4338ca;font-size:12px;font-weight:800;">4 hour minimum</div>
                   </div>
-                  <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Hourly Total</label><input id="cd_hourly_total" type="text" readonly value="$0.00" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#f8fafc;color:#334155;font-weight:800;" /></div>
                 </div>
                 <div id="cd_datetime_grid" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px;">
                   <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Pickup Date & Time</label><input id="cd_start_time" type="datetime-local" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" /></div>
                 </div>
-                <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-top:12px;position:relative;z-index:20;overflow:visible;">
-                  <div style="position:relative;z-index:20;"><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Pickup Address</label><input id="cd_pickup" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" inputmode="text" placeholder="Street address or airport terminal" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;pointer-events:auto;position:relative;z-index:21;" /></div>
-                  <div style="position:relative;z-index:20;"><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Dropoff Address</label><input id="cd_dropoff" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" inputmode="text" placeholder="Destination address" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;pointer-events:auto;position:relative;z-index:21;" /></div>
+                <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-top:12px;">
+                  <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Pickup Address</label><input id="cd_pickup" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" inputmode="text" placeholder="Street address or airport terminal" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" /></div>
+                  <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Dropoff Address</label><input id="cd_dropoff" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" inputmode="text" placeholder="Destination address" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" /></div>
                 </div>
               </div>
 
