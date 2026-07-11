@@ -824,9 +824,43 @@
   }
 
   async function loadConfig() {
-    const res = await fetch(`${BACKEND_URL}/api/get-profile-widget/${locationId}`);
-    if (!res.ok) throw new Error(`Config load failed (${res.status})`);
-    state.config = await res.json();
+    state.config = await new Promise((resolve, reject) => {
+      const callbackName = `chauffeurWidgetConfig_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+      const script = document.createElement("script");
+      let settled = false;
+
+      const cleanup = () => {
+        try { delete window[callbackName]; } catch {}
+        script.remove();
+      };
+
+      window[callbackName] = (payload) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        if (!payload || payload.error) {
+          reject(new Error(payload?.error || "Config load failed"));
+          return;
+        }
+        resolve(payload);
+      };
+
+      script.onerror = () => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        reject(new Error("Config load failed"));
+      };
+
+      script.src = `${BACKEND_URL}/api/get-profile-widget-script/${encodeURIComponent(locationId)}?callback=${encodeURIComponent(callbackName)}`;
+      document.head.appendChild(script);
+      setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        reject(new Error("Config load timed out"));
+      }, 20000);
+    });
 
     const mapsKey = String(state.config.maps_api_key || "").trim();
     if (!mapsKey) return;
