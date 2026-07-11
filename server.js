@@ -6250,8 +6250,8 @@ function requireWizardToken(req, res, next) {
   return res.status(403).send("Forbidden");
 }
 
-app.use(express.json({ limit: "10mb" }));
-app.use(express.urlencoded({ extended: true, limit: "10mb" }));
+app.use(express.json({ limit: "25mb" }));
+app.use(express.urlencoded({ extended: true, limit: "25mb" }));
 app.get("/setup-wizard.html", requireWizardToken, (req, res) => {
   res.sendFile(path.join(__dirname, "public", "setup-wizard.html"));
 });
