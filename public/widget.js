@@ -245,13 +245,25 @@
     }
   }
 
+  function getAddressInput(kind) {
+    const directId = kind === "pickup" ? "cd_pickup" : "cd_dropoff";
+    const containerId = kind === "pickup" ? "pickup-address-container" : "dropoff-address-container";
+    return document.getElementById(directId)
+      || document.querySelector(`#${containerId} input`)
+      || document.querySelector(`#${containerId} textarea`);
+  }
+
   function applyPrefillFromPageQuery() {
     prefillField("cd_first_name", "first_name");
     prefillField("cd_last_name", "last_name");
     prefillField("cd_email", "email");
     prefillField("cd_phone", "phone");
-    prefillField("cd_pickup", "pickup_address");
-    prefillField("cd_dropoff", "dropoff_address");
+    const pickupInput = getAddressInput("pickup");
+    const dropoffInput = getAddressInput("dropoff");
+    const pickupValue = String(pageQuery.get("pickup_address") || "").trim();
+    const dropoffValue = String(pageQuery.get("dropoff_address") || "").trim();
+    if (pickupInput && pickupValue) pickupInput.value = pickupValue;
+    if (dropoffInput && dropoffValue) dropoffInput.value = dropoffValue;
     prefillField("cd_passenger_count", "passenger_count");
 
     const vehicleSlotId = String(pageQuery.get("vehicle_slot_id") || "").trim();
@@ -888,7 +900,7 @@
       };
       window.__cdInitAutocomplete = () => {
         if (state.maps.authFailed) return;
-        initAutocomplete()
+        initializeAddressFields()
           .then((initialized) => {
             state.maps.autocompleteReady = Boolean(initialized);
             updateAddressHelperState();
@@ -910,10 +922,10 @@
     }
   }
 
-  async function initAutocomplete() {
+  async function initializeGooglePlacesAutocomplete() {
     if (state.maps.authFailed) return;
-    const pickupInput = document.getElementById("cd_pickup");
-    const dropoffInput = document.getElementById("cd_dropoff");
+    const pickupInput = getAddressInput("pickup");
+    const dropoffInput = getAddressInput("dropoff");
     if (!pickupInput || !dropoffInput) return false;
     if (!window.google?.maps?.places?.Autocomplete) return false;
 
@@ -940,6 +952,35 @@
     attachAutocomplete(pickupInput, "pickup");
     attachAutocomplete(dropoffInput, "dropoff");
     return true;
+  }
+
+  function activateManualAddressFallback() {
+    state.maps.autocompleteReady = false;
+    updateAddressHelperState();
+  }
+
+  function showAddressWarning(message) {
+    const helper = document.getElementById("cd_address_helper");
+    if (!helper) return;
+    helper.textContent = message;
+    helper.style.display = "block";
+    helper.style.color = "#9a3412";
+    helper.style.background = "#fff7ed";
+    helper.style.border = "1px solid #fed7aa";
+  }
+
+  async function initializeAddressFields() {
+    try {
+      await initializeGooglePlacesAutocomplete();
+    } catch (error) {
+      console.error("Google address autocomplete failed:", error);
+
+      activateManualAddressFallback();
+
+      showAddressWarning(
+        "Address autocomplete is unavailable. Please type the addresses manually."
+      );
+    }
   }
 
   function updateAddressHelperState() {
@@ -1206,8 +1247,8 @@
                   <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Pickup Date & Time</label><input id="cd_start_time" type="datetime-local" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" /></div>
                 </div>
                 <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-top:12px;">
-                  <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Pickup Address</label><input id="cd_pickup" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" inputmode="text" placeholder="Street address or airport terminal" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" /></div>
-                  <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Dropoff Address</label><input id="cd_dropoff" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" inputmode="text" placeholder="Destination address" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" /></div>
+                  <div id="pickup-address-container"><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Pickup Address</label><input id="cd_pickup" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" inputmode="text" placeholder="Street address or airport terminal" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" /></div>
+                  <div id="dropoff-address-container"><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Dropoff Address</label><input id="cd_dropoff" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" inputmode="text" placeholder="Destination address" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" /></div>
                   <div id="cd_address_helper" style="display:none;padding:10px 12px;border-radius:12px;font-size:12px;line-height:1.5;"></div>
                 </div>
               </div>
@@ -1321,7 +1362,7 @@
     applyPrefillFromPageQuery();
     updateAddressHelperState();
     if (!state.maps.authFailed && !state.maps.autocompleteReady && window.google?.maps?.importLibrary) {
-      initAutocomplete()
+      initializeAddressFields()
         .then((initialized) => {
           state.maps.autocompleteReady = Boolean(initialized);
           updateAddressHelperState();
@@ -1373,8 +1414,8 @@
       last_name: document.getElementById("cd_last_name")?.value.trim(),
       email: document.getElementById("cd_email")?.value.trim(),
         phone: formatPhoneForUi(document.getElementById("cd_phone")?.value.trim()),
-      pickup_address: document.getElementById("cd_pickup")?.value.trim(),
-      dropoff_address: document.getElementById("cd_dropoff")?.value.trim(),
+      pickup_address: getAddressInput("pickup")?.value.trim(),
+      dropoff_address: getAddressInput("dropoff")?.value.trim(),
       start_time: normalizedStartTime,
       start_time_local: rawStartTime || "",
       booking_mode: selectedBookingMode(),
