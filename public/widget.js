@@ -1435,6 +1435,51 @@
     };
   }
 
+  async function fetchJsonWithRetry(url, options, { retries = 1, timeoutMs = 30000 } = {}) {
+    let lastError = null;
+
+    for (let attempt = 0; attempt <= retries; attempt += 1) {
+      const controller = new AbortController();
+      const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
+
+      try {
+        const response = await fetch(url, {
+          ...options,
+          signal: controller.signal,
+        });
+        const rawText = await response.text();
+        let parsed = null;
+
+        if (rawText) {
+          try {
+            parsed = JSON.parse(rawText);
+          } catch {
+            parsed = { error: rawText };
+          }
+        }
+
+        if (!response.ok) {
+          const message = parsed?.error || parsed?.message || `Request failed (${response.status})`;
+          throw new Error(message);
+        }
+
+        return parsed;
+      } catch (error) {
+        lastError = error;
+        if (attempt >= retries) {
+          throw new Error(error?.name === "AbortError"
+            ? "Quote request timed out. Please try again."
+            : (error?.message || "Unable to calculate quote."));
+        }
+        await wait(500);
+      } finally {
+        window.clearTimeout(timeoutId);
+      }
+    }
+
+    throw lastError || new Error("Unable to calculate quote.");
+  }
+
   async function buildQuote() {
     const payload = formPayload();
     const vehicle = selectedVehicle();
@@ -1443,7 +1488,7 @@
       throw new Error("Enter pickup, dropoff, and pickup date/time first.");
     }
 
-    const serverQuoteResponse = await fetch(`${BACKEND_URL}/api/widget-quote`, {
+    const serverQuote = await fetchJsonWithRetry(`${BACKEND_URL}/api/widget-quote`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -1461,11 +1506,17 @@
         selected_addons: payload.selected_addons,
       }),
     });
-    const serverQuote = await serverQuoteResponse.json();
-    if (!serverQuoteResponse.ok || !serverQuote?.success) {
+
+    if (!serverQuote?.success) {
       throw new Error(serverQuote?.error || "Unable to calculate quote.");
     }
 
+    state.route = {
+      pickupCoords: null,
+      dropoffCoords: null,
+      miles: Number(serverQuote.miles || 0),
+      durationMinutes: Number(serverQuote.route_duration_minutes || 0),
+    };
     state.quote = serverQuote;
     return;
 
