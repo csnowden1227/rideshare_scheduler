@@ -7139,6 +7139,8 @@ async function saveConfigHandler(req, res) {
       [location_id]
     );
     const existingProfile = existingProfileRes.rows[0] || {};
+    const hasBusinessLogoField = Object.prototype.hasOwnProperty.call(req.body || {}, "business_logo");
+    const incomingBusinessLogo = hasBusinessLogoField ? business_logo : existingProfile.business_logo;
     const previousFleet = safeParseJson(existingProfile.fleet, []);
     const normalizedPlanName = normalizePlanName(plan_name || existingProfile.plan_name || "starter");
     const entitlements = buildPlanEntitlements({
@@ -7150,7 +7152,7 @@ async function saveConfigHandler(req, res) {
       addonExtraVehicleCount: existingProfile.addon_extra_vehicle_count,
     });
     const sanitizedBranding = sanitizeBrandingByEntitlements({
-      businessLogo: business_logo,
+      businessLogo: incomingBusinessLogo,
       brandColorPrimary: brand_color_primary,
       brandColorSecondary: brand_color_secondary,
       brandColorAccent: brand_color_accent,
@@ -7260,10 +7262,6 @@ async function saveConfigHandler(req, res) {
       }
     }
 
-    await syncFleetSettings(client, location_id, sanitizedFleet);
-
-    await syncFixedRates(client, location_id, fixed_rates);
-
     await client.query("COMMIT");
 
     const instantBookingNotificationSummary = {
@@ -7333,68 +7331,86 @@ async function saveConfigHandler(req, res) {
         error: null,
         retry_attempted: false
       });
-      setTimeout(() => {
-        sendWizardSyncWebhook({
-          webhookUrl: normalizedWebhookUrl,
-          locationId: location_id,
-          businessName: business_name,
-          planName: normalizedPlanName,
-          mapsApiKeyPresent: Boolean(String(maps_api_key || "").trim()),
-          paymentProvider: payment_provider,
-          hasStripeKey: Boolean(String(stripe_secret_key || "").trim()),
-          hasSquareAccessToken: Boolean(String(square_access_token || "").trim()),
-          hasSquareLocationId: Boolean(String(square_location_id || "").trim()),
-          hasPayPalClientId: Boolean(String(paypal_client_id || "").trim()),
-          hasPayPalClientSecret: Boolean(String(paypal_client_secret || "").trim()),
-          payPalEnvironment: normalizePayPalEnvironment(paypal_environment),
-          hasAuthorizeApiLoginId: Boolean(String(authorize_api_login_id || "").trim()),
-          hasAuthorizeTransactionKey: Boolean(String(authorize_transaction_key || "").trim()),
-          authorizeEnvironment: normalizeAuthorizeEnvironment(authorize_environment),
-          taxRate: parseFloat(tax_rate) || 0,
-          serviceLat: service_lat,
-          serviceLng: service_lng,
-          serviceRadius: service_radius,
-          fleet: sanitizedFleet,
-          fixedRates: fixed_rates,
-          peakWindows: peak_windows,
-          hourlyBookings: hourly_bookings,
-          events,
-          addons
-        })
-          .then((result) => {
-            setWizardSyncStatus(location_id, {
-              state: result?.success ? "completed" : "failed",
-              attempted: true,
-              queued: true,
-              success: Boolean(result?.success),
-              status: result?.status ?? null,
-              error: result?.error || null,
-              retry_attempted: Boolean(result?.retry_attempted)
-            });
-            console.log("Wizard sync webhook completed in background:", {
-              location_id,
-              status: result?.status,
-              success: result?.success,
-              retry_attempted: result?.retry_attempted
-            });
-          })
-          .catch((err) => {
-            setWizardSyncStatus(location_id, {
-              state: "failed",
-              attempted: true,
-              queued: true,
-              success: false,
-              status: null,
-              error: err?.message || String(err || "Wizard sync webhook failed."),
-              retry_attempted: false
-            });
-            console.error("Wizard sync webhook background error:", {
-              location_id,
-              error: err?.message || err
-            });
-          });
-      }, 0);
     }
+
+    setTimeout(async () => {
+      let bgClient = null;
+      try {
+        bgClient = await pool.connect();
+        await bgClient.query("BEGIN");
+        await syncFleetSettings(bgClient, location_id, sanitizedFleet);
+        await syncFixedRates(bgClient, location_id, fixed_rates);
+        await bgClient.query("COMMIT");
+
+        if (webhookSync.attempted) {
+          const result = await sendWizardSyncWebhook({
+            webhookUrl: normalizedWebhookUrl,
+            locationId: location_id,
+            businessName: business_name,
+            planName: normalizedPlanName,
+            mapsApiKeyPresent: Boolean(String(maps_api_key || "").trim()),
+            paymentProvider: payment_provider,
+            hasStripeKey: Boolean(String(stripe_secret_key || "").trim()),
+            hasSquareAccessToken: Boolean(String(square_access_token || "").trim()),
+            hasSquareLocationId: Boolean(String(square_location_id || "").trim()),
+            hasPayPalClientId: Boolean(String(paypal_client_id || "").trim()),
+            hasPayPalClientSecret: Boolean(String(paypal_client_secret || "").trim()),
+            payPalEnvironment: normalizePayPalEnvironment(paypal_environment),
+            hasAuthorizeApiLoginId: Boolean(String(authorize_api_login_id || "").trim()),
+            hasAuthorizeTransactionKey: Boolean(String(authorize_transaction_key || "").trim()),
+            authorizeEnvironment: normalizeAuthorizeEnvironment(authorize_environment),
+            taxRate: parseFloat(tax_rate) || 0,
+            serviceLat: service_lat,
+            serviceLng: service_lng,
+            serviceRadius: service_radius,
+            fleet: sanitizedFleet,
+            fixedRates: fixed_rates,
+            peakWindows: peak_windows,
+            hourlyBookings: hourly_bookings,
+            events,
+            addons
+          });
+          setWizardSyncStatus(location_id, {
+            state: result?.success ? "completed" : "failed",
+            attempted: true,
+            queued: true,
+            success: Boolean(result?.success),
+            status: result?.status ?? null,
+            error: result?.error || null,
+            retry_attempted: Boolean(result?.retry_attempted)
+          });
+          console.log("Wizard sync webhook completed in background:", {
+            location_id,
+            status: result?.status,
+            success: result?.success,
+            retry_attempted: result?.retry_attempted
+          });
+        }
+      } catch (bgErr) {
+        if (bgClient) {
+          try {
+            await bgClient.query("ROLLBACK");
+          } catch {}
+        }
+        if (webhookSync.attempted) {
+          setWizardSyncStatus(location_id, {
+            state: "failed",
+            attempted: true,
+            queued: true,
+            success: false,
+            status: null,
+            error: bgErr?.message || String(bgErr || "Background sync failed."),
+            retry_attempted: false
+          });
+        }
+        console.error("Background profile sync error:", {
+          location_id,
+          error: bgErr?.message || bgErr
+        });
+      } finally {
+        if (bgClient) bgClient.release();
+      }
+    }, 0);
 
     return res.status(webhookSync.queued ? 202 : 200).json({
       success: true,
