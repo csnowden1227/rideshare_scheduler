@@ -915,57 +915,85 @@
       const script = document.createElement("script");
       script.id = "cd-google-maps";
       script.dataset.mapsKey = mapsKey;
-      script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(mapsKey)}&libraries=places,geometry&loading=async`;
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(mapsKey)}&libraries=places,geometry&loading=async&callback=__cdInitAutocomplete`;
       script.async = true;
       document.head.appendChild(script);
     }
   }
 
   async function initAutocomplete() {
-    if (!window.google?.maps?.importLibrary) return;
-
-    const attachAutocomplete = async (kind) => {
+    const attachAutocomplete = (kind) => {
       const input = getAddressInput(kind);
-      if (!input || input.dataset?.autocompleteEnhanced === "true") return;
+      if (!input || input.dataset?.autocompleteEnhanced === "true") return false;
+      if (!window.google?.maps?.places?.Autocomplete) return false;
 
-      const { PlaceAutocompleteElement } = await google.maps.importLibrary("places");
-      if (!PlaceAutocompleteElement) return;
+      const autocomplete = new google.maps.places.Autocomplete(input, {
+        componentRestrictions: {
+          country: "us",
+        },
+        fields: [
+          "formatted_address",
+          "geometry",
+          "name",
+        ],
+        types: ["geocode"],
+      });
 
-      const autocompleteElement = new PlaceAutocompleteElement();
-      autocompleteElement.id = input.id;
-      autocompleteElement.setAttribute("style", input.getAttribute("style") || "");
-      autocompleteElement.placeholder = input.getAttribute("placeholder") || "";
-      autocompleteElement.includedRegionCodes = ["us"];
-      autocompleteElement.value = input.value || "";
-      autocompleteElement.dataset.autocompleteEnhanced = "true";
+      input.dataset.autocompleteEnhanced = "true";
 
-      autocompleteElement.addEventListener("gmp-select", async (event) => {
-        try {
-          const place = event.placePrediction?.toPlace?.();
-          if (!place) return;
-          await place.fetchFields({ fields: ["formattedAddress", "location", "displayName"] });
-          state.places[kind] = place;
-          if (place.formattedAddress) {
-            autocompleteElement.value = place.formattedAddress;
-          }
-        } catch (error) {
-          console.warn("Place autocomplete select failed:", error);
+      autocomplete.addListener("place_changed", function () {
+        const place = autocomplete.getPlace();
+
+        if (!place) {
+          state.places[kind] = null;
+          return;
+        }
+
+        state.places[kind] = place;
+
+        if (place.formatted_address) {
+          input.value = place.formatted_address;
         }
       });
 
-      autocompleteElement.addEventListener("input", () => {
+      input.addEventListener("input", function () {
         state.places[kind] = null;
       });
 
-      input.replaceWith(autocompleteElement);
+      return true;
     };
 
     try {
-      await attachAutocomplete("pickup");
-      await attachAutocomplete("dropoff");
+      const pickupReady = attachAutocomplete("pickup");
+      const dropoffReady = attachAutocomplete("dropoff");
+      updateAddressHelperState("");
+      return pickupReady || dropoffReady;
     } catch (error) {
-      console.warn("Google Places element autocomplete could not initialize.", error);
+      console.warn("Google Places autocomplete failed. Manual typing remains available.", error);
+      updateAddressHelperState("Address autocomplete is unavailable right now. Please type the pickup and dropoff manually.");
+      return false;
     }
+  }
+
+  window.__cdInitAutocomplete = async () => {
+    await initAutocomplete();
+  };
+
+  function updateAddressHelperState(message = "") {
+    const helper = document.getElementById("cd_address_helper");
+    if (!helper) return;
+
+    if (!message) {
+      helper.textContent = "";
+      helper.style.display = "none";
+      return;
+    }
+
+    helper.textContent = message;
+    helper.style.display = "block";
+    helper.style.color = "#9a3412";
+    helper.style.background = "#fff7ed";
+    helper.style.border = "1px solid #fed7aa";
   }
 
   async function waitForGoogleMaps() {
@@ -974,7 +1002,7 @@
     await new Promise((resolve, reject) => {
       const started = Date.now();
       const check = setInterval(() => {
-        if (window.google?.maps?.importLibrary) {
+        if (window.google?.maps?.places?.Autocomplete) {
           clearInterval(check);
           resolve();
         } else if (Date.now() - started > 10000) {
@@ -1209,6 +1237,7 @@
                 <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-top:12px;">
                   <div id="pickup-address-container"><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Pickup Address</label><input id="cd_pickup" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" inputmode="text" placeholder="Street address or airport terminal" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" /></div>
                   <div id="dropoff-address-container"><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Dropoff Address</label><input id="cd_dropoff" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" inputmode="text" placeholder="Destination address" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" /></div>
+                  <div id="cd_address_helper" style="display:none;padding:10px 12px;border-radius:12px;font-size:12px;line-height:1.5;"></div>
                 </div>
               </div>
 
@@ -2014,7 +2043,9 @@
       showError("Loading booking widget...");
       await loadConfig();
       showError("Loading booking options...");
-      await waitForGoogleMaps();
+      waitForGoogleMaps().catch((error) => {
+        console.warn("Google Maps failed to load in time:", error);
+      });
       try {
         const handledCheckout = await handleCheckoutReturn();
         if (!handledCheckout) {
