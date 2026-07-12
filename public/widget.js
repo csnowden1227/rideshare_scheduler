@@ -915,7 +915,7 @@
       const script = document.createElement("script");
       script.id = "cd-google-maps";
       script.dataset.mapsKey = mapsKey;
-      script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(mapsKey)}&libraries=places,geometry&loading=async&callback=__cdInitAutocomplete`;
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(mapsKey)}&libraries=places,geometry&loading=async&auth_referrer_policy=origin&callback=__cdInitAutocomplete`;
       script.async = true;
       document.head.appendChild(script);
     }
@@ -930,6 +930,29 @@
       const input = getAddressInput(kind);
       if (!input || input.dataset?.autocompleteEnhanced === "true") return false;
       if (!window.google?.maps?.places?.Autocomplete) return false;
+
+      const originalPlaceholder = input.getAttribute("placeholder") || "";
+      const restorePlaceholder = () => {
+        if (originalPlaceholder && input.getAttribute("placeholder") !== originalPlaceholder) {
+          input.setAttribute("placeholder", originalPlaceholder);
+        }
+      };
+
+      input.dataset.cdOriginalPlaceholder = originalPlaceholder;
+      input.style.position = "relative";
+      input.style.zIndex = "2";
+      input.style.pointerEvents = "auto";
+      input.style.userSelect = "text";
+      input.style.webkitUserSelect = "text";
+      input.setAttribute("autocomplete", "street-address");
+      restorePlaceholder();
+
+      if (!input.dataset.placeholderGuardAttached) {
+        const observer = new MutationObserver(restorePlaceholder);
+        observer.observe(input, { attributes: true, attributeFilter: ["placeholder"] });
+        input.dataset.placeholderGuardAttached = "true";
+        input.__cdPlaceholderObserver = observer;
+      }
 
       const autocomplete = new google.maps.places.Autocomplete(input, {
         componentRestrictions: {
@@ -962,8 +985,10 @@
 
       input.addEventListener("input", function () {
         state.places[kind] = null;
+        restorePlaceholder();
       });
 
+      restorePlaceholder();
       return true;
     };
 
@@ -1240,8 +1265,8 @@
                   <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Pickup Date & Time</label><input id="cd_start_time" type="datetime-local" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" /></div>
                 </div>
                 <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-top:12px;">
-                  <div id="pickup-address-container"><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Pickup Address</label><input id="cd_pickup" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" inputmode="text" placeholder="Street address or airport terminal" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" /></div>
-                  <div id="dropoff-address-container"><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Dropoff Address</label><input id="cd_dropoff" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" inputmode="text" placeholder="Destination address" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" /></div>
+                  <div id="pickup-address-container"><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Pickup Address</label><input id="cd_pickup" name="pickup_address" type="text" autocomplete="street-address" autocorrect="off" autocapitalize="off" spellcheck="false" inputmode="text" placeholder="Street address or airport terminal" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;position:relative;z-index:2;pointer-events:auto;user-select:text;-webkit-user-select:text;" /></div>
+                  <div id="dropoff-address-container"><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Dropoff Address</label><input id="cd_dropoff" name="dropoff_address" type="text" autocomplete="street-address" autocorrect="off" autocapitalize="off" spellcheck="false" inputmode="text" placeholder="Destination address" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;position:relative;z-index:2;pointer-events:auto;user-select:text;-webkit-user-select:text;" /></div>
                   <div id="cd_address_helper" style="display:none;padding:10px 12px;border-radius:12px;font-size:12px;line-height:1.5;"></div>
                 </div>
               </div>
