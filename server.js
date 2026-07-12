@@ -14568,6 +14568,7 @@ app.get("/api/get-profile/:location_id", requireWizardToken, async (req, res) =>
 const parsedEvents = safeParseJson(profile.events);
 const parsedPeakWindows = safeParseJson(profile.peak_windows);
 const parsedAddons = safeParseJson(profile.addons);
+const parsedHourlyBookings = safeParseJson(profile.hourly_bookings);
 const entitlements = buildPlanEntitlements({
   planName: profile.plan_name || "starter",
   addonBrandingUnlocked: profile.addon_branding_unlocked,
@@ -14676,6 +14677,7 @@ res.json({
   events: parsedEvents,
   peak_windows: parsedPeakWindows,
   fixed_rates: parsedFixedRates,
+  hourly_bookings: parsedHourlyBookings,
   addons: parsedAddons,
 
   service_lat: profile.service_lat,
