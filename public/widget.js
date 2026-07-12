@@ -706,16 +706,15 @@
     const hourlyBookings = Array.isArray(state.config?.hourly_bookings) ? state.config.hourly_bookings : [];
 
     const options = [
-      `<option value="">${hourlyBookings.length ? "Select executive luxury chauffeur" : "No executive luxury chauffeur rates configured"}</option>`,
+      `<option value="">${hourlyBookings.length ? "Select Executive Luxury Chauffeur" : "No Executive Luxury Chauffeur rates configured"}</option>`,
       ...hourlyBookings.map((row) => {
-        const label = String(row.booking_description || "Executive Luxury Chauffeur").trim();
-        return `<option value="${escapeHtml(row.vehicle_slot_id || "")}">${escapeHtml(label)}</option>`;
+        const label = `${row.booking_description || "Executive Luxury Chauffeur"}${row.vehicle_make || row.vehicle_model ? ` - ${[row.vehicle_make, row.vehicle_model].filter(Boolean).join(" ")}` : ""}`;
+        return `<option value="${escapeHtml(row.booking_description || "")}">${escapeHtml(label)}</option>`;
       }),
     ];
 
     return `
-      <div id="cd_hourly_wrap" style="display:none;">
-        <div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.14em;color:#475569;margin-bottom:8px;">SECTION: EXECUTIVE LUXURY CHAUFFEUR</div>
+      <div id="cd_hourly_booking_wrap" style="display:none;">
         <label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Executive Luxury Chauffeur</label>
         <select id="cd_hourly_booking" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" ${hourlyBookings.length ? "" : "disabled"}>
           ${options.join("")}
@@ -1213,7 +1212,7 @@
                   <div style="max-width:220px;"><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:8px;"># of Passengers</label><input id="cd_passenger_count" type="number" min="1" value="1" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" /></div>
                 </div>
                 <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-top:12px;">
-                  <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Route Option</label><select id="cd_booking_mode" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;"><option value="standard">Standard Booking</option><option value="fixed">Fixed Destinations</option><option value="event">Events</option><option value="hourly">Executive Luxury Chauffeur</option></select></div>
+                  <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Route/Service Option</label><select id="cd_booking_mode" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;"><option value="standard">Standard Booking</option><option value="fixed">Fixed Destinations</option><option value="event">Events</option><option value="hourly">Executive Luxury Chauffeur</option></select></div>
                 </div>
                 <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-top:12px;">
                   <div id="cd_event_wrap" style="display:none;">${eventSelect || ""}</div>
@@ -1567,6 +1566,14 @@
       }
     }
 
+    if (payload.booking_mode === "hourly" && !hourlyConfig) {
+      throw new Error("Select an hourly reservation option to continue.");
+    }
+
+    if (payload.booking_mode === "hourly" && hourlyHours < 4) {
+      throw new Error("4 hour minimum.");
+    }
+
     let baseRate = toNumber(vehicle.base_rate, 0);
     let mileRate = toNumber(vehicle.mile_rate, 0);
     let pricingLabel = `${vehicle.vehicle_type || "Selected vehicle"} standard pricing`;
@@ -1583,6 +1590,11 @@
       pricingLabel = `${fixedRate.location_name || "Fixed zone"} flat rate`;
     }
 
+    if (hourlyConfig) {
+      const hourlyRate = toNumber(hourlyConfig.hourly_rate, 0);
+      rideSubtotal = hourlyRate * hourlyHours;
+      pricingLabel = `${hourlyConfig.booking_description || "Executive Luxury Chauffeur"} at ${money(hourlyRate)}/hr for ${hourlyHours} hour${hourlyHours === 1 ? "" : "s"}`;
+    }
     if (fixedRate && fixedSurcharge > 0) {
       rideSubtotal += fixedSurcharge;
       pricingLabel = `${pricingLabel} + $${fixedSurcharge.toFixed(2)} time-based surcharge`;

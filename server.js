@@ -3889,6 +3889,110 @@ async function sendCrmSmsToContact({
   };
 }
 
+async function sendBookingConflictNotifications({
+  locationId,
+  vehicleSlotId,
+  vehicleLabel,
+  pickupAddress,
+  dropoffAddress,
+  startTime,
+  endTime,
+  conflictTitle,
+  crmAuthOptions = {},
+}) {
+  const summaryLines = [
+    "Booking conflict detected.",
+    vehicleLabel ? `Vehicle: ${vehicleLabel}` : null,
+    vehicleSlotId ? `Slot: ${vehicleSlotId}` : null,
+    startTime ? `Start: ${startTime}` : null,
+    endTime ? `End: ${endTime}` : null,
+    pickupAddress ? `Pickup: ${pickupAddress}` : null,
+    dropoffAddress ? `Dropoff: ${dropoffAddress}` : null,
+    conflictTitle ? `Conflicts with: ${conflictTitle}` : null,
+  ].filter(Boolean);
+
+  const alertResults = { operator: null, driver: null };
+
+  const operatorContactId = await upsertCrmContact({
+    locationId,
+    firstName: "Booking",
+    lastName: "Conflict Alerts",
+    phone: BOOKING_CONFLICT_ALERT_PHONE,
+    crmAuthOptions,
+  });
+
+  if (operatorContactId) {
+    alertResults.operator = await sendCrmSmsToContact({
+      locationId,
+      contactId: operatorContactId,
+      message: summaryLines.join("\n"),
+      crmAuthOptions,
+    });
+  } else {
+    alertResults.operator = {
+      success: false,
+      skipped: true,
+      reason: "Unable to resolve conflict alert contact.",
+    };
+  }
+
+  const profileLookup = await pool.query(
+    `SELECT fleet
+     FROM profiles
+     WHERE location_id = $1
+     LIMIT 1`,
+    [locationId]
+  );
+  const fleetRows = normalizeFleetRecords(safeParseJson(profileLookup.rows[0]?.fleet));
+  const matchedDriver = fleetRows.find(
+    (vehicleRow) => String(vehicleRow?.vehicle_slot_id || "").trim() === String(vehicleSlotId || "").trim()
+  ) || null;
+  const driverName = String(matchedDriver?.driver_name || "").trim();
+  const driverPhone = normalizeDriverPhone(matchedDriver?.driver_phone || "");
+
+  if (driverName && driverPhone) {
+    const driverContactId = await upsertCrmContact({
+      locationId,
+      firstName: driverName,
+      lastName: "",
+      phone: driverPhone,
+      crmAuthOptions,
+    });
+
+    if (driverContactId) {
+      const driverLines = [
+        "A booking conflict was detected for your vehicle.",
+        vehicleLabel ? `Vehicle: ${vehicleLabel}` : null,
+        startTime ? `Start: ${startTime}` : null,
+        endTime ? `End: ${endTime}` : null,
+        pickupAddress ? `Pickup: ${pickupAddress}` : null,
+        dropoffAddress ? `Dropoff: ${dropoffAddress}` : null,
+      ].filter(Boolean);
+
+      alertResults.driver = await sendCrmSmsToContact({
+        locationId,
+        contactId: driverContactId,
+        message: driverLines.join("\n"),
+        crmAuthOptions,
+      });
+    } else {
+      alertResults.driver = {
+        success: false,
+        skipped: true,
+        reason: "Unable to resolve driver CRM contact for conflict alert.",
+      };
+    }
+  } else {
+    alertResults.driver = {
+      success: false,
+      skipped: true,
+      reason: "Driver phone not available for conflict alert.",
+    };
+  }
+
+  return alertResults;
+}
+
 async function sendCrmEmailToContact({
   locationId,
   contactId,
@@ -7743,6 +7847,7 @@ const oauth2Client = new google.auth.OAuth2(
 const travelTimeCache = new Map();
 const DEFAULT_TRIP_MINUTES = 60;
 const BOOKING_BUFFER_MINUTES = 20;
+const BOOKING_CONFLICT_ALERT_PHONE = "9197171584";
 
 /* 🔐 Get Maps API Key from Database */
 async function getMapsKey(location_id) {
@@ -7882,15 +7987,60 @@ async function getRouteMetrics({
 }
 
 async function computeRoute({
-  origin,
-  destination,
-  departureISO,
-  originLat,
-  originLng,
-  destinationLat,
-  destinationLng,
-  mapsApiKey,
+  location_id = null,
+  origin = null,
+  destination = null,
+  departureISO = null,
+  originLat = null,
+  originLng = null,
+  destinationLat = null,
+  destinationLng = null,
+  mapsApiKey = null,
 }) {
+  if (location_id) {
+    const key = await getMapsKey(location_id);
+    if (!key || !origin || !destination) {
+      return { distanceMeters: 16093.4, durationMinutes: DEFAULT_TRIP_MINUTES, source: "fallback" };
+    }
+
+    try {
+      const response = await fetch("https://routes.googleapis.com/directions/v2:computeRoutes", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Goog-Api-Key": key,
+          "X-Goog-FieldMask": "routes.duration,routes.distanceMeters"
+        },
+        body: JSON.stringify({
+          origin: { address: origin },
+          destination: { address: destination },
+          travelMode: "DRIVE",
+          routingPreference: "TRAFFIC_AWARE",
+          departureTime: departureISO || new Date().toISOString()
+        })
+      });
+
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data.routes?.length) {
+        return { distanceMeters: 16093.4, durationMinutes: DEFAULT_TRIP_MINUTES, source: "fallback" };
+      }
+
+      const route = data.routes[0];
+      const iso = String(route.duration || "PT45M");
+      const hours = Number((iso.match(/(\d+)H/) || [])[1] || 0);
+      const mins = Number((iso.match(/(\d+)M/) || [])[1] || 0);
+      const secs = Number((iso.match(/(\d+)S/) || [])[1] || 0);
+
+      return {
+        distanceMeters: Number(route.distanceMeters || 0),
+        durationMinutes: hours * 60 + mins + Math.ceil(secs / 60),
+        source: "google",
+      };
+    } catch {
+      return { distanceMeters: 16093.4, durationMinutes: DEFAULT_TRIP_MINUTES, source: "fallback" };
+    }
+  }
+
   const metrics = await getRouteMetrics({
     origin,
     destination,
@@ -7906,6 +8056,37 @@ async function computeRoute({
     distanceMeters: Math.max(0, Number(metrics.distanceMiles || 0) * 1609.34),
     durationMinutes: Number(metrics.durationMinutes || DEFAULT_TRIP_MINUTES),
     source: metrics.source || "fallback",
+  };
+}
+
+function resolveHourlyBookingQuote(hourlyBookings, selectedHourlyBooking, hourlyHours) {
+  const bookingDescription = String(selectedHourlyBooking || "").trim();
+  const hours = Math.max(1, Number(hourlyHours || 1));
+  if (!bookingDescription) {
+    return {
+      hourlyBooking: null,
+      hourlyHours: hours,
+      hourlyRate: 0,
+      hourlySubtotal: 0,
+      pricingLabel: null,
+    };
+  }
+
+  const hourlyBooking = (Array.isArray(hourlyBookings) ? hourlyBookings : []).find((row) =>
+    String(row.booking_description || "").trim() === bookingDescription
+  ) || null;
+
+  const hourlyRate = Number(hourlyBooking?.hourly_rate || 0);
+  const hourlySubtotal = Number((hourlyRate * hours).toFixed(2));
+
+  return {
+    hourlyBooking,
+    hourlyHours: hours,
+    hourlyRate,
+    hourlySubtotal,
+    pricingLabel: hourlyBooking
+      ? `${hourlyBooking.booking_description || "Executive Luxury Chauffeur"} at $${hourlyRate.toFixed(2)}/hr for ${hours} hour${hours === 1 ? "" : "s"}`
+      : null,
   };
 }
 
@@ -11976,6 +12157,8 @@ function buildCrmBookingPayload({
       additional_items_aboard: booking.additional_items_aboard || null,
       selected_event_name: booking.selected_event_name || null,
       selected_fixed_destination: booking.selected_fixed_destination || null,
+      selected_hourly_booking: booking.selected_hourly_booking || null,
+      hourly_hours: Number.isFinite(Number(booking.hourly_hours)) ? Number(booking.hourly_hours) : null,
       selected_addons: Array.isArray(booking.selected_addons) ? booking.selected_addons : [],
     },
       customer: {
@@ -12035,6 +12218,10 @@ function buildCrmBookingPayload({
     pricing: {
       pricing_label: meta.pricing_label || null,
       fixed_rate_name: meta.fixed_rate_name || null,
+      hourly_booking_name: meta.hourly_booking_name || null,
+      hourly_hours: Number.isFinite(Number(meta.hourly_hours)) ? Number(meta.hourly_hours) : null,
+      hourly_rate: Number.isFinite(Number(meta.hourly_rate)) ? Number(meta.hourly_rate) : null,
+      hourly_total: Number.isFinite(Number(meta.hourly_total)) ? Number(meta.hourly_total) : null,
       peak_multiplier: Number.isFinite(Number(meta.peak_multiplier))
         ? Number(meta.peak_multiplier)
         : null,
@@ -12594,6 +12781,8 @@ async function createBookingRecord(input, { paymentLink = null, triggerWebhook =
     additional_items_aboard = null,
     selected_event_name = null,
     selected_fixed_destination = null,
+    selected_hourly_booking = null,
+    hourly_hours = null,
     selected_addons = []
   } = input;
 
@@ -12613,6 +12802,7 @@ async function createBookingRecord(input, { paymentLink = null, triggerWebhook =
       "addon_funnel_unlocked",
       "addon_tracking_unlocked",
       "addon_extra_vehicle_count",
+      "hourly_bookings",
       "peak_windows",
       "open_time",
       "close_time",
@@ -12693,6 +12883,10 @@ async function createBookingRecord(input, { paymentLink = null, triggerWebhook =
   const calendar_id = fleetVehicle?.calendar_id || null;
   const vehicle_type = fleetVehicle?.vehicle_type || fleetVehicle?.name || null;
   const vehicle_category = fleetVehicle?.vehicle_category || null;
+  const bookingModeNormalized = String(booking_mode || "standard").trim().toLowerCase();
+  const resolvedHourlyHoursForCalendar = bookingModeNormalized === "hourly"
+    ? Math.max(4, Number(hourly_hours || 0) || 0)
+    : null;
 
   const routeMetrics = await getRouteMetrics({
     origin: pickup_address,
@@ -12706,11 +12900,13 @@ async function createBookingRecord(input, { paymentLink = null, triggerWebhook =
   const generalBufferMinutes = parseInt(fleetVehicle?.outbound_buffer_min, 10) || BOOKING_BUFFER_MINUTES;
   const additionalTrafficBufferMinutes = getAdditionalTrafficBufferMinutes({
     peakWindows: safeParseJson(profile.peak_windows),
-    bookingMode: booking_mode || "standard",
+    bookingMode: bookingModeNormalized,
     startTime: start_time,
     vehicleType: fleetVehicle?.vehicle_type || "",
   });
-  const bookingDurationMinutes = routeMetrics.durationMinutes + generalBufferMinutes + additionalTrafficBufferMinutes;
+  const bookingDurationMinutes = bookingModeNormalized === "hourly" && resolvedHourlyHoursForCalendar
+    ? (resolvedHourlyHoursForCalendar * 60)
+    : (routeMetrics.durationMinutes + generalBufferMinutes + additionalTrafficBufferMinutes);
   const end_time = new Date(
     new Date(start_time).getTime() + bookingDurationMinutes * 60000
   ).toISOString();
@@ -12736,6 +12932,23 @@ async function createBookingRecord(input, { paymentLink = null, triggerWebhook =
   });
   const bookingStatus = isBookingConfirmed ? "confirmed" : "pending";
   const normalizedCustomerPhone = normalizePhoneNumber(phone);
+  const hourlyQuote = bookingModeNormalized === "hourly"
+    ? resolveHourlyBookingQuote(
+        safeParseJson(profile.hourly_bookings, []),
+        selected_hourly_booking,
+        hourly_hours
+      )
+    : {
+        hourlyBooking: null,
+        hourlyHours: Number(hourly_hours || 0) || null,
+        hourlyRate: null,
+        hourlySubtotal: null,
+        pricingLabel: null,
+      };
+  const resolvedHourlyBookingName = hourlyQuote.hourlyBooking?.booking_description || String(selected_hourly_booking || "").trim() || null;
+  const resolvedHourlyHours = hourlyQuote.hourlyBooking ? hourlyQuote.hourlyHours : (Number(hourly_hours || 0) || null);
+  const resolvedHourlyRate = hourlyQuote.hourlyBooking ? hourlyQuote.hourlyRate : null;
+  const resolvedHourlyTotal = hourlyQuote.hourlyBooking ? hourlyQuote.hourlySubtotal : null;
 
   const result = await pool.query(
     `INSERT INTO bookings (
@@ -12854,6 +13067,8 @@ async function createBookingRecord(input, { paymentLink = null, triggerWebhook =
           additional_items_aboard,
           selected_event_name,
           selected_fixed_destination,
+          selected_hourly_booking: resolvedHourlyBookingName,
+          hourly_hours: resolvedHourlyHours,
           selected_addons,
         },
         customer: {
@@ -12904,7 +13119,11 @@ async function createBookingRecord(input, { paymentLink = null, triggerWebhook =
         meta: {
           source: "booking_widget",
           payment_provider: resolvedPaymentProvider,
-          pricing_label,
+          pricing_label: pricing_label || hourlyQuote.pricingLabel,
+          hourly_booking_name: resolvedHourlyBookingName,
+          hourly_hours: resolvedHourlyHours,
+          hourly_rate: resolvedHourlyRate,
+          hourly_total: resolvedHourlyTotal,
           fixed_rate_name,
           peak_multiplier,
           fixed_surcharge,
@@ -12994,6 +13213,13 @@ async function createBookingRecord(input, { paymentLink = null, triggerWebhook =
         dropoff_lng,
         start_time,
         end_time
+      },
+      pricing: {
+        pricing_label: pricing_label || hourlyQuote.pricingLabel || null,
+        hourly_booking_name: resolvedHourlyBookingName,
+        hourly_hours: resolvedHourlyHours,
+        hourly_rate: resolvedHourlyRate,
+        hourly_total: resolvedHourlyTotal,
       }
     },
     financials: {
@@ -13135,6 +13361,18 @@ app.post("/api/create-checkout-session", async (req, res) => {
       });
     }
 
+    if (String(req.body.booking_mode || "").trim().toLowerCase() === "hourly") {
+      const hourlyHours = Number(req.body.hourly_hours || 0);
+      if (!Number.isFinite(hourlyHours) || hourlyHours < 4) {
+        return res.status(400).json({ error: "4 hour minimum." });
+      }
+    }
+
+    const bookingModeNormalized = String(req.body.booking_mode || "standard").trim().toLowerCase();
+    const hourlyHoursForCalendar = bookingModeNormalized === "hourly"
+      ? Math.max(4, Number(req.body.hourly_hours || 0) || 0)
+      : null;
+
     const routeMetrics = await getRouteMetrics({
       origin: req.body.pickup_address,
       destination: req.body.dropoff_address,
@@ -13147,11 +13385,13 @@ app.post("/api/create-checkout-session", async (req, res) => {
     const generalBufferMinutes = parseInt(fleetVehicle?.outbound_buffer_min, 10) || BOOKING_BUFFER_MINUTES;
     const additionalTrafficBufferMinutes = getAdditionalTrafficBufferMinutes({
       peakWindows: safeParseJson(profile.peak_windows),
-      bookingMode: req.body.booking_mode || "standard",
+      bookingMode: bookingModeNormalized,
       startTime: req.body.start_time,
       vehicleType: fleetVehicle?.vehicle_type || "",
     });
-    const bookingDurationMinutes = routeMetrics.durationMinutes + generalBufferMinutes + additionalTrafficBufferMinutes;
+    const bookingDurationMinutes = bookingModeNormalized === "hourly" && hourlyHoursForCalendar
+      ? (hourlyHoursForCalendar * 60)
+      : (routeMetrics.durationMinutes + generalBufferMinutes + additionalTrafficBufferMinutes);
     const calculatedEndTime = new Date(
       new Date(req.body.start_time).getTime() + bookingDurationMinutes * 60000
     ).toISOString();
@@ -13170,6 +13410,23 @@ app.post("/api/create-checkout-session", async (req, res) => {
       );
 
       if (conflictingEvent) {
+        sendBookingConflictNotifications({
+          locationId,
+          vehicleSlotId,
+          vehicleLabel: String(fleetVehicle?.vehicle_type || fleetVehicle?.name || vehicleSlotId || "").trim() || null,
+          pickupAddress: req.body.pickup_address || null,
+          dropoffAddress: req.body.dropoff_address || null,
+          startTime: req.body.start_time || null,
+          endTime: calculatedEndTime || null,
+          conflictTitle: conflictingEvent.title || null,
+          crmAuthOptions: { includeEnvFallback: false },
+        }).catch((error) => {
+          console.warn("[booking-conflict] notification send failed", {
+            locationId,
+            vehicleSlotId,
+            error: error?.message || error,
+          });
+        });
         return res.status(409).json({
           error: "This vehicle is not available for that time. Please call to check other fleet availability. We can add you to the waitlist.",
           waitlist_recommended: true,
@@ -15004,7 +15261,7 @@ app.post("/api/pricing/quote", async (req, res) => {
     }
 
     // C. Route Calculation
-    const route = await computeRoute({ origin: pickup, destination: dropoff, departureISO });
+    const route = await computeRoute({ location_id, origin: pickup, destination: dropoff, departureISO });
     const miles = route.distanceMeters / 1609.34;
     let totalCents = baseCents + Math.round(miles * perMileCents);
     
@@ -15087,7 +15344,12 @@ app.post("/api/widget-quote", async (req, res) => {
       return res.status(400).json({ error: "Choose a valid pickup date and time." });
     }
 
-    const route = await computeRoute({ origin: pickup_address, destination: dropoff_address, departureISO: start_time });
+    const route = await computeRoute({
+      origin: pickup_address,
+      destination: dropoff_address,
+      departureISO: start_time,
+      mapsApiKey: profile.maps_api_key || null,
+    });
     const miles = Number((route.distanceMeters / 1609.34).toFixed(2));
     const eventConfig = booking_mode === "event" ? resolveEventByName(events, selected_event_name) : null;
     const selectedFixedName = booking_mode === "fixed" ? String(selected_fixed_destination || "").trim() : "";
