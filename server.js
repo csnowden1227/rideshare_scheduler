@@ -7881,6 +7881,34 @@ async function getRouteMetrics({
   return fallback();
 }
 
+async function computeRoute({
+  origin,
+  destination,
+  departureISO,
+  originLat,
+  originLng,
+  destinationLat,
+  destinationLng,
+  mapsApiKey,
+}) {
+  const metrics = await getRouteMetrics({
+    origin,
+    destination,
+    originLat,
+    originLng,
+    destinationLat,
+    destinationLng,
+    mapsApiKey,
+    departureISO,
+  });
+
+  return {
+    distanceMeters: Math.max(0, Number(metrics.distanceMiles || 0) * 1609.34),
+    durationMinutes: Number(metrics.durationMinutes || DEFAULT_TRIP_MINUTES),
+    source: metrics.source || "fallback",
+  };
+}
+
 async function geocodeAddress(address, mapsApiKey) {
   const formattedAddress = String(address || "").trim();
   if (!formattedAddress || !mapsApiKey) {
