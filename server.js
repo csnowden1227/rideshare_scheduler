@@ -178,6 +178,7 @@ let bookingSyncColumnsReady = null;
 let crmLocationTokenColumnsReady = null;
 let profileCrmApiKeyColumnReady = null;
 let profilePublicAppUrlColumnReady = null;
+let profileOwnerSmsColumnReady = null;
 let profilePricingColumnsReady = null;
 let profileEntitlementColumnsReady = null;
 let profilePaymentProviderColumnsReady = null;
@@ -603,6 +604,18 @@ async function ensureProfilePublicAppUrlColumn() {
     });
   }
   return profilePublicAppUrlColumnReady;
+}
+
+async function ensureProfileOwnerSmsColumn() {
+  if (!profileOwnerSmsColumnReady) {
+    profileOwnerSmsColumnReady = (async () => {
+      await pool.query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS owner_sms TEXT`);
+    })().catch((err) => {
+      profileOwnerSmsColumnReady = null;
+      throw err;
+    });
+  }
+  return profileOwnerSmsColumnReady;
 }
 
 async function ensureProfileEntitlementColumns() {
@@ -3989,36 +4002,45 @@ async function sendBookingConflictNotifications({
 
   const alertResults = { operator: null, driver: null };
 
-  const operatorContactId = await upsertCrmContact({
-    locationId,
-    firstName: "Booking",
-    lastName: "Conflict Alerts",
-    phone: BOOKING_CONFLICT_ALERT_PHONE,
-    crmAuthOptions,
-  });
-
-  if (operatorContactId) {
-    alertResults.operator = await addCrmConflictMarkerToContact({
-      locationId,
-      contactId: operatorContactId,
-      noteBody: summaryLines.join("\n"),
-      crmAuthOptions,
-    });
-  } else {
-    alertResults.operator = {
-      success: false,
-      skipped: true,
-      reason: "Unable to resolve conflict alert contact.",
-    };
-  }
-
   const profileLookup = await pool.query(
-    `SELECT fleet
+    `SELECT fleet, owner_sms
      FROM profiles
      WHERE location_id = $1
      LIMIT 1`,
     [locationId]
   );
+  const ownerSms = normalizePhoneNumber(profileLookup.rows[0]?.owner_sms || "") || BOOKING_CONFLICT_ALERT_PHONE;
+  if (ownerSms) {
+    const ownerContactId = await upsertCrmContact({
+      locationId,
+      firstName: "Booking",
+      lastName: "Conflict Alerts",
+      phone: ownerSms,
+      crmAuthOptions,
+    });
+
+    if (ownerContactId) {
+      alertResults.operator = await sendCrmSmsToContact({
+        locationId,
+        contactId: ownerContactId,
+        message: summaryLines.join("\n"),
+        crmAuthOptions,
+      });
+    } else {
+      alertResults.operator = {
+        success: false,
+        skipped: true,
+        reason: "Unable to resolve owner SMS contact.",
+      };
+    }
+  } else {
+    alertResults.operator = {
+      success: false,
+      skipped: true,
+      reason: "Owner SMS number not configured.",
+    };
+  }
+
   const fleetRows = normalizeFleetRecords(safeParseJson(profileLookup.rows[0]?.fleet));
   const matchedDriver = fleetRows.find(
     (vehicleRow) => String(vehicleRow?.vehicle_slot_id || "").trim() === String(vehicleSlotId || "").trim()
@@ -7064,6 +7086,7 @@ async function saveConfigHandler(req, res) {
       brand_color_secondary,
       brand_color_accent,
       widget_tagline,
+      owner_sms,
       plan_name,
       crm_webhook_url,
       maps_api_key,
@@ -7102,6 +7125,7 @@ async function saveConfigHandler(req, res) {
     await client.query("BEGIN");
     await ensureProfileCrmApiKeyColumn();
     await ensureProfilePublicAppUrlColumn();
+    await ensureProfileOwnerSmsColumn();
     await ensureProfilePricingColumns();
     await ensureProfileEntitlementColumns();
     await ensureProfilePaymentProviderColumns();
@@ -7150,6 +7174,7 @@ async function saveConfigHandler(req, res) {
     pushProfileField("brand_color_secondary", sanitizedBranding.brand_color_secondary || DEFAULT_BRAND_COLORS.secondary);
     pushProfileField("brand_color_accent", sanitizedBranding.brand_color_accent || DEFAULT_BRAND_COLORS.accent);
     pushProfileField("widget_tagline", sanitizedBranding.widget_tagline || null);
+    pushProfileField("owner_sms", normalizePhoneNumber(owner_sms) || null);
     pushProfileField("plan_name", normalizedPlanName);
     pushProfileField("public_app_url", normalizePublicAppUrl(req.body.public_app_url || null) || null);
     pushProfileField("crm_webhook_url", crm_webhook_url);
