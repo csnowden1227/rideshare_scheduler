@@ -3889,6 +3889,80 @@ async function sendCrmSmsToContact({
   };
 }
 
+async function addCrmConflictMarkerToContact({
+  locationId,
+  contactId,
+  noteBody,
+  crmAuthOptions = {},
+}) {
+  if (!locationId || !contactId) {
+    return { success: false, skipped: true, reason: "locationId and contactId are required." };
+  }
+
+  const tagsResult = await fetchCrmWithFallback(
+    locationId,
+    new URL(`/contacts/${encodeURIComponent(String(contactId))}/tags`, CRM_API_BASE_URL),
+    {
+      method: "POST",
+      headers: {
+        Version: "2021-07-28",
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        tags: ["booking_conflict"],
+      }),
+    },
+    [400, 401, 403],
+    crmAuthOptions
+  );
+
+  if (!tagsResult?.response?.ok) {
+    return {
+      success: false,
+      status: tagsResult?.response?.status || 500,
+      error: tagsResult?.bodyText ? tagsResult.bodyText.slice(0, 300) : "Unable to tag CRM contact for conflict.",
+      tokenSource: tagsResult?.tokenSource || null,
+      attemptedSources: tagsResult?.attemptedSources || [],
+    };
+  }
+
+  if (String(noteBody || "").trim()) {
+    const noteResult = await fetchCrmWithFallback(
+      locationId,
+      new URL(`/contacts/${encodeURIComponent(String(contactId))}/notes`, CRM_API_BASE_URL),
+      {
+        method: "POST",
+        headers: {
+          Version: "2021-07-28",
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          body: String(noteBody).trim(),
+        }),
+      },
+      [400, 401, 403],
+      crmAuthOptions
+    );
+
+    if (!noteResult?.response?.ok) {
+      return {
+        success: false,
+        status: noteResult?.response?.status || 500,
+        error: noteResult?.bodyText ? noteResult.bodyText.slice(0, 300) : "Unable to add CRM conflict note.",
+        tokenSource: noteResult?.tokenSource || null,
+        attemptedSources: noteResult?.attemptedSources || [],
+      };
+    }
+  }
+
+  return {
+    success: true,
+    status: 200,
+  };
+}
+
 async function sendBookingConflictNotifications({
   locationId,
   vehicleSlotId,
@@ -3898,6 +3972,7 @@ async function sendBookingConflictNotifications({
   startTime,
   endTime,
   conflictTitle,
+  farmOutLink,
   crmAuthOptions = {},
 }) {
   const summaryLines = [
@@ -3909,6 +3984,7 @@ async function sendBookingConflictNotifications({
     pickupAddress ? `Pickup: ${pickupAddress}` : null,
     dropoffAddress ? `Dropoff: ${dropoffAddress}` : null,
     conflictTitle ? `Conflicts with: ${conflictTitle}` : null,
+    farmOutLink ? `Farm-out Link: ${farmOutLink}` : null,
   ].filter(Boolean);
 
   const alertResults = { operator: null, driver: null };
@@ -3922,10 +3998,10 @@ async function sendBookingConflictNotifications({
   });
 
   if (operatorContactId) {
-    alertResults.operator = await sendCrmSmsToContact({
+    alertResults.operator = await addCrmConflictMarkerToContact({
       locationId,
       contactId: operatorContactId,
-      message: summaryLines.join("\n"),
+      noteBody: summaryLines.join("\n"),
       crmAuthOptions,
     });
   } else {
@@ -3967,12 +4043,13 @@ async function sendBookingConflictNotifications({
         endTime ? `End: ${endTime}` : null,
         pickupAddress ? `Pickup: ${pickupAddress}` : null,
         dropoffAddress ? `Dropoff: ${dropoffAddress}` : null,
+        farmOutLink ? `Farm-out Link: ${farmOutLink}` : null,
       ].filter(Boolean);
 
-      alertResults.driver = await sendCrmSmsToContact({
+      alertResults.driver = await addCrmConflictMarkerToContact({
         locationId,
         contactId: driverContactId,
-        message: driverLines.join("\n"),
+        noteBody: driverLines.join("\n"),
         crmAuthOptions,
       });
     } else {
@@ -13410,6 +13487,15 @@ app.post("/api/create-checkout-session", async (req, res) => {
       );
 
       if (conflictingEvent) {
+        const farmOutLink = appendQueryParams(
+          buildDispatchManagerUrl(getPublicAppUrl(req), locationId),
+          {
+            source: "booking_conflict",
+            vehicle_slot_id: vehicleSlotId || undefined,
+            start_time: req.body.start_time || undefined,
+          }
+        );
+
         sendBookingConflictNotifications({
           locationId,
           vehicleSlotId,
@@ -13419,6 +13505,7 @@ app.post("/api/create-checkout-session", async (req, res) => {
           startTime: req.body.start_time || null,
           endTime: calculatedEndTime || null,
           conflictTitle: conflictingEvent.title || null,
+          farmOutLink,
           crmAuthOptions: { includeEnvFallback: false },
         }).catch((error) => {
           console.warn("[booking-conflict] notification send failed", {
