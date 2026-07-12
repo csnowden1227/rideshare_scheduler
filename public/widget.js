@@ -1508,28 +1508,6 @@
       throw new Error("Enter pickup, dropoff, and pickup date/time first.");
     }
 
-    const [pickupCoords, dropoffCoords] = await Promise.all([
-      geocodeInput(payload.pickup_address, "pickup"),
-      geocodeInput(payload.dropoff_address, "dropoff"),
-    ]);
-
-    const miles = haversineMiles(
-      pickupCoords.lat,
-      pickupCoords.lng,
-      dropoffCoords.lat,
-      dropoffCoords.lng
-    );
-
-    const route = {
-      pickupCoords,
-      dropoffCoords,
-      miles: Number(miles.toFixed(2)),
-    };
-
-    if (!isWithinServiceArea(route)) {
-      throw new Error(`Pickup is outside the configured ${toNumber(state.config?.service_radius, 0)} mile service area.`);
-    }
-
     const serverQuoteResponse = await fetch(`${BACKEND_URL}/api/widget-quote`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1553,7 +1531,6 @@
       throw new Error(serverQuote?.error || "Unable to calculate quote.");
     }
 
-    state.route = route;
     state.quote = serverQuote;
     return;
 
@@ -1658,6 +1635,12 @@
       peak_multiplier: peakMultiplier,
       fixed_surcharge: fixedRate ? fixedSurcharge : 0,
       booking_mode: payload.booking_mode,
+    };
+
+    state.route = {
+      pickupCoords: null,
+      dropoffCoords: null,
+      miles: state.quote.miles,
     };
 
     return state.quote;
@@ -1897,7 +1880,7 @@
       return showError("Please accept the cancellation and payment terms before continuing.");
     }
 
-    if (!state.quote || !state.route) {
+    if (!state.quote) {
       try {
         await buildQuote();
         renderQuoteSummary();
@@ -1907,12 +1890,8 @@
     }
 
     Object.assign(payload, {
-      pickup_address: state.route.pickupCoords.formattedAddress || payload.pickup_address,
-      dropoff_address: state.route.dropoffCoords.formattedAddress || payload.dropoff_address,
-      pickup_lat: state.route.pickupCoords.lat,
-      pickup_lng: state.route.pickupCoords.lng,
-      dropoff_lat: state.route.dropoffCoords.lat,
-      dropoff_lng: state.route.dropoffCoords.lng,
+      pickup_address: payload.pickup_address,
+      dropoff_address: payload.dropoff_address,
       quoted_price: Number(state.quote.quoted_price || 0),
       addon_total: Number(state.quote.addon_total || 0),
       tax_amount: Number(state.quote.tax_amount || 0),
@@ -1927,8 +1906,8 @@
       fixed_rate_name: state.quote.fixed_rate_name || null,
       peak_multiplier: Number(state.quote.peak_multiplier || 1),
       fixed_surcharge: Number(state.quote.fixed_surcharge || 0),
-      route_distance_miles: Number(state.quote.miles || state.route.miles || 0),
-      route_duration_minutes: Number(state.route.durationMinutes || 0),
+      route_distance_miles: Number(state.quote.miles || 0),
+      route_duration_minutes: Number(state.quote.route_duration_minutes || state.quote.duration_minutes || 0),
       return_url: currentPageUrl(),
       practice_mode: isPracticeMode(),
     });
