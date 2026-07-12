@@ -921,6 +921,10 @@
     }
   }
 
+  function getAddressInput(kind) {
+    return document.getElementById(kind === "pickup" ? "cd_pickup" : "cd_dropoff");
+  }
+
   async function initAutocomplete() {
     const attachAutocomplete = (kind) => {
       const input = getAddressInput(kind);
@@ -973,11 +977,12 @@
       updateAddressHelperState("Address autocomplete is unavailable right now. Please type the pickup and dropoff manually.");
       return false;
     }
+
   }
 
   window.__cdInitAutocomplete = async () => {
     await initAutocomplete();
-  };
+  }
 
   function updateAddressHelperState(message = "") {
     const helper = document.getElementById("cd_address_helper");
