@@ -915,7 +915,7 @@
       const script = document.createElement("script");
       script.id = "cd-google-maps";
       script.dataset.mapsKey = mapsKey;
-      script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(mapsKey)}&libraries=places,geometry&loading=async&auth_referrer_policy=origin&callback=__cdInitAutocomplete`;
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(mapsKey)}&libraries=places,geometry&v=weekly&loading=async&auth_referrer_policy=origin&callback=__cdInitAutocomplete`;
       script.async = true;
       document.head.appendChild(script);
     }
@@ -928,33 +928,20 @@
   async function initAutocomplete() {
     const attachAutocomplete = (kind) => {
       const input = getAddressInput(kind);
-      if (!input || input.dataset?.autocompleteEnhanced === "true") return false;
-      if (!window.google?.maps?.places?.Autocomplete) return false;
-
-      const originalPlaceholder = input.getAttribute("placeholder") || "";
-      const restorePlaceholder = () => {
-        if (originalPlaceholder && input.getAttribute("placeholder") !== originalPlaceholder) {
-          input.setAttribute("placeholder", originalPlaceholder);
-        }
-      };
-
-      input.dataset.cdOriginalPlaceholder = originalPlaceholder;
-      input.style.position = "relative";
-      input.style.zIndex = "2";
-      input.style.pointerEvents = "auto";
-      input.style.userSelect = "text";
-      input.style.webkitUserSelect = "text";
-      input.setAttribute("autocomplete", "street-address");
-      restorePlaceholder();
-
-      if (!input.dataset.placeholderGuardAttached) {
-        const observer = new MutationObserver(restorePlaceholder);
-        observer.observe(input, { attributes: true, attributeFilter: ["placeholder"] });
-        input.dataset.placeholderGuardAttached = "true";
-        input.__cdPlaceholderObserver = observer;
+      if (!input) {
+        console.warn(`Address input not found for: ${kind}`);
+        return;
       }
 
+      // Do not initialize the same input more than once.
+      if (input.dataset.autocompleteEnhanced === "true") {
+        return;
+      }
+
+      input.dataset.autocompleteEnhanced = "true";
+
       const autocomplete = new google.maps.places.Autocomplete(input, {
+        types: ["geocode"],
         componentRestrictions: {
           country: "us",
         },
@@ -962,35 +949,68 @@
           "formatted_address",
           "geometry",
           "name",
+          "place_id",
         ],
-        types: ["geocode"],
       });
-
-      input.dataset.autocompleteEnhanced = "true";
 
       autocomplete.addListener("place_changed", function () {
         const place = autocomplete.getPlace();
 
         if (!place) {
           state.places[kind] = null;
+          console.warn(`No valid Google place selected for ${kind}.`);
+          return;
+        }
+
+        if (!place?.geometry?.location) {
+          state.places[kind] = null;
+          console.warn(`No valid Google place selected for ${kind}.`);
           return;
         }
 
         state.places[kind] = place;
 
-        if (place.formatted_address) {
-          input.value = place.formatted_address;
-        }
+        const formattedAddress =
+          place.formatted_address ||
+          place.name ||
+          input.value ||
+          "";
+
+        input.value = formattedAddress;
+
+        console.log(`${kind} place selected`, {
+          address: formattedAddress,
+          lat: place.geometry.location.lat(),
+          lng: place.geometry.location.lng(),
+          placeId: place.place_id || null,
+        });
       });
 
       input.addEventListener("input", function () {
-        state.places[kind] = null;
-        restorePlaceholder();
+        const selectedPlace = state.places[kind];
+
+        if (
+          selectedPlace &&
+          input.value !== selectedPlace.formatted_address
+        ) {
+          state.places[kind] = null;
+        }
       });
 
-      restorePlaceholder();
+      input.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+        }
+      });
+
       return true;
     };
+
+    if (!window.google?.maps?.places?.Autocomplete) {
+      console.warn("Google Places Autocomplete is not available.");
+      updateAddressHelperState("Address autocomplete is unavailable right now. Please type the pickup and dropoff manually.");
+      return false;
+    }
 
     try {
       const pickupReady = attachAutocomplete("pickup");
@@ -1440,15 +1460,53 @@
     };
   }
 
+  function extractPlaceCoordinates(place = null) {
+    const location =
+      place?.geometry?.location ||
+      place?.location ||
+      null;
+
+    if (!location) {
+      return null;
+    }
+
+    const lat =
+      typeof location.lat === "function"
+        ? location.lat()
+        : Number(location.lat);
+
+    const lng =
+      typeof location.lng === "function"
+        ? location.lng()
+        : Number(location.lng);
+
+    if (
+      !Number.isFinite(lat) ||
+      !Number.isFinite(lng)
+    ) {
+      return null;
+    }
+
+    return {
+      lat,
+      lng,
+      formattedAddress: String(
+        place?.formatted_address ||
+        place?.formattedAddress ||
+        ""
+      ).trim(),
+    };
+  }
+
   async function geocodeInput(address, placeKey) {
     const place = state.places[placeKey];
-    const location = place?.geometry?.location;
+    const extracted = extractPlaceCoordinates(place);
 
-    if (location && typeof location.lat === "function" && typeof location.lng === "function") {
+    if (extracted) {
       return {
-        lat: location.lat(),
-        lng: location.lng(),
-        formattedAddress: place.formatted_address || address,
+        lat: extracted.lat,
+        lng: extracted.lng,
+        formattedAddress: extracted.formattedAddress || address,
       };
     }
 

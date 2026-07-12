@@ -923,7 +923,7 @@ async function ensureGoogleMapsLoaded(mapsKey) {
         const script = document.createElement('script');
         script.id = 'wizard-google-maps';
         script.dataset.mapsKey = trimmedKey;
-        script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(trimmedKey)}&libraries=places,geometry`;
+        script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(trimmedKey)}&libraries=places,geometry&v=weekly`;
         script.async = true;
         script.defer = true;
         script.onerror = () => {
@@ -1010,11 +1010,10 @@ async function initServiceMap(lat = 34.0522, lng = -118.2437, radiusMiles = 90) 
 
 function initAutocomplete() {
     const input = document.getElementById('map-search');
-    if (!input || !google?.maps?.places?.Autocomplete) {
+    if (!input) {
         console.warn(
-            "Google Places autocomplete is unavailable. Manual address entry remains enabled."
+            "Address input not found for setup wizard autocomplete."
         );
-        setAutocompleteStatus('Address autocomplete unavailable. Manual city or ZIP entry is enabled.', true);
         return Promise.resolve();
     }
 
@@ -1052,6 +1051,9 @@ function initAutocomplete() {
     };
 
     const attachManualGeocode = (control) => {
+        if (control.dataset.manualLookupEnhanced === 'true') return;
+        control.dataset.manualLookupEnhanced = 'true';
+
         control.addEventListener('keydown', async (event) => {
             if (event.key !== 'Enter') return;
             event.preventDefault();
@@ -1063,16 +1065,26 @@ function initAutocomplete() {
                 const match = result?.results?.[0];
                 if (!match?.geometry?.location) return;
 
-                const lat = match.geometry.location.lat();
-                const lng = match.geometry.location.lng();
-                document.getElementById('svc_lat').value = lat.toFixed(6);
-                document.getElementById('svc_lng').value = lng.toFixed(6);
-                updateMapFromCoordinates();
+                moveServiceMapToLocation(
+                    match.geometry.location.lat(),
+                    match.geometry.location.lng()
+                );
             } catch (err) {
                 console.error('Geocode search failed:', err);
             }
         });
     };
+
+    attachManualGeocode(input);
+
+    if (!window.google?.maps?.places?.Autocomplete) {
+        console.warn(
+            "Google Places Autocomplete is unavailable."
+        );
+
+        setAutocompleteStatus('Address autocomplete unavailable. Manual city or ZIP entry is enabled.', true);
+        return Promise.resolve();
+    }
 
     try {
         autocomplete = new google.maps.places.Autocomplete(input, {
@@ -1083,6 +1095,7 @@ function initAutocomplete() {
                 'formatted_address',
                 'geometry',
                 'name',
+                'place_id',
             ],
             types: ['geocode'],
         });
@@ -1092,7 +1105,7 @@ function initAutocomplete() {
         autocomplete.addListener('place_changed', function () {
             const place = autocomplete.getPlace();
 
-            if (!place) {
+            if (!place?.geometry?.location) {
                 return;
             }
 
@@ -1100,7 +1113,10 @@ function initAutocomplete() {
                 input.value = place.formatted_address;
             }
 
-            updateMapFromPlace(place, 'Autocomplete');
+            moveServiceMapToLocation(
+                place.geometry.location.lat(),
+                place.geometry.location.lng()
+            );
         });
 
         input.addEventListener('input', function () {
@@ -1147,6 +1163,38 @@ function updateMapFromCoordinates() {
     if (routeMap) {
         routeMap.setCenter(pos);
     }
+}
+
+function moveServiceMapToLocation(lat, lng) {
+    const latitude = Number(lat);
+    const longitude = Number(lng);
+
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+        return;
+    }
+
+    document.getElementById('svc_lat').value = latitude.toFixed(6);
+    document.getElementById('svc_lng').value = longitude.toFixed(6);
+
+    const position = {
+        lat: latitude,
+        lng: longitude,
+    };
+
+    if (map) {
+        map.setCenter(position);
+        map.setZoom(11);
+    }
+
+    if (marker) {
+        marker.setPosition(position);
+    }
+
+    if (circle) {
+        circle.setCenter(position);
+    }
+
+    refreshServiceAreaOverlay();
 }
 
 function useCurrentLocation() {
