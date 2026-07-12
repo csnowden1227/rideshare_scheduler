@@ -944,6 +944,15 @@ async function compressLogoFile(file) {
     });
 }
 
+async function compressFleetPhotoFile(file) {
+    const originalDataUrl = await readFileAsDataUrl(file);
+    return compressImageDataUrl(originalDataUrl, {
+        maxWidth: 900,
+        maxHeight: 900,
+        quality: 0.78
+    });
+}
+
 
 
 function previewLogo(input) {
@@ -1885,7 +1894,7 @@ function bindFleetRow(row) {
         const file = event.target.files?.[0];
         if (!file) return;
         try {
-            const dataUrl = await fileToDataUrl(file);
+            const dataUrl = await compressFleetPhotoFile(file);
             const hidden = row.querySelector('.v-image-data');
             const preview = row.querySelector('.v-image-preview');
             if (hidden) hidden.value = dataUrl;
