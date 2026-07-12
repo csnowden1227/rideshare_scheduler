@@ -249,17 +249,31 @@
       || document.querySelector(`#${containerId} textarea`);
   }
 
+  function getAddressValue(kind) {
+    const field = getAddressInput(kind);
+    if (field && typeof field.value === "string") {
+      return field.value.trim();
+    }
+    const place = state.places[kind];
+    return String(place?.formattedAddress || place?.formatted_address || "").trim();
+  }
+
+  function setAddressValue(kind, value) {
+    const field = getAddressInput(kind);
+    if (field && "value" in field) {
+      field.value = value;
+    }
+  }
+
   function applyPrefillFromPageQuery() {
     prefillField("cd_first_name", "first_name");
     prefillField("cd_last_name", "last_name");
     prefillField("cd_email", "email");
     prefillField("cd_phone", "phone");
-    const pickupInput = getAddressInput("pickup");
-    const dropoffInput = getAddressInput("dropoff");
     const pickupValue = String(pageQuery.get("pickup_address") || "").trim();
     const dropoffValue = String(pageQuery.get("dropoff_address") || "").trim();
-    if (pickupInput && pickupValue) pickupInput.value = pickupValue;
-    if (dropoffInput && dropoffValue) dropoffInput.value = dropoffValue;
+    if (pickupValue) setAddressValue("pickup", pickupValue);
+    if (dropoffValue) setAddressValue("dropoff", dropoffValue);
     prefillField("cd_passenger_count", "passenger_count");
 
     const vehicleSlotId = String(pageQuery.get("vehicle_slot_id") || "").trim();
@@ -891,29 +905,57 @@
       const script = document.createElement("script");
       script.id = "cd-google-maps";
       script.dataset.mapsKey = mapsKey;
-      script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(mapsKey)}&libraries=places,geometry`;
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(mapsKey)}&libraries=places,geometry&loading=async`;
       script.async = true;
       document.head.appendChild(script);
     }
   }
 
-  function initAutocomplete() {
-    if (!window.google?.maps?.places) return;
+  async function initAutocomplete() {
+    if (!window.google?.maps?.importLibrary) return;
 
-    const pickup = document.getElementById("cd_pickup");
-    const dropoff = document.getElementById("cd_dropoff");
-    if (!pickup || !dropoff) return;
+    const attachAutocomplete = async (kind) => {
+      const input = getAddressInput(kind);
+      if (!input || input.dataset?.autocompleteEnhanced === "true") return;
 
-    const pickupAutocomplete = new google.maps.places.Autocomplete(pickup, { types: ["address"] });
-    const dropoffAutocomplete = new google.maps.places.Autocomplete(dropoff, { types: ["address"] });
+      const { PlaceAutocompleteElement } = await google.maps.importLibrary("places");
+      if (!PlaceAutocompleteElement) return;
 
-    pickupAutocomplete.addListener("place_changed", () => {
-      state.places.pickup = pickupAutocomplete.getPlace();
-    });
+      const autocompleteElement = new PlaceAutocompleteElement();
+      autocompleteElement.id = input.id;
+      autocompleteElement.setAttribute("style", input.getAttribute("style") || "");
+      autocompleteElement.placeholder = input.getAttribute("placeholder") || "";
+      autocompleteElement.includedRegionCodes = ["us"];
+      autocompleteElement.value = input.value || "";
+      autocompleteElement.dataset.autocompleteEnhanced = "true";
 
-    dropoffAutocomplete.addListener("place_changed", () => {
-      state.places.dropoff = dropoffAutocomplete.getPlace();
-    });
+      autocompleteElement.addEventListener("gmp-select", async (event) => {
+        try {
+          const place = event.placePrediction?.toPlace?.();
+          if (!place) return;
+          await place.fetchFields({ fields: ["formattedAddress", "location", "displayName"] });
+          state.places[kind] = place;
+          if (place.formattedAddress) {
+            autocompleteElement.value = place.formattedAddress;
+          }
+        } catch (error) {
+          console.warn("Place autocomplete select failed:", error);
+        }
+      });
+
+      autocompleteElement.addEventListener("input", () => {
+        state.places[kind] = null;
+      });
+
+      input.replaceWith(autocompleteElement);
+    };
+
+    try {
+      await attachAutocomplete("pickup");
+      await attachAutocomplete("dropoff");
+    } catch (error) {
+      console.warn("Google Places element autocomplete could not initialize.", error);
+    }
   }
 
   async function waitForGoogleMaps() {
@@ -922,7 +964,7 @@
     await new Promise((resolve, reject) => {
       const started = Date.now();
       const check = setInterval(() => {
-        if (window.google?.maps?.places) {
+        if (window.google?.maps?.importLibrary) {
           clearInterval(check);
           resolve();
         } else if (Date.now() - started > 10000) {
@@ -1266,7 +1308,7 @@
 
     bindVehiclePicker();
     updateBookingModeUI();
-    initAutocomplete();
+    void initAutocomplete();
     applyPrefillFromPageQuery();
   }
 
@@ -1307,8 +1349,8 @@
       last_name: document.getElementById("cd_last_name")?.value.trim(),
       email: document.getElementById("cd_email")?.value.trim(),
         phone: formatPhoneForUi(document.getElementById("cd_phone")?.value.trim()),
-      pickup_address: getAddressInput("pickup")?.value.trim(),
-      dropoff_address: getAddressInput("dropoff")?.value.trim(),
+      pickup_address: getAddressValue("pickup"),
+      dropoff_address: getAddressValue("dropoff"),
       start_time: normalizedStartTime,
       start_time_local: rawStartTime || "",
       booking_mode: selectedBookingMode(),

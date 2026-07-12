@@ -1038,7 +1038,7 @@ async function ensureGoogleMapsLoaded(mapsKey) {
     const existingKey = existing?.dataset?.mapsKey || '';
     const shouldReloadScript = Boolean(existing && existingKey && existingKey !== trimmedKey);
 
-    if (window.google?.maps?.places && !shouldReloadScript) {
+    if (window.google?.maps?.importLibrary && !shouldReloadScript) {
         setMapsKeyStatus("Map ready. Search city/state or drag the service area to continue.");
         return;
     }
@@ -1052,7 +1052,7 @@ async function ensureGoogleMapsLoaded(mapsKey) {
         const script = document.createElement('script');
         script.id = 'wizard-google-maps';
         script.dataset.mapsKey = trimmedKey;
-        script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(trimmedKey)}&libraries=places`;
+        script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(trimmedKey)}&libraries=places&loading=async`;
         script.async = true;
         script.defer = true;
         script.onerror = () => {
@@ -1067,7 +1067,7 @@ async function ensureGoogleMapsLoaded(mapsKey) {
     await new Promise((resolve, reject) => {
         const started = Date.now();
         const check = setInterval(() => {
-            if (window.google?.maps?.places) {
+            if (window.google?.maps?.importLibrary) {
                 clearInterval(check);
                 setMapsKeyStatus("Map ready. Search city/state or drag the service area to continue.");
                 resolve();
@@ -1134,49 +1134,17 @@ function initServiceMap(lat = 34.0522, lng = -118.2437, radiusMiles = 90) {
     setTimeout(refreshServiceAreaOverlay, 150);
     initRouteMap(center.lat, center.lng);
     updateRouteMap();
-    initAutocomplete();
+    void initAutocomplete();
 }
 
-function initAutocomplete() {
+async function initAutocomplete() {
     const input = document.getElementById('map-search');
-    if (!input || !google?.maps?.places) return;
+    if (!input) return;
 
-    autocomplete = new google.maps.places.Autocomplete(input, {
-        componentRestrictions: { country: ['us'] },
-        fields: ['geometry', 'name', 'formatted_address']
-    });
-
-    autocomplete.addListener('place_changed', () => {
-        const place = autocomplete.getPlace();
-
-        if (!place.geometry || !place.geometry.location) {
-            console.log(`No details available for input: '${place.name || input.value}'`);
-            return;
-        }
-
-        const lat = place.geometry.location.lat();
-        const lng = place.geometry.location.lng();
-
-        document.getElementById('svc_lat').value = lat.toFixed(6);
-        document.getElementById('svc_lng').value = lng.toFixed(6);
-
-        if (map) {
-            const pos = { lat, lng };
-            map.setCenter(pos);
-            map.setZoom(11);
-
-            if (marker) marker.setPosition(pos);
-            if (circle) circle.setCenter(pos);
-            refreshServiceAreaOverlay();
-        }
-
-        console.log(`📍 Map moved to: ${lat}, ${lng}`);
-    });
-
-    input.addEventListener('keydown', async (event) => {
+    const handleManualLookup = async (field, event) => {
         if (event.key !== 'Enter') return;
         event.preventDefault();
-        const query = input.value.trim();
+        const query = field.value.trim();
         if (!query || !geocoder) return;
 
         try {
@@ -1192,49 +1160,64 @@ function initAutocomplete() {
         } catch (err) {
             console.error('Geocode search failed:', err);
         }
-    });
-}
-
-/*    marker = new google.maps.Marker({ position: center, map: map, draggable: true });
-    
-    circle = new google.maps.Circle({
-        map: map,
-        center: center,
-        radius: radiusMiles * 1609.34,
-        fillColor: '#2563eb',
-        fillOpacity: 0.2,
-        strokeColor: '#2563eb',
-        strokeWeight: 2,
-        editable: true,
-        draggable: true
-    });
-
-    const updateFields = () => {
-        const center = circle.getCenter();
-        const radMeters = circle.getRadius();
-        document.getElementById('svc_lat').value = center.lat().toFixed(6);
-        document.getElementById('svc_lng').value = center.lng().toFixed(6);
-        document.getElementById('svc_radius').value = Math.round(radMeters / 1609.34);
-        marker.setPosition(center);
     };
 
-    circle.addListener('center_changed', updateFields);
-    circle.addListener('radius_changed', updateFields);
-    marker.addListener('drag', () => circle.setCenter(marker.getPosition()));
+    input.addEventListener('keydown', (event) => handleManualLookup(input, event));
 
-    const searchInput = document.getElementById('map-search');
-    autocomplete = new google.maps.places.Autocomplete(searchInput);
-    autocomplete.addListener('place_changed', () => {
-        const place = autocomplete.getPlace();
-        if (place.geometry) {
-            map.setCenter(place.geometry.location);
-            circle.setCenter(place.geometry.location);
-            marker.setPosition(place.geometry.location);
-            updateFields();
-        }
-    });
+    if (!window.google?.maps?.importLibrary) return;
 
-    updateFields(); */
+    try {
+        const { PlaceAutocompleteElement } = await google.maps.importLibrary('places');
+        if (!PlaceAutocompleteElement) return;
+
+        const enhanced = new PlaceAutocompleteElement();
+        enhanced.id = input.id;
+        enhanced.className = input.className;
+        enhanced.setAttribute('style', input.getAttribute('style') || '');
+        enhanced.placeholder = input.getAttribute('placeholder') || '';
+        enhanced.includedRegionCodes = ['us'];
+        enhanced.value = input.value || '';
+        enhanced.addEventListener('gmp-select', async (event) => {
+            try {
+                const place = event.placePrediction?.toPlace?.();
+                if (!place) return;
+                await place.fetchFields({ fields: ['geometry', 'name', 'formattedAddress'] });
+
+                if (!place.geometry || !place.geometry.location) {
+                    console.log(`No details available for input: '${place.displayName || enhanced.value}'`);
+                    return;
+                }
+
+                const lat = place.geometry.location.lat();
+                const lng = place.geometry.location.lng();
+                document.getElementById('svc_lat').value = lat.toFixed(6);
+                document.getElementById('svc_lng').value = lng.toFixed(6);
+
+                if (map) {
+                    const pos = { lat, lng };
+                    map.setCenter(pos);
+                    map.setZoom(11);
+
+                    if (marker) marker.setPosition(pos);
+                    if (circle) circle.setCenter(pos);
+                    refreshServiceAreaOverlay();
+                }
+
+                console.log(`Map moved to: ${lat}, ${lng}`);
+            } catch (err) {
+                console.error('Places selection failed:', err);
+            }
+        });
+
+        enhanced.addEventListener('keydown', (event) => handleManualLookup(enhanced, event));
+        input.replaceWith(enhanced);
+        autocomplete = enhanced;
+    } catch (error) {
+        console.warn('Places autocomplete element could not initialize.', error);
+    }
+}
+
+/* Legacy map autocomplete block kept out of the active code path. */
 
 function updateCircleFromInput() {
     if (!circle) return;
@@ -2953,4 +2936,5 @@ window.onload = loadFromBackend;
 </script>
 </body>
 </html>
+
 
