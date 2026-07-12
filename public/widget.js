@@ -915,15 +915,23 @@
     if (state.maps.authFailed) return;
     if (!window.google?.maps?.importLibrary) return false;
 
-    const pickup = document.getElementById("cd_pickup");
-    const dropoff = document.getElementById("cd_dropoff");
-    if (!pickup || !dropoff) return false;
-
     const { PlaceAutocompleteElement } = await google.maps.importLibrary("places");
     if (typeof PlaceAutocompleteElement !== "function") return false;
 
-    const configureAutocomplete = (element, kind) => {
-      if (!element) return;
+    const pickupHost = document.getElementById("cd_pickup_host");
+    const dropoffHost = document.getElementById("cd_dropoff_host");
+    if (!pickupHost || !dropoffHost) return false;
+
+    pickupHost.innerHTML = "";
+    dropoffHost.innerHTML = "";
+
+    const buildAutocomplete = (host, kind) => {
+      const element = new PlaceAutocompleteElement();
+      element.id = kind === "pickup" ? "cd_pickup" : "cd_dropoff";
+      element.placeholder = kind === "pickup" ? "Pickup address" : "Dropoff address";
+      element.includedRegionCodes = ["us"];
+      element.style.cssText = "width:100%;display:block;min-height:48px;";
+
       element.addEventListener("gmp-select", async (event) => {
         const placePrediction = event?.placePrediction;
         if (!placePrediction) return;
@@ -942,14 +950,12 @@
       element.addEventListener("input", () => {
         state.places[kind] = null;
       });
+      host.appendChild(element);
+      return element;
     };
 
-    if (pickup instanceof PlaceAutocompleteElement) {
-      configureAutocomplete(pickup, "pickup");
-    }
-    if (dropoff instanceof PlaceAutocompleteElement) {
-      configureAutocomplete(dropoff, "dropoff");
-    }
+    buildAutocomplete(pickupHost, "pickup");
+    buildAutocomplete(dropoffHost, "dropoff");
 
     return true;
   }
@@ -1218,8 +1224,8 @@
                   <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Pickup Date & Time</label><input id="cd_start_time" type="datetime-local" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" /></div>
                 </div>
                 <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-top:12px;">
-                  <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Pickup Address</label><gmp-place-autocomplete id="cd_pickup" placeholder="Pickup address" style="width:100%;display:block;min-height:48px;"></gmp-place-autocomplete></div>
-                  <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Dropoff Address</label><gmp-place-autocomplete id="cd_dropoff" placeholder="Dropoff address" style="width:100%;display:block;min-height:48px;"></gmp-place-autocomplete></div>
+                  <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Pickup Address</label><div id="cd_pickup_host"></div></div>
+                  <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Dropoff Address</label><div id="cd_dropoff_host"></div></div>
                   <div id="cd_address_helper" style="display:none;padding:10px 12px;border-radius:12px;font-size:12px;line-height:1.5;"></div>
                 </div>
               </div>
@@ -1332,6 +1338,20 @@
     updateBookingModeUI();
     applyPrefillFromPageQuery();
     updateAddressHelperState();
+    if (!state.maps.authFailed && !state.maps.autocompleteReady && window.google?.maps?.importLibrary) {
+      initAutocomplete()
+        .then((initialized) => {
+          state.maps.autocompleteReady = Boolean(initialized);
+          updateAddressHelperState();
+          applyPrefillFromPageQuery();
+        })
+        .catch((error) => {
+          console.warn("Google Places autocomplete re-init failed.", error);
+          state.maps.authFailed = true;
+          state.maps.autocompleteReady = false;
+          updateAddressHelperState();
+        });
+    }
   }
 
   function showError(message) {
