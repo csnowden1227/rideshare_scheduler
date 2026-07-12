@@ -1542,6 +1542,7 @@
         pickup_address: payload.pickup_address,
         dropoff_address: payload.dropoff_address,
         start_time: payload.start_time,
+        start_time_local: payload.start_time_local || payload.start_time,
         passenger_count: payload.passenger_count,
         selected_event_name: payload.selected_event_name,
         selected_fixed_destination: payload.selected_fixed_destination,
