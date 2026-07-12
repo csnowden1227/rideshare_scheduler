@@ -15657,7 +15657,7 @@ app.post("/api/widget-quote", async (req, res) => {
         rideSubtotal += fixedSurcharge;
         pricingLabel = `${pricingLabel} + $${fixedSurcharge.toFixed(2)} peak surcharge`;
       }
-    } else if (peakMultiplier > 1) {
+    } else if (!hourlyConfig && peakMultiplier > 1) {
       rideSubtotal *= peakMultiplier;
       pricingLabel = `${pricingLabel} with peak multiplier ${peakMultiplier.toFixed(2)}x`;
     }
