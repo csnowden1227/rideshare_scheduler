@@ -295,6 +295,16 @@
   }
 
   function vehicleDisplayName(vehicle = {}) {
+    const useMakeModelLabel = vehicle?.use_make_model_label === true
+      || String(vehicle?.use_make_model_label || "").trim().toLowerCase() === "true";
+    if (useMakeModelLabel) {
+      const year = String(vehicle.vehicle_year || "").trim();
+      const make = String(vehicle.vehicle_make || "").trim();
+      const model = String(vehicle.vehicle_model || "").trim();
+      const makeModel = [make, model].filter(Boolean).join(" ").trim();
+      if (makeModel) return makeModel;
+      if (year) return year;
+    }
     return String(vehicle.vehicle_type || vehicle.name || vehicle.vehicle_slot_id || "Vehicle").trim();
   }
 
