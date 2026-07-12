@@ -6432,7 +6432,7 @@ function isAllowedOrigin(origin) {
   }
 }
 
-app.use(cors({
+const corsOptions = {
   origin(origin, callback) {
     if (!origin) return callback(null, true);
     if (!isAllowedOrigin(origin)) {
@@ -6444,8 +6444,12 @@ app.use(cors({
     return callback(null, true);
   },
   methods: ['GET', 'POST', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Setup-Wizard-Token']
-}));
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Setup-Wizard-Token'],
+  optionsSuccessStatus: 204,
+};
+
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
 
 function getWizardToken(req) {
   return (
