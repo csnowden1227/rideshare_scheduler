@@ -8372,6 +8372,27 @@ function getPeakMultiplier(dateISO, customMultiplier) {
   return 1.0;
 }
 
+function getFixedSurcharge(dateISO, peakWindows = [], selectedVehicleType = "") {
+  const startDate = new Date(dateISO);
+  if (Number.isNaN(startDate.getTime())) return 0;
+
+  const normalizedVehicleType = String(selectedVehicleType || "").trim().toLowerCase();
+  let surcharge = 0;
+
+  for (const windowConfig of Array.isArray(peakWindows) ? peakWindows : []) {
+    const windowVehicleType = String(windowConfig.vehicle_type || "").trim().toLowerCase();
+    const vehicleMatches = !windowVehicleType || windowVehicleType === normalizedVehicleType;
+    if (!vehicleMatches || !matchesPeakWindow(windowConfig, startDate)) continue;
+
+    surcharge = Math.max(
+      surcharge,
+      toNumber(windowConfig.fixed_surcharge ?? windowConfig.flat_surcharge, 0)
+    );
+  }
+
+  return surcharge;
+}
+
 function toNumber(value, fallback = 0) {
   const n = Number(value);
   return Number.isFinite(n) ? n : fallback;
@@ -15629,8 +15650,14 @@ app.post("/api/widget-quote", async (req, res) => {
     }
 
     const peakMultiplier = getPeakMultiplier(startDate.toISOString(), peakWindows?.[0]?.multiplier);
-    const fixedSurcharge = 0;
-    if (!fixedRate && peakMultiplier > 1) {
+    const fixedSurcharge = fixedRate ? getFixedSurcharge(startDate.toISOString(), peakWindows, vehicle.vehicle_type) : 0;
+
+    if (fixedRate) {
+      if (fixedSurcharge > 0) {
+        rideSubtotal += fixedSurcharge;
+        pricingLabel = `${pricingLabel} + $${fixedSurcharge.toFixed(2)} peak surcharge`;
+      }
+    } else if (peakMultiplier > 1) {
       rideSubtotal *= peakMultiplier;
       pricingLabel = `${pricingLabel} with peak multiplier ${peakMultiplier.toFixed(2)}x`;
     }
@@ -15667,7 +15694,7 @@ app.post("/api/widget-quote", async (req, res) => {
       hourly_booking_slot_id: hourlyConfig?.vehicle_slot_id || null,
       hourly_hours: hourlyConfig ? hourlyHours : null,
       fixed_rate_name: fixedRate?.location_name || null,
-      peak_multiplier: Number(peakMultiplier.toFixed(2)),
+      peak_multiplier: Number((fixedRate ? 1 : peakMultiplier).toFixed(2)),
       fixed_surcharge: Number(fixedSurcharge.toFixed(2)),
       selected_addons,
     });

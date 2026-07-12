@@ -1621,9 +1621,11 @@
       rideSubtotal = hourlyRate * hourlyHours;
       pricingLabel = `${hourlyConfig.booking_description || "Executive Luxury Chauffeur"} at ${money(hourlyRate)}/hr for ${hourlyHours} hour${hourlyHours === 1 ? "" : "s"}`;
     }
-    if (fixedRate && fixedSurcharge > 0) {
-      rideSubtotal += fixedSurcharge;
-      pricingLabel = `${pricingLabel} + $${fixedSurcharge.toFixed(2)} time-based surcharge`;
+    if (fixedRate) {
+      if (fixedSurcharge > 0) {
+        rideSubtotal += fixedSurcharge;
+        pricingLabel = `${pricingLabel} + $${fixedSurcharge.toFixed(2)} time-based surcharge`;
+      }
     } else if (peakMultiplier > 1) {
       rideSubtotal *= peakMultiplier;
       pricingLabel = `${pricingLabel} with peak multiplier ${peakMultiplier.toFixed(2)}x`;
