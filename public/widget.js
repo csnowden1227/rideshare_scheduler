@@ -734,15 +734,29 @@
   }
 
   function fixedRateByName(name) {
-    if (!name) return null;
+    const target = String(name || "").trim();
+    if (!target) return null;
     return (state.config?.fixed_rates || []).find((zone) => {
-      return fixedRateKey(zone) === String(name || "").trim() ||
-        (zone.location_name || zone.route_name || "") === name;
+      const identifiers = [
+        zone.id,
+        zone.location_name,
+        zone.route_name,
+        zone.pickup_keyword,
+        zone.dropoff_keyword,
+      ]
+        .map((value) => String(value || "").trim())
+        .filter(Boolean);
+
+      return identifiers.includes(target);
     }) || null;
   }
 
   function fixedRateLabel(zone) {
     return zone?.location_name || zone?.route_name || "";
+  }
+
+  function fixedRateOptionValue(zone = {}) {
+    return String(zone.id || fixedRateLabel(zone) || "").trim();
   }
 
   function fixedRateKey(zone = {}) {
@@ -769,8 +783,9 @@
   }
 
   function hourlyBookingBySlotId(slotId) {
-    if (!slotId) return null;
-    return (state.config?.hourly_bookings || []).find((row) => String(row.vehicle_slot_id || "") === String(slotId || "")) || null;
+    const target = String(slotId || "").trim();
+    if (!target) return null;
+    return (state.config?.hourly_bookings || []).find((row) => String(row.vehicle_slot_id || "").trim() === target) || null;
   }
 
   function hourlyBookingByValue(value = "") {
@@ -790,6 +805,31 @@
     }) || null;
   }
 
+  function hourlyBookingOptionValue(row = {}) {
+    return String(
+      row.id ||
+      row.hourly_booking_id ||
+      row.vehicle_slot_id ||
+      row.booking_description ||
+      ""
+    ).trim();
+  }
+
+  function extractPlaceCoordinates(place = null) {
+    const location = place?.location || place?.geometry?.location || null;
+    if (!location) return null;
+
+    const lat = typeof location.lat === "function" ? location.lat() : Number(location.lat);
+    const lng = typeof location.lng === "function" ? location.lng() : Number(location.lng);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+
+    return {
+      lat,
+      lng,
+      formattedAddress: String(place?.formattedAddress || place?.formatted_address || "").trim(),
+    };
+  }
+
   function renderHourlyBookingSelect() {
     const hourlyBookings = Array.isArray(state.config?.hourly_bookings) ? state.config.hourly_bookings : [];
 
@@ -799,7 +839,7 @@
         const label = `${row.booking_description || "Executive Luxury Chauffeur"}${row.vehicle_make || row.vehicle_model ? ` - ${[row.vehicle_make, row.vehicle_model].filter(Boolean).join(" ")}` : ""}`;
         const hourlyRate = toNumber(row.hourly_rate, 0);
         const rateText = hourlyRate > 0 ? ` - ${money(hourlyRate)}/hr` : "";
-        return `<option value="${escapeHtml(row.booking_description || "")}">${escapeHtml(label + rateText)}</option>`;
+        return `<option value="${escapeHtml(hourlyBookingOptionValue(row))}">${escapeHtml(label + rateText)}</option>`;
       }),
     ];
 
@@ -837,13 +877,14 @@
     const vehicleSlotId = selectedVehicle()?.vehicle_slot_id || document.getElementById("cd_vehicle_slot_id")?.value || "";
     const matchedBooking = hourlyBookingBySlotId(vehicleSlotId);
 
-    if (matchedBooking?.booking_description) {
-      hourlySelect.value = matchedBooking.booking_description;
+    if (matchedBooking) {
+      hourlySelect.value = hourlyBookingOptionValue(matchedBooking);
       return;
     }
 
     const currentBooking = hourlyBookingByValue(hourlySelect.value);
     if (currentBooking && String(currentBooking.vehicle_slot_id || "").trim() === String(vehicleSlotId || "").trim()) {
+      hourlySelect.value = hourlyBookingOptionValue(currentBooking);
       return;
     }
 
@@ -908,13 +949,26 @@
     const fixedRates = Array.isArray(state.config?.fixed_rates) ? state.config.fixed_rates : [];
     const pickup = route.pickupCoords;
     const dropoff = route.dropoffCoords;
-    const selectedTarget = String(selectedName || "").trim();
+    const selectedTarget = String(selectedName || "").trim().toLowerCase();
     const touchingZones = fixedRates.filter((zone) => {
       const lat = toNumber(zone.lat, NaN);
       const lng = toNumber(zone.lng, NaN);
       const radius = toNumber(zone.radius, 0);
       if (!Number.isFinite(lat) || !Number.isFinite(lng) || radius <= 0) return false;
-      if (selectedTarget && fixedRateKey(zone) !== selectedTarget && fixedRateLabel(zone) !== selectedTarget) return false;
+      if (selectedTarget) {
+        const zoneLabels = [
+          zone.id,
+          zone.location_name,
+          zone.route_name,
+          zone.pickup_keyword,
+          zone.dropoff_keyword,
+          fixedRateKey(zone),
+          fixedRateLabel(zone),
+        ]
+          .map((value) => String(value || "").trim().toLowerCase())
+          .filter(Boolean);
+        if (!zoneLabels.includes(selectedTarget)) return false;
+      }
 
       const pickupDistance = haversineMiles(pickup.lat, pickup.lng, lat, lng);
       const dropoffDistance = haversineMiles(dropoff.lat, dropoff.lng, lat, lng);
@@ -1212,7 +1266,7 @@
           .filter(Boolean)
           .join(" - ");
 
-        return `<option value="${escapeHtml(fixedRateKey(zone))}">${escapeHtml(displayLabel)}</option>`;
+        return `<option value="${escapeHtml(fixedRateOptionValue(zone))}">${escapeHtml(displayLabel)}</option>`;
       }),
     ];
 
@@ -1703,6 +1757,9 @@
       throw new Error("Enter pickup, dropoff, and pickup date/time first.");
     }
 
+    const pickupCoords = extractPlaceCoordinates(state.places.pickup);
+    const dropoffCoords = extractPlaceCoordinates(state.places.dropoff);
+
     const serverQuote = await fetchJsonWithRetry(`${BACKEND_URL}/api/widget-quote`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1712,6 +1769,10 @@
         booking_mode: payload.booking_mode,
         pickup_address: payload.pickup_address,
         dropoff_address: payload.dropoff_address,
+        pickup_lat: pickupCoords?.lat ?? null,
+        pickup_lng: pickupCoords?.lng ?? null,
+        dropoff_lat: dropoffCoords?.lat ?? null,
+        dropoff_lng: dropoffCoords?.lng ?? null,
         start_time: payload.start_time,
         start_time_local: payload.start_time_local || payload.start_time,
         passenger_count: payload.passenger_count,
@@ -1728,8 +1789,8 @@
     }
 
     state.route = {
-      pickupCoords: null,
-      dropoffCoords: null,
+      pickupCoords: pickupCoords || null,
+      dropoffCoords: dropoffCoords || null,
       miles: Number(serverQuote.miles || 0),
       durationMinutes: Number(serverQuote.route_duration_minutes || 0),
     };

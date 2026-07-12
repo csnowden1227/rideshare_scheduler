@@ -9137,31 +9137,26 @@ function computePaymentPolicy(startDate, total, depositAmount) {
   };
 }
 
-function resolveHourlyBookingBySlotId(hourlyBookings = [], selectedHourlyBooking = "", selectedVehicleSlotId = "") {
-  const bookings = Array.isArray(hourlyBookings) ? hourlyBookings : [];
-  const targetBooking = String(selectedHourlyBooking || "").trim().toLowerCase();
-  const targetSlot = String(selectedVehicleSlotId || "").trim().toLowerCase();
+function resolveHourlyBookingBySlotId(hourlyBookings = [], slotId = "") {
+  const target = String(slotId || "").trim().toLowerCase();
+  if (!target) return null;
+  return Array.isArray(hourlyBookings)
+    ? hourlyBookings.find((row = {}) => {
+        const identifiers = [
+          row.id,
+          row.hourly_booking_id,
+          row.vehicle_slot_id,
+          row.booking_description,
+          row.vehicle_make,
+          row.vehicle_model,
+          row.vehicle_type,
+        ]
+          .map((value) => String(value || "").trim().toLowerCase())
+          .filter(Boolean);
 
-  const slotMatch = targetSlot
-    ? bookings.find((row = {}) => String(row.vehicle_slot_id || "").trim().toLowerCase() === targetSlot) || null
+        return identifiers.includes(target);
+      }) || null
     : null;
-
-  if (!targetBooking) {
-    return slotMatch;
-  }
-
-  const bookingMatches = bookings.filter((row = {}) => String(row.booking_description || "").trim().toLowerCase() === targetBooking);
-  if (bookingMatches.length === 1) return bookingMatches[0];
-  if (bookingMatches.length > 1) {
-    const slotSpecificMatch = targetSlot
-      ? bookingMatches.find((row = {}) => String(row.vehicle_slot_id || "").trim().toLowerCase() === targetSlot) || null
-      : null;
-    return slotSpecificMatch || bookingMatches[0] || slotMatch;
-  }
-
-  if (slotMatch) return slotMatch;
-
-  return bookings.find((row = {}) => String(row.vehicle_slot_id || "").trim().toLowerCase() === targetBooking) || null;
 }
 
 function fixedRateKey(rate = {}) {
@@ -9217,6 +9212,13 @@ function resolveFixedRate(
 
     return names.includes(target) || fixedRateKey(rate) === target;
   }) || null;
+}
+
+function resolveFixedRateByName(
+  fixedRates = [],
+  selectedName = ""
+) {
+  return resolveFixedRate(fixedRates, selectedName);
 }
 
 function calculateFixedPricing({
@@ -16722,6 +16724,10 @@ app.post("/api/widget-quote", async (req, res) => {
       booking_mode,
       pickup_address,
       dropoff_address,
+      pickup_lat,
+      pickup_lng,
+      dropoff_lat,
+      dropoff_lng,
       start_time,
       start_time_local,
       passenger_count,
@@ -16788,7 +16794,6 @@ app.post("/api/widget-quote", async (req, res) => {
           destinationLng: req.body?.dropoff_lng,
           mapsApiKey: profile.maps_api_key || null,
         });
-
     const miles = Number((route.distanceMeters / 1609.34).toFixed(2));
     const passengerCount = normalizePassengerCount(passenger_count);
     const serviceFeeType = normalizeServiceFeeType(profile.service_fee_type);
