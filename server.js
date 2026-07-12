@@ -6404,6 +6404,8 @@ async function syncFleetSettings(client, location_id, fleet = []) {
 const allowedOrigins = [
   'https://app.leadconnectorhq.com',
   'https://app.crmonesource.com',
+  'https://chauffeursdeluxe.com',
+  'https://www.chauffeursdeluxe.com',
   'https://chauffeurdeluxe.crmonesource.com',
   'https://services.leadconnectorhq.com',
   'https://rideshare-scheduler-axx6.onrender.com',
@@ -6420,6 +6422,7 @@ function isAllowedOrigin(origin) {
 
     return (
       hostname.endsWith('.crmonesource.com') ||
+      hostname.endsWith('.chauffeursdeluxe.com') ||
       hostname.endsWith('.leadconnectorhq.com') ||
       hostname.endsWith('.gohighlevel.com') ||
       hostname.endsWith('.msgsndr.com')
