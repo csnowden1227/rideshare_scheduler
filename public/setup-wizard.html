@@ -826,6 +826,54 @@ function setSyncStatus(message, isSuccess = true) {
     statusEl.className = `text-xs font-semibold text-center leading-relaxed ${isSuccess ? 'text-emerald-600' : 'text-rose-600'}`;
 }
 
+let wizardSyncPollTimer = null;
+
+function stopWizardSyncPolling() {
+    if (wizardSyncPollTimer) {
+        window.clearTimeout(wizardSyncPollTimer);
+        wizardSyncPollTimer = null;
+    }
+}
+
+function pollWizardSyncStatus(attempt = 1, maxAttempts = 40) {
+    stopWizardSyncPolling();
+    wizardSyncPollTimer = window.setTimeout(async () => {
+        try {
+            const url = `${BACKEND_URL}/api/wizard-sync-status/${encodeURIComponent(location_id)}`;
+            const res = await fetch(url, {
+                cache: 'no-store',
+                headers: wizardToken ? { 'X-Setup-Wizard-Token': wizardToken } : {}
+            });
+            const data = await res.json().catch(() => ({}));
+            const status = data?.status || {};
+            if (res.ok && status.state === 'completed') {
+                setSyncStatus("CRM sync complete.", true);
+                showNotification("CRM sync complete!");
+                stopWizardSyncPolling();
+                return;
+            }
+            if (res.ok && status.state === 'failed') {
+                setSyncStatus(`CRM sync finished with error: ${status.error || 'Unknown error'}`, false);
+                showNotification(`CRM sync finished with error: ${status.error || 'Unknown error'}`, false);
+                stopWizardSyncPolling();
+                return;
+            }
+            if (attempt >= maxAttempts) {
+                setSyncStatus("Saved locally. CRM sync is still processing in the background.", true);
+                stopWizardSyncPolling();
+                return;
+            }
+        } catch (err) {
+            console.warn("Wizard sync status polling failed:", err);
+            if (attempt >= maxAttempts) {
+                stopWizardSyncPolling();
+                return;
+            }
+        }
+        pollWizardSyncStatus(attempt + 1, maxAttempts);
+    }, attempt === 1 ? 2500 : 3000);
+}
+
 function setMapsKeyStatus(message, isError = false) {
     const status = document.getElementById('maps-key-status');
     if (!status) return;
@@ -2317,6 +2365,7 @@ async function loadFromBackend() {
 }
 
 async function saveToBackend() {
+    stopWizardSyncPolling();
     const mapsKey = document.getElementById('maps_key').value;
     const paymentProvider = document.getElementById('payment_provider').value;
     const stripeSecretKey = document.getElementById('stripe_secret_key').value;
@@ -2542,6 +2591,7 @@ async function saveToBackend() {
                     ? "Saved locally. CRM sync will retry once if needed."
                     : "Saved locally. CRM sync is processing now.",
                     true);
+                pollWizardSyncStatus();
             } else {
                 setSyncStatus("Saved locally.", true);
             }

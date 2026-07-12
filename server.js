@@ -7314,49 +7314,96 @@ async function saveConfigHandler(req, res) {
       }, 0);
     }
 
-    let webhookSync = {
-      attempted: false,
+    const webhookSync = {
+      attempted: Boolean(normalizedWebhookUrl && normalizedWebhookUrl.startsWith("http")),
+      queued: false,
       success: false,
       status: null,
-      error: null
+      error: null,
+      retry_attempted: false
     };
 
-    if (normalizedWebhookUrl && normalizedWebhookUrl.startsWith("http")) {
-      webhookSync = await sendWizardSyncWebhook({
-        webhookUrl: normalizedWebhookUrl,
-        locationId: location_id,
-        businessName: business_name,
-        planName: normalizedPlanName,
-        mapsApiKeyPresent: Boolean(String(maps_api_key || "").trim()),
-        paymentProvider: payment_provider,
-        hasStripeKey: Boolean(String(stripe_secret_key || "").trim()),
-        hasSquareAccessToken: Boolean(String(square_access_token || "").trim()),
-        hasSquareLocationId: Boolean(String(square_location_id || "").trim()),
-        hasPayPalClientId: Boolean(String(paypal_client_id || "").trim()),
-        hasPayPalClientSecret: Boolean(String(paypal_client_secret || "").trim()),
-        payPalEnvironment: normalizePayPalEnvironment(paypal_environment),
-        hasAuthorizeApiLoginId: Boolean(String(authorize_api_login_id || "").trim()),
-        hasAuthorizeTransactionKey: Boolean(String(authorize_transaction_key || "").trim()),
-        authorizeEnvironment: normalizeAuthorizeEnvironment(authorize_environment),
-        taxRate: parseFloat(tax_rate) || 0,
-        serviceLat: service_lat,
-        serviceLng: service_lng,
-        serviceRadius: service_radius,
-        fleet: sanitizedFleet,
-        fixedRates: fixed_rates,
-        peakWindows: peak_windows,
-        hourlyBookings: hourly_bookings,
-        events,
-        addons
+    if (webhookSync.attempted) {
+      webhookSync.queued = true;
+      setWizardSyncStatus(location_id, {
+        state: "queued",
+        attempted: true,
+        queued: true,
+        success: false,
+        error: null,
+        retry_attempted: false
       });
+      setTimeout(() => {
+        sendWizardSyncWebhook({
+          webhookUrl: normalizedWebhookUrl,
+          locationId: location_id,
+          businessName: business_name,
+          planName: normalizedPlanName,
+          mapsApiKeyPresent: Boolean(String(maps_api_key || "").trim()),
+          paymentProvider: payment_provider,
+          hasStripeKey: Boolean(String(stripe_secret_key || "").trim()),
+          hasSquareAccessToken: Boolean(String(square_access_token || "").trim()),
+          hasSquareLocationId: Boolean(String(square_location_id || "").trim()),
+          hasPayPalClientId: Boolean(String(paypal_client_id || "").trim()),
+          hasPayPalClientSecret: Boolean(String(paypal_client_secret || "").trim()),
+          payPalEnvironment: normalizePayPalEnvironment(paypal_environment),
+          hasAuthorizeApiLoginId: Boolean(String(authorize_api_login_id || "").trim()),
+          hasAuthorizeTransactionKey: Boolean(String(authorize_transaction_key || "").trim()),
+          authorizeEnvironment: normalizeAuthorizeEnvironment(authorize_environment),
+          taxRate: parseFloat(tax_rate) || 0,
+          serviceLat: service_lat,
+          serviceLng: service_lng,
+          serviceRadius: service_radius,
+          fleet: sanitizedFleet,
+          fixedRates: fixed_rates,
+          peakWindows: peak_windows,
+          hourlyBookings: hourly_bookings,
+          events,
+          addons
+        })
+          .then((result) => {
+            setWizardSyncStatus(location_id, {
+              state: result?.success ? "completed" : "failed",
+              attempted: true,
+              queued: true,
+              success: Boolean(result?.success),
+              status: result?.status ?? null,
+              error: result?.error || null,
+              retry_attempted: Boolean(result?.retry_attempted)
+            });
+            console.log("Wizard sync webhook completed in background:", {
+              location_id,
+              status: result?.status,
+              success: result?.success,
+              retry_attempted: result?.retry_attempted
+            });
+          })
+          .catch((err) => {
+            setWizardSyncStatus(location_id, {
+              state: "failed",
+              attempted: true,
+              queued: true,
+              success: false,
+              status: null,
+              error: err?.message || String(err || "Wizard sync webhook failed."),
+              retry_attempted: false
+            });
+            console.error("Wizard sync webhook background error:", {
+              location_id,
+              error: err?.message || err
+            });
+          });
+      }, 0);
     }
 
-    return res.json({
+    return res.status(webhookSync.queued ? 202 : 200).json({
       success: true,
       entitlements,
       instant_booking_notifications: instantBookingNotificationSummary,
       webhook_sync: webhookSync,
-      message: "✅ Profile fully saved and aligned"
+      message: webhookSync.queued
+        ? "✅ Profile saved. CRM sync started in the background."
+        : "✅ Profile fully saved and aligned"
     });
   } catch (err) {
     await client.query("ROLLBACK");
@@ -7583,6 +7630,24 @@ async function sendWizardSyncWebhook({
   }
 
   return result;
+}
+
+const wizardSyncStatusByLocationId = new Map();
+
+function setWizardSyncStatus(locationId, status = {}) {
+  const key = String(locationId || "").trim();
+  if (!key) return;
+  wizardSyncStatusByLocationId.set(key, {
+    location_id: key,
+    updated_at: new Date().toISOString(),
+    ...status
+  });
+}
+
+function getWizardSyncStatus(locationId) {
+  const key = String(locationId || "").trim();
+  if (!key) return null;
+  return wizardSyncStatusByLocationId.get(key) || null;
 }
 
 async function ensureFleetSettingsBookingPolicyColumns(db = pool) {
@@ -8601,6 +8666,32 @@ app.post("/api/ensure-profile/:location_id", requireWizardToken, async (req, res
   } catch (err) {
     console.error("Ensure profile error:", err);
     return res.status(500).json({ error: err.message || "Failed to ensure profile." });
+  }
+});
+
+app.get("/api/wizard-sync-status/:location_id", requireWizardToken, async (req, res) => {
+  try {
+    const location_id = String(req.params.location_id || "").trim();
+    if (!location_id) {
+      return res.status(400).json({ success: false, error: "location_id is required" });
+    }
+    const status = getWizardSyncStatus(location_id);
+    return res.json({
+      success: true,
+      location_id,
+      status: status || {
+        location_id,
+        state: "idle",
+        attempted: false,
+        queued: false,
+        success: false,
+        error: null,
+        updated_at: null
+      }
+    });
+  } catch (err) {
+    console.error("Wizard sync status error:", err);
+    return res.status(500).json({ success: false, error: err?.message || "Unable to load sync status." });
   }
 });
 
