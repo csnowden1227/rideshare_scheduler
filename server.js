@@ -3082,6 +3082,13 @@ function sanitizeBrandingByEntitlements({
   };
 }
 
+function shrinkWidgetLogoPayload(businessLogo, maxChars = 120000) {
+  const logo = String(businessLogo || "").trim();
+  if (!logo) return "";
+  if (logo.length > maxChars) return "";
+  return logo;
+}
+
 function buildPublicBrandingFromProfile(profile = {}) {
   const entitlements = buildEntitlementsFromProfile(profile);
 
@@ -14702,7 +14709,7 @@ res.json({
 
   business_name: profile.business_name,
   public_app_url: profile.public_app_url || "",
-  business_logo: sanitizedBranding.business_logo || "",
+  business_logo: shrinkWidgetLogoPayload(sanitizedBranding.business_logo || ""),
   brand_color_primary: sanitizedBranding.brand_color_primary || DEFAULT_BRAND_COLORS.primary,
   brand_color_secondary: sanitizedBranding.brand_color_secondary || DEFAULT_BRAND_COLORS.secondary,
   brand_color_accent: sanitizedBranding.brand_color_accent || DEFAULT_BRAND_COLORS.accent,
@@ -15830,7 +15837,7 @@ app.get("/api/get-profile-widget-script/:location_id", async (req, res) => {
         entitlements,
         business_name: p.business_name || "",
         public_app_url: p.public_app_url || "",
-        business_logo: sanitizedBranding.business_logo || "",
+        business_logo: shrinkWidgetLogoPayload(sanitizedBranding.business_logo || ""),
         brand_color_primary: sanitizedBranding.brand_color_primary || DEFAULT_BRAND_COLORS.primary,
         brand_color_secondary: sanitizedBranding.brand_color_secondary || DEFAULT_BRAND_COLORS.secondary,
         brand_color_accent: sanitizedBranding.brand_color_accent || DEFAULT_BRAND_COLORS.accent,

@@ -864,7 +864,7 @@
         settled = true;
         cleanup();
         reject(new Error("Config load timed out"));
-      }, 20000);
+      }, 30000);
     });
 
     const mapsKey = String(state.config.maps_api_key || "").trim();
@@ -904,7 +904,7 @@
       const script = document.createElement("script");
       script.id = "cd-google-maps";
       script.dataset.mapsKey = mapsKey;
-      script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(mapsKey)}&libraries=geometry&callback=__cdInitAutocomplete`;
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(mapsKey)}&libraries=geometry,places&callback=__cdInitAutocomplete`;
       script.async = true;
       document.head.appendChild(script);
     }
@@ -912,50 +912,33 @@
 
   async function initAutocomplete() {
     if (state.maps.authFailed) return;
-    if (!window.google?.maps?.importLibrary) return false;
+    const pickupInput = document.getElementById("cd_pickup");
+    const dropoffInput = document.getElementById("cd_dropoff");
+    if (!pickupInput || !dropoffInput) return false;
+    if (!window.google?.maps?.places?.Autocomplete) return false;
 
-    const { PlaceAutocompleteElement } = await google.maps.importLibrary("places");
-    if (typeof PlaceAutocompleteElement !== "function") return false;
+    const attachAutocomplete = (input, kind) => {
+      const autocomplete = new google.maps.places.Autocomplete(input, {
+        types: ["geocode"],
+        componentRestrictions: { country: ["us"] },
+        fields: ["formatted_address", "geometry", "name"]
+      });
 
-    const pickupHost = document.getElementById("cd_pickup_host");
-    const dropoffHost = document.getElementById("cd_dropoff_host");
-    if (!pickupHost || !dropoffHost) return false;
-
-    pickupHost.innerHTML = "";
-    dropoffHost.innerHTML = "";
-
-    const buildAutocomplete = (host, kind) => {
-      const element = new PlaceAutocompleteElement();
-      element.id = kind === "pickup" ? "cd_pickup" : "cd_dropoff";
-      element.placeholder = kind === "pickup" ? "Pickup address" : "Dropoff address";
-      element.includedRegionCodes = ["us"];
-      element.style.cssText = "width:100%;display:block;min-height:48px;";
-
-      element.addEventListener("gmp-select", async (event) => {
-        const placePrediction = event?.placePrediction;
-        if (!placePrediction) return;
-        const place = placePrediction.toPlace();
-        try {
-          await place.fetchFields({ fields: ["formattedAddress", "location", "displayName"] });
-        } catch (error) {
-          console.warn(`Google Places details fetch failed for ${kind}.`, error);
-        }
-        state.places[kind] = place;
-        if (place?.formattedAddress) {
-          element.value = place.formattedAddress;
+      autocomplete.addListener("place_changed", () => {
+        const place = autocomplete.getPlace();
+        state.places[kind] = place || null;
+        if (place?.formatted_address) {
+          input.value = place.formatted_address;
         }
       });
 
-      element.addEventListener("input", () => {
+      input.addEventListener("input", () => {
         state.places[kind] = null;
       });
-      host.appendChild(element);
-      return element;
     };
 
-    buildAutocomplete(pickupHost, "pickup");
-    buildAutocomplete(dropoffHost, "dropoff");
-
+    attachAutocomplete(pickupInput, "pickup");
+    attachAutocomplete(dropoffInput, "dropoff");
     return true;
   }
 
@@ -1223,8 +1206,8 @@
                   <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Pickup Date & Time</label><input id="cd_start_time" type="datetime-local" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" /></div>
                 </div>
                 <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-top:12px;">
-                  <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Pickup Address</label><div id="cd_pickup_host"></div></div>
-                  <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Dropoff Address</label><div id="cd_dropoff_host"></div></div>
+                  <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Pickup Address</label><input id="cd_pickup" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" inputmode="text" placeholder="Street address or airport terminal" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" /></div>
+                  <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Dropoff Address</label><input id="cd_dropoff" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" inputmode="text" placeholder="Destination address" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" /></div>
                   <div id="cd_address_helper" style="display:none;padding:10px 12px;border-radius:12px;font-size:12px;line-height:1.5;"></div>
                 </div>
               </div>
