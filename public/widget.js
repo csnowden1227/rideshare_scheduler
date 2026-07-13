@@ -1422,7 +1422,7 @@
                 <div id="cd_payment_notice" style="margin-top:12px;font-size:12px;color:#475569;"></div>
               </div>
               <div id="cd_summary" style="display:none;margin-top:14px;padding:18px;border-radius:20px;background:#f8fafc;border:1px solid #dbe4f0;">
-                <div style="display:flex;justify-content:space-between;margin-bottom:10px;"><span>Ride Subtotal</span><strong id="res_quoted_price">$0.00</strong></div>
+                <div style="display:flex;justify-content:space-between;margin-bottom:10px;"><span>Service Cost</span><strong id="res_quoted_price">$0.00</strong></div>
                 <div style="display:flex;justify-content:space-between;margin-bottom:10px;"><span>Add-Ons</span><strong id="res_addons">$0.00</strong></div>
                 <div style="display:flex;justify-content:space-between;margin-bottom:10px;"><span>Tax</span><strong id="res_tax">$0.00</strong></div>
                 <div style="display:flex;justify-content:space-between;margin-bottom:10px;"><span>Minimum Deposit</span><strong id="res_deposit_amount">$0.00</strong></div>
