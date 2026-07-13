@@ -6222,6 +6222,7 @@ function applyStandardPricingWindow({
         ? `${standardResult.label} with ${multiplier.toFixed(2)}x multiplier`
         : standardResult.label,
     multiplier: roundMoney(multiplier),
+    peak_multiplier: roundMoney(multiplier),
     surcharge: roundMoney(surcharge),
     subtotal: roundMoney(subtotal),
     pricing_window: {
@@ -8910,6 +8911,7 @@ function resolveHourlyOption({
         row.id,
         row.hourly_booking_id,
         row.booking_description,
+        row.vehicle_slot_id,
       ]
         .map((value) =>
           String(value || "").trim().toLowerCase()
@@ -9262,21 +9264,45 @@ function resolveEvent(
   events = [],
   selectedEventName = ""
 ) {
-  const target = String(selectedEventName || "")
-    .trim()
-    .toLowerCase();
+  const rawTarget = String(selectedEventName || "").trim();
 
-  if (!target) {
+  if (!rawTarget) {
     return null;
   }
 
-  return (Array.isArray(events)
-    ? events
-    : []
-  ).find((event = {}) => {
+  const [targetNameRaw, targetDateRaw] = rawTarget.split("|||");
+  const targetName = String(targetNameRaw || "")
+    .trim()
+    .toLowerCase();
+  const targetDate = String(targetDateRaw || "")
+    .trim()
+    .toLowerCase();
+
+  const rows = Array.isArray(events) ? events : [];
+
+  if (!targetName && !targetDate) {
+    return null;
+  }
+
+  const dateMatched = rows.find((event = {}) => {
+    const eventName = String(event.event_name || "")
+      .trim()
+      .toLowerCase();
+    const eventDate = String(event.event_date || "")
+      .trim()
+      .toLowerCase();
+
+    return eventName === targetName && targetDate && eventDate === targetDate;
+  });
+
+  if (dateMatched) {
+    return dateMatched;
+  }
+
+  return rows.find((event = {}) => {
     return String(event.event_name || "")
       .trim()
-      .toLowerCase() === target;
+      .toLowerCase() === targetName;
   }) || null;
 }
 
@@ -9348,11 +9374,17 @@ function calculateEventPricing({
   const subtotal =
     preMultiplierSubtotal * multiplier;
 
+  const eventLabel =
+    multiplier > 1
+      ? `${event.event_name || "Event"} pricing with ${multiplier.toFixed(2)}x event multiplier`
+      : `${event.event_name || "Event"} pricing`;
+
   return {
     mode: "event",
-    label: `${event.event_name || "Event"} pricing`,
+    label: eventLabel,
     event_name: event.event_name || "",
     event_date: event.event_date || "",
+    event_multiplier: roundMoney(multiplier),
     base_rate: roundMoney(baseRate),
     mile_rate: roundMoney(mileRate),
     miles: roundMoney(normalizedMiles),
@@ -9360,6 +9392,7 @@ function calculateEventPricing({
     pre_multiplier_subtotal:
       roundMoney(preMultiplierSubtotal),
     multiplier: roundMoney(multiplier),
+    peak_multiplier: 1,
     surcharge: 0,
     subtotal: roundMoney(subtotal),
   };
@@ -9405,10 +9438,17 @@ function calculateRideSection({
       selectedEventName
     );
 
-    return calculateEventPricing({
+    const eventResult = calculateEventPricing({
       event,
       vehicle,
       miles,
+      startTimeLocal,
+    });
+
+    return applyStandardPricingWindow({
+      standardResult: eventResult,
+      pricingWindows,
+      vehicle,
       startTimeLocal,
     });
   }
@@ -16815,14 +16855,14 @@ app.post("/api/widget-quote", async (req, res) => {
       balance_due_deadline: paymentPolicy.balanceDueDeadline,
       booking_policy: normalizeFleetBookingPolicy(vehicle, profile),
       pricing_label: quote.ride.label,
-      peak_multiplier: quote.ride.multiplier || 1,
+      peak_multiplier: quote.ride.peak_multiplier || quote.ride.multiplier || 1,
       fixed_surcharge: quote.ride.surcharge || 0,
       hourly_booking_name: quote.ride.mode === "hourly" ? quote.ride.hourly_booking_name || null : null,
       hourly_booking_slot_id: quote.ride.mode === "hourly" ? quote.ride.vehicle_slot_id || null : null,
       hourly_hours: quote.ride.mode === "hourly" ? quote.ride.hourly_hours || null : null,
       event_name: quote.ride.mode === "event" ? quote.ride.event_name || null : null,
       event_date: quote.ride.mode === "event" ? quote.ride.event_date || null : null,
-      event_multiplier: quote.ride.mode === "event" ? Number(quote.ride.multiplier || 1) : 1,
+      event_multiplier: quote.ride.mode === "event" ? Number(quote.ride.event_multiplier || quote.ride.multiplier || 1) : 1,
       fixed_rate_name: quote.ride.mode === "fixed" ? quote.ride.fixed_rate_name || null : null,
       route_duration_minutes: Number(route.durationMinutes || 0),
       selected_addons,

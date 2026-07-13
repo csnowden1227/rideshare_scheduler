@@ -709,8 +709,22 @@
   }
 
   function eventByName(name) {
-    if (!name) return null;
-    return (state.config?.events || []).find((event) => event.event_name === name) || null;
+    const rawTarget = String(name || "").trim();
+    if (!rawTarget) return null;
+
+    const [targetNameRaw, targetDateRaw] = rawTarget.split("|||");
+    const targetName = String(targetNameRaw || "").trim().toLowerCase();
+    const targetDate = String(targetDateRaw || "").trim().toLowerCase();
+    const events = Array.isArray(state.config?.events) ? state.config.events : [];
+
+    return events.find((event) => {
+      const eventName = String(event.event_name || "").trim().toLowerCase();
+      const eventDate = String(event.event_date || "").trim().toLowerCase();
+      if (targetDate) {
+        return eventName === targetName && eventDate === targetDate;
+      }
+      return eventName === targetName;
+    }) || null;
   }
 
   function selectedBookingMode() {
@@ -764,7 +778,7 @@
       `<option value="">${hourlyBookings.length ? "Select Executive Luxury Chauffeur" : "No Executive Luxury Chauffeur rates configured"}</option>`,
       ...hourlyBookings.map((row) => {
         const label = `${row.booking_description || "Executive Luxury Chauffeur"}${row.vehicle_make || row.vehicle_model ? ` - ${[row.vehicle_make, row.vehicle_model].filter(Boolean).join(" ")}` : ""}`;
-        return `<option value="${escapeHtml(row.booking_description || "")}">${escapeHtml(label)}</option>`;
+        return `<option value="${escapeHtml(row.vehicle_slot_id || row.booking_description || "")}">${escapeHtml(label)}</option>`;
       }),
     ];
 
@@ -1128,7 +1142,7 @@
       `<option value="">Select event</option>`,
       ...events.map((event) => {
         const label = `${event.event_name || "Special Event"}${event.event_date ? ` - ${event.event_date}` : ""}`;
-        return `<option value="${escapeHtml(event.event_name || "")}">${escapeHtml(label)}</option>`;
+        return `<option value="${escapeHtml([event.event_name || "", event.event_date || ""].join("|||"))}">${escapeHtml(label)}</option>`;
       }),
     ];
 
