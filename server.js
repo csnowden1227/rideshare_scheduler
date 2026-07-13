@@ -16753,7 +16753,20 @@ app.post("/api/widget-quote", async (req, res) => {
 
     const profile = profileRes.rows[0];
     const fleet = safeParseJson(profile.fleet);
-    const fixedRates = safeParseJson(profile.fixed_rates);
+    let fixedRates = safeParseJson(profile.fixed_rates);
+    if (await tableExists("fixed_rates")) {
+      const fixedRatesColumns = await getTableColumns("fixed_rates");
+      const fixedRatesIdColumn = fixedRatesColumns.has("location_id")
+        ? "location_id"
+        : (fixedRatesColumns.has("user_id") ? "user_id" : null);
+      if (fixedRatesIdColumn) {
+        const fixedRatesRes = await client.query(
+          `SELECT * FROM fixed_rates WHERE ${fixedRatesIdColumn} = $1 AND COALESCE(is_active, true) = true`,
+          [location_id]
+        );
+        fixedRates = fixedRatesRes.rows;
+      }
+    }
     const events = safeParseJson(profile.events);
     const peakWindows = safeParseJson(profile.peak_windows);
     const addons = safeParseJson(profile.addons);

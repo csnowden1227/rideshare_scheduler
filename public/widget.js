@@ -743,6 +743,7 @@
         zone.route_name,
         zone.pickup_keyword,
         zone.dropoff_keyword,
+        fixedRateKey(zone),
       ]
         .map((value) => String(value || "").trim())
         .filter(Boolean);
@@ -756,7 +757,7 @@
   }
 
   function fixedRateOptionValue(zone = {}) {
-    return String(zone.id || fixedRateLabel(zone) || "").trim();
+    return fixedRateKey(zone);
   }
 
   function fixedRateKey(zone = {}) {
@@ -1257,15 +1258,7 @@
       `<option value="">Select fixed destination</option>`,
       ...fixedRates.map((zone) => {
         const label = fixedRateLabel(zone) || "Fixed destination";
-        const price = toNumber(zone.fixed_price, 0);
-        const radius = toNumber(zone.radius, 0);
-        const displayLabel = [
-          label,
-          radius > 0 ? `${radius.toFixed(1)} mi` : "",
-          price > 0 ? money(price) : "",
-        ]
-          .filter(Boolean)
-          .join(" - ");
+        const displayLabel = label;
 
         return `<option value="${escapeHtml(fixedRateOptionValue(zone))}">${escapeHtml(displayLabel)}</option>`;
       }),
