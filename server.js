@@ -6222,7 +6222,6 @@ function applyStandardPricingWindow({
         ? `${standardResult.label} with ${multiplier.toFixed(2)}x multiplier`
         : standardResult.label,
     multiplier: roundMoney(multiplier),
-    peak_multiplier: roundMoney(multiplier),
     surcharge: roundMoney(surcharge),
     subtotal: roundMoney(subtotal),
     pricing_window: {
@@ -8911,7 +8910,6 @@ function resolveHourlyOption({
         row.id,
         row.hourly_booking_id,
         row.booking_description,
-        row.vehicle_slot_id,
       ]
         .map((value) =>
           String(value || "").trim().toLowerCase()
@@ -9165,29 +9163,6 @@ function resolveHourlyBookingBySlotId(hourlyBookings = [], selectedHourlyBooking
   return bookings.find((row = {}) => String(row.vehicle_slot_id || "").trim().toLowerCase() === targetBooking) || null;
 }
 
-function fixedRateKey(rate = {}) {
-  const normalizeText = (value) =>
-    String(value || "")
-      .trim()
-      .toLowerCase();
-  const normalizeMoney = (value, digits = 2) => {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed.toFixed(digits) : "";
-  };
-
-  return JSON.stringify({
-    location_name: normalizeText(rate.location_name),
-    route_name: normalizeText(rate.route_name),
-    pickup_keyword: normalizeText(rate.pickup_keyword),
-    dropoff_keyword: normalizeText(rate.dropoff_keyword),
-    vehicle_type: normalizeText(rate.vehicle_type),
-    lat: normalizeMoney(rate.lat, 6),
-    lng: normalizeMoney(rate.lng, 6),
-    radius: normalizeMoney(rate.radius, 2),
-    fixed_price: normalizeMoney(rate.fixed_price, 2),
-  });
-}
-
 function resolveFixedRate(
   fixedRates = [],
   selectedName = ""
@@ -9208,15 +9183,13 @@ function resolveFixedRate(
       rate.id,
       rate.location_name,
       rate.route_name,
-      rate.pickup_keyword,
-      rate.dropoff_keyword,
     ]
       .map((value) =>
         String(value || "").trim().toLowerCase()
       )
       .filter(Boolean);
 
-    return names.includes(target) || fixedRateKey(rate) === target;
+    return names.includes(target);
   }) || null;
 }
 
@@ -9264,45 +9237,21 @@ function resolveEvent(
   events = [],
   selectedEventName = ""
 ) {
-  const rawTarget = String(selectedEventName || "").trim();
-
-  if (!rawTarget) {
-    return null;
-  }
-
-  const [targetNameRaw, targetDateRaw] = rawTarget.split("|||");
-  const targetName = String(targetNameRaw || "")
-    .trim()
-    .toLowerCase();
-  const targetDate = String(targetDateRaw || "")
+  const target = String(selectedEventName || "")
     .trim()
     .toLowerCase();
 
-  const rows = Array.isArray(events) ? events : [];
-
-  if (!targetName && !targetDate) {
+  if (!target) {
     return null;
   }
 
-  const dateMatched = rows.find((event = {}) => {
-    const eventName = String(event.event_name || "")
-      .trim()
-      .toLowerCase();
-    const eventDate = String(event.event_date || "")
-      .trim()
-      .toLowerCase();
-
-    return eventName === targetName && targetDate && eventDate === targetDate;
-  });
-
-  if (dateMatched) {
-    return dateMatched;
-  }
-
-  return rows.find((event = {}) => {
+  return (Array.isArray(events)
+    ? events
+    : []
+  ).find((event = {}) => {
     return String(event.event_name || "")
       .trim()
-      .toLowerCase() === targetName;
+      .toLowerCase() === target;
   }) || null;
 }
 
@@ -9374,17 +9323,11 @@ function calculateEventPricing({
   const subtotal =
     preMultiplierSubtotal * multiplier;
 
-  const eventLabel =
-    multiplier > 1
-      ? `${event.event_name || "Event"} pricing with ${multiplier.toFixed(2)}x event multiplier`
-      : `${event.event_name || "Event"} pricing`;
-
   return {
     mode: "event",
-    label: eventLabel,
+    label: `${event.event_name || "Event"} pricing`,
     event_name: event.event_name || "",
     event_date: event.event_date || "",
-    event_multiplier: roundMoney(multiplier),
     base_rate: roundMoney(baseRate),
     mile_rate: roundMoney(mileRate),
     miles: roundMoney(normalizedMiles),
@@ -9392,7 +9335,6 @@ function calculateEventPricing({
     pre_multiplier_subtotal:
       roundMoney(preMultiplierSubtotal),
     multiplier: roundMoney(multiplier),
-    peak_multiplier: 1,
     surcharge: 0,
     subtotal: roundMoney(subtotal),
   };
@@ -9438,17 +9380,10 @@ function calculateRideSection({
       selectedEventName
     );
 
-    const eventResult = calculateEventPricing({
+    return calculateEventPricing({
       event,
       vehicle,
       miles,
-      startTimeLocal,
-    });
-
-    return applyStandardPricingWindow({
-      standardResult: eventResult,
-      pricingWindows,
-      vehicle,
       startTimeLocal,
     });
   }
@@ -16855,14 +16790,14 @@ app.post("/api/widget-quote", async (req, res) => {
       balance_due_deadline: paymentPolicy.balanceDueDeadline,
       booking_policy: normalizeFleetBookingPolicy(vehicle, profile),
       pricing_label: quote.ride.label,
-      peak_multiplier: quote.ride.peak_multiplier || quote.ride.multiplier || 1,
+      peak_multiplier: quote.ride.multiplier || 1,
       fixed_surcharge: quote.ride.surcharge || 0,
       hourly_booking_name: quote.ride.mode === "hourly" ? quote.ride.hourly_booking_name || null : null,
       hourly_booking_slot_id: quote.ride.mode === "hourly" ? quote.ride.vehicle_slot_id || null : null,
       hourly_hours: quote.ride.mode === "hourly" ? quote.ride.hourly_hours || null : null,
       event_name: quote.ride.mode === "event" ? quote.ride.event_name || null : null,
       event_date: quote.ride.mode === "event" ? quote.ride.event_date || null : null,
-      event_multiplier: quote.ride.mode === "event" ? Number(quote.ride.event_multiplier || quote.ride.multiplier || 1) : 1,
+      event_multiplier: quote.ride.mode === "event" ? Number(quote.ride.multiplier || 1) : 1,
       fixed_rate_name: quote.ride.mode === "fixed" ? quote.ride.fixed_rate_name || null : null,
       route_duration_minutes: Number(route.durationMinutes || 0),
       selected_addons,

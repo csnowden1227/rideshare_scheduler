@@ -709,22 +709,8 @@
   }
 
   function eventByName(name) {
-    const rawTarget = String(name || "").trim();
-    if (!rawTarget) return null;
-
-    const [targetNameRaw, targetDateRaw] = rawTarget.split("|||");
-    const targetName = String(targetNameRaw || "").trim().toLowerCase();
-    const targetDate = String(targetDateRaw || "").trim().toLowerCase();
-    const events = Array.isArray(state.config?.events) ? state.config.events : [];
-
-    return events.find((event) => {
-      const eventName = String(event.event_name || "").trim().toLowerCase();
-      const eventDate = String(event.event_date || "").trim().toLowerCase();
-      if (targetDate) {
-        return eventName === targetName && eventDate === targetDate;
-      }
-      return eventName === targetName;
-    }) || null;
+    if (!name) return null;
+    return (state.config?.events || []).find((event) => event.event_name === name) || null;
   }
 
   function selectedBookingMode() {
@@ -734,36 +720,13 @@
   function fixedRateByName(name) {
     if (!name) return null;
     return (state.config?.fixed_rates || []).find((zone) => {
-      return fixedRateKey(zone) === String(name || "").trim() ||
-        (zone.location_name || zone.route_name || "") === name;
+      const label = zone.location_name || zone.route_name || "";
+      return label === name;
     }) || null;
   }
 
   function fixedRateLabel(zone) {
     return zone?.location_name || zone?.route_name || "";
-  }
-
-  function fixedRateKey(zone = {}) {
-    const normalizeText = (value) =>
-      String(value || "")
-        .trim()
-        .toLowerCase();
-    const normalizeMoney = (value, digits = 2) => {
-      const parsed = Number(value);
-      return Number.isFinite(parsed) ? parsed.toFixed(digits) : "";
-    };
-
-    return JSON.stringify({
-      location_name: normalizeText(zone.location_name),
-      route_name: normalizeText(zone.route_name),
-      pickup_keyword: normalizeText(zone.pickup_keyword),
-      dropoff_keyword: normalizeText(zone.dropoff_keyword),
-      vehicle_type: normalizeText(zone.vehicle_type),
-      lat: normalizeMoney(zone.lat, 6),
-      lng: normalizeMoney(zone.lng, 6),
-      radius: normalizeMoney(zone.radius, 2),
-      fixed_price: normalizeMoney(zone.fixed_price, 2),
-    });
   }
 
   function hourlyBookingBySlotId(slotId) {
@@ -778,7 +741,7 @@
       `<option value="">${hourlyBookings.length ? "Select Executive Luxury Chauffeur" : "No Executive Luxury Chauffeur rates configured"}</option>`,
       ...hourlyBookings.map((row) => {
         const label = `${row.booking_description || "Executive Luxury Chauffeur"}${row.vehicle_make || row.vehicle_model ? ` - ${[row.vehicle_make, row.vehicle_model].filter(Boolean).join(" ")}` : ""}`;
-        return `<option value="${escapeHtml(row.vehicle_slot_id || row.booking_description || "")}">${escapeHtml(label)}</option>`;
+        return `<option value="${escapeHtml(row.booking_description || "")}">${escapeHtml(label)}</option>`;
       }),
     ];
 
@@ -871,13 +834,12 @@
     const fixedRates = Array.isArray(state.config?.fixed_rates) ? state.config.fixed_rates : [];
     const pickup = route.pickupCoords;
     const dropoff = route.dropoffCoords;
-    const selectedTarget = String(selectedName || "").trim();
     const touchingZones = fixedRates.filter((zone) => {
       const lat = toNumber(zone.lat, NaN);
       const lng = toNumber(zone.lng, NaN);
       const radius = toNumber(zone.radius, 0);
       if (!Number.isFinite(lat) || !Number.isFinite(lng) || radius <= 0) return false;
-      if (selectedTarget && fixedRateKey(zone) !== selectedTarget && fixedRateLabel(zone) !== selectedTarget) return false;
+      if (selectedName && fixedRateLabel(zone) !== selectedName) return false;
 
       const pickupDistance = haversineMiles(pickup.lat, pickup.lng, lat, lng);
       const dropoffDistance = haversineMiles(dropoff.lat, dropoff.lng, lat, lng);
@@ -1142,7 +1104,7 @@
       `<option value="">Select event</option>`,
       ...events.map((event) => {
         const label = `${event.event_name || "Special Event"}${event.event_date ? ` - ${event.event_date}` : ""}`;
-        return `<option value="${escapeHtml([event.event_name || "", event.event_date || ""].join("|||"))}">${escapeHtml(label)}</option>`;
+        return `<option value="${escapeHtml(event.event_name || "")}">${escapeHtml(label)}</option>`;
       }),
     ];
 
@@ -1160,22 +1122,17 @@
     const fixedRates = Array.isArray(state.config?.fixed_rates) ? state.config.fixed_rates : [];
     if (!fixedRates.length) return "";
 
+    const uniqueLabels = Array.from(
+      new Set(
+        fixedRates
+          .map((zone) => zone.location_name || zone.route_name || "")
+          .filter(Boolean)
+      )
+    );
+
     const options = [
       `<option value="">Select fixed destination</option>`,
-      ...fixedRates.map((zone) => {
-        const label = fixedRateLabel(zone) || "Fixed destination";
-        const price = toNumber(zone.fixed_price, 0);
-        const radius = toNumber(zone.radius, 0);
-        const displayLabel = [
-          label,
-          radius > 0 ? `${radius.toFixed(1)} mi` : "",
-          price > 0 ? money(price) : "",
-        ]
-          .filter(Boolean)
-          .join(" - ");
-
-        return `<option value="${escapeHtml(fixedRateKey(zone))}">${escapeHtml(displayLabel)}</option>`;
-      }),
+      ...uniqueLabels.map((label) => `<option value="${escapeHtml(label)}">${escapeHtml(label)}</option>`),
     ];
 
     return `
