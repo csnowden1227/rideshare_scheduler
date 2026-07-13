@@ -931,12 +931,9 @@
   function getFixedSurcharge(startDate, vehicle = null) {
     const windows = Array.isArray(state.config?.peak_windows) ? state.config.peak_windows : [];
     let surcharge = 0;
-    const selectedVehicleType = String(vehicle?.vehicle_type || "").trim().toLowerCase();
 
     windows.forEach((windowConfig) => {
-      const windowVehicleType = String(windowConfig.vehicle_type || "").trim().toLowerCase();
-      const vehicleMatches = !windowVehicleType || windowVehicleType === selectedVehicleType;
-      if (vehicleMatches && matchesPeakWindow(windowConfig, startDate)) {
+      if (matchesPeakWindow(windowConfig, startDate)) {
         surcharge = Math.max(
           surcharge,
           toNumber(windowConfig.fixed_surcharge ?? windowConfig.flat_surcharge, 0)
@@ -1471,7 +1468,7 @@
               </div>
               <div id="cd_summary" style="display:none;margin-top:14px;padding:18px;border-radius:20px;background:#f8fafc;border:1px solid #dbe4f0;">
                 <div style="display:flex;justify-content:space-between;margin-bottom:10px;"><span>Service Cost</span><strong id="res_quoted_price">$0.00</strong></div>
-                <div id="res_peak_surcharge_row" style="display:none;justify-content:space-between;margin-bottom:10px;"><span id="res_peak_surcharge_label">Peak Time SCG</span><strong id="res_peak_surcharge_amount">$0.00</strong></div>
+                <div id="res_peak_surcharge_row" style="display:none;justify-content:space-between;margin-bottom:10px;"><span id="res_peak_surcharge_label">Peak Time Surcharge</span><strong id="res_peak_surcharge_amount">$0.00</strong></div>
                 <div style="display:flex;justify-content:space-between;margin-bottom:10px;"><span>Add-Ons</span><strong id="res_addons">$0.00</strong></div>
                 <div style="display:flex;justify-content:space-between;margin-bottom:10px;"><span>Tax</span><strong id="res_tax">$0.00</strong></div>
                 <div style="display:flex;justify-content:space-between;margin-bottom:10px;"><span>Minimum Deposit</span><strong id="res_deposit_amount">$0.00</strong></div>
@@ -1908,7 +1905,7 @@
   function renderQuoteSummary() {
     if (!state.quote) return;
 
-    const peakSurcharge = Number(state.quote.fixed_surcharge || 0);
+    const peakSurcharge = Number((state.quote.peak_time_surcharge ?? state.quote.fixed_surcharge) || 0);
     const baseServiceCost = peakSurcharge > 0
       ? Math.max(0, Number(state.quote.quoted_price || 0) - peakSurcharge)
       : Number(state.quote.quoted_price || 0);
@@ -1926,7 +1923,7 @@
     const peakSurchargeAmount = document.getElementById("res_peak_surcharge_amount");
     if (peakSurchargeRow && peakSurchargeLabel && peakSurchargeAmount) {
       if (peakSurcharge > 0) {
-        peakSurchargeLabel.textContent = state.quote.fixed_surcharge_label || "Peak Time SCG";
+        peakSurchargeLabel.textContent = state.quote.fixed_surcharge_label || "Peak Time Surcharge";
         peakSurchargeAmount.textContent = money(peakSurcharge);
         peakSurchargeRow.style.display = "flex";
       } else {
@@ -1946,7 +1943,7 @@
       metaParts.push(`Minimum notice: ${(Number(bookingPolicy.min_notice_min || 0) / 60).toFixed(1).replace(/\.0$/, "")} hours.`);
     }
     if (peakSurcharge > 0) {
-      metaParts.push(`Peak Time SCG: ${money(peakSurcharge)}.`);
+      metaParts.push(`Peak Time Surcharge: ${money(peakSurcharge)}.`);
     }
     if (state.quote.balance_due > 0 && state.quote.balance_due_deadline) {
       metaParts.push(`Balance invoice due by ${new Date(state.quote.balance_due_deadline).toLocaleString()}.`);
@@ -2011,8 +2008,9 @@
 
     const notes = [];
     if (state.quote.fixed_rate_name) notes.push(`Fixed-rate zone applied: ${state.quote.fixed_rate_name}.`);
-    if (state.quote.fixed_surcharge > 0) {
-      notes.push(`Peak Time SCG applied: ${money(state.quote.fixed_surcharge)}.`);
+    const peakTimeSurcharge = Number((state.quote.peak_time_surcharge ?? state.quote.fixed_surcharge) || 0);
+    if (peakTimeSurcharge > 0) {
+      notes.push(`Peak Time Surcharge applied: ${money(peakTimeSurcharge)}.`);
     }
     notes.push(
       state.quote.balance_due > 0

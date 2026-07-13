@@ -6152,7 +6152,6 @@ function findApplicablePricingWindow({
 
     return (
       dayMatches &&
-      vehicleRuleMatches(window, vehicle) &&
       isTimeWithinWindow(
         currentMinutes,
         startMinutes,
@@ -6253,7 +6252,6 @@ function getAdditionalTrafficBufferMinutes({
   const startDate = new Date(startTime);
   if (Number.isNaN(startDate.getTime())) return 0;
 
-  const selectedVehicleType = String(vehicleType || "").trim().toLowerCase();
   let extraBuffer = 0;
 
   for (const windowConfig of Array.isArray(peakWindows) ? peakWindows : []) {
@@ -6269,9 +6267,6 @@ function getAdditionalTrafficBufferMinutes({
     const appliesToStandard = !hasFixedSurcharge;
     const targetMode = appliesToFixed ? "fixed" : "standard";
     if (bookingMode !== targetMode) continue;
-
-    const windowVehicleType = String(windowConfig.vehicle_type || "").trim().toLowerCase();
-    if (bookingMode === "fixed" && windowVehicleType && windowVehicleType !== selectedVehicleType) continue;
 
     extraBuffer = Math.max(extraBuffer, parseInt(windowConfig.buffer_min, 10) || 0);
   }
@@ -8620,16 +8615,12 @@ function normalizeTimeValue(value) {
 function getMatchingPeakWindows(peakWindows = [], startDate, vehicleType = "") {
   if (!(startDate instanceof Date) || Number.isNaN(startDate.getTime())) return [];
 
-  const normalizedVehicleType = String(vehicleType || "").trim().toLowerCase();
   const currentMinutes = startDate.getHours() * 60 + startDate.getMinutes();
   return (Array.isArray(peakWindows) ? peakWindows : []).filter((windowConfig = {}) => {
-    const windowVehicleType = String(windowConfig.vehicle_type || "").trim().toLowerCase();
-    const vehicleMatches = !windowVehicleType || windowVehicleType === normalizedVehicleType;
     const dayMatches = dayRuleMatches(windowConfig.day, startDate);
     const startMinutes = timeStringToMinutes(windowConfig.start_time);
     const endMinutes = timeStringToMinutes(windowConfig.end_time);
     return (
-      vehicleMatches &&
       dayMatches &&
       isTimeWithinWindow(
         currentMinutes,
@@ -9527,17 +9518,19 @@ function calculateCompleteQuote({
     passengerCount,
   });
 
+  const flatPeakSurcharge = getFixedSurcharge(
+    startTimeLocal,
+    pricingWindows,
+    vehicle?.vehicle_type || ""
+  );
+  const multiplierPeakSurcharge = positiveNumber(
+    ride.peak_time_surcharge ?? ride.surcharge,
+    0
+  );
   const timeBasedSurcharge =
     ride.mode === "fixed"
-      ? getFixedSurcharge(
-          startTimeLocal,
-          pricingWindows,
-          vehicle?.vehicle_type || ""
-        )
-      : positiveNumber(
-          ride.peak_time_surcharge ?? ride.surcharge,
-          0
-        );
+      ? flatPeakSurcharge
+      : multiplierPeakSurcharge;
 
   const rideSubtotal =
     roundMoney(ride.subtotal) +
@@ -9572,7 +9565,7 @@ function calculateCompleteQuote({
 
   const rideLabel =
     timeBasedSurcharge > 0
-      ? `${ride.label} + $${timeBasedSurcharge.toFixed(2)} Peak Time SCG`
+      ? `${ride.label} + $${timeBasedSurcharge.toFixed(2)} Peak Time Surcharge`
       : ride.label;
 
   return {
@@ -16885,7 +16878,7 @@ app.post("/api/widget-quote", async (req, res) => {
       fixed_surcharge: quote.ride.surcharge || 0,
       peak_time_surcharge: quote.ride.peak_time_surcharge || quote.ride.surcharge || 0,
       fixed_surcharge_label: Number(quote.ride.surcharge || 0) > 0
-        ? "Peak Time SCG"
+        ? "Peak Time Surcharge"
         : null,
       hourly_booking_name: quote.ride.mode === "hourly" ? quote.ride.hourly_booking_name || null : null,
       hourly_booking_slot_id: quote.ride.mode === "hourly" ? quote.ride.vehicle_slot_id || null : null,
