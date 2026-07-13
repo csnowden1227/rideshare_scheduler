@@ -14105,7 +14105,12 @@ async function createBalancePaymentLink(bookingRow) {
   return buildBalancePaymentEntryUrl(bookingRow.id);
 }
 
-async function createBookingRecord(input, { paymentLink = null, triggerWebhook = true, req = null } = {}) {
+async function createBookingRecord(input, {
+  paymentLink = null,
+  triggerWebhook = true,
+  req = null,
+  enforceTimingValidation = true,
+} = {}) {
   const {
     location_id,
     vehicle_slot_id,
@@ -14239,17 +14244,19 @@ async function createBookingRecord(input, { paymentLink = null, triggerWebhook =
     ) || null;
   }
 
-  const bookingTimingValidation = validateBookingTimingRules({
-    slot: fleetVehicle || {},
-    startTime: start_time,
-    startTimeLocal: start_time_local,
-    profileDefaults: {
-      open_time: profile.open_time,
-      close_time: profile.close_time,
-    },
-  });
-  if (!bookingTimingValidation.ok) {
-    throw new Error(bookingTimingValidation.error);
+  if (enforceTimingValidation) {
+    const bookingTimingValidation = validateBookingTimingRules({
+      slot: fleetVehicle || {},
+      startTime: start_time,
+      startTimeLocal: start_time_local,
+      profileDefaults: {
+        open_time: profile.open_time,
+        close_time: profile.close_time,
+      },
+    });
+    if (!bookingTimingValidation.ok) {
+      throw new Error(bookingTimingValidation.error);
+    }
   }
 
   const webhookUrl = profile.crm_webhook_url || null;
@@ -14752,22 +14759,6 @@ app.post("/api/create-checkout-session", async (req, res) => {
       ) || null;
     }
 
-    const bookingTimingValidation = validateBookingTimingRules({
-      slot: fleetVehicle || {},
-      startTime: req.body.start_time,
-      startTimeLocal: req.body.start_time_local,
-      profileDefaults: {
-        open_time: profile.open_time,
-        close_time: profile.close_time,
-      },
-    });
-    if (!bookingTimingValidation.ok) {
-      return res.status(409).json({
-        error: bookingTimingValidation.error,
-        instant_booking_policy: bookingTimingValidation.policy,
-      });
-    }
-
     if (String(req.body.booking_mode || "").trim().toLowerCase() === "hourly") {
       const hourlyHours = Number(req.body.hourly_hours || 0);
       if (!Number.isFinite(hourlyHours) || hourlyHours < 4) {
@@ -14877,7 +14868,7 @@ app.post("/api/create-checkout-session", async (req, res) => {
           hours_until_ride: hoursUntilRide,
           payment_provider: paymentProvider,
         },
-        { triggerWebhook: true, paymentLink: null, req }
+        { triggerWebhook: true, paymentLink: null, req, enforceTimingValidation: false }
       );
 
       bookingId = bookingResult.booking?.id;
@@ -14922,7 +14913,7 @@ app.post("/api/create-checkout-session", async (req, res) => {
         hours_until_ride: hoursUntilRide,
         payment_provider: paymentProvider,
       },
-      { triggerWebhook: false, req }
+      { triggerWebhook: false, req, enforceTimingValidation: false }
     );
 
     bookingId = bookingResult.booking?.id;
@@ -15127,7 +15118,7 @@ app.post("/api/test-run/create-checkout-session", async (req, res) => {
           ? [{ description: `${serviceFeeType === "percent" ? "Processing Fee" : "Service Fee"}`, price: serviceFeeAmount, type: "per_booking" }]
           : [],
       },
-      { triggerWebhook: false, req }
+      { triggerWebhook: false, req, enforceTimingValidation: false }
     );
 
     bookingId = bookingResult.booking?.id;
