@@ -557,11 +557,13 @@
         if (!slotId) return;
         hiddenInput.value = slotId;
         syncVehiclePickerSelection(slotId);
+        syncHourlyBookingSelection();
         if (state.quote) getQuote();
       });
     });
 
     syncVehiclePickerSelection(hiddenInput.value);
+    syncHourlyBookingSelection();
   }
 
   function normalizeBooleanish(value, fallback = false) {
@@ -757,6 +759,23 @@
     return (state.config?.hourly_bookings || []).find((row) => String(row.vehicle_slot_id || "") === String(slotId || "")) || null;
   }
 
+  function hourlyBookingByValue(value = "") {
+    const target = String(value || "").trim();
+    if (!target) return null;
+
+    return (state.config?.hourly_bookings || []).find((row) => {
+      const identifiers = [
+        row.id,
+        row.hourly_booking_id,
+        row.booking_description,
+      ]
+        .map((item) => String(item || "").trim())
+        .filter(Boolean);
+
+      return identifiers.includes(target);
+    }) || null;
+  }
+
   function renderHourlyBookingSelect() {
     const hourlyBookings = Array.isArray(state.config?.hourly_bookings) ? state.config.hourly_bookings : [];
 
@@ -764,7 +783,9 @@
       `<option value="">${hourlyBookings.length ? "Select Executive Luxury Chauffeur" : "No Executive Luxury Chauffeur rates configured"}</option>`,
       ...hourlyBookings.map((row) => {
         const label = `${row.booking_description || "Executive Luxury Chauffeur"}${row.vehicle_make || row.vehicle_model ? ` - ${[row.vehicle_make, row.vehicle_model].filter(Boolean).join(" ")}` : ""}`;
-        return `<option value="${escapeHtml(row.booking_description || "")}">${escapeHtml(label)}</option>`;
+        const hourlyRate = toNumber(row.hourly_rate, 0);
+        const rateText = hourlyRate > 0 ? ` - ${money(hourlyRate)}/hr` : "";
+        return `<option value="${escapeHtml(row.booking_description || "")}">${escapeHtml(label + rateText)}</option>`;
       }),
     ];
 
@@ -792,11 +813,27 @@
     const hourlyWrap = document.getElementById("cd_hourly_wrap");
     if (hourlyWrap) hourlyWrap.style.display = bookingMode === "hourly" ? "block" : "none";
     if (hourlyHoursWrap) hourlyHoursWrap.style.display = bookingMode === "hourly" ? "block" : "none";
-    if (bookingMode !== "hourly" && hourlySelect) hourlySelect.value = "";
-    if (bookingMode === "hourly" && hourlySelect && !hourlySelect.value) {
-      const fallback = Array.from(hourlySelect.options || []).find((option) => option.value);
-      if (fallback) hourlySelect.value = fallback.value;
+    if (!hourlySelect) return;
+
+    if (bookingMode !== "hourly") {
+      hourlySelect.value = "";
+      return;
     }
+
+    const vehicleSlotId = selectedVehicle()?.vehicle_slot_id || document.getElementById("cd_vehicle_slot_id")?.value || "";
+    const matchedBooking = hourlyBookingBySlotId(vehicleSlotId);
+
+    if (matchedBooking?.booking_description) {
+      hourlySelect.value = matchedBooking.booking_description;
+      return;
+    }
+
+    const currentBooking = hourlyBookingByValue(hourlySelect.value);
+    if (currentBooking && String(currentBooking.vehicle_slot_id || "").trim() === String(vehicleSlotId || "").trim()) {
+      return;
+    }
+
+    hourlySelect.value = "";
   }
 
   function matchesPeakWindow(windowConfig, startDate) {
@@ -1395,6 +1432,7 @@
 
     document.getElementById("cd_booking_mode")?.addEventListener("change", () => {
       updateBookingModeUI();
+      syncHourlyBookingSelection();
       if (state.quote) getQuote();
     });
 

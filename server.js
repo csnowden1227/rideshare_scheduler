@@ -8904,6 +8904,16 @@ function resolveHourlyOption({
     ? hourlyBookings
     : [];
 
+  const slotMatches = rows.filter((row = {}) => {
+    return String(row.vehicle_slot_id || "")
+      .trim()
+      .toLowerCase() === slotTarget;
+  });
+
+  if (slotMatches.length === 1) {
+    return slotMatches[0];
+  }
+
   if (selectedTarget) {
     const exactMatch = rows.find((row = {}) => {
       const identifiers = [
@@ -8924,13 +8934,7 @@ function resolveHourlyOption({
     }
   }
 
-  const slotMatches = rows.filter((row = {}) => {
-    return String(row.vehicle_slot_id || "")
-      .trim()
-      .toLowerCase() === slotTarget;
-  });
-
-  return slotMatches.length === 1
+  return slotMatches.length > 1
     ? slotMatches[0]
     : null;
 }
