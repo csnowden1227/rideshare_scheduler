@@ -720,13 +720,36 @@
   function fixedRateByName(name) {
     if (!name) return null;
     return (state.config?.fixed_rates || []).find((zone) => {
-      const label = zone.location_name || zone.route_name || "";
-      return label === name;
+      return fixedRateKey(zone) === String(name || "").trim() ||
+        (zone.location_name || zone.route_name || "") === name;
     }) || null;
   }
 
   function fixedRateLabel(zone) {
     return zone?.location_name || zone?.route_name || "";
+  }
+
+  function fixedRateKey(zone = {}) {
+    const normalizeText = (value) =>
+      String(value || "")
+        .trim()
+        .toLowerCase();
+    const normalizeMoney = (value, digits = 2) => {
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed.toFixed(digits) : "";
+    };
+
+    return JSON.stringify({
+      location_name: normalizeText(zone.location_name),
+      route_name: normalizeText(zone.route_name),
+      pickup_keyword: normalizeText(zone.pickup_keyword),
+      dropoff_keyword: normalizeText(zone.dropoff_keyword),
+      vehicle_type: normalizeText(zone.vehicle_type),
+      lat: normalizeMoney(zone.lat, 6),
+      lng: normalizeMoney(zone.lng, 6),
+      radius: normalizeMoney(zone.radius, 2),
+      fixed_price: normalizeMoney(zone.fixed_price, 2),
+    });
   }
 
   function hourlyBookingBySlotId(slotId) {
@@ -834,12 +857,13 @@
     const fixedRates = Array.isArray(state.config?.fixed_rates) ? state.config.fixed_rates : [];
     const pickup = route.pickupCoords;
     const dropoff = route.dropoffCoords;
+    const selectedTarget = String(selectedName || "").trim();
     const touchingZones = fixedRates.filter((zone) => {
       const lat = toNumber(zone.lat, NaN);
       const lng = toNumber(zone.lng, NaN);
       const radius = toNumber(zone.radius, 0);
       if (!Number.isFinite(lat) || !Number.isFinite(lng) || radius <= 0) return false;
-      if (selectedName && fixedRateLabel(zone) !== selectedName) return false;
+      if (selectedTarget && fixedRateKey(zone) !== selectedTarget && fixedRateLabel(zone) !== selectedTarget) return false;
 
       const pickupDistance = haversineMiles(pickup.lat, pickup.lng, lat, lng);
       const dropoffDistance = haversineMiles(dropoff.lat, dropoff.lng, lat, lng);
@@ -1122,17 +1146,22 @@
     const fixedRates = Array.isArray(state.config?.fixed_rates) ? state.config.fixed_rates : [];
     if (!fixedRates.length) return "";
 
-    const uniqueLabels = Array.from(
-      new Set(
-        fixedRates
-          .map((zone) => zone.location_name || zone.route_name || "")
-          .filter(Boolean)
-      )
-    );
-
     const options = [
       `<option value="">Select fixed destination</option>`,
-      ...uniqueLabels.map((label) => `<option value="${escapeHtml(label)}">${escapeHtml(label)}</option>`),
+      ...fixedRates.map((zone) => {
+        const label = fixedRateLabel(zone) || "Fixed destination";
+        const price = toNumber(zone.fixed_price, 0);
+        const radius = toNumber(zone.radius, 0);
+        const displayLabel = [
+          label,
+          radius > 0 ? `${radius.toFixed(1)} mi` : "",
+          price > 0 ? money(price) : "",
+        ]
+          .filter(Boolean)
+          .join(" - ");
+
+        return `<option value="${escapeHtml(fixedRateKey(zone))}">${escapeHtml(displayLabel)}</option>`;
+      }),
     ];
 
     return `
