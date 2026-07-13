@@ -925,7 +925,7 @@
     return document.getElementById(kind === "pickup" ? "cd_pickup" : "cd_dropoff");
   }
 
-  async function initAutocomplete() {
+  function initAutocomplete() {
     const attachAutocomplete = (kind) => {
       const input = getAddressInput(kind);
       if (!input) {
@@ -1025,9 +1025,9 @@
 
   }
 
-  window.__cdInitAutocomplete = async () => {
-    await initAutocomplete();
-  }
+  window.__cdInitAutocomplete = function () {
+    initAutocomplete();
+  };
 
   function updateAddressHelperState(message = "") {
     const helper = document.getElementById("cd_address_helper");
