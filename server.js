@@ -16760,7 +16760,7 @@ app.post("/api/widget-quote", async (req, res) => {
         ? "location_id"
         : (fixedRatesColumns.has("user_id") ? "user_id" : null);
       if (fixedRatesIdColumn) {
-        const fixedRatesRes = await client.query(
+        const fixedRatesRes = await pool.query(
           `SELECT * FROM fixed_rates WHERE ${fixedRatesIdColumn} = $1 AND COALESCE(is_active, true) = true`,
           [location_id]
         );
