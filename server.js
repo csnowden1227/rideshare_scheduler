@@ -183,6 +183,7 @@ let profilePricingColumnsReady = null;
 let profileEntitlementColumnsReady = null;
 let profilePaymentProviderColumnsReady = null;
 let profileServiceAreaColumnsReady = null;
+let profileIdColumnPromise = null;
 let profileOnDemandNurtureColumnReady = null;
 let saasAddonPurchasesTableReady = null;
 let dispatchTablesReady = null;
@@ -279,27 +280,49 @@ const SAAS_ADDON_RULES = {
 
 // Initialize the Google Maps Client for the Backend
 const googleMapsClient = new GoogleMapsClient({});
+const tableExistsCache = new Map();
+const tableColumnsCache = new Map();
 
 async function tableExists(tableName) {
-  const result = await pool.query(
-    `SELECT EXISTS (
-      SELECT 1
-      FROM information_schema.tables
-      WHERE table_schema = 'public' AND table_name = $1
-    ) AS exists`,
-    [tableName]
-  );
-  return Boolean(result.rows[0]?.exists);
+  const key = String(tableName || "").trim().toLowerCase();
+  if (!tableExistsCache.has(key)) {
+    tableExistsCache.set(key, (async () => {
+      const result = await pool.query(
+        `SELECT EXISTS (
+          SELECT 1
+          FROM information_schema.tables
+          WHERE table_schema = 'public' AND table_name = $1
+        ) AS exists`,
+        [tableName]
+      );
+      return Boolean(result.rows[0]?.exists);
+    })().catch((err) => {
+      tableExistsCache.delete(key);
+      throw err;
+    }));
+  }
+
+  return tableExistsCache.get(key);
 }
 
 async function getTableColumns(tableName) {
-  const result = await pool.query(
-    `SELECT column_name
-     FROM information_schema.columns
-     WHERE table_schema = 'public' AND table_name = $1`,
-    [tableName]
-  );
-  return new Set(result.rows.map((row) => row.column_name));
+  const key = String(tableName || "").trim().toLowerCase();
+  if (!tableColumnsCache.has(key)) {
+    tableColumnsCache.set(key, (async () => {
+      const result = await pool.query(
+        `SELECT column_name
+         FROM information_schema.columns
+         WHERE table_schema = 'public' AND table_name = $1`,
+        [tableName]
+      );
+      return new Set(result.rows.map((row) => row.column_name));
+    })().catch((err) => {
+      tableColumnsCache.delete(key);
+      throw err;
+    }));
+  }
+
+  return tableColumnsCache.get(key);
 }
 
 function safeParseJson(data, fallback = []) {
@@ -3545,10 +3568,19 @@ async function getCrmAccessTokenForLocation(locationId) {
 }
 
 async function getProfileIdColumn() {
-  const columns = await getTableColumns("profiles");
-  if (columns.has("location_id")) return "location_id";
-  if (columns.has("id")) return "id";
-  throw new Error("Profiles table is missing both location_id and id columns.");
+  if (!profileIdColumnPromise) {
+    profileIdColumnPromise = (async () => {
+      const columns = await getTableColumns("profiles");
+      if (columns.has("location_id")) return "location_id";
+      if (columns.has("id")) return "id";
+      throw new Error("Profiles table is missing both location_id and id columns.");
+    })().catch((err) => {
+      profileIdColumnPromise = null;
+      throw err;
+    });
+  }
+
+  return profileIdColumnPromise;
 }
 
 async function getStripeSecretKeyForLocation(locationId, options = {}) {
@@ -17010,13 +17042,38 @@ app.get("/api/get-profile-widget-script/:location_id", async (req, res) => {
     }
 
     const location_id = String(req.params.location_id || "").trim();
-    await ensureProfileEntitlementColumns();
-    await ensureProfilePaymentProviderColumns();
-    await ensureProfileServiceAreaColumns();
     const profileIdColumn = await getProfileIdColumn();
 
     const profileRes = await pool.query(
-      `SELECT * FROM profiles WHERE ${profileIdColumn} = $1`,
+      `SELECT
+         ${profileIdColumn},
+         plan_name,
+         addon_branding_unlocked,
+         addon_funnel_unlocked,
+         addon_tracking_unlocked,
+         addon_extra_vehicle_count,
+         business_name,
+         public_app_url,
+         business_logo,
+         brand_color_primary,
+         brand_color_secondary,
+         brand_color_accent,
+         widget_tagline,
+         maps_api_key,
+         payment_provider,
+         tax_rate,
+         service_fee_type,
+         service_fee_value,
+         service_area_type,
+         service_area_rules,
+         fleet,
+         fixed_rates,
+         hourly_bookings,
+         peak_windows,
+         events,
+         addons
+       FROM profiles
+       WHERE ${profileIdColumn} = $1`,
       [location_id]
     );
 

@@ -1024,7 +1024,7 @@
         settled = true;
         cleanup();
         reject(new Error("Config load timed out"));
-      }, 30000);
+      }, 60000);
     });
 
     const mapsKey = String(state.config.maps_api_key || "").trim();
@@ -1696,7 +1696,7 @@
     };
   }
 
-  async function fetchJsonWithRetry(url, options, { retries = 1, timeoutMs = 30000 } = {}) {
+  async function fetchJsonWithRetry(url, options, { retries = 1, timeoutMs = 60000 } = {}) {
     let lastError = null;
 
     for (let attempt = 0; attempt <= retries; attempt += 1) {
