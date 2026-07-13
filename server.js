@@ -16877,6 +16877,9 @@ app.post("/api/widget-quote", async (req, res) => {
       pricing_label: quote.ride.label,
       peak_multiplier: quote.ride.multiplier || 1,
       fixed_surcharge: quote.ride.surcharge || 0,
+      fixed_surcharge_label: quote.ride.mode === "fixed" && Number(quote.ride.surcharge || 0) > 0
+        ? "Peak time surcharge"
+        : null,
       hourly_booking_name: quote.ride.mode === "hourly" ? quote.ride.hourly_booking_name || null : null,
       hourly_booking_slot_id: quote.ride.mode === "hourly" ? quote.ride.vehicle_slot_id || null : null,
       hourly_hours: quote.ride.mode === "hourly" ? quote.ride.hourly_hours || null : null,

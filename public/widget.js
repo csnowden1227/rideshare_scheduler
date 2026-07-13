@@ -1471,6 +1471,7 @@
               </div>
               <div id="cd_summary" style="display:none;margin-top:14px;padding:18px;border-radius:20px;background:#f8fafc;border:1px solid #dbe4f0;">
                 <div style="display:flex;justify-content:space-between;margin-bottom:10px;"><span>Service Cost</span><strong id="res_quoted_price">$0.00</strong></div>
+                <div id="res_peak_surcharge_row" style="display:none;justify-content:space-between;margin-bottom:10px;"><span id="res_peak_surcharge_label">Peak time surcharge</span><strong id="res_peak_surcharge_amount">$0.00</strong></div>
                 <div style="display:flex;justify-content:space-between;margin-bottom:10px;"><span>Add-Ons</span><strong id="res_addons">$0.00</strong></div>
                 <div style="display:flex;justify-content:space-between;margin-bottom:10px;"><span>Tax</span><strong id="res_tax">$0.00</strong></div>
                 <div style="display:flex;justify-content:space-between;margin-bottom:10px;"><span>Minimum Deposit</span><strong id="res_deposit_amount">$0.00</strong></div>
@@ -1907,7 +1908,12 @@
   function renderQuoteSummary() {
     if (!state.quote) return;
 
-    document.getElementById("res_quoted_price").textContent = money(state.quote.quoted_price);
+    const fixedSurcharge = state.quote.booking_mode === "fixed" ? Number(state.quote.fixed_surcharge || 0) : 0;
+    const baseServiceCost = fixedSurcharge > 0
+      ? Math.max(0, Number(state.quote.quoted_price || 0) - fixedSurcharge)
+      : Number(state.quote.quoted_price || 0);
+
+    document.getElementById("res_quoted_price").textContent = money(baseServiceCost);
     document.getElementById("res_addons").textContent = money(state.quote.addon_total);
     document.getElementById("res_tax").textContent = money(state.quote.tax_amount);
     document.getElementById("res_deposit_amount").textContent = money(state.quote.deposit_amount);
@@ -1915,6 +1921,18 @@
     document.getElementById("res_balance_due").textContent = money(state.quote.balance_due || 0);
     document.getElementById("res_total").textContent = money(state.quote.total);
     document.getElementById("cd_summary").style.display = "block";
+    const peakSurchargeRow = document.getElementById("res_peak_surcharge_row");
+    const peakSurchargeLabel = document.getElementById("res_peak_surcharge_label");
+    const peakSurchargeAmount = document.getElementById("res_peak_surcharge_amount");
+    if (peakSurchargeRow && peakSurchargeLabel && peakSurchargeAmount) {
+      if (fixedSurcharge > 0) {
+        peakSurchargeLabel.textContent = state.quote.fixed_surcharge_label || "Peak time surcharge";
+        peakSurchargeAmount.textContent = money(fixedSurcharge);
+        peakSurchargeRow.style.display = "flex";
+      } else {
+        peakSurchargeRow.style.display = "none";
+      }
+    }
     const bookWrap = document.getElementById("cd_book_wrap");
     if (bookWrap) bookWrap.style.display = "grid";
     const metaParts = [`${state.quote.miles.toFixed(2)} miles estimated.`];
@@ -1926,6 +1944,9 @@
     }
     if (bookingPolicy) {
       metaParts.push(`Minimum notice: ${(Number(bookingPolicy.min_notice_min || 0) / 60).toFixed(1).replace(/\.0$/, "")} hours.`);
+    }
+    if (fixedSurcharge > 0) {
+      metaParts.push(`Peak time surcharge: ${money(fixedSurcharge)}.`);
     }
     if (state.quote.balance_due > 0 && state.quote.balance_due_deadline) {
       metaParts.push(`Balance invoice due by ${new Date(state.quote.balance_due_deadline).toLocaleString()}.`);
@@ -2161,6 +2182,7 @@
       fixed_rate_name: state.quote.fixed_rate_name || null,
       peak_multiplier: Number(state.quote.peak_multiplier || 1),
       fixed_surcharge: Number(state.quote.fixed_surcharge || 0),
+      fixed_surcharge_label: state.quote.fixed_surcharge_label || null,
       route_distance_miles: Number(state.quote.miles || 0),
       route_duration_minutes: Number(state.quote.route_duration_minutes || state.quote.duration_minutes || 0),
       return_url: currentPageUrl(),
