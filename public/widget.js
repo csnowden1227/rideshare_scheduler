@@ -796,6 +796,7 @@
       const identifiers = [
         row.id,
         row.hourly_booking_id,
+        row.vehicle_slot_id,
         row.booking_description,
       ]
         .map((item) => String(item || "").trim())
