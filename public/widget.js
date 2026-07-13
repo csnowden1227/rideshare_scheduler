@@ -1430,6 +1430,8 @@
     const normalizedStartTime = startTimeValue && !Number.isNaN(startTimeValue.getTime())
       ? startTimeValue.toISOString()
       : "";
+    const pickupCoords = extractPlaceCoordinates(state.places.pickup);
+    const dropoffCoords = extractPlaceCoordinates(state.places.dropoff);
 
     return {
       location_id: locationId,
@@ -1440,6 +1442,10 @@
         phone: formatPhoneForUi(document.getElementById("cd_phone")?.value.trim()),
       pickup_address: getAddressValue("pickup"),
       dropoff_address: getAddressValue("dropoff"),
+      pickup_lat: pickupCoords?.lat ?? "",
+      pickup_lng: pickupCoords?.lng ?? "",
+      dropoff_lat: dropoffCoords?.lat ?? "",
+      dropoff_lng: dropoffCoords?.lng ?? "",
       start_time: normalizedStartTime,
       start_time_local: rawStartTime || "",
       booking_mode: selectedBookingMode(),

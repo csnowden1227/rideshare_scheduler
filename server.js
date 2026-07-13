@@ -8501,9 +8501,29 @@ async function computeRoute({
       const hours = Number((iso.match(/(\d+)H/) || [])[1] || 0);
       const mins = Number((iso.match(/(\d+)M/) || [])[1] || 0);
       const secs = Number((iso.match(/(\d+)S/) || [])[1] || 0);
+      const routeDistanceMeters = Number(route.distanceMeters || 0);
+
+      if (!Number.isFinite(routeDistanceMeters) || routeDistanceMeters <= 0) {
+        const fallbackMetrics = await getRouteMetrics({
+          origin,
+          destination,
+          originLat,
+          originLng,
+          destinationLat,
+          destinationLng,
+          mapsApiKey: key,
+          departureISO,
+        });
+
+        return {
+          distanceMeters: Math.max(0, Number(fallbackMetrics.distanceMiles || 0) * 1609.34),
+          durationMinutes: fallbackMetrics.durationMinutes || (hours * 60 + mins + Math.ceil(secs / 60)) || DEFAULT_TRIP_MINUTES,
+          source: fallbackMetrics.source || "fallback",
+        };
+      }
 
       return {
-        distanceMeters: Number(route.distanceMeters || 0),
+        distanceMeters: routeDistanceMeters,
         durationMinutes: hours * 60 + mins + Math.ceil(secs / 60),
         source: "google",
       };
@@ -16695,6 +16715,10 @@ app.post("/api/widget-quote", async (req, res) => {
           origin: pickup_address,
           destination: dropoff_address,
           departureISO: start_time,
+          originLat: req.body?.pickup_lat,
+          originLng: req.body?.pickup_lng,
+          destinationLat: req.body?.dropoff_lat,
+          destinationLng: req.body?.dropoff_lng,
           mapsApiKey: profile.maps_api_key || null,
         });
 
