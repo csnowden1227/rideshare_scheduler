@@ -1165,7 +1165,7 @@
     if (mode !== "hourly" && hourlySelect) hourlySelect.value = "";
   }
 
-  function render() {
+  async function render() {
     const root = getRoot();
     const fleet = Array.isArray(state.config?.fleet) ? state.config.fleet : [];
     const colors = getBrandColors();
@@ -1397,8 +1397,8 @@
 
     bindVehiclePicker();
     updateBookingModeUI();
-    void initAutocomplete();
     applyPrefillFromPageQuery();
+    await initAutocomplete();
   }
 
   function showError(message) {
