@@ -9559,7 +9559,7 @@ function calculateCompleteQuote({
 
   const rideLabel =
     fixedSurcharge > 0
-      ? `${ride.label} + $${fixedSurcharge.toFixed(2)} peak surcharge`
+      ? `${ride.label} + $${fixedSurcharge.toFixed(2)} Peak Time SCG`
       : ride.label;
 
   return {
@@ -16878,7 +16878,7 @@ app.post("/api/widget-quote", async (req, res) => {
       peak_multiplier: quote.ride.multiplier || 1,
       fixed_surcharge: quote.ride.surcharge || 0,
       fixed_surcharge_label: quote.ride.mode === "fixed" && Number(quote.ride.surcharge || 0) > 0
-        ? "Peak time surcharge"
+        ? "Peak Time SCG"
         : null,
       hourly_booking_name: quote.ride.mode === "hourly" ? quote.ride.hourly_booking_name || null : null,
       hourly_booking_slot_id: quote.ride.mode === "hourly" ? quote.ride.vehicle_slot_id || null : null,

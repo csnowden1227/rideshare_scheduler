@@ -1471,7 +1471,7 @@
               </div>
               <div id="cd_summary" style="display:none;margin-top:14px;padding:18px;border-radius:20px;background:#f8fafc;border:1px solid #dbe4f0;">
                 <div style="display:flex;justify-content:space-between;margin-bottom:10px;"><span>Service Cost</span><strong id="res_quoted_price">$0.00</strong></div>
-                <div id="res_peak_surcharge_row" style="display:none;justify-content:space-between;margin-bottom:10px;"><span id="res_peak_surcharge_label">Peak time surcharge</span><strong id="res_peak_surcharge_amount">$0.00</strong></div>
+                <div id="res_peak_surcharge_row" style="display:none;justify-content:space-between;margin-bottom:10px;"><span id="res_peak_surcharge_label">Peak Time SCG</span><strong id="res_peak_surcharge_amount">$0.00</strong></div>
                 <div style="display:flex;justify-content:space-between;margin-bottom:10px;"><span>Add-Ons</span><strong id="res_addons">$0.00</strong></div>
                 <div style="display:flex;justify-content:space-between;margin-bottom:10px;"><span>Tax</span><strong id="res_tax">$0.00</strong></div>
                 <div style="display:flex;justify-content:space-between;margin-bottom:10px;"><span>Minimum Deposit</span><strong id="res_deposit_amount">$0.00</strong></div>
@@ -1926,7 +1926,7 @@
     const peakSurchargeAmount = document.getElementById("res_peak_surcharge_amount");
     if (peakSurchargeRow && peakSurchargeLabel && peakSurchargeAmount) {
       if (fixedSurcharge > 0) {
-        peakSurchargeLabel.textContent = state.quote.fixed_surcharge_label || "Peak time surcharge";
+        peakSurchargeLabel.textContent = state.quote.fixed_surcharge_label || "Peak Time SCG";
         peakSurchargeAmount.textContent = money(fixedSurcharge);
         peakSurchargeRow.style.display = "flex";
       } else {
@@ -1946,7 +1946,7 @@
       metaParts.push(`Minimum notice: ${(Number(bookingPolicy.min_notice_min || 0) / 60).toFixed(1).replace(/\.0$/, "")} hours.`);
     }
     if (fixedSurcharge > 0) {
-      metaParts.push(`Peak time surcharge: ${money(fixedSurcharge)}.`);
+      metaParts.push(`Peak Time SCG: ${money(fixedSurcharge)}.`);
     }
     if (state.quote.balance_due > 0 && state.quote.balance_due_deadline) {
       metaParts.push(`Balance invoice due by ${new Date(state.quote.balance_due_deadline).toLocaleString()}.`);
@@ -2012,7 +2012,7 @@
     const notes = [];
     if (state.quote.fixed_rate_name) notes.push(`Fixed-rate zone applied: ${state.quote.fixed_rate_name}.`);
     if (state.quote.fixed_surcharge > 0) {
-      notes.push(`Time-based fixed-route surcharge applied: ${money(state.quote.fixed_surcharge)}.`);
+      notes.push(`Peak Time SCG applied: ${money(state.quote.fixed_surcharge)}.`);
     }
     notes.push(
       state.quote.balance_due > 0
