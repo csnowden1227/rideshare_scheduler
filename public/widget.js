@@ -712,7 +712,21 @@
 
   function eventByName(name) {
     if (!name) return null;
-    return (state.config?.events || []).find((event) => event.event_name === name) || null;
+    const raw = String(name || "").trim();
+    if (!raw) return null;
+
+    const [eventName, eventDate = ""] = raw.split("|||").map((value) => String(value || "").trim());
+    const targetName = eventName.toLowerCase();
+
+    const matches = (state.config?.events || []).filter((event) => String(event.event_name || "").trim().toLowerCase() === targetName);
+    if (!matches.length) return null;
+
+    if (eventDate) {
+      const dated = matches.find((event) => String(event.event_date || "").trim() === eventDate);
+      if (dated) return dated;
+    }
+
+    return matches[0] || null;
   }
 
   function selectedBookingMode() {
@@ -1165,7 +1179,8 @@
       `<option value="">Select event</option>`,
       ...events.map((event) => {
         const label = `${event.event_name || "Special Event"}${event.event_date ? ` - ${event.event_date}` : ""}`;
-        return `<option value="${escapeHtml(event.event_name || "")}">${escapeHtml(label)}</option>`;
+        const value = [event.event_name || "", event.event_date || ""].join("|||");
+        return `<option value="${escapeHtml(value)}">${escapeHtml(label)}</option>`;
       }),
     ];
 
@@ -1407,7 +1422,7 @@
                 <div id="cd_payment_notice" style="margin-top:12px;font-size:12px;color:#475569;"></div>
               </div>
               <div id="cd_summary" style="display:none;margin-top:14px;padding:18px;border-radius:20px;background:#f8fafc;border:1px solid #dbe4f0;">
-                <div style="display:flex;justify-content:space-between;margin-bottom:10px;"><span>Base + Distance</span><strong id="res_quoted_price">$0.00</strong></div>
+                <div style="display:flex;justify-content:space-between;margin-bottom:10px;"><span>Ride Subtotal</span><strong id="res_quoted_price">$0.00</strong></div>
                 <div style="display:flex;justify-content:space-between;margin-bottom:10px;"><span>Add-Ons</span><strong id="res_addons">$0.00</strong></div>
                 <div style="display:flex;justify-content:space-between;margin-bottom:10px;"><span>Tax</span><strong id="res_tax">$0.00</strong></div>
                 <div style="display:flex;justify-content:space-between;margin-bottom:10px;"><span>Minimum Deposit</span><strong id="res_deposit_amount">$0.00</strong></div>
@@ -1848,7 +1863,7 @@
     document.getElementById("cd_summary").style.display = "block";
     const bookWrap = document.getElementById("cd_book_wrap");
     if (bookWrap) bookWrap.style.display = "grid";
-    const metaParts = [`${state.quote.miles.toFixed(2)} miles estimated.`, `${state.quote.pricing_label}.`];
+    const metaParts = [`${state.quote.miles.toFixed(2)} miles estimated.`];
     const bookingPolicy = state.quote.booking_policy || null;
     if (bookingPolicy?.instant_booking_enabled) {
       metaParts.push(`Instant booking window: ${formatTimeLabel(bookingPolicy.instant_booking_start_time)} to ${formatTimeLabel(bookingPolicy.instant_booking_end_time)}.`);
@@ -1923,9 +1938,6 @@
     if (state.quote.fixed_rate_name) notes.push(`Fixed-rate zone applied: ${state.quote.fixed_rate_name}.`);
     if (state.quote.fixed_surcharge > 0) {
       notes.push(`Time-based fixed-route surcharge applied: ${money(state.quote.fixed_surcharge)}.`);
-    }
-    if (state.quote.peak_multiplier > 1 && !state.quote.fixed_rate_name) {
-      notes.push(`Peak pricing applied at ${state.quote.peak_multiplier.toFixed(2)}x.`);
     }
     notes.push(
       state.quote.balance_due > 0

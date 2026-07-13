@@ -6217,10 +6217,7 @@ function applyStandardPricingWindow({
 
   return {
     ...standardResult,
-    label:
-      multiplier > 1
-        ? `${standardResult.label} with ${multiplier.toFixed(2)}x multiplier`
-        : standardResult.label,
+    label: standardResult.label,
     multiplier: roundMoney(multiplier),
     surcharge: roundMoney(surcharge),
     subtotal: roundMoney(subtotal),
@@ -9266,22 +9263,45 @@ function resolveEvent(
   events = [],
   selectedEventName = ""
 ) {
-  const target = String(selectedEventName || "")
-    .trim()
-    .toLowerCase();
+  const rawTarget = String(selectedEventName || "")
+    .trim();
+
+  if (!rawTarget) {
+    return null;
+  }
+
+  const [targetName, targetDate = ""] = rawTarget
+    .split("|||")
+    .map((value) => String(value || "").trim());
+
+  const target = targetName.toLowerCase();
 
   if (!target) {
     return null;
   }
 
-  return (Array.isArray(events)
-    ? events
-    : []
-  ).find((event = {}) => {
+  const matches = (Array.isArray(events) ? events : []).filter((event = {}) => {
     return String(event.event_name || "")
       .trim()
       .toLowerCase() === target;
-  }) || null;
+  });
+
+  if (!matches.length) {
+    return null;
+  }
+
+  if (targetDate) {
+    const exactDateMatch = matches.find((event = {}) => {
+      return String(event.event_date || "")
+        .trim() === targetDate;
+    });
+
+    if (exactDateMatch) {
+      return exactDateMatch;
+    }
+  }
+
+  return matches[0] || null;
 }
 
 function validateEventDate({
@@ -9409,10 +9429,17 @@ function calculateRideSection({
       selectedEventName
     );
 
-    return calculateEventPricing({
+    const eventResult = calculateEventPricing({
       event,
       vehicle,
       miles,
+      startTimeLocal,
+    });
+
+    return applyStandardPricingWindow({
+      standardResult: eventResult,
+      pricingWindows,
+      vehicle,
       startTimeLocal,
     });
   }
@@ -14287,6 +14314,17 @@ async function createBookingRecord(input, { paymentLink = null, triggerWebhook =
   });
   const bookingStatus = isBookingConfirmed ? "confirmed" : "pending";
   const normalizedCustomerPhone = normalizePhoneNumber(phone);
+  const eventOption = selected_event_name
+    ? resolveEvent(
+        safeParseJson(profile.events, []),
+        selected_event_name
+      )
+    : null;
+  const resolvedSelectedEventName = eventOption?.event_name
+    || String(selected_event_name || "")
+      .split("|||")[0]
+      .trim()
+    || null;
   const hourlyOption = bookingModeNormalized === "hourly"
     ? resolveHourlyOption({
         hourlyBookings: safeParseJson(profile.hourly_bookings, []),
@@ -14432,7 +14470,7 @@ async function createBookingRecord(input, { paymentLink = null, triggerWebhook =
           carry_on_count,
           checked_bag_count,
           additional_items_aboard,
-          selected_event_name,
+          selected_event_name: resolvedSelectedEventName,
           selected_fixed_destination,
           selected_hourly_booking: resolvedHourlyBookingName,
           hourly_hours: resolvedHourlyHours,
