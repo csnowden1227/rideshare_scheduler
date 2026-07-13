@@ -6196,6 +6196,7 @@ function applyStandardPricingWindow({
   if (!matchedWindow) {
     return {
       ...standardResult,
+      peak_time_surcharge: 0,
       pricing_window: null,
     };
   }
@@ -6205,34 +6206,42 @@ function applyStandardPricingWindow({
     positiveNumber(matchedWindow.multiplier, 1)
   );
 
-  const surcharge = positiveNumber(
-    matchedWindow.fixed_surcharge,
+  const serviceCost = positiveNumber(
+    standardResult.subtotal,
     0
   );
-
-  const multipliedAmount =
-    standardResult.subtotal * multiplier;
-
-  const subtotal = multipliedAmount + surcharge;
+  const peakTimeSurcharge = calculatePeakTimeSurcharge(
+    serviceCost,
+    multiplier
+  );
+  const subtotal = serviceCost + peakTimeSurcharge;
 
   return {
     ...standardResult,
     label: standardResult.label,
     multiplier: roundMoney(multiplier),
-    surcharge: roundMoney(surcharge),
+    surcharge: roundMoney(peakTimeSurcharge),
+    peak_time_surcharge: roundMoney(peakTimeSurcharge),
     subtotal: roundMoney(subtotal),
     pricing_window: {
       day: matchedWindow.day || "",
       start_time: matchedWindow.start_time || "",
       end_time: matchedWindow.end_time || "",
       multiplier: roundMoney(multiplier),
-      fixed_surcharge: roundMoney(surcharge),
+      peak_time_surcharge: roundMoney(peakTimeSurcharge),
       extra_buffer_min: positiveNumber(
         matchedWindow.buffer_min,
         0
       ),
     },
   };
+}
+
+function calculatePeakTimeSurcharge(serviceCost = 0, multiplier = 1) {
+  const normalizedServiceCost = positiveNumber(serviceCost, 0);
+  const normalizedMultiplier = Math.max(1, positiveNumber(multiplier, 1));
+
+  return roundMoney(normalizedServiceCost * (normalizedMultiplier - 1));
 }
 
 function getAdditionalTrafficBufferMinutes({
@@ -9518,17 +9527,21 @@ function calculateCompleteQuote({
     passengerCount,
   });
 
-  const fixedSurcharge =
+  const timeBasedSurcharge =
     ride.mode === "fixed"
       ? getFixedSurcharge(
           startTimeLocal,
           pricingWindows,
           vehicle?.vehicle_type || ""
         )
-      : 0;
+      : positiveNumber(
+          ride.peak_time_surcharge ?? ride.surcharge,
+          0
+        );
 
   const rideSubtotal =
-    roundMoney(ride.subtotal) + fixedSurcharge;
+    roundMoney(ride.subtotal) +
+    (ride.mode === "fixed" ? timeBasedSurcharge : 0);
 
   const subtotalBeforeFees =
     rideSubtotal + addons.total;
@@ -9558,8 +9571,8 @@ function calculateCompleteQuote({
   });
 
   const rideLabel =
-    fixedSurcharge > 0
-      ? `${ride.label} + $${fixedSurcharge.toFixed(2)} Peak Time SCG`
+    timeBasedSurcharge > 0
+      ? `${ride.label} + $${timeBasedSurcharge.toFixed(2)} Peak Time SCG`
       : ride.label;
 
   return {
@@ -9567,10 +9580,12 @@ function calculateCompleteQuote({
       ...ride,
       label: rideLabel,
       subtotal: roundMoney(rideSubtotal),
-      surcharge: roundMoney(fixedSurcharge),
+      surcharge: roundMoney(timeBasedSurcharge),
+      peak_time_surcharge: roundMoney(timeBasedSurcharge),
     },
     addons,
-    fixed_surcharge: roundMoney(fixedSurcharge),
+    fixed_surcharge: roundMoney(timeBasedSurcharge),
+    peak_time_surcharge: roundMoney(timeBasedSurcharge),
     service_fee: serviceFee,
     tax,
     subtotal_before_fees:
@@ -16868,7 +16883,8 @@ app.post("/api/widget-quote", async (req, res) => {
       pricing_label: quote.ride.label,
       peak_multiplier: quote.ride.multiplier || 1,
       fixed_surcharge: quote.ride.surcharge || 0,
-      fixed_surcharge_label: quote.ride.mode === "fixed" && Number(quote.ride.surcharge || 0) > 0
+      peak_time_surcharge: quote.ride.peak_time_surcharge || quote.ride.surcharge || 0,
+      fixed_surcharge_label: Number(quote.ride.surcharge || 0) > 0
         ? "Peak Time SCG"
         : null,
       hourly_booking_name: quote.ride.mode === "hourly" ? quote.ride.hourly_booking_name || null : null,

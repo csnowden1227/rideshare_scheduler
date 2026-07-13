@@ -1908,9 +1908,9 @@
   function renderQuoteSummary() {
     if (!state.quote) return;
 
-    const fixedSurcharge = state.quote.booking_mode === "fixed" ? Number(state.quote.fixed_surcharge || 0) : 0;
-    const baseServiceCost = fixedSurcharge > 0
-      ? Math.max(0, Number(state.quote.quoted_price || 0) - fixedSurcharge)
+    const peakSurcharge = Number(state.quote.fixed_surcharge || 0);
+    const baseServiceCost = peakSurcharge > 0
+      ? Math.max(0, Number(state.quote.quoted_price || 0) - peakSurcharge)
       : Number(state.quote.quoted_price || 0);
 
     document.getElementById("res_quoted_price").textContent = money(baseServiceCost);
@@ -1925,9 +1925,9 @@
     const peakSurchargeLabel = document.getElementById("res_peak_surcharge_label");
     const peakSurchargeAmount = document.getElementById("res_peak_surcharge_amount");
     if (peakSurchargeRow && peakSurchargeLabel && peakSurchargeAmount) {
-      if (fixedSurcharge > 0) {
+      if (peakSurcharge > 0) {
         peakSurchargeLabel.textContent = state.quote.fixed_surcharge_label || "Peak Time SCG";
-        peakSurchargeAmount.textContent = money(fixedSurcharge);
+        peakSurchargeAmount.textContent = money(peakSurcharge);
         peakSurchargeRow.style.display = "flex";
       } else {
         peakSurchargeRow.style.display = "none";
@@ -1945,8 +1945,8 @@
     if (bookingPolicy) {
       metaParts.push(`Minimum notice: ${(Number(bookingPolicy.min_notice_min || 0) / 60).toFixed(1).replace(/\.0$/, "")} hours.`);
     }
-    if (fixedSurcharge > 0) {
-      metaParts.push(`Peak Time SCG: ${money(fixedSurcharge)}.`);
+    if (peakSurcharge > 0) {
+      metaParts.push(`Peak Time SCG: ${money(peakSurcharge)}.`);
     }
     if (state.quote.balance_due > 0 && state.quote.balance_due_deadline) {
       metaParts.push(`Balance invoice due by ${new Date(state.quote.balance_due_deadline).toLocaleString()}.`);
