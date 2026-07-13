@@ -9163,6 +9163,29 @@ function resolveHourlyBookingBySlotId(hourlyBookings = [], selectedHourlyBooking
   return bookings.find((row = {}) => String(row.vehicle_slot_id || "").trim().toLowerCase() === targetBooking) || null;
 }
 
+function fixedRateKey(rate = {}) {
+  const normalizeText = (value) =>
+    String(value || "")
+      .trim()
+      .toLowerCase();
+  const normalizeMoney = (value, digits = 2) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed.toFixed(digits) : "";
+  };
+
+  return JSON.stringify({
+    location_name: normalizeText(rate.location_name),
+    route_name: normalizeText(rate.route_name),
+    pickup_keyword: normalizeText(rate.pickup_keyword),
+    dropoff_keyword: normalizeText(rate.dropoff_keyword),
+    vehicle_type: normalizeText(rate.vehicle_type),
+    lat: normalizeMoney(rate.lat, 6),
+    lng: normalizeMoney(rate.lng, 6),
+    radius: normalizeMoney(rate.radius, 2),
+    fixed_price: normalizeMoney(rate.fixed_price, 2),
+  });
+}
+
 function resolveFixedRate(
   fixedRates = [],
   selectedName = ""
@@ -9183,13 +9206,15 @@ function resolveFixedRate(
       rate.id,
       rate.location_name,
       rate.route_name,
+      rate.pickup_keyword,
+      rate.dropoff_keyword,
     ]
       .map((value) =>
         String(value || "").trim().toLowerCase()
       )
       .filter(Boolean);
 
-    return names.includes(target);
+    return names.includes(target) || fixedRateKey(rate) === target;
   }) || null;
 }
 
