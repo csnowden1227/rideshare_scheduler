@@ -1825,8 +1825,7 @@
         throw new Error("Select a fixed destination to continue.");
       }
 
-      const matchedFixedName = fixedRateLabel(matchedFixedRate);
-      if (!matchedFixedRate || selectedFixedName !== matchedFixedName) {
+      if (!matchedFixedRate) {
         throw new Error(`This trip must touch the ${selectedFixedName} fixed destination geofence.`);
       }
     }
