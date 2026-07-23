@@ -197,6 +197,14 @@
       line-height: 1.7;
       font-size: 13px;
     }
+    .section-kicker {
+      margin: 0 0 8px;
+      font-size: 12px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+      color: var(--brand-accent);
+    }
     .grid {
       display: grid;
       gap: 18px;
@@ -227,6 +235,11 @@
       margin: 0 0 12px;
       color: var(--muted);
       line-height: 1.7;
+    }
+    .section-cta {
+      margin-top: 18px;
+      display: flex;
+      justify-content: flex-start;
     }
     .vehicle-grid {
       display: grid;
@@ -408,11 +421,70 @@
       margin-bottom: 4px;
       color: var(--brand-primary);
     }
+    .faq-list {
+      display: grid;
+      gap: 12px;
+      margin-top: 14px;
+    }
+    .faq-item {
+      border: 1px solid var(--brand-line);
+      border-radius: 18px;
+      padding: 16px 18px;
+      background: #fff;
+    }
+    .faq-item h3 {
+      margin: 0 0 8px;
+      font-size: 16px;
+      color: var(--brand-primary);
+      line-height: 1.35;
+    }
+    .faq-item p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.75;
+    }
+    .pricing-band {
+      display: grid;
+      grid-template-columns: 1.1fr 0.9fr;
+      gap: 18px;
+      align-items: start;
+    }
+    .price-card {
+      border: 1px solid var(--brand-line);
+      border-radius: 22px;
+      padding: 20px;
+      background: linear-gradient(180deg, #fffdf7 0%, #ffffff 100%);
+    }
+    .price-card h3 {
+      margin: 0 0 8px;
+      font-size: 20px;
+      color: var(--brand-primary);
+    }
+    .price-stack {
+      display: grid;
+      gap: 10px;
+      margin-top: 14px;
+    }
+    .price-line {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      border-bottom: 1px solid #f1e7c5;
+      padding-bottom: 10px;
+      color: #334155;
+      line-height: 1.6;
+    }
+    .price-line strong {
+      color: var(--brand-primary);
+    }
     @media (max-width: 900px) {
       .hero-layout {
         grid-template-columns: 1fr;
       }
       .vehicle-grid {
+        grid-template-columns: 1fr;
+      }
+      .pricing-band {
         grid-template-columns: 1fr;
       }
       .grid-2,
@@ -473,7 +545,6 @@
             <a id="personal-link" class="button button-primary hidden" href="#" target="_blank" rel="noopener noreferrer">Open Personal Booking Link</a>
             <button id="copy-link-btn" class="button button-secondary hidden" type="button">Copy Booking Link</button>
             <a id="apply-link" class="button button-quiet hidden" href="#" target="_blank" rel="noopener noreferrer">Apply and Pay for Access</a>
-            <a class="button button-secondary" href="/dispatch-network-manager.html">View Dispatch Manager</a>
           </div>
           <div id="hero-status" class="muted" style="margin-top: 14px; color: rgba(255,255,255,0.9); line-height: 1.8;">
             Driver partner pages are paid access. A driver must apply, subscribe to the partner page, and stay active in good standing before the personal booking link is enabled.
@@ -505,6 +576,7 @@
 
     <section class="grid">
       <article class="card fleet-section">
+        <p class="section-kicker">Step 1 of 5</p>
         <h2>Fleet Template</h2>
         <p class="fleet-intro">
           Drivers can present these four cars as the examples in their personal luxury chauffeur page. Use two vehicle categories with two cars in each category.
@@ -552,9 +624,13 @@
             </div>
           </div>
         </div>
+        <div class="section-cta">
+          <a class="button button-primary" href="/partner-onboarding.html">Start Paid Partner Signup</a>
+        </div>
       </article>
 
       <article class="card">
+        <p class="section-kicker">Step 2 of 5</p>
         <h2>The Strategy</h2>
         <p>
           Position drivers as business development partners. They are not just hired hands. They are the people who bring the client,
@@ -594,6 +670,9 @@
             </p>
           </div>
         </div>
+        <div class="section-cta">
+          <a class="button button-primary" href="/dispatch-network-manager.html">Open Dispatch Manager</a>
+        </div>
       </article>
 
       <article class="card">
@@ -621,6 +700,7 @@
     </section>
 
     <section class="card" style="margin-top: 18px; background: linear-gradient(180deg, #ffffff 0%, #fafaff 100%);">
+      <p class="section-kicker">Step 3 of 5</p>
       <h2>How It Connects To Dispatch</h2>
       <p>
         The recruiting page brings in the lead, but the dispatcher manager turns that lead into a finished trip.
@@ -661,11 +741,11 @@
       </div>
       <div class="button-row">
         <a class="button button-primary" href="/network-dispatch.html">View Dispatch Workflow</a>
-        <a class="button button-secondary" href="/dispatch-network-manager.html">Open Dispatch Manager</a>
       </div>
     </section>
 
     <section class="card" style="margin-top: 18px;">
+      <p class="section-kicker">Step 4 of 5</p>
       <h2>Paid Partner Access</h2>
       <p>
         The partner page is a paid membership feature. Drivers must sign up, purchase access, and be approved before they receive
@@ -689,37 +769,30 @@
       </div>
       <div class="button-row">
         <a class="button button-primary" href="/addons.html#driver-partner-access">Review Partner Pricing</a>
-        <a class="button button-secondary" href="/partner-onboarding.html">Open Partner Onboarding</a>
       </div>
     </section>
 
-    <section class="grid-2" style="margin-top: 18px;">
-      <article class="card">
-        <h2>Recruiting Pitch</h2>
-        <div class="quote">
-          <strong>Short version</strong>
-          What if you could build your own luxury chauffeur business without buying a luxury vehicle?
-          Bring your clients to your personal booking page. When they book an hourly reservation at least 48 hours in advance,
-          we provide the vehicle, process the payment, manage dispatch, and pay you after the trip. You focus on the relationship
-          and the experience. We handle the operations.
+    <section class="card" style="margin-top: 18px;">
+      <p class="section-kicker">Step 5 of 5</p>
+      <h2>Frequently Asked Questions</h2>
+      <p>Keep this short and direct so drivers can decide fast.</p>
+      <div class="faq-list">
+        <div class="faq-item">
+          <h3>Do I need to own a luxury vehicle?</h3>
+          <p>No. The platform provides the vehicle after the client books the hourly trip at least 48 hours in advance.</p>
         </div>
-        <div class="button-row">
-          <button id="copy-pitch-btn" class="button button-secondary" type="button">Copy Pitch</button>
+        <div class="faq-item">
+          <h3>What kind of bookings can I bring?</h3>
+          <p>Hourly reservations only. This is designed for scheduled, premium trips that are planned ahead of time.</p>
         </div>
-      </article>
-
-      <article class="card">
-        <h2>Elevator Pitch</h2>
-        <p>
-          Imagine earning executive chauffeur income without owning a luxury vehicle. With Chauffeur Deluxe, you bring clients to your
-          personalized booking page. When they reserve an hourly trip at least 48 hours ahead, we provide the luxury vehicle,
-          handle booking, payments, insurance, dispatch, and customer support. You focus on delivering an exceptional ride while we
-          handle the business.
-        </p>
-        <p>
-          Build your own client base, grow your income, and let the platform power the operations behind you.
-        </p>
-      </article>
+        <div class="faq-item">
+          <h3>How do I get paid?</h3>
+          <p>After the trip is completed, the platform handles the booking and pays the driver according to the active partner terms.</p>
+        </div>
+      </div>
+      <div class="section-cta">
+        <a class="button button-primary" href="/partner-onboarding.html">Start Your Application</a>
+      </div>
     </section>
 
     <section class="card" style="margin-top: 18px;">
@@ -734,6 +807,33 @@
         <div class="tag"><strong>Tagline</strong>Drive Luxury Without Buying Luxury.</div>
         <div class="tag"><strong>Tagline</strong>Turn Your Network Into Premium Chauffeur Income.</div>
         <div class="tag"><strong>Tagline</strong>Bring the Client. We Bring the Luxury Vehicle.</div>
+      </div>
+    </section>
+
+    <section class="card" style="margin-top: 18px;">
+      <p class="section-kicker">Final Step</p>
+      <div class="pricing-band">
+        <div>
+          <h2>Start Your Driver Partner Page</h2>
+          <p>
+            This is the paid conversion block. Drivers apply, pay for access, and then receive their branded booking page,
+            thumbnail, and vehicle selection template.
+          </p>
+          <div class="button-row">
+            <a id="final-cta" class="button button-primary" href="/addons.html#driver-partner-access">Apply and Pay for Access</a>
+          </div>
+        </div>
+        <div class="price-card">
+          <h3>Recommended Offer</h3>
+          <div class="price-stack">
+            <div class="price-line"><span>Setup fee</span><strong>$149 one time</strong></div>
+            <div class="price-line"><span>Monthly access</span><strong>$79 / month</strong></div>
+            <div class="price-line"><span>Annual option</span><strong>$790 / year</strong></div>
+          </div>
+          <p class="muted" style="margin: 14px 0 0; line-height: 1.7;">
+            Position this as the premium way to let drivers bring clients without owning the vehicle.
+          </p>
+        </div>
       </div>
     </section>
   </div>
@@ -753,7 +853,6 @@
     const personalLink = document.getElementById("personal-link");
     const copyLinkBtn = document.getElementById("copy-link-btn");
     const applyLink = document.getElementById("apply-link");
-    const copyPitchBtn = document.getElementById("copy-pitch-btn");
     const previewName = document.getElementById("preview-name");
     const previewRole = document.getElementById("preview-role");
     const driverPhotoPreview = document.getElementById("driver-photo-preview");
@@ -815,17 +914,6 @@
       if (vehicleType) target.searchParams.set("vehicle_type", vehicleType);
       if (vehicleName) target.searchParams.set("vehicle_name", vehicleName);
       cta.href = target.toString();
-    });
-
-    copyPitchBtn.addEventListener("click", async () => {
-      try {
-        await navigator.clipboard.writeText(pitchText);
-        copyPitchBtn.textContent = "Pitch Copied";
-        setTimeout(() => (copyPitchBtn.textContent = "Copy Pitch"), 1500);
-      } catch (err) {
-        copyPitchBtn.textContent = "Copy unavailable";
-        setTimeout(() => (copyPitchBtn.textContent = "Copy Pitch"), 1500);
-      }
     });
   </script>
 </body>
