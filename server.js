@@ -4063,6 +4063,7 @@ async function addCrmConflictMarkerToContact({
   locationId,
   contactId,
   noteBody,
+  tags = ["booking_conflict", "urgent"],
   crmAuthOptions = {},
 }) {
   if (!locationId || !contactId) {
@@ -4080,7 +4081,7 @@ async function addCrmConflictMarkerToContact({
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        tags: ["booking_conflict"],
+        tags: Array.isArray(tags) ? tags.filter(Boolean) : ["booking_conflict"],
       }),
     },
     [400, 401, 403],
@@ -4133,6 +4134,50 @@ async function addCrmConflictMarkerToContact({
   };
 }
 
+function buildDriverConflictAlertContent({
+  vehicleLabel,
+  pickupAddress,
+  dropoffAddress,
+  startTime,
+  endTime,
+  conflictTitle,
+  farmOutLink,
+}) {
+  const subject = `URGENT: Booking conflict for ${vehicleLabel || "your vehicle"}`;
+  const lines = [
+    "URGENT: We detected overlapping bookings for your vehicle.",
+    "Please contact the customer immediately and confirm next steps.",
+    vehicleLabel ? `Vehicle: ${vehicleLabel}` : null,
+    startTime ? `Start: ${startTime}` : null,
+    endTime ? `End: ${endTime}` : null,
+    pickupAddress ? `Pickup: ${pickupAddress}` : null,
+    dropoffAddress ? `Dropoff: ${dropoffAddress}` : null,
+    conflictTitle ? `Conflicts with: ${conflictTitle}` : null,
+    farmOutLink ? `Farm-out Link: ${farmOutLink}` : null,
+  ].filter(Boolean);
+
+  const html = `
+    <div style="font-family:Segoe UI,Tahoma,Geneva,Verdana,sans-serif;color:#0f172a;line-height:1.7;">
+      <p style="margin:0 0 8px;color:#b91c1c;font-size:12px;font-weight:800;letter-spacing:0.08em;">URGENT</p>
+      <h2 style="margin:0 0 12px;">Booking Conflict Detected</h2>
+      <p style="margin:0 0 12px;">Please contact the customer immediately and resolve the overlapping booking.</p>
+      ${vehicleLabel ? `<p style="margin:0 0 6px;"><strong>Vehicle:</strong> ${escapeHtml(vehicleLabel)}</p>` : ""}
+      ${startTime ? `<p style="margin:0 0 6px;"><strong>Start:</strong> ${escapeHtml(startTime)}</p>` : ""}
+      ${endTime ? `<p style="margin:0 0 6px;"><strong>End:</strong> ${escapeHtml(endTime)}</p>` : ""}
+      ${pickupAddress ? `<p style="margin:0 0 6px;"><strong>Pickup:</strong> ${escapeHtml(pickupAddress)}</p>` : ""}
+      ${dropoffAddress ? `<p style="margin:0 0 6px;"><strong>Dropoff:</strong> ${escapeHtml(dropoffAddress)}</p>` : ""}
+      ${conflictTitle ? `<p style="margin:0 0 16px;"><strong>Conflicts With:</strong> ${escapeHtml(conflictTitle)}</p>` : ""}
+      ${farmOutLink ? `<p style="margin:0;"><a href="${escapeHtml(farmOutLink)}" style="color:#1d4ed8;font-weight:700;text-decoration:none;">Open conflict details</a></p>` : ""}
+    </div>
+  `;
+
+  return {
+    subject,
+    message: lines.join("\n"),
+    html,
+  };
+}
+
 async function sendBookingConflictNotifications({
   locationId,
   vehicleSlotId,
@@ -4146,7 +4191,7 @@ async function sendBookingConflictNotifications({
   crmAuthOptions = {},
 }) {
   const summaryLines = [
-    "Booking conflict detected.",
+    "URGENT: Booking conflict detected.",
     vehicleLabel ? `Vehicle: ${vehicleLabel}` : null,
     vehicleSlotId ? `Slot: ${vehicleSlotId}` : null,
     startTime ? `Start: ${startTime}` : null,
@@ -4204,33 +4249,59 @@ async function sendBookingConflictNotifications({
   ) || null;
   const driverName = String(matchedDriver?.driver_name || "").trim();
   const driverPhone = normalizeDriverPhone(matchedDriver?.driver_phone || "");
+  const driverEmail = normalizeDriverEmail(matchedDriver?.driver_email || "");
 
-  if (driverName && driverPhone) {
+  if (driverName && (driverPhone || driverEmail)) {
     const driverContactId = await upsertCrmContact({
       locationId,
       firstName: driverName,
       lastName: "",
-      phone: driverPhone,
+      phone: driverPhone || undefined,
+      email: driverEmail || undefined,
       crmAuthOptions,
     });
 
     if (driverContactId) {
-      const driverLines = [
-        "A booking conflict was detected for your vehicle.",
-        vehicleLabel ? `Vehicle: ${vehicleLabel}` : null,
-        startTime ? `Start: ${startTime}` : null,
-        endTime ? `End: ${endTime}` : null,
-        pickupAddress ? `Pickup: ${pickupAddress}` : null,
-        dropoffAddress ? `Dropoff: ${dropoffAddress}` : null,
-        farmOutLink ? `Farm-out Link: ${farmOutLink}` : null,
-      ].filter(Boolean);
-
       alertResults.driver = await addCrmConflictMarkerToContact({
         locationId,
         contactId: driverContactId,
-        noteBody: driverLines.join("\n"),
+        noteBody: summaryLines.join("\n"),
+        tags: ["booking_conflict", "urgent"],
         crmAuthOptions,
       });
+
+      const urgentAlert = buildDriverConflictAlertContent({
+        vehicleLabel,
+        pickupAddress,
+        dropoffAddress,
+        startTime,
+        endTime,
+        conflictTitle,
+        farmOutLink,
+      });
+
+      const smsResult = driverPhone
+        ? await sendCrmSmsToContact({
+            locationId,
+            contactId: driverContactId,
+            message: urgentAlert.message,
+            crmAuthOptions,
+          })
+        : { success: false, skipped: true, reason: "Driver phone not available for conflict SMS." };
+
+      const emailResult = driverEmail
+        ? await sendCrmEmailToContact({
+            locationId,
+            contactId: driverContactId,
+            subject: urgentAlert.subject,
+            message: urgentAlert.message,
+            html: urgentAlert.html,
+            crmAuthOptions,
+          })
+        : { success: false, skipped: true, reason: "Driver email not available for conflict email." };
+
+      alertResults.driver_sms = smsResult;
+      alertResults.driver_email = emailResult;
     } else {
       alertResults.driver = {
         success: false,
@@ -4242,7 +4313,7 @@ async function sendBookingConflictNotifications({
     alertResults.driver = {
       success: false,
       skipped: true,
-      reason: "Driver phone not available for conflict alert.",
+      reason: "Driver phone or email not available for conflict alert.",
     };
   }
 
