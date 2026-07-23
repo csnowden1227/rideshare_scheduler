@@ -15453,23 +15453,33 @@ app.post("/api/create-checkout-session", async (req, res) => {
       ? Math.max(4, Number(req.body.hourly_hours || 0) || 0)
       : null;
 
-    const routeMetrics = await getRouteMetrics({
-      origin: req.body.pickup_address,
-      destination: req.body.dropoff_address,
-      originLat: req.body.pickup_lat,
-      originLng: req.body.pickup_lng,
-      destinationLat: req.body.dropoff_lat,
-      destinationLng: req.body.dropoff_lng,
-      mapsApiKey: profile.maps_api_key || null,
-    });
-    const generalBufferMinutes = parseInt(fleetVehicle?.outbound_buffer_min, 10) || BOOKING_BUFFER_MINUTES;
-    const additionalTrafficBufferMinutes = getAdditionalTrafficBufferMinutes({
-      peakWindows: safeParseJson(profile.peak_windows),
-      bookingMode: bookingModeNormalized,
-      startTime: req.body.start_time,
-      vehicleType: fleetVehicle?.vehicle_type || "",
-    });
-    // Keep the route ETA from Maps, then add only the wizard's peak-time buffer.
+    const routeMetrics = bookingModeNormalized === "hourly"
+      ? {
+          distanceMiles: 0,
+          durationMinutes: 0,
+          source: "hourly",
+        }
+      : await getRouteMetrics({
+          origin: req.body.pickup_address,
+          destination: req.body.dropoff_address,
+          originLat: req.body.pickup_lat,
+          originLng: req.body.pickup_lng,
+          destinationLat: req.body.dropoff_lat,
+          destinationLng: req.body.dropoff_lng,
+          mapsApiKey: profile.maps_api_key || null,
+        });
+    const generalBufferMinutes = bookingModeNormalized === "hourly"
+      ? 0
+      : (parseInt(fleetVehicle?.outbound_buffer_min, 10) || BOOKING_BUFFER_MINUTES);
+    const additionalTrafficBufferMinutes = bookingModeNormalized === "hourly"
+      ? 0
+      : getAdditionalTrafficBufferMinutes({
+          peakWindows: safeParseJson(profile.peak_windows),
+          bookingMode: bookingModeNormalized,
+          startTime: req.body.start_time,
+          vehicleType: fleetVehicle?.vehicle_type || "",
+        });
+    // Hourly bookings use only the requested hours; standard bookings use route ETA plus buffers.
     const bookingDurationMinutes = bookingModeNormalized === "hourly" && hourlyHoursForCalendar
       ? (hourlyHoursForCalendar * 60)
       : (routeMetrics.durationMinutes + generalBufferMinutes + additionalTrafficBufferMinutes);
