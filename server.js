@@ -408,6 +408,12 @@ async function ensureBookingSyncColumns() {
       await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS driver_paid_in_full_sms_sent_at TIMESTAMPTZ`);
       await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS driver_sms_last_attempt_at TIMESTAMPTZ`);
       await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS driver_sms_last_error TEXT`);
+      await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS driver_confirmation_email_sent_at TIMESTAMPTZ`);
+      await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS driver_confirmation_email_last_attempt_at TIMESTAMPTZ`);
+      await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS driver_confirmation_email_last_error TEXT`);
+      await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS driver_reminder_email_sent_at TIMESTAMPTZ`);
+      await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS driver_reminder_email_last_attempt_at TIMESTAMPTZ`);
+      await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS driver_reminder_email_last_error TEXT`);
       await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS customer_confirmation_sms_sent_at TIMESTAMPTZ`);
       await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS customer_confirmation_email_sent_at TIMESTAMPTZ`);
       await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS customer_completed_sms_sent_at TIMESTAMPTZ`);
@@ -447,6 +453,54 @@ function logCustomerNotificationAudit(eventName, details = {}) {
 }
 
 async function recordBookingCustomerNotificationAudit({
+  bookingId,
+  sentAtColumn,
+  lastAttemptColumn,
+  lastErrorColumn,
+  success = false,
+  error = null,
+}) {
+  if (!bookingId || !lastAttemptColumn) return;
+  await ensureBookingSyncColumns();
+
+  const assignments = [`${lastAttemptColumn} = NOW()`];
+  if (lastErrorColumn) {
+    assignments.push(`${lastErrorColumn} = $2`);
+  }
+  if (success && sentAtColumn) {
+    assignments.push(`${sentAtColumn} = NOW()`);
+  }
+
+  const params = [bookingId];
+  if (lastErrorColumn) {
+    params.push(error ? String(error).slice(0, 1000) : null);
+  }
+  await pool.query(
+    `UPDATE bookings
+     SET ${assignments.join(", ")}
+     WHERE id = $1`,
+    params
+  );
+}
+
+function logDriverNotificationAudit(eventName, details = {}) {
+  console.log(`[driver-notify] ${eventName}`, {
+    bookingId: details.bookingId || null,
+    locationId: details.locationId || null,
+    notificationType: details.notificationType || null,
+    target: details.target || null,
+    provider: details.provider || null,
+    attempted: details.attempted ?? null,
+    skipped: details.skipped ?? null,
+    success: details.success ?? null,
+    status: details.status || null,
+    reason: details.reason || null,
+    error: details.error || null,
+    triggerSource: details.triggerSource || null,
+  });
+}
+
+async function recordBookingDriverNotificationAudit({
   bookingId,
   sentAtColumn,
   lastAttemptColumn,
@@ -4245,6 +4299,218 @@ async function sendCrmEmailToContact({
   };
 }
 
+async function sendDriverBookingEmailForBooking({
+  bookingId,
+  locationId,
+  emailKind = "confirmation",
+  paymentStatus = null,
+  booking = null,
+  profile = null,
+  req = null,
+  forceReplay = false,
+}) {
+  if (!bookingId || !locationId) {
+    return { success: false, skipped: true, reason: "bookingId and locationId are required." };
+  }
+
+  await ensureBookingSyncColumns();
+
+  const normalizedEmailKind = String(emailKind || "confirmation").trim().toLowerCase() === "reminder" ? "reminder" : "confirmation";
+  const bookingLookup = booking ? { rows: [booking] } : await pool.query(
+    `SELECT *
+     FROM bookings
+     WHERE id = $1
+     LIMIT 1`,
+    [bookingId]
+  );
+  const bookingRow = bookingLookup.rows[0] || null;
+  if (!bookingRow) {
+    return { success: false, skipped: true, reason: "Booking not found." };
+  }
+
+  const profileLookup = profile ? { rows: [profile] } : await pool.query(
+    `SELECT fleet, plan_name, business_name
+     FROM profiles
+     WHERE location_id = $1
+     LIMIT 1`,
+    [locationId]
+  );
+  const profileRow = profileLookup.rows[0] || {};
+  const profileFleet = normalizeFleetRecords(safeParseJson(profileRow.fleet));
+  const matchedDriver = profileFleet.find(
+    (vehicleRow) => String(vehicleRow?.vehicle_slot_id || "").trim() === String(bookingRow.vehicle_slot_id || "").trim()
+  ) || null;
+
+  const driverName = String(matchedDriver?.driver_name || "").trim();
+  const driverEmail = normalizeDriverEmail(matchedDriver?.driver_email || "");
+  const driverPhone = normalizeDriverPhone(matchedDriver?.driver_phone || "");
+  const businessName = String(profileRow.business_name || "Your chauffeur service").trim() || "Your chauffeur service";
+  const planName = String(profileRow.plan_name || "starter").trim().toLowerCase() || "starter";
+
+  console.log("[driver-notify] matched fleet row", {
+    bookingId,
+    locationId,
+    emailKind: normalizedEmailKind,
+    paymentStatus,
+    bookingVehicleSlotId: String(bookingRow.vehicle_slot_id || "").trim() || null,
+    matchedVehicleSlotId: String(matchedDriver?.vehicle_slot_id || "").trim() || null,
+    driverNamePresent: Boolean(driverName),
+    driverEmailPresent: Boolean(driverEmail),
+    driverPhonePresent: Boolean(driverPhone),
+  });
+
+  if (!driverName || !driverEmail) {
+    return {
+      success: false,
+      skipped: true,
+      reason: "Driver name or email is missing.",
+    };
+  }
+
+  if (normalizedEmailKind === "confirmation") {
+    const fullyPaid = paymentStatus === "paid_in_full" || paymentStatus === "paid_in_full_balance_cleared" || Number(bookingRow.balance_due || 0) <= 0;
+    if (!fullyPaid) {
+      return {
+        success: false,
+        skipped: true,
+        reason: "Driver confirmation email only sends when the booking is paid in full.",
+      };
+    }
+    if (bookingRow.driver_confirmation_email_sent_at && !forceReplay) {
+      return {
+        success: false,
+        skipped: true,
+        reason: "Driver confirmation email already sent for this booking.",
+      };
+    }
+  } else if (normalizedEmailKind === "reminder") {
+    if (String(bookingRow.status || "").trim().toLowerCase() !== "confirmed") {
+      return {
+        success: false,
+        skipped: true,
+        reason: "Driver reminder email only sends for confirmed bookings.",
+      };
+    }
+    if (bookingRow.driver_reminder_email_sent_at && !forceReplay) {
+      return {
+        success: false,
+        skipped: true,
+        reason: "Driver reminder email already sent for this booking.",
+      };
+    }
+    const pickupTime = bookingRow.start_time ? new Date(bookingRow.start_time) : null;
+    const minutesUntilPickup = pickupTime ? (pickupTime.getTime() - Date.now()) / 60000 : Number.NaN;
+    if (!Number.isFinite(minutesUntilPickup) || minutesUntilPickup < 105 || minutesUntilPickup > 135) {
+      return {
+        success: false,
+        skipped: true,
+        reason: "Booking is not within the 2-hour reminder window.",
+      };
+    }
+  }
+
+  const tracking = await ensureTrackingSessionForBookingInternal({
+    bookingId,
+    locationId,
+    req,
+  });
+  const shortUrls = await buildShortPublicUrls({
+    req,
+    locationId,
+    bookingId,
+    trackingSessionId: tracking.tracking_session_id || null,
+    tracking: {
+      driver_tracking_url: tracking.driver_url || null,
+    },
+  });
+
+  let driverContactId = await upsertCrmContact({
+    locationId,
+    firstName: driverName,
+    lastName: "",
+    email: driverEmail,
+    phone: driverPhone || undefined,
+  });
+
+  if (!driverContactId && driverPhone) {
+    driverContactId = await upsertCrmContact({
+      locationId,
+      firstName: driverName,
+      lastName: "",
+      email: driverEmail,
+      phone: driverPhone,
+    });
+  }
+
+  if (!driverContactId) {
+    return {
+      success: false,
+      skipped: true,
+      reason: "Unable to resolve driver CRM contact.",
+    };
+  }
+
+  const emailContent = buildDriverBookingEmailContent({
+    booking: bookingRow,
+    vehicle: matchedDriver,
+    businessName,
+    planName,
+    emailKind: normalizedEmailKind,
+    trackingUrl: shortUrls.tracking.driver_tracking_url || tracking.driver_url || null,
+  });
+
+  logDriverNotificationAudit(`${normalizedEmailKind}_email_service_start`, {
+    bookingId,
+    locationId,
+    notificationType: `driver_${normalizedEmailKind}_email`,
+    target: "driver",
+    provider: "crm_email",
+    attempted: true,
+    triggerSource: `sendDriverBookingEmailForBooking.${normalizedEmailKind}`,
+  });
+
+  const sendResult = await sendCrmEmailToContact({
+    locationId,
+    contactId: driverContactId,
+    subject: emailContent.subject,
+    message: emailContent.message,
+    html: emailContent.html,
+  });
+
+  await recordBookingDriverNotificationAudit({
+    bookingId,
+    sentAtColumn: normalizedEmailKind === "reminder" ? "driver_reminder_email_sent_at" : "driver_confirmation_email_sent_at",
+    lastAttemptColumn: normalizedEmailKind === "reminder" ? "driver_reminder_email_last_attempt_at" : "driver_confirmation_email_last_attempt_at",
+    lastErrorColumn: normalizedEmailKind === "reminder" ? "driver_reminder_email_last_error" : "driver_confirmation_email_last_error",
+    success: Boolean(sendResult?.success),
+    error: sendResult?.error || sendResult?.reason || null,
+  });
+
+  logDriverNotificationAudit(`${normalizedEmailKind}_email_service_result`, {
+    bookingId,
+    locationId,
+    notificationType: `driver_${normalizedEmailKind}_email`,
+    target: "driver",
+    provider: "crm_email",
+    attempted: true,
+    skipped: Boolean(sendResult?.skipped),
+    success: Boolean(sendResult?.success),
+    status: sendResult?.status || null,
+    reason: sendResult?.reason || null,
+    error: sendResult?.error || null,
+    triggerSource: `sendDriverBookingEmailForBooking.${normalizedEmailKind}`,
+  });
+
+  return {
+    ...sendResult,
+    booking_id: bookingId,
+    contactId: driverContactId,
+    business_name: businessName,
+    plan_name: planName,
+    tracking_url: shortUrls.tracking.driver_tracking_url || tracking.driver_url || null,
+  };
+}
+
 async function listCrmContactsForLocation({
   locationId,
   limit = 100,
@@ -4700,6 +4966,7 @@ async function hasInstantBookingNotificationLog({
 }
 
 let instantBookingDailyNotificationLoopRunning = false;
+let driverPrePickupEmailReminderLoopRunning = false;
 
 function getLocalWeekdayNumber(timeZone = BOOKING_DISPLAY_TIMEZONE, date = new Date()) {
   try {
@@ -4821,6 +5088,77 @@ async function processDailyInstantBookingNotifications() {
   }
 }
 
+async function processDriverPrePickupEmailReminders() {
+  if (driverPrePickupEmailReminderLoopRunning) return;
+  driverPrePickupEmailReminderLoopRunning = true;
+  try {
+    await ensureBookingSyncColumns();
+    const remindersResult = await pool.query(
+      `SELECT
+        b.id,
+        b.location_id,
+        b.status,
+        b.first_name,
+        b.last_name,
+        b.pickup_address,
+        b.dropoff_address,
+        b.start_time,
+        b.vehicle_slot_id,
+        b.vehicle_type,
+        b.driver_reminder_email_sent_at,
+        p.business_name,
+        p.plan_name,
+        p.fleet
+       FROM bookings b
+       LEFT JOIN profiles p ON p.location_id = b.location_id
+       WHERE LOWER(COALESCE(b.status, '')) = 'confirmed'
+         AND b.start_time IS NOT NULL
+         AND b.driver_reminder_email_sent_at IS NULL
+         AND b.start_time >= NOW() + INTERVAL '1 hour 45 minutes'
+         AND b.start_time < NOW() + INTERVAL '2 hours 15 minutes'
+       ORDER BY b.start_time ASC, b.id ASC`
+    );
+
+    for (const booking of remindersResult.rows) {
+      try {
+        const result = await sendDriverBookingReminderEmailForBooking({
+          bookingId: booking.id,
+          locationId: booking.location_id,
+          booking,
+          profile: {
+            business_name: booking.business_name || null,
+            plan_name: booking.plan_name || "starter",
+            fleet: booking.fleet || null,
+          },
+        });
+
+        console.log("[driver-notify] pickup reminder result", {
+          bookingId: booking.id,
+          locationId: booking.location_id,
+          attempted: Boolean(result?.attempted),
+          skipped: Boolean(result?.skipped),
+          success: Boolean(result?.success),
+          reason: result?.reason || null,
+          error: result?.error || null,
+          status: result?.status || null,
+        });
+      } catch (err) {
+        console.error("[driver-notify] pickup reminder error", {
+          bookingId: booking.id,
+          locationId: booking.location_id,
+          error: err?.message || err,
+        });
+      }
+    }
+  } catch (err) {
+    console.error("[driver-notify] pickup reminder sweep failed", {
+      error: err?.message || err,
+    });
+  } finally {
+    driverPrePickupEmailReminderLoopRunning = false;
+  }
+}
+
 function buildDriverBookingSmsMessage({
   booking,
   paymentState,
@@ -4867,6 +5205,64 @@ function buildDriverBookingSmsMessage({
   }
 
   return lines.join("\n");
+}
+
+function buildDriverBookingEmailContent({
+  booking,
+  vehicle = null,
+  businessName,
+  planName = "starter",
+  emailKind = "confirmation",
+  trackingUrl = null,
+}) {
+  const companyName = businessName || "Your chauffeur service";
+  const customerName = [booking?.first_name, booking?.last_name].filter(Boolean).join(" ").trim() || "Customer";
+  const vehicleName = buildVehicleDisplayName(vehicle, booking?.vehicle_type || "");
+  const pickupTime = formatDisplayDateTime(booking?.start_time) || booking?.start_time || "TBD";
+  const pickupAddress = booking?.pickup_address || "TBD";
+  const dropoffAddress = booking?.dropoff_address || "TBD";
+  const confirmationMode = String(emailKind || "confirmation").trim().toLowerCase() === "reminder" ? "reminder" : "confirmation";
+
+  const subject = confirmationMode === "reminder"
+    ? `${companyName} pickup reminder`
+    : `${companyName} booking confirmed and paid in full`;
+
+  const lines = [];
+  if (confirmationMode === "reminder") {
+    lines.push("This is your 2-hour reminder for the upcoming pickup.");
+  } else {
+    lines.push("Your booking is confirmed and paid in full.");
+  }
+  lines.push(`Customer: ${customerName}`);
+  if (vehicleName) {
+    lines.push(`Vehicle: ${vehicleName}`);
+  }
+  lines.push(`Pickup Time: ${pickupTime}`);
+  lines.push(`Pickup: ${pickupAddress}`);
+  lines.push(`Dropoff: ${dropoffAddress}`);
+  if (trackingUrl) {
+    lines.push(`Driver Tracking: ${trackingUrl}`);
+  }
+
+  const html = `
+    <div style="font-family:Segoe UI,Tahoma,Geneva,Verdana,sans-serif;color:#0f172a;line-height:1.7;">
+      <p style="margin:0 0 8px;color:#475569;font-size:12px;font-weight:700;letter-spacing:0.08em;">${confirmationMode === "reminder" ? "DRIVER REMINDER" : "DRIVER CONFIRMATION"}</p>
+      <h2 style="margin:0 0 12px;">${confirmationMode === "reminder" ? "Pickup Reminder" : "Booking Confirmed"}</h2>
+      <p style="margin:0 0 12px;">${escapeHtml(confirmationMode === "reminder" ? "This is your 2-hour reminder for the upcoming pickup." : "Your booking is confirmed and paid in full.")}</p>
+      <p style="margin:0 0 6px;"><strong>Customer:</strong> ${escapeHtml(customerName)}</p>
+      ${vehicleName ? `<p style="margin:0 0 6px;"><strong>Vehicle:</strong> ${escapeHtml(vehicleName)}</p>` : ""}
+      <p style="margin:0 0 6px;"><strong>Pickup Time:</strong> ${escapeHtml(pickupTime)}</p>
+      <p style="margin:0 0 6px;"><strong>Pickup:</strong> ${escapeHtml(pickupAddress)}</p>
+      <p style="margin:0 0 16px;"><strong>Dropoff:</strong> ${escapeHtml(dropoffAddress)}</p>
+      ${trackingUrl ? `<p style="margin:0;"><a href="${escapeHtml(trackingUrl)}" style="color:#1d4ed8;font-weight:700;text-decoration:none;">Open driver tracking</a></p>` : ""}
+    </div>
+  `;
+
+  return {
+    subject,
+    message: lines.join("\n"),
+    html,
+  };
 }
 
 function buildCustomerTrackingStatusSmsMessage({
@@ -9711,6 +10107,15 @@ app.post('/api/crm-webhook/reseed', async (req, res) => {
         existingBooking: bookingRow,
         forceReplay: forceDriverSmsReplay,
       });
+      result.driver_email = String(paymentStatus || "").startsWith("paid_in_full")
+        ? await sendDriverBookingEmailForBooking({
+            bookingId: booking_id,
+            locationId: location_id,
+            emailKind: "confirmation",
+            paymentStatus,
+            forceReplay: forceDriverSmsReplay,
+          })
+        : { attempted: false, skipped: true, reason: "Driver confirmation email only sends when the booking is paid in full." };
     }
     return res.status(result?.status || (result?.success ? 200 : 500)).json(result);
   } catch (err) {
@@ -13975,6 +14380,15 @@ async function updateBookingConfirmation({
       paymentStatus,
       existingBooking,
     });
+    const driverEmailResult = String(paymentStatus || "").startsWith("paid_in_full")
+      ? await sendDriverBookingEmailForBooking({
+          bookingId,
+          locationId: result.rows[0].location_id,
+          emailKind: "confirmation",
+          paymentStatus,
+          req,
+        })
+      : { attempted: false, skipped: true, reason: "Driver confirmation email only sends when the booking is paid in full." };
     console.log("[driver-sms] post-confirmation result", {
       bookingId,
       locationId: result.rows[0].location_id,
@@ -13986,6 +14400,18 @@ async function updateBookingConfirmation({
       error: driverSmsResult?.error || null,
       status: driverSmsResult?.status || null,
       tokenSource: driverSmsResult?.tokenSource || null,
+    });
+    console.log("[driver-notify] post-confirmation email result", {
+      bookingId,
+      locationId: result.rows[0].location_id,
+      paymentStatus,
+      attempted: Boolean(driverEmailResult?.attempted),
+      skipped: Boolean(driverEmailResult?.skipped),
+      success: Boolean(driverEmailResult?.success),
+      reason: driverEmailResult?.reason || null,
+      error: driverEmailResult?.error || null,
+      status: driverEmailResult?.status || null,
+      tokenSource: driverEmailResult?.tokenSource || null,
     });
   } catch (driverSmsErr) {
     console.error("Driver assignment SMS error after confirmation:", driverSmsErr);
@@ -14643,6 +15069,15 @@ async function createBookingRecord(input, {
         locationId: location_id,
         paymentStatus: paymentState.paymentStatus,
       });
+      const driverEmailResult = String(paymentState.paymentStatus || "").startsWith("paid_in_full")
+        ? await sendDriverBookingEmailForBooking({
+            bookingId: booking_id,
+            locationId: location_id,
+            emailKind: "confirmation",
+            paymentStatus: paymentState.paymentStatus,
+            req,
+          })
+        : { attempted: false, skipped: true, reason: "Driver confirmation email only sends when the booking is paid in full." };
       console.log("[driver-sms] booking creation result", {
         bookingId: booking_id,
         locationId: location_id,
@@ -14654,6 +15089,18 @@ async function createBookingRecord(input, {
         error: driverSmsResult?.error || null,
         status: driverSmsResult?.status || null,
         tokenSource: driverSmsResult?.tokenSource || null,
+      });
+      console.log("[driver-notify] booking creation email result", {
+        bookingId: booking_id,
+        locationId: location_id,
+        paymentStatus: paymentState.paymentStatus,
+        attempted: Boolean(driverEmailResult?.attempted),
+        skipped: Boolean(driverEmailResult?.skipped),
+        success: Boolean(driverEmailResult?.success),
+        reason: driverEmailResult?.reason || null,
+        error: driverEmailResult?.error || null,
+        status: driverEmailResult?.status || null,
+        tokenSource: driverEmailResult?.tokenSource || null,
       });
     } catch (driverSmsErr) {
       console.error("Driver assignment SMS error during booking creation:", driverSmsErr);
@@ -17847,9 +18294,17 @@ app.listen(PORT, () => {
     .catch((err) => {
       console.error("[instant-booking] Failed to initialize notification tables:", err);
     });
+  processDriverPrePickupEmailReminders().catch((err) => {
+    console.error("[driver-notify] Failed to initialize pickup reminder sweep:", err);
+  });
   setInterval(() => {
     processDailyInstantBookingNotifications().catch((err) => {
       console.error("[instant-booking] Daily notification loop error:", err);
+    });
+  }, 15 * 60 * 1000);
+  setInterval(() => {
+    processDriverPrePickupEmailReminders().catch((err) => {
+      console.error("[driver-notify] Pickup reminder loop error:", err);
     });
   }, 15 * 60 * 1000);
 });
