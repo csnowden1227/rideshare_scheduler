@@ -4,6 +4,7 @@
   const pageQuery = new URLSearchParams(window.location.search);
   const locationId = params.get("loc") || pageQuery.get("location_id") || pageQuery.get("locationId") || "";
   const widgetMode = String(params.get("mode") || "live").toLowerCase() === "practice" ? "practice" : "live";
+  const hourlyOnly = String(params.get("hourly_only") || pageQuery.get("hourly_only") || "").toLowerCase();
   const BACKEND_URL = scriptTag.src.split("/widget.js")[0];
   const rootId = "chauffeur-booking-widget";
 
@@ -730,6 +731,9 @@
   }
 
   function selectedBookingMode() {
+    if (hourlyOnly === "1" || hourlyOnly === "true" || hourlyOnly === "yes") {
+      return "hourly";
+    }
     return document.getElementById("cd_booking_mode")?.value || "standard";
   }
 
@@ -1302,6 +1306,8 @@
     const vehiclePicker = renderVehiclePicker(fleet);
     const eventSelect = renderEventSelect();
     const fixedDestinationSelect = renderFixedDestinationSelect();
+    const hourlyBookingSelect = renderHourlyBookingSelect();
+    const showServiceModeControls = !(hourlyOnly === "1" || hourlyOnly === "true" || hourlyOnly === "yes");
     const serviceRadius = toNumber(state.config?.service_radius, 0);
     const addonTitle = "Addons (car seat, wheelchair, food & beverage, etc)";
 
@@ -1399,13 +1405,13 @@
                   <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:8px;">Select Your Vehicle</label>${vehiclePicker}</div>
                   <div style="max-width:220px;"><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:8px;"># of Passengers</label><input id="cd_passenger_count" type="number" min="1" value="1" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" /></div>
                 </div>
-                <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-top:12px;">
+                ${showServiceModeControls ? `<div style="display:grid;grid-template-columns:1fr;gap:12px;margin-top:12px;">
                   <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Route/Service Option</label><select id="cd_booking_mode" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;"><option value="standard">Standard Booking</option><option value="fixed">Fixed Destinations</option><option value="event">Events</option><option value="hourly">Executive Luxury Chauffeur</option></select></div>
-                </div>
+                </div>` : `<input id="cd_booking_mode" type="hidden" value="hourly" />`}
                 <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-top:12px;">
-                  <div id="cd_event_wrap" style="display:none;">${eventSelect || ""}</div>
-                  ${renderHourlyBookingSelect() || ""}
-                  ${fixedDestinationSelect}
+                  ${showServiceModeControls ? `<div id="cd_event_wrap" style="display:none;">${eventSelect || ""}</div>` : ""}
+                  ${hourlyBookingSelect || ""}
+                  ${showServiceModeControls ? `${fixedDestinationSelect}` : ""}
                 </div>
                 <div id="cd_datetime_grid" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px;">
                   <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Pickup Date & Time</label><input id="cd_start_time" type="datetime-local" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" /></div>

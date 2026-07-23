@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Driver Personal Page Preview</title>
+  <style>
+    :root {
+      --gold: #d4af37;
+      --gold-deep: #9a7a16;
+      --ink: #111827;
+      --charcoal: #17171b;
+      --panel: #fffaf2;
+      --panel-border: rgba(212, 175, 55, 0.22);
+      --muted: #5b6472;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top left, rgba(212, 175, 55, 0.12), transparent 28%),
+        radial-gradient(circle at top right, rgba(23, 23, 27, 0.08), transparent 22%),
+        linear-gradient(180deg, #fffdf8 0%, #f7f1e7 100%);
+      min-height: 100vh;
+    }
+    .wrap {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 24px 16px 40px;
+    }
+    .hero {
+      background: linear-gradient(135deg, #101114 0%, #1e2027 100%);
+      color: #fff;
+      border-radius: 30px;
+      padding: 28px;
+      box-shadow: 0 26px 60px rgba(15, 23, 42, 0.16);
+      overflow: hidden;
+    }
+    .hero-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1.02fr) minmax(320px, 0.98fr);
+      gap: 18px;
+      align-items: start;
+    }
+    .brand {
+      display: flex;
+      justify-content: space-between;
+      gap: 14px;
+      align-items: flex-start;
+      flex-wrap: wrap;
+      margin-bottom: 18px;
+    }
+    .brand h1 {
+      margin: 0;
+      font-size: 22px;
+      line-height: 1.1;
+      letter-spacing: -0.03em;
+    }
+    .brand p {
+      margin: 6px 0 0;
+      color: rgba(255,255,255,0.78);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.16em;
+      font-weight: 800;
+    }
+    .slug {
+      display: inline-flex;
+      align-items: center;
+      width: fit-content;
+      padding: 10px 14px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.10);
+      border: 1px solid rgba(212, 175, 55, 0.26);
+      color: #f5e2a2;
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    .headline {
+      margin: 0;
+      font-size: clamp(34px, 4vw, 58px);
+      line-height: 0.98;
+      letter-spacing: -0.05em;
+      max-width: 16ch;
+    }
+    .copy {
+      margin: 18px 0 0;
+      max-width: 62ch;
+      color: rgba(255,255,255,0.88);
+      line-height: 1.8;
+      font-size: 16px;
+    }
+    .chip-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 18px;
+    }
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      padding: 9px 13px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.12);
+      border: 1px solid rgba(212,175,55,0.18);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    .button-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 22px;
+    }
+    .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 52px;
+      padding: 14px 18px;
+      border-radius: 16px;
+      text-decoration: none;
+      font-weight: 800;
+      font-size: 14px;
+      border: 1px solid transparent;
+      transition: transform 0.18s ease, filter 0.18s ease, background 0.18s ease;
+      cursor: pointer;
+    }
+    .button:hover {
+      transform: translateY(-1px);
+      filter: brightness(0.98);
+    }
+    .button-primary {
+      background: linear-gradient(135deg, var(--gold), #f2db8d);
+      color: #1a1a1a;
+    }
+    .button-secondary {
+      background: rgba(255,255,255,0.08);
+      color: #fff;
+      border-color: rgba(255,255,255,0.14);
+    }
+    .button-outline {
+      background: #fff;
+      color: var(--gold-deep);
+      border-color: rgba(212, 175, 55, 0.24);
+    }
+    .preview-card {
+      background: linear-gradient(180deg, #fffdf7 0%, #fff7e8 100%);
+      border: 1px solid var(--panel-border);
+      border-radius: 28px;
+      padding: 18px;
+      box-shadow: 0 20px 42px rgba(15, 23, 42, 0.10);
+      color: var(--ink);
+    }
+    .preview-top {
+      display: flex;
+      justify-content: space-between;
+      gap: 14px;
+      align-items: flex-start;
+      flex-wrap: wrap;
+    }
+    .driver-lockup {
+      display: grid;
+      grid-template-columns: 72px 1fr;
+      gap: 14px;
+      align-items: center;
+    }
+    .driver-photo,
+    .driver-placeholder {
+      width: 72px;
+      height: 72px;
+      border-radius: 18px;
+      object-fit: cover;
+      border: 1px solid rgba(212,175,55,0.28);
+      box-shadow: 0 10px 20px rgba(15, 23, 42, 0.08);
+      display: block;
+    }
+    .driver-placeholder {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(135deg, rgba(212,175,55,0.28), rgba(255,247,218,0.96));
+      color: #1f2937;
+      font-weight: 900;
+      font-size: 22px;
+      letter-spacing: -0.04em;
+    }
+    .driver-name {
+      margin: 0;
+      font-size: 22px;
+      line-height: 1.1;
+      color: #111827;
+      font-weight: 900;
+    }
+    .driver-role {
+      margin: 4px 0 0;
+      color: var(--gold-deep);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      font-weight: 800;
+    }
+    .mock-page {
+      margin-top: 16px;
+      border-radius: 24px;
+      border: 1px solid rgba(212,175,55,0.18);
+      background:
+        radial-gradient(circle at top right, rgba(212,175,55,0.10), transparent 26%),
+        linear-gradient(180deg, #ffffff 0%, #fffaf0 100%);
+      padding: 16px;
+      overflow: hidden;
+    }
+    .mock-page-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .mock-page-head h3 {
+      margin: 0;
+      font-size: 18px;
+      color: #111827;
+    }
+    .mock-page-head p {
+      margin: 4px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.6;
+    }
+    .widget-shell {
+      margin-top: 14px;
+      border-radius: 24px;
+      border: 1px solid rgba(212,175,55,0.18);
+      background: linear-gradient(180deg, #ffffff 0%, #fffaf3 100%);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.7);
+      padding: 14px;
+    }
+    .widget-shell[hidden] {
+      display: none;
+    }
+    .widget-label {
+      display: inline-flex;
+      align-items: center;
+      width: fit-content;
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: rgba(212,175,55,0.12);
+      color: var(--gold-deep);
+      font-size: 11px;
+      font-weight: 900;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      margin-bottom: 12px;
+    }
+    .divider {
+      height: 1px;
+      background: rgba(212,175,55,0.16);
+      margin: 16px 0;
+    }
+    @media (max-width: 960px) {
+      .hero-layout {
+        grid-template-columns: 1fr;
+      }
+      .headline {
+        max-width: none;
+      }
+    }
+    @media (max-width: 640px) {
+      .wrap {
+        padding: 14px 12px 28px;
+      }
+      .hero {
+        padding: 20px 16px;
+        border-radius: 24px;
+      }
+      .preview-card {
+        padding: 14px;
+        border-radius: 22px;
+      }
+      .button-row {
+        display: grid;
+      }
+      .button {
+        width: 100%;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="hero">
+      <div class="hero-layout">
+        <div>
+          <div class="brand">
+            <div>
+              <h1>Chauffeur Deluxe</h1>
+              <p>Driver personal page preview</p>
+            </div>
+            <span class="slug" id="page-slug">chauffeursdeluxe.com/partner/john-smith</span>
+          </div>
+          <h2 class="headline" id="hero-title">Bring your client. Share your page. Book hourly luxury.</h2>
+          <p class="copy" id="hero-copy">
+            This is the mock version of a driver's personal page. It shows the driver's name and thumbnail, a premium brand
+            presentation, and an hourly-only booking widget that stays tied to the selected location.
+          </p>
+          <div class="chip-row">
+            <span class="chip">Hourly only</span>
+            <span class="chip">Add-ons enabled</span>
+            <span class="chip">Location-tied widget</span>
+            <span class="chip">Driver thumbnail visible</span>
+          </div>
+          <div class="button-row">
+            <button id="open-widget" class="button button-primary" type="button">Open Booking Widget</button>
+            <a class="button button-secondary" href="/driver-partner-program.html">Back to Program Page</a>
+          </div>
+        </div>
+
+        <aside class="preview-card">
+          <div class="preview-top">
+            <div class="driver-lockup">
+              <img id="driver-photo" class="driver-photo hidden" alt="Driver thumbnail preview" />
+              <div id="driver-placeholder" class="driver-placeholder">CD</div>
+              <div>
+                <p class="driver-name" id="driver-name">Your Name</p>
+                <p class="driver-role" id="driver-role">Luxury Chauffeur</p>
+              </div>
+            </div>
+            <span class="slug" id="page-slug-top">chauffeursdeluxe.com/partner/john-smith</span>
+          </div>
+
+          <div class="mock-page">
+            <div class="mock-page-head">
+              <div>
+                <h3>Personal Page Mockup</h3>
+                <p>A clean, premium personal page where the rider sees the chauffeur identity first.</p>
+              </div>
+              <span class="widget-label">Preview Only</span>
+            </div>
+            <div class="divider"></div>
+            <p class="copy" style="margin:0;color:#4b5563;font-size:14px;line-height:1.8;">
+              The booking widget below is the driver-facing version of Chauffeur Deluxe. It is hourly-only, tied to the selected
+              location, and can still support add-ons without exposing standard, fixed, or event modes.
+            </p>
+            <div class="widget-shell" id="widget-shell" hidden>
+              <div id="chauffeur-booking-widget"></div>
+            </div>
+            <div id="widget-placeholder" style="margin-top:14px;padding:14px;border-radius:18px;background:#fff8e9;border:1px solid rgba(212,175,55,0.18);color:#7a5a10;font-size:13px;line-height:1.7;">
+              Click <strong>Open Booking Widget</strong> to reveal the live hourly booking form.
+            </div>
+          </div>
+        </aside>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const query = new URLSearchParams(window.location.search);
+    const driverName = (query.get("driver_name") || "Your Name").trim();
+    const driverRole = (query.get("driver_title") || "Luxury Chauffeur").trim();
+    const driverPhoto = (query.get("driver_photo") || query.get("photo_url") || "").trim();
+    const slug = (query.get("slug") || "chauffeursdeluxe.com/partner/john-smith").trim();
+    const locationId = (query.get("location_id") || query.get("locationId") || "mamDGnLGy7zhvZmCPDku").trim();
+
+    const driverNameEl = document.getElementById("driver-name");
+    const driverRoleEl = document.getElementById("driver-role");
+    const driverPhotoEl = document.getElementById("driver-photo");
+    const driverPlaceholderEl = document.getElementById("driver-placeholder");
+    const slugEls = [document.getElementById("page-slug"), document.getElementById("page-slug-top")];
+    const openWidgetBtn = document.getElementById("open-widget");
+    const widgetShell = document.getElementById("widget-shell");
+    const widgetPlaceholder = document.getElementById("widget-placeholder");
+
+    function initialsFor(value) {
+      const parts = String(value || "").trim().split(/\s+/).filter(Boolean);
+      if (!parts.length) return "CD";
+      return parts.slice(0, 2).map((part) => part[0]).join("").toUpperCase();
+    }
+
+    driverNameEl.textContent = driverName;
+    driverRoleEl.textContent = driverRole;
+    slugEls.forEach((el) => {
+      if (el) el.textContent = slug;
+    });
+
+    if (driverPhoto) {
+      driverPhotoEl.src = driverPhoto;
+      driverPhotoEl.classList.remove("hidden");
+      driverPlaceholderEl.classList.add("hidden");
+    } else {
+      driverPlaceholderEl.textContent = initialsFor(driverName);
+      driverPlaceholderEl.classList.remove("hidden");
+      driverPhotoEl.classList.add("hidden");
+    }
+
+    openWidgetBtn.addEventListener("click", () => {
+      widgetShell.hidden = false;
+      widgetPlaceholder.hidden = true;
+      openWidgetBtn.textContent = "Widget Open";
+      openWidgetBtn.disabled = true;
+      openWidgetBtn.style.opacity = "0.8";
+      openWidgetBtn.style.cursor = "default";
+    });
+
+    const widgetScript = document.createElement("script");
+    widgetScript.src = `/widget.js?loc=${encodeURIComponent(locationId)}&hourly_only=true`;
+    widgetScript.async = true;
+    document.body.appendChild(widgetScript);
+  </script>
+</body>
+</html>
