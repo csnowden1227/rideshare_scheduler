@@ -4143,10 +4143,10 @@ function buildDriverConflictAlertContent({
   conflictTitle,
   farmOutLink,
 }) {
-  const subject = `URGENT: Booking conflict for ${vehicleLabel || "your vehicle"}`;
+  const subject = `URGENT: Two bookings conflict on your calendar`;
   const lines = [
-    "URGENT: We detected overlapping bookings for your vehicle.",
-    "Please contact the customer immediately and confirm next steps.",
+    "URGENT: Two bookings conflict on your calendar.",
+    "Call the customer now.",
     vehicleLabel ? `Vehicle: ${vehicleLabel}` : null,
     startTime ? `Start: ${startTime}` : null,
     endTime ? `End: ${endTime}` : null,
@@ -4160,7 +4160,7 @@ function buildDriverConflictAlertContent({
     <div style="font-family:Segoe UI,Tahoma,Geneva,Verdana,sans-serif;color:#0f172a;line-height:1.7;">
       <p style="margin:0 0 8px;color:#b91c1c;font-size:12px;font-weight:800;letter-spacing:0.08em;">URGENT</p>
       <h2 style="margin:0 0 12px;">Booking Conflict Detected</h2>
-      <p style="margin:0 0 12px;">Please contact the customer immediately and resolve the overlapping booking.</p>
+      <p style="margin:0 0 12px;">Two bookings conflict on your calendar. Call the customer now.</p>
       ${vehicleLabel ? `<p style="margin:0 0 6px;"><strong>Vehicle:</strong> ${escapeHtml(vehicleLabel)}</p>` : ""}
       ${startTime ? `<p style="margin:0 0 6px;"><strong>Start:</strong> ${escapeHtml(startTime)}</p>` : ""}
       ${endTime ? `<p style="margin:0 0 6px;"><strong>End:</strong> ${escapeHtml(endTime)}</p>` : ""}
@@ -4191,7 +4191,8 @@ async function sendBookingConflictNotifications({
   crmAuthOptions = {},
 }) {
   const summaryLines = [
-    "URGENT: Booking conflict detected.",
+    "URGENT: Two bookings conflict on your calendar.",
+    "Call the customer now.",
     vehicleLabel ? `Vehicle: ${vehicleLabel}` : null,
     vehicleSlotId ? `Slot: ${vehicleSlotId}` : null,
     startTime ? `Start: ${startTime}` : null,
@@ -14937,6 +14938,7 @@ async function createBookingRecord(input, {
         startTime: start_time,
         vehicleType: fleetVehicle?.vehicle_type || "",
       });
+  // Keep the route ETA from Maps, then add only the wizard's peak-time buffer.
   const bookingDurationMinutes = isHourlyBooking && resolvedHourlyHoursForCalendar
     ? (resolvedHourlyHoursForCalendar * 60)
     : (routeMetrics.durationMinutes + generalBufferMinutes + additionalTrafficBufferMinutes);
@@ -15467,6 +15469,7 @@ app.post("/api/create-checkout-session", async (req, res) => {
       startTime: req.body.start_time,
       vehicleType: fleetVehicle?.vehicle_type || "",
     });
+    // Keep the route ETA from Maps, then add only the wizard's peak-time buffer.
     const bookingDurationMinutes = bookingModeNormalized === "hourly" && hourlyHoursForCalendar
       ? (hourlyHoursForCalendar * 60)
       : (routeMetrics.durationMinutes + generalBufferMinutes + additionalTrafficBufferMinutes);
