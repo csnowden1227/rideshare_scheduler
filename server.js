@@ -160,6 +160,16 @@ const CRM_OAUTH_SCOPES = String(
   process.env.CRM_OAUTH_SCOPES ||
   "contacts.readonly contacts.write calendars.readonly calendars.write"
 ).trim();
+const CRM_CALENDAR_TEMPLATE = Object.freeze({
+  slotDuration: 60,
+  slotDurationUnit: "mins",
+  slotInterval: 15,
+  slotIntervalUnit: "mins",
+  slotBuffer: 15,
+  slotBufferUnit: "mins",
+  appointmentPerSlot: 1,
+  appoinmentPerSlot: 1,
+});
 
 // 1. Define Environment Variables
 const CRM_WEBHOOK_URL =
@@ -3564,6 +3574,137 @@ async function fetchCrmWithFallback(locationId, url, init = {}, retryStatuses = 
   }
 
   return lastResult;
+}
+
+function buildNormalizedCrmCalendarPayload(calendar = {}) {
+  return {
+    slotDuration: CRM_CALENDAR_TEMPLATE.slotDuration,
+    slotDurationUnit: CRM_CALENDAR_TEMPLATE.slotDurationUnit,
+    slotInterval: CRM_CALENDAR_TEMPLATE.slotInterval,
+    slotIntervalUnit: CRM_CALENDAR_TEMPLATE.slotIntervalUnit,
+    slotBuffer: CRM_CALENDAR_TEMPLATE.slotBuffer,
+    slotBufferUnit: CRM_CALENDAR_TEMPLATE.slotBufferUnit,
+    appointmentPerSlot: CRM_CALENDAR_TEMPLATE.appointmentPerSlot,
+    appoinmentPerSlot: CRM_CALENDAR_TEMPLATE.appoinmentPerSlot,
+  };
+}
+
+async function syncCrmCalendarTemplate(locationId, calendarId) {
+  const resolvedLocationId = String(locationId || "").trim();
+  const resolvedCalendarId = String(calendarId || "").trim();
+  if (!resolvedLocationId || !resolvedCalendarId) return { skipped: true, reason: "missing_calendar" };
+
+  const readResult = await fetchCrmWithFallback(
+    resolvedLocationId,
+    new URL(`/calendars/${encodeURIComponent(resolvedCalendarId)}`, CRM_API_BASE_URL),
+    {
+      method: "GET",
+      headers: {
+        Version: "2021-07-28",
+        Accept: "application/json",
+      },
+    }
+  );
+
+  if (!readResult.response) {
+    return { skipped: true, reason: "no_crm_token" };
+  }
+
+  if (!readResult.response.ok) {
+    return {
+      skipped: false,
+      success: false,
+      status: readResult.response.status,
+      error: readResult.bodyText?.slice(0, 300) || "Unable to read CRM calendar.",
+      calendarId: resolvedCalendarId,
+    };
+  }
+
+  let parsed;
+  try {
+    parsed = readResult.bodyText ? JSON.parse(readResult.bodyText) : {};
+  } catch {
+    parsed = {};
+  }
+
+  const currentCalendar = parsed?.calendar || parsed?.data?.calendar || parsed?.data || parsed || {};
+  const desiredCalendar = buildNormalizedCrmCalendarPayload(currentCalendar);
+
+  const fieldsToNormalize = [
+    "slotDuration",
+    "slotDurationUnit",
+    "slotInterval",
+    "slotIntervalUnit",
+    "slotBuffer",
+    "slotBufferUnit",
+    "appointmentPerSlot",
+    "appoinmentPerSlot",
+  ];
+
+  const needsUpdate = fieldsToNormalize.some((field) => String(currentCalendar?.[field] ?? "") !== String(desiredCalendar?.[field] ?? ""));
+  if (!needsUpdate) {
+    return { success: true, skipped: true, calendarId: resolvedCalendarId, reason: "already_normalized" };
+  }
+
+  const updateResult = await fetchCrmWithFallback(
+    resolvedLocationId,
+    new URL(`/calendars/${encodeURIComponent(resolvedCalendarId)}`, CRM_API_BASE_URL),
+    {
+      method: "PUT",
+      headers: {
+        Version: "2021-07-28",
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(desiredCalendar),
+    }
+  );
+
+  if (!updateResult.response) {
+    return { success: false, skipped: false, calendarId: resolvedCalendarId, error: "No CRM response." };
+  }
+
+  if (!updateResult.response.ok) {
+    return {
+      success: false,
+      skipped: false,
+      calendarId: resolvedCalendarId,
+      status: updateResult.response.status,
+      error: updateResult.bodyText?.slice(0, 300) || "Unable to update CRM calendar.",
+    };
+  }
+
+  return { success: true, skipped: false, calendarId: resolvedCalendarId, status: updateResult.response.status };
+}
+
+async function syncCrmCalendarTemplates(locationId, fleet = []) {
+  const uniqueCalendarIds = Array.from(
+    new Set(
+      (Array.isArray(fleet) ? fleet : [])
+        .map((row) => String(row?.calendar_id || "").trim())
+        .filter(Boolean)
+    )
+  );
+
+  const results = [];
+  for (const calendarId of uniqueCalendarIds) {
+    try {
+      const result = await syncCrmCalendarTemplate(locationId, calendarId);
+      results.push(result);
+      if (result?.success && !result?.skipped) {
+        console.log("[calendar-template] normalized", { locationId, calendarId });
+      } else if (result?.success && result?.skipped) {
+        console.log("[calendar-template] already normalized", { locationId, calendarId });
+      } else {
+        console.warn("[calendar-template] normalization failed", { locationId, calendarId, error: result?.error || null, status: result?.status || null });
+      }
+    } catch (error) {
+      results.push({ success: false, calendarId, error: error?.message || String(error) });
+      console.warn("[calendar-template] normalization error", { locationId, calendarId, error: error?.message || String(error) });
+    }
+  }
+
+  return results;
 }
 
 async function saveCrmToken(locationId, tokenData = {}) {
@@ -7255,8 +7396,8 @@ async function syncFleetSettings(client, location_id, fleet = []) {
     push("per_mile_rate", parseFloat(slot.mile_rate) || 0);
     push("minimum_fare", parseFloat(slot.minimum_fare) || 0);
     push("deposit_percent", parseFloat(slot.deposit_percent) || 0);
-    push("slot_interval_min", parseInt(slot.slot_interval_min, 10) || 30);
-    push("duration_min", parseInt(slot.duration_min, 10) || 105);
+    push("slot_interval_min", parseInt(slot.slot_interval_min, 10) || 15);
+    push("duration_min", parseInt(slot.duration_min, 10) || 60);
     push("inbound_buffer_min", parseInt(slot.inbound_buffer_min, 10) || 0);
     push("outbound_buffer_min", parseInt(slot.outbound_buffer_min, 10) || BOOKING_BUFFER_MINUTES);
     push("min_notice_min", policy.min_notice_min);
@@ -8228,6 +8369,11 @@ async function saveConfigHandler(req, res) {
         await syncFleetSettings(bgClient, location_id, sanitizedFleet);
         await syncFixedRates(bgClient, location_id, fixed_rates);
         await bgClient.query("COMMIT");
+        try {
+          await syncCrmCalendarTemplates(location_id, sanitizedFleet);
+        } catch (calendarSyncErr) {
+          console.warn("Wizard calendar template sync failed:", calendarSyncErr);
+        }
 
         if (webhookSync.attempted) {
           const result = await sendWizardSyncWebhook({
@@ -10404,6 +10550,13 @@ if (fleet && fleet.length > 0) {
 
         await client.query('COMMIT');
         console.log(`✅ Profile and FleetSlots synced for: ${location_id}`);
+        setTimeout(async () => {
+            try {
+                await syncCrmCalendarTemplates(location_id, normalizeFleetRecords(fleet || []));
+            } catch (calendarErr) {
+                console.error("Legacy calendar template sync failed:", calendarErr);
+            }
+        }, 0);
         res.json({ success: true, message: 'All settings and slots saved!' });
 
     } catch (err) {
