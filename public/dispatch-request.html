@@ -91,6 +91,40 @@
       color: var(--ink);
       overflow-wrap: anywhere;
     }
+    .status-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 7px 11px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      border: 1px solid transparent;
+      white-space: nowrap;
+    }
+    .status-pill.confirmed {
+      background: #dcfce7;
+      color: #166534;
+      border-color: #86efac;
+    }
+    .status-pill.waitlisted {
+      background: #ffedd5;
+      color: #9a3412;
+      border-color: #fdba74;
+    }
+    .status-pill.neutral {
+      background: #e2e8f0;
+      color: #334155;
+      border-color: #cbd5e1;
+    }
     textarea {
       width: 100%;
       min-height: 120px;
@@ -232,6 +266,13 @@
           <div class="value" id="pickup-time">Loading...</div>
         </div>
         <div class="card">
+          <span class="label">Booking Status</span>
+          <div class="status-row">
+            <div class="value" id="booking-status-text">Loading...</div>
+            <span id="booking-status-badge" class="status-pill neutral">Pending</span>
+          </div>
+        </div>
+        <div class="card">
           <span class="label">Location ID</span>
           <div class="value" id="location-id">Loading...</div>
         </div>
@@ -278,6 +319,29 @@
         if (!el) return;
         el.textContent = message;
         el.classList.toggle("error", isError);
+      }
+
+      function updateBookingStatusBadge(dispatchStatus) {
+        const badge = document.getElementById("booking-status-badge");
+        const text = document.getElementById("booking-status-text");
+        if (!badge || !text) return;
+        const normalized = String(dispatchStatus || "").trim().toLowerCase();
+        if (normalized === "waitlist") {
+          badge.textContent = "Waitlisted";
+          badge.className = "status-pill waitlisted";
+          text.textContent = "This booking needs immediate follow-up.";
+          return;
+        }
+        if (normalized) {
+          const label = normalized.replace(/_/g, " ");
+          badge.textContent = label.charAt(0).toUpperCase() + label.slice(1);
+          badge.className = "status-pill confirmed";
+          text.textContent = "Booking confirmed and ready for dispatch.";
+          return;
+        }
+        badge.textContent = "Pending";
+        badge.className = "status-pill neutral";
+        text.textContent = "Booking status pending.";
       }
 
       async function requestJson(url, options = {}) {
@@ -340,6 +404,7 @@
         setText("dropoff-address", currentSession?.dropoff_address || "Not set");
         setText("pickup-time", currentSession?.start_time ? new Date(currentSession.start_time).toLocaleString() : "Not set");
         setText("location-id", currentSession?.location_id || "Not set");
+        updateBookingStatusBadge(currentSession?.dispatch_status);
         setText(
           "partner-summary",
           data.eligible_partner_count

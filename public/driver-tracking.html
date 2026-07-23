@@ -72,6 +72,12 @@
     .box-purple {
       background: var(--brand-accent);
     }
+    .status-line {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
     .label {
       display: block;
       font-size: 12px;
@@ -86,6 +92,32 @@
       line-height: 1.7;
       color: #111827;
       overflow-wrap: anywhere;
+    }
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 7px 11px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      white-space: nowrap;
+      border: 1px solid transparent;
+    }
+    .status-pill.waitlisted {
+      background: #ffedd5;
+      color: #9a3412;
+      border-color: #fdba74;
+    }
+    .status-pill.assigned {
+      background: #dcfce7;
+      color: #166534;
+      border-color: #86efac;
+    }
+    .hidden {
+      display: none;
     }
     .map {
       width: 100%;
@@ -231,7 +263,10 @@
         <div class="info">
           <div class="box box-purple">
             <span class="label">Trip Status</span>
-            <div class="value" id="trip-status">Loading...</div>
+            <div class="status-line">
+              <div class="value" id="trip-status">Loading...</div>
+              <span id="booking-status-badge" class="status-pill hidden" aria-live="polite">Waitlisted</span>
+            </div>
           </div>
 
           <div class="box">
@@ -426,6 +461,19 @@
       setText("customer-view-driver", driverLine);
       setText("customer-view-plate", vehiclePlate ? `License Plate: ${vehiclePlate}` : "Vehicle plate will appear once saved in the setup wizard.");
       setImagePreview("customer-view-vehicle", session?.vehicle_image || "", "Vehicle photo");
+    }
+
+    function updateBookingStatusBadge(dispatchStatus) {
+      const badge = document.getElementById("booking-status-badge");
+      if (!badge) return;
+      const normalized = String(dispatchStatus || "").trim().toLowerCase();
+      if (normalized === "waitlist") {
+        badge.textContent = "Waitlisted";
+        badge.className = "status-pill waitlisted";
+        badge.classList.remove("hidden");
+        return;
+      }
+      badge.className = "status-pill hidden";
     }
 
     function populateDriverOptions(profiles, selectedProfileId) {
@@ -762,6 +810,7 @@
         currentSession = getSessionData(data);
 
         setText("trip-status", currentSession.status || "driver_assigned");
+        updateBookingStatusBadge(currentSession.dispatch_status);
         setText("customer-name", currentSession.customer_name || "Assigned customer");
         setText("pickup-address", currentSession.pickup_address || "");
         setText("dropoff-address", currentSession.dropoff_address || "");
