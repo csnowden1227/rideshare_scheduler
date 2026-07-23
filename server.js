@@ -6912,7 +6912,7 @@ async function syncConfirmedBookingCalendarEvent(bookingId) {
       b.calendar_id,
       b.crm_contact_id,
       b.crm_event_id,
-      b.booking_buffer_minutes,
+      NULL AS booking_buffer_minutes,
       b.balance_due,
       p.business_name
      FROM bookings b
@@ -6960,14 +6960,18 @@ async function syncConfirmedBookingCalendarEvent(bookingId) {
   });
 
   try {
-    const bookingProfile = await getBookingProfileRow(booking.location_id, ["peak_windows"]);
+    const bookingProfile = await getBookingProfileRow(booking.location_id, ["peak_windows", "fleet"]);
+    const profileFleet = normalizeFleetRecords(safeParseJson(bookingProfile?.fleet || []));
+    const matchedFleetSlot = profileFleet.find(
+      (vehicleRow) => String(vehicleRow?.vehicle_slot_id || "").trim() === String(booking.vehicle_slot_id || "").trim()
+    ) || null;
     await syncCrmCalendarTemplate(
       booking.location_id,
       booking.calendar_id,
       [{
         calendar_id: booking.calendar_id,
         vehicle_slot_id: booking.vehicle_slot_id,
-        outbound_buffer_min: Number(booking.booking_buffer_minutes || 0),
+        outbound_buffer_min: Number(matchedFleetSlot?.outbound_buffer_min || booking.booking_buffer_minutes || 0),
       }],
       safeParseJson(bookingProfile?.peak_windows || [])
     );
@@ -15528,6 +15532,27 @@ async function createBookingRecord(input, {
         success: false,
         error: calendarErr?.message || "CRM calendar sync failed.",
       };
+    }
+  }
+
+  if (isBookingConfirmed && booking_id && !waitlistBooking && calendarSync && calendarSync.success === false) {
+    try {
+      await pool.query(
+        `UPDATE bookings
+         SET dispatch_status = 'waitlist'
+         WHERE id = $1`,
+        [booking_id]
+      );
+      calendarSync = {
+        ...calendarSync,
+        waitlist: true,
+        waitlist_reason: "crm_calendar_sync_failed",
+      };
+    } catch (waitlistErr) {
+      console.warn("Failed to mark booking waitlist after CRM sync failure:", {
+        bookingId: booking_id,
+        error: waitlistErr?.message || waitlistErr,
+      });
     }
   }
 
