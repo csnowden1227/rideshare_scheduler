@@ -161,13 +161,9 @@ const CRM_OAUTH_SCOPES = String(
   "contacts.readonly contacts.write calendars.readonly calendars.write"
 ).trim();
 const CRM_CALENDAR_TEMPLATE = Object.freeze({
-  slotDuration: 60,
   slotDurationUnit: "mins",
-  slotInterval: 15,
   slotIntervalUnit: "mins",
-  slotBuffer: 15,
   slotBufferUnit: "mins",
-  appointmentPerSlot: 1,
   appoinmentPerSlot: 1,
 });
 
@@ -3576,20 +3572,85 @@ async function fetchCrmWithFallback(locationId, url, init = {}, retryStatuses = 
   return lastResult;
 }
 
-function buildNormalizedCrmCalendarPayload(calendar = {}) {
+async function getCalendarTemplateTimingForVehicle(locationId, vehicleSlotId, fleetSlot = {}, peakWindows = []) {
+  const resolvedLocationId = String(locationId || "").trim();
+  const resolvedVehicleSlotId = String(vehicleSlotId || "").trim();
+  const bufferFromWizard = Number.isFinite(parseInt(fleetSlot?.outbound_buffer_min, 10))
+    ? Math.max(0, parseInt(fleetSlot.outbound_buffer_min, 10))
+    : null;
+  const peakBufferMinutes = Array.isArray(peakWindows)
+    ? peakWindows.reduce((max, window) => Math.max(max, Math.max(0, parseInt(window?.buffer_min, 10) || 0)), 0)
+    : 0;
+
+  let routeDurationMinutes = null;
+
+  if (resolvedLocationId && resolvedVehicleSlotId) {
+    const bookingRes = await pool.query(
+      `SELECT
+         booking_duration_minutes,
+         route_duration_minutes,
+         booking_buffer_minutes
+       FROM bookings
+       WHERE location_id = $1
+         AND vehicle_slot_id = $2
+         AND COALESCE(booking_mode, '') <> 'hourly'
+         AND booking_duration_minutes IS NOT NULL
+       ORDER BY start_time DESC
+       LIMIT 1`,
+      [resolvedLocationId, resolvedVehicleSlotId]
+    );
+
+    const bookingRow = bookingRes.rows[0] || null;
+    const latestRouteDuration = Number(bookingRow?.route_duration_minutes);
+    const latestBookingDuration = Number(bookingRow?.booking_duration_minutes);
+    const latestBookingBuffer = Number(bookingRow?.booking_buffer_minutes);
+
+    if (Number.isFinite(latestRouteDuration) && latestRouteDuration > 0) {
+      routeDurationMinutes = latestRouteDuration;
+    } else if (Number.isFinite(latestBookingDuration) && latestBookingDuration > 0) {
+      const bufferMinutes = Number.isFinite(latestBookingBuffer) && latestBookingBuffer > 0
+        ? latestBookingBuffer
+        : (Number.isFinite(bufferFromWizard) ? bufferFromWizard : 0);
+      routeDurationMinutes = Math.max(0, latestBookingDuration - bufferMinutes);
+    }
+  }
+
+  const slotDurationMinutes = Number.isFinite(routeDurationMinutes) && routeDurationMinutes > 0
+    ? routeDurationMinutes
+    : null;
+  const slotBufferMinutes = Number.isFinite(bufferFromWizard)
+    ? Math.max(0, bufferFromWizard + peakBufferMinutes)
+    : null;
+
   return {
-    slotDuration: CRM_CALENDAR_TEMPLATE.slotDuration,
+    ...CRM_CALENDAR_TEMPLATE,
+    ...(slotDurationMinutes != null ? { slotDuration: slotDurationMinutes } : {}),
+    ...(slotBufferMinutes != null ? { slotBuffer: slotBufferMinutes } : {}),
+    slotInterval: 15,
+    appointmentPerSlot: 1,
+  };
+}
+
+async function buildNormalizedCrmCalendarPayload(calendar = {}, options = {}) {
+  const slot = options.slot || {};
+  const peakWindows = options.peakWindows || [];
+  const template = await getCalendarTemplateTimingForVehicle(
+    options.locationId,
+    options.vehicleSlotId || slot.vehicle_slot_id || slot.vehicleSlotId || "",
+    slot,
+    peakWindows
+  );
+
+  return {
+    ...template,
     slotDurationUnit: CRM_CALENDAR_TEMPLATE.slotDurationUnit,
-    slotInterval: CRM_CALENDAR_TEMPLATE.slotInterval,
     slotIntervalUnit: CRM_CALENDAR_TEMPLATE.slotIntervalUnit,
-    slotBuffer: CRM_CALENDAR_TEMPLATE.slotBuffer,
     slotBufferUnit: CRM_CALENDAR_TEMPLATE.slotBufferUnit,
-    appointmentPerSlot: CRM_CALENDAR_TEMPLATE.appointmentPerSlot,
     appoinmentPerSlot: CRM_CALENDAR_TEMPLATE.appoinmentPerSlot,
   };
 }
 
-async function syncCrmCalendarTemplate(locationId, calendarId) {
+async function syncCrmCalendarTemplate(locationId, calendarId, fleet = [], peakWindows = []) {
   const resolvedLocationId = String(locationId || "").trim();
   const resolvedCalendarId = String(calendarId || "").trim();
   if (!resolvedLocationId || !resolvedCalendarId) return { skipped: true, reason: "missing_calendar" };
@@ -3628,7 +3689,15 @@ async function syncCrmCalendarTemplate(locationId, calendarId) {
   }
 
   const currentCalendar = parsed?.calendar || parsed?.data?.calendar || parsed?.data || parsed || {};
-  const desiredCalendar = buildNormalizedCrmCalendarPayload(currentCalendar);
+  const matchingFleetSlot = Array.isArray(fleet)
+    ? fleet.find((row) => String(row?.calendar_id || "").trim() === resolvedCalendarId)
+    : null;
+  const desiredCalendar = await buildNormalizedCrmCalendarPayload(currentCalendar, {
+    locationId: resolvedLocationId,
+    vehicleSlotId: matchingFleetSlot?.vehicle_slot_id || "",
+    slot: matchingFleetSlot || {},
+    peakWindows,
+  });
 
   const fieldsToNormalize = [
     "slotDuration",
@@ -3677,7 +3746,7 @@ async function syncCrmCalendarTemplate(locationId, calendarId) {
   return { success: true, skipped: false, calendarId: resolvedCalendarId, status: updateResult.response.status };
 }
 
-async function syncCrmCalendarTemplates(locationId, fleet = []) {
+async function syncCrmCalendarTemplates(locationId, fleet = [], peakWindows = []) {
   const uniqueCalendarIds = Array.from(
     new Set(
       (Array.isArray(fleet) ? fleet : [])
@@ -3689,7 +3758,7 @@ async function syncCrmCalendarTemplates(locationId, fleet = []) {
   const results = [];
   for (const calendarId of uniqueCalendarIds) {
     try {
-      const result = await syncCrmCalendarTemplate(locationId, calendarId);
+      const result = await syncCrmCalendarTemplate(locationId, calendarId, fleet, peakWindows);
       results.push(result);
       if (result?.success && !result?.skipped) {
         console.log("[calendar-template] normalized", { locationId, calendarId });
@@ -6656,6 +6725,7 @@ async function syncConfirmedBookingCalendarEvent(bookingId) {
       b.calendar_id,
       b.crm_contact_id,
       b.crm_event_id,
+      b.booking_buffer_minutes,
       b.balance_due,
       p.business_name
      FROM bookings b
@@ -6701,6 +6771,22 @@ async function syncConfirmedBookingCalendarEvent(bookingId) {
     title,
     notes,
   });
+
+  try {
+    const bookingProfile = await getBookingProfileRow(booking.location_id, ["peak_windows"]);
+    await syncCrmCalendarTemplate(
+      booking.location_id,
+      booking.calendar_id,
+      [{
+        calendar_id: booking.calendar_id,
+        vehicle_slot_id: booking.vehicle_slot_id,
+        outbound_buffer_min: Number(booking.booking_buffer_minutes || 0),
+      }],
+      safeParseJson(bookingProfile?.peak_windows || [])
+    );
+  } catch (calendarTemplateErr) {
+    console.warn("CRM calendar template refresh skipped after booking:", calendarTemplateErr?.message || calendarTemplateErr);
+  }
 
   const cancelUnpaidBalanceAt = Number(booking.balance_due || 0) > 0 ? endOfUtcDay(booking.start_time ? new Date(new Date(booking.start_time).getTime() - (48 * 60 * 60 * 1000)).toISOString() : null) : null;
 
@@ -8370,7 +8456,7 @@ async function saveConfigHandler(req, res) {
         await syncFixedRates(bgClient, location_id, fixed_rates);
         await bgClient.query("COMMIT");
         try {
-          await syncCrmCalendarTemplates(location_id, sanitizedFleet);
+          await syncCrmCalendarTemplates(location_id, sanitizedFleet, peak_windows);
         } catch (calendarSyncErr) {
           console.warn("Wizard calendar template sync failed:", calendarSyncErr);
         }
@@ -10552,7 +10638,7 @@ if (fleet && fleet.length > 0) {
         console.log(`✅ Profile and FleetSlots synced for: ${location_id}`);
         setTimeout(async () => {
             try {
-                await syncCrmCalendarTemplates(location_id, normalizeFleetRecords(fleet || []));
+                await syncCrmCalendarTemplates(location_id, normalizeFleetRecords(fleet || []), peak_windows);
             } catch (calendarErr) {
                 console.error("Legacy calendar template sync failed:", calendarErr);
             }
