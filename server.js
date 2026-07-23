@@ -7919,6 +7919,9 @@ app.get("/dispatch-request.html", (req, res) => {
 app.get("/network-dispatch.html", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "network-dispatch.html"));
 });
+app.get("/driver-partner-program.html", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "driver-partner-program.html"));
+});
 app.get("/saas-sales.html", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "saas-sales.html"));
 });

@@ -1,0 +1,695 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Driver Partner Program</title>
+  <style>
+    :root {
+      --brand-primary: #0A0A0A;
+      --brand-secondary: #41424C;
+      --brand-accent: #DAA520;
+      --brand-line: rgba(218, 165, 32, 0.22);
+      --brand-muted: #5f6470;
+      --brand-card-shadow: rgba(10, 10, 10, 0.18);
+      --paper: rgba(255, 255, 255, 0.96);
+      --soft: #f8fafc;
+      --soft-warm: #fffaf0;
+      --ink: #111827;
+      --muted: #64748b;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top left, rgba(218, 165, 32, 0.12), transparent 24%),
+        radial-gradient(circle at top right, rgba(65, 66, 76, 0.16), transparent 28%),
+        linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
+      -webkit-text-size-adjust: 100%;
+    }
+    .wrap {
+      max-width: 1160px;
+      margin: 0 auto;
+      padding: 24px 16px 40px;
+    }
+    .hero {
+      background: linear-gradient(135deg, var(--brand-primary) 0%, var(--brand-secondary) 100%);
+      color: #fff;
+      border-radius: 28px;
+      padding: 30px 24px;
+      box-shadow: 0 24px 56px var(--brand-card-shadow);
+    }
+    .hero-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1.35fr) minmax(280px, 0.9fr);
+      gap: 18px;
+      align-items: start;
+    }
+    .hero-top {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: flex-start;
+      flex-wrap: wrap;
+      margin-bottom: 14px;
+    }
+    .brand-lockup {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      min-width: 0;
+    }
+    .brand-mark {
+      width: 54px;
+      height: 54px;
+      border-radius: 18px;
+      object-fit: cover;
+      background: rgba(255,255,255,0.12);
+      border: 1px solid rgba(255,255,255,0.18);
+      padding: 6px;
+      display: block;
+    }
+    .brand-mark.hidden {
+      display: none;
+    }
+    .brand-name {
+      margin: 0 0 6px;
+      font-size: 20px;
+      font-weight: 900;
+      letter-spacing: -0.03em;
+      color: #fff;
+    }
+    .eyebrow {
+      margin: 0;
+      font-size: 12px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+      color: rgba(255,255,255,0.82);
+    }
+    h1 {
+      margin: 0 0 12px;
+      font-size: 38px;
+      line-height: 1.05;
+      max-width: 820px;
+    }
+    .hero p {
+      margin: 0;
+      max-width: 920px;
+      line-height: 1.8;
+    }
+    .band {
+      margin-top: 18px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 8px 12px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      background: rgba(255, 255, 255, 0.14);
+      color: #fff;
+    }
+    .preview-panel {
+      border-radius: 24px;
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      background: rgba(255, 255, 255, 0.08);
+      backdrop-filter: blur(8px);
+      padding: 18px;
+    }
+    .preview-panel h2 {
+      margin: 0 0 8px;
+      font-size: 18px;
+      color: #fff;
+      line-height: 1.2;
+    }
+    .preview-panel p {
+      margin: 0;
+      color: rgba(255, 255, 255, 0.88);
+      line-height: 1.7;
+      font-size: 14px;
+    }
+    .preview-card {
+      margin-top: 14px;
+      border-radius: 22px;
+      background: linear-gradient(180deg, rgba(255,255,255,0.14) 0%, rgba(255,255,255,0.08) 100%);
+      border: 1px solid rgba(255,255,255,0.16);
+      padding: 16px;
+    }
+    .profile-media {
+      display: grid;
+      grid-template-columns: 82px 1fr;
+      gap: 14px;
+      align-items: center;
+    }
+    .profile-photo,
+    .profile-placeholder {
+      width: 82px;
+      height: 82px;
+      border-radius: 18px;
+      object-fit: cover;
+      border: 1px solid rgba(255,255,255,0.18);
+      background: rgba(255,255,255,0.12);
+      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.18);
+      display: block;
+    }
+    .profile-placeholder {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 22px;
+      font-weight: 900;
+      letter-spacing: -0.04em;
+      color: #fff;
+      background: linear-gradient(135deg, rgba(218, 165, 32, 0.4), rgba(255, 255, 255, 0.12));
+    }
+    .profile-photo.hidden,
+    .profile-placeholder.hidden {
+      display: none;
+    }
+    .preview-name {
+      margin: 0;
+      font-size: 20px;
+      font-weight: 900;
+      line-height: 1.2;
+      color: #fff;
+    }
+    .preview-role {
+      margin: 4px 0 0;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: rgba(255, 255, 255, 0.82);
+    }
+    .preview-bullets {
+      margin: 14px 0 0;
+      padding-left: 18px;
+      color: rgba(255, 255, 255, 0.88);
+      line-height: 1.7;
+      font-size: 13px;
+    }
+    .grid {
+      display: grid;
+      gap: 18px;
+      margin-top: 18px;
+    }
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px;
+    }
+    .card {
+      background: var(--paper);
+      border: 1px solid var(--brand-line);
+      border-radius: 22px;
+      padding: 22px;
+      box-shadow: 0 12px 28px rgba(15, 23, 42, 0.06);
+    }
+    .card h2 {
+      margin: 0 0 10px;
+      color: var(--brand-primary);
+      font-size: 24px;
+      line-height: 1.15;
+    }
+    .card h3 {
+      margin: 0 0 8px;
+      font-size: 18px;
+      color: var(--ink);
+    }
+    .card p, .card li {
+      color: #334155;
+      line-height: 1.8;
+    }
+    .card ul {
+      margin: 12px 0 0;
+      padding-left: 18px;
+    }
+    .step-list {
+      display: grid;
+      gap: 14px;
+      margin-top: 12px;
+    }
+    .step {
+      border: 1px solid var(--brand-line);
+      border-radius: 18px;
+      padding: 16px;
+      background: linear-gradient(180deg, #ffffff 0%, #fafaff 100%);
+    }
+    .step-number {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 30px;
+      height: 30px;
+      border-radius: 999px;
+      background: rgba(218, 165, 32, 0.18);
+      color: var(--brand-primary);
+      font-weight: 800;
+      margin-bottom: 10px;
+    }
+    .quote {
+      border-left: 4px solid var(--brand-accent);
+      background: #f8f5eb;
+      padding: 16px 18px;
+      border-radius: 16px;
+      line-height: 1.8;
+      color: #3f3f46;
+    }
+    .quote strong {
+      display: block;
+      margin-bottom: 6px;
+      color: var(--ink);
+    }
+    .button-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 18px;
+    }
+    .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 52px;
+      padding: 14px 18px;
+      border-radius: 16px;
+      text-decoration: none;
+      font-weight: 700;
+      font-size: 14px;
+      transition: transform 0.18s ease, filter 0.18s ease;
+      border: 1px solid transparent;
+    }
+    .button:hover {
+      transform: translateY(-1px);
+      filter: brightness(0.98);
+    }
+    .button-primary {
+      background: linear-gradient(135deg, var(--brand-primary), var(--brand-secondary));
+      color: #fff;
+    }
+    .button-secondary {
+      background: #fff;
+      color: var(--brand-primary);
+      border-color: var(--brand-line);
+    }
+    .button-quiet {
+      background: var(--soft-warm);
+      color: #92400e;
+      border-color: #fdba74;
+    }
+    .muted {
+      color: var(--muted);
+    }
+    .callout {
+      background: linear-gradient(135deg, #fefce8 0%, #fff7ed 100%);
+      border: 1px solid #fcd34d;
+      border-radius: 22px;
+      padding: 20px;
+    }
+    .tag-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 14px;
+    }
+    .tag {
+      border: 1px solid var(--brand-line);
+      border-radius: 16px;
+      padding: 14px 16px;
+      background: #fff;
+      color: #334155;
+      line-height: 1.6;
+    }
+    .tag strong {
+      display: block;
+      margin-bottom: 4px;
+      color: var(--brand-primary);
+    }
+    @media (max-width: 900px) {
+      .hero-layout {
+        grid-template-columns: 1fr;
+      }
+      .grid-2,
+      .tag-grid {
+        grid-template-columns: 1fr;
+      }
+      h1 {
+        font-size: 30px;
+      }
+    }
+    @media (max-width: 640px) {
+      .wrap {
+        padding: 16px 12px 32px;
+      }
+      .hero,
+      .card,
+      .callout {
+        border-radius: 20px;
+      }
+      .hero {
+        padding: 22px 18px;
+      }
+      .button-row {
+        display: grid;
+      }
+      .button {
+        width: 100%;
+      }
+    }
+  </style>
+</head>
+  <body>
+  <div class="wrap">
+    <section class="hero">
+      <div class="hero-layout">
+        <div>
+          <div class="hero-top">
+            <div class="brand-lockup">
+              <div>
+                <p class="brand-name" id="brand-name">Chauffeur Deluxe</p>
+                <p class="eyebrow" id="brand-eyebrow">Driver Partner Program</p>
+              </div>
+            </div>
+          </div>
+          <h1 id="hero-title">Bring the Client. We Bring the Luxury Vehicle.</h1>
+          <p id="hero-copy">
+            Build a premium chauffeur business without owning the car. Drivers bring their own clients into a branded booking page,
+            and once the client books an hourly trip at least 48 hours in advance, the platform handles the vehicle, payment,
+            dispatch, support, and operations.
+          </p>
+          <div class="band">
+            <span class="chip">Hourly only</span>
+            <span class="chip">48-hour minimum</span>
+            <span class="chip">Platform provides the vehicle</span>
+            <span class="chip">Driver gets paid after the trip</span>
+          </div>
+          <div class="button-row">
+            <a id="personal-link" class="button button-primary hidden" href="#" target="_blank" rel="noopener noreferrer">Open Personal Booking Link</a>
+            <button id="copy-link-btn" class="button button-secondary hidden" type="button">Copy Booking Link</button>
+            <a id="apply-link" class="button button-quiet hidden" href="#" target="_blank" rel="noopener noreferrer">Apply and Pay for Access</a>
+            <a class="button button-secondary" href="/dispatch-network-manager.html">View Dispatch Manager</a>
+          </div>
+          <div id="hero-status" class="muted" style="margin-top: 14px; color: rgba(255,255,255,0.9); line-height: 1.8;">
+            Driver partner pages are paid access. A driver must apply, subscribe to the partner page, and stay active in good standing before the personal booking link is enabled.
+          </div>
+        </div>
+
+        <aside class="preview-panel">
+          <h2>Personal Page Template</h2>
+          <p>This is the branded template a driver can use to present themselves as a luxury chauffeur.</p>
+          <div class="preview-card">
+            <div class="profile-media">
+              <img id="driver-photo-preview" class="profile-photo hidden" alt="Driver thumbnail preview" />
+              <div id="driver-photo-placeholder" class="profile-placeholder">CD</div>
+              <div>
+                <p class="preview-name" id="preview-name">Your Name</p>
+                <p class="preview-role" id="preview-role">Luxury Chauffeur</p>
+              </div>
+            </div>
+            <ul class="preview-bullets">
+              <li>Personal booking link</li>
+              <li>Driver thumbnail</li>
+              <li>QR code sharing page</li>
+              <li>Paid access before activation</li>
+            </ul>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <section class="grid">
+      <article class="card">
+        <h2>The Strategy</h2>
+        <p>
+          Position drivers as business development partners. They are not just hired hands. They are the people who bring the client,
+          while your company handles the luxury fleet, insurance, scheduling, payment collection, support, and dispatch.
+        </p>
+        <div class="step-list">
+          <div class="step">
+            <div class="step-number">1</div>
+            <h3>Recruit the right drivers</h3>
+            <p>
+              Focus on chauffeurs, executive drivers, limo drivers, hospitality pros, veterans, security-minded drivers, and any
+              operator who can confidently build relationships. They do not need to own a luxury vehicle to participate.
+            </p>
+          </div>
+          <div class="step">
+            <div class="step-number">2</div>
+            <h3>Give each driver a personal link</h3>
+            <p>
+              Every driver gets a branded booking URL and QR code. They share that link with people they already meet in hotels,
+              airports, offices, churches, weddings, conferences, and concierge relationships.
+            </p>
+          </div>
+          <div class="step">
+            <div class="step-number">3</div>
+            <h3>Keep the trip scheduled</h3>
+            <p>
+              Only hourly reservations booked at least 48 hours in advance are allowed through this channel. That gives the platform
+              time to assign the right vehicle and keep operations clean.
+            </p>
+          </div>
+          <div class="step">
+            <div class="step-number">4</div>
+            <h3>We provide the vehicle</h3>
+            <p>
+              The platform supplies the sedan, SUV, Sprinter, or executive van. The client experiences a fully branded service,
+              while the driver simply arrives, drives, and completes the trip.
+            </p>
+          </div>
+        </div>
+      </article>
+
+      <article class="card">
+        <h2>Why Drivers Say Yes</h2>
+        <p>
+          Drivers usually struggle with one of two problems: they own a vehicle and carry all the overhead, or they do not own
+          one and cannot access premium clients. This model solves both.
+        </p>
+        <ul>
+          <li>No vehicle purchase required.</li>
+          <li>No invoicing or payment chasing.</li>
+          <li>No scheduling headaches.</li>
+          <li>No insurance administration burden.</li>
+          <li>Potential referral income when they bring the relationship.</li>
+          <li>A clear, premium brand to represent in the market.</li>
+        </ul>
+        <div class="callout" style="margin-top: 18px;">
+          <strong>Best-practice rule:</strong>
+          <p style="margin: 8px 0 0;">
+            Make the referred driver the preferred chauffeur for clients they bring in, as long as they stay active and available.
+          If they are unavailable, the platform can still fulfill the trip with another qualified chauffeur.
+          </p>
+        </div>
+      </article>
+    </section>
+
+    <section class="card" style="margin-top: 18px; background: linear-gradient(180deg, #ffffff 0%, #fafaff 100%);">
+      <h2>How It Connects To Dispatch</h2>
+      <p>
+        The recruiting page brings in the lead, but the dispatcher manager turns that lead into a finished trip.
+        Once a client books through a driver's personal link, the booking enters the dispatch workflow so your team can review the trip,
+        assign the right vehicle, watch for conflicts, and keep the operation clean.
+      </p>
+      <div class="grid-2" style="margin-top: 14px;">
+        <div class="step">
+          <div class="step-number">A</div>
+          <h3>Driver brings the client</h3>
+          <p>
+            The chauffeur shares their personal booking page. The client books an hourly reservation at least 48 hours in advance.
+          </p>
+        </div>
+        <div class="step">
+          <div class="step-number">B</div>
+          <h3>Dispatcher manager receives the booking</h3>
+          <p>
+            Your internal team sees the reservation in dispatch, assigns the vehicle, checks for conflicts, and keeps the booking
+            visible if it needs waitlist attention.
+          </p>
+        </div>
+        <div class="step">
+          <div class="step-number">C</div>
+          <h3>Operations stay in one place</h3>
+          <p>
+            The driver does not have to run payments or logistics. The platform routes the booking into the dispatcher workflow
+            and your team keeps control of fulfillment.
+          </p>
+        </div>
+        <div class="step">
+          <div class="step-number">D</div>
+          <h3>Trip is assigned and paid</h3>
+          <p>
+            Once dispatch clears the trip, the platform handles the rest and pays the driver after completion.
+          </p>
+        </div>
+      </div>
+      <div class="button-row">
+        <a class="button button-primary" href="/network-dispatch.html">View Dispatch Workflow</a>
+        <a class="button button-secondary" href="/dispatch-network-manager.html">Open Dispatch Manager</a>
+      </div>
+    </section>
+
+    <section class="card" style="margin-top: 18px;">
+      <h2>Paid Partner Access</h2>
+      <p>
+        The partner page is a paid membership feature. Drivers must sign up, purchase access, and be approved before they receive
+        a branded booking link and QR code they can share with their own clients.
+      </p>
+      <div class="grid-2" style="margin-top: 14px;">
+        <div class="step">
+          <div class="step-number">$</div>
+          <h3>Partner page subscription</h3>
+          <p>
+            Charge a recurring subscription for the personal booking page, branded link, and access to the driver partner program.
+          </p>
+        </div>
+        <div class="step">
+          <div class="step-number">✓</div>
+          <h3>Activation after payment</h3>
+          <p>
+            Once the application and payment are complete, the system can activate the partner page and let the driver start sending leads.
+          </p>
+        </div>
+      </div>
+      <div class="button-row">
+        <a class="button button-primary" href="/addons.html#driver-partner-access">Review Partner Pricing</a>
+        <a class="button button-secondary" href="/partner-onboarding.html">Open Partner Onboarding</a>
+      </div>
+    </section>
+
+    <section class="grid-2" style="margin-top: 18px;">
+      <article class="card">
+        <h2>Recruiting Pitch</h2>
+        <div class="quote">
+          <strong>Short version</strong>
+          What if you could build your own luxury chauffeur business without buying a luxury vehicle?
+          Bring your clients to your personal booking page. When they book an hourly reservation at least 48 hours in advance,
+          we provide the vehicle, process the payment, manage dispatch, and pay you after the trip. You focus on the relationship
+          and the experience. We handle the operations.
+        </div>
+        <div class="button-row">
+          <button id="copy-pitch-btn" class="button button-secondary" type="button">Copy Pitch</button>
+        </div>
+      </article>
+
+      <article class="card">
+        <h2>Elevator Pitch</h2>
+        <p>
+          Imagine earning executive chauffeur income without owning a luxury vehicle. With Chauffeur Deluxe, you bring clients to your
+          personalized booking page. When they reserve an hourly trip at least 48 hours ahead, we provide the luxury vehicle,
+          handle booking, payments, insurance, dispatch, and customer support. You focus on delivering an exceptional ride while we
+          handle the business.
+        </p>
+        <p>
+          Build your own client base, grow your income, and let the platform power the operations behind you.
+        </p>
+      </article>
+    </section>
+
+    <section class="card" style="margin-top: 18px;">
+      <h2>Marketing Message and Taglines</h2>
+      <p class="muted">
+        Speak to drivers as partners, not applicants. Lead with opportunity, not employment.
+      </p>
+      <div class="tag-grid">
+        <div class="tag"><strong>Primary line</strong>Build Your Luxury Chauffeur Business Without Owning the Vehicle.</div>
+        <div class="tag"><strong>Tagline</strong>Your Clients. Our Fleet. Your Income.</div>
+        <div class="tag"><strong>Tagline</strong>Find the Client. We Handle the Rest.</div>
+        <div class="tag"><strong>Tagline</strong>Drive Luxury Without Buying Luxury.</div>
+        <div class="tag"><strong>Tagline</strong>Turn Your Network Into Premium Chauffeur Income.</div>
+        <div class="tag"><strong>Tagline</strong>Bring the Client. We Bring the Luxury Vehicle.</div>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const query = new URLSearchParams(window.location.search);
+    const companyName = (query.get("company_name") || "Chauffeur Deluxe").trim();
+    const driverName = (query.get("driver_name") || "").trim();
+    const driverTitle = (query.get("driver_title") || "Luxury Chauffeur").trim();
+    const driverPhoto = (query.get("driver_photo") || query.get("photo_url") || "").trim();
+    const bookingUrl = (query.get("booking_url") || query.get("personal_link") || "").trim();
+    const applyUrl = (query.get("apply_url") || "/addons.html#driver-partner-access").trim();
+
+    const heroTitle = document.getElementById("hero-title");
+    const heroCopy = document.getElementById("hero-copy");
+    const heroStatus = document.getElementById("hero-status");
+    const personalLink = document.getElementById("personal-link");
+    const copyLinkBtn = document.getElementById("copy-link-btn");
+    const applyLink = document.getElementById("apply-link");
+    const copyPitchBtn = document.getElementById("copy-pitch-btn");
+    const previewName = document.getElementById("preview-name");
+    const previewRole = document.getElementById("preview-role");
+    const driverPhotoPreview = document.getElementById("driver-photo-preview");
+    const driverPhotoPlaceholder = document.getElementById("driver-photo-placeholder");
+
+    function initialsFor(value) {
+      const parts = String(value || "").trim().split(/\s+/).filter(Boolean);
+      if (!parts.length) return "CD";
+      return parts.slice(0, 2).map((part) => part[0]).join("").toUpperCase();
+    }
+
+    const pitchText = [
+      `What if you could build your own luxury chauffeur business without buying a luxury vehicle?`,
+      `Bring your clients to your personal booking page.`,
+      `When they book an hourly reservation at least 48 hours in advance, ${companyName} provides the vehicle, processes payment, manages dispatch, and pays you after the trip.`,
+      `You focus on the relationship and the experience. ${companyName} handles the operations.`
+    ].join(" ");
+
+    heroTitle.textContent = driverName ? `${driverName}, build your own chauffeur business` : "Bring the Client. We Bring the Luxury Vehicle.";
+    heroCopy.textContent = pitchText;
+    heroStatus.textContent = `Ideal for hourly bookings only, with a 48-hour advance minimum so ${companyName} can assign the right vehicle and handle dispatch cleanly.`;
+    previewName.textContent = driverName || "Your Name";
+    previewRole.textContent = driverTitle || "Luxury Chauffeur";
+
+    if (driverPhoto) {
+      driverPhotoPreview.src = driverPhoto;
+      driverPhotoPreview.classList.remove("hidden");
+      driverPhotoPlaceholder.classList.add("hidden");
+    } else {
+      driverPhotoPlaceholder.textContent = initialsFor(driverName || companyName);
+      driverPhotoPlaceholder.classList.remove("hidden");
+      driverPhotoPreview.classList.add("hidden");
+    }
+
+    if (bookingUrl) {
+      personalLink.href = bookingUrl;
+      personalLink.classList.remove("hidden");
+      copyLinkBtn.classList.remove("hidden");
+      copyLinkBtn.addEventListener("click", async () => {
+        try {
+          await navigator.clipboard.writeText(bookingUrl);
+          copyLinkBtn.textContent = "Copied";
+          setTimeout(() => (copyLinkBtn.textContent = "Copy Booking Link"), 1500);
+        } catch (err) {
+          copyLinkBtn.textContent = "Copy unavailable";
+          setTimeout(() => (copyLinkBtn.textContent = "Copy Booking Link"), 1500);
+        }
+      });
+    }
+
+    applyLink.href = applyUrl;
+    applyLink.classList.remove("hidden");
+
+    copyPitchBtn.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(pitchText);
+        copyPitchBtn.textContent = "Pitch Copied";
+        setTimeout(() => (copyPitchBtn.textContent = "Copy Pitch"), 1500);
+      } catch (err) {
+        copyPitchBtn.textContent = "Copy unavailable";
+        setTimeout(() => (copyPitchBtn.textContent = "Copy Pitch"), 1500);
+      }
+    });
+  </script>
+</body>
+</html>

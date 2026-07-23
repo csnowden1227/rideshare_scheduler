@@ -387,7 +387,11 @@
       </div>
       <div class="btn-row">
         <a class="btn btn-primary" href="/network-dispatch.html">Learn More</a>
+        <a class="btn btn-secondary" href="/driver-partner-program.html">Driver Partner Program</a>
       </div>
+      <p class="muted" style="margin: 14px 0 0 0; line-height: 1.8;">
+        Use the driver partner program when you want to recruit chauffeurs who bring their own clients and book hourly reservations at least 48 hours in advance.
+      </p>
     </div>
 
     <div class="section">
@@ -397,6 +401,17 @@
       </p>
 
       <div class="grid-2">
+        <label class="option" id="driver-partner-access">
+          <div>
+            <input type="checkbox" id="addon-driver-partner">
+            <strong>Driver Partner Page Access</strong>
+          </div>
+          <div style="margin-top: 6px; color: var(--purple); font-weight: 700;">Add Your Price / month</div>
+          <p class="muted" style="margin: 10px 0 0 0; line-height: 1.8;">
+            Give drivers a branded personal booking page, a thumbnail-driven profile template, and access to the BYOC recruiting flow. This access should be active only after signup and payment.
+          </p>
+        </label>
+
         <label class="option">
           <div>
             <input type="checkbox" id="addon-branding">
@@ -438,7 +453,7 @@
         <div class="option" style="background: #f8fafc;">
           <strong>Checkout Note</strong>
           <p class="muted" style="margin: 10px 0 0 0; line-height: 1.8;">
-            This page is ready to connect to a combined backend checkout flow later. Right now it calculates the totals and gives you one place to sell the add-ons clearly.
+            This page is ready to connect to a combined backend checkout flow later. Right now it calculates the totals and gives you one place to sell the add-ons clearly, including paid partner page access.
           </p>
         </div>
       </div>
@@ -463,10 +478,11 @@
     }
 
     function updateSummaryOnly() {
+      const partnerAccess = document.getElementById("addon-driver-partner").checked ? 59.99 : 0;
       const branding = document.getElementById("addon-branding").checked ? 49.99 : 0;
       const funnel = document.getElementById("addon-funnel").checked ? 497 : 0;
       const extraVehicles = Number(document.getElementById("addon-extra-vehicle-qty").value || 0);
-      const monthly = branding + (extraVehicles * 109.99);
+      const monthly = partnerAccess + branding + (extraVehicles * 109.99);
       const oneTime = funnel;
 
       document.getElementById("one-time-total").textContent = currency(oneTime);
@@ -476,6 +492,7 @@
     }
 
     window.addEventListener("load", updateSummaryOnly);
+    document.getElementById("addon-driver-partner").addEventListener("change", updateSummaryOnly);
     document.getElementById("addon-branding").addEventListener("change", updateSummaryOnly);
     document.getElementById("addon-funnel").addEventListener("change", updateSummaryOnly);
     document.getElementById("addon-extra-vehicle-qty").addEventListener("change", updateSummaryOnly);
