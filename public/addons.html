@@ -406,7 +406,7 @@
             <input type="checkbox" id="addon-driver-partner">
             <strong>Driver Partner Page Access</strong>
           </div>
-          <div style="margin-top: 6px; color: var(--purple); font-weight: 700;">Add Your Price / month</div>
+          <div style="margin-top: 6px; color: var(--purple); font-weight: 700;">$100 setup + $79/month</div>
           <p class="muted" style="margin: 10px 0 0 0; line-height: 1.8;">
             Give drivers a branded personal booking page, a thumbnail-driven profile template, and access to the BYOC recruiting flow. This access should be active only after signup and payment.
           </p>
@@ -478,12 +478,14 @@
     }
 
     function updateSummaryOnly() {
-      const partnerAccess = document.getElementById("addon-driver-partner").checked ? 59.99 : 0;
+      const partnerAccessSelected = document.getElementById("addon-driver-partner").checked;
+      const partnerAccessSetup = partnerAccessSelected ? 100 : 0;
+      const partnerAccessMonthly = partnerAccessSelected ? 79 : 0;
       const branding = document.getElementById("addon-branding").checked ? 49.99 : 0;
       const funnel = document.getElementById("addon-funnel").checked ? 497 : 0;
       const extraVehicles = Number(document.getElementById("addon-extra-vehicle-qty").value || 0);
-      const monthly = partnerAccess + branding + (extraVehicles * 109.99);
-      const oneTime = funnel;
+      const monthly = partnerAccessMonthly + branding + (extraVehicles * 109.99);
+      const oneTime = funnel + partnerAccessSetup;
 
       document.getElementById("one-time-total").textContent = currency(oneTime);
       document.getElementById("monthly-total").textContent = currency(monthly);
