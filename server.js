@@ -3650,6 +3650,125 @@ async function buildNormalizedCrmCalendarPayload(calendar = {}, options = {}) {
   };
 }
 
+function formatTimeOfDayFromMinutes(totalMinutes) {
+  if (!Number.isFinite(totalMinutes)) return null;
+  const normalizedMinutes = ((Math.round(totalMinutes) % 1440) + 1440) % 1440;
+  const hours = Math.floor(normalizedMinutes / 60);
+  const minutes = normalizedMinutes % 60;
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+}
+
+function buildCrmScheduleRulesFromFleet(fleet = []) {
+  const normalizedFleet = normalizeFleetRecords(Array.isArray(fleet) ? fleet : []);
+  let earliestStartMinutes = null;
+  let latestEndMinutes = null;
+
+  for (const slot of normalizedFleet) {
+    const slotStartMinutes = parseTimeOfDayToMinutes(slot?.instant_booking_start_time);
+    const slotEndMinutes = parseTimeOfDayToMinutes(slot?.instant_booking_end_time);
+
+    if (Number.isFinite(slotStartMinutes)) {
+      earliestStartMinutes = earliestStartMinutes == null
+        ? slotStartMinutes
+        : Math.min(earliestStartMinutes, slotStartMinutes);
+    }
+
+    if (Number.isFinite(slotEndMinutes)) {
+      latestEndMinutes = latestEndMinutes == null
+        ? slotEndMinutes
+        : Math.max(latestEndMinutes, slotEndMinutes);
+    }
+  }
+
+  if (!Number.isFinite(earliestStartMinutes) || !Number.isFinite(latestEndMinutes)) {
+    return [];
+  }
+
+  const startLabel = formatTimeOfDayFromMinutes(earliestStartMinutes);
+  const endLabel = formatTimeOfDayFromMinutes(latestEndMinutes);
+  if (!startLabel || !endLabel) return [];
+
+  const intervals = earliestStartMinutes <= latestEndMinutes
+    ? [{ from: startLabel, to: endLabel }]
+    : [
+        { from: startLabel, to: "23:59" },
+        { from: "00:00", to: endLabel },
+      ];
+
+  return [
+    "monday",
+    "tuesday",
+    "wednesday",
+    "thursday",
+    "friday",
+    "saturday",
+    "sunday",
+  ].map((day) => ({
+    type: "wday",
+    day,
+    intervals,
+  }));
+}
+
+async function syncCrmAvailabilitySchedule(locationId, schedule = {}, fleet = []) {
+  const resolvedLocationId = String(locationId || "").trim();
+  const resolvedScheduleId = String(schedule?.id || "").trim();
+  if (!resolvedLocationId || !resolvedScheduleId) {
+    return { skipped: true, reason: "missing_schedule" };
+  }
+
+  const desiredRules = buildCrmScheduleRulesFromFleet(fleet);
+  if (!desiredRules.length) {
+    return { skipped: true, reason: "missing_schedule_rules", scheduleId: resolvedScheduleId };
+  }
+
+  const currentTimezone = String(schedule?.timezone || "").trim() || null;
+  const currentCalendarIds = Array.isArray(schedule?.calendarIds) ? schedule.calendarIds : [];
+  const desiredSchedule = {
+    name: schedule?.name || "Work Hours",
+    rules: desiredRules,
+    calendarIds: currentCalendarIds,
+    userId: schedule?.userId || null,
+    locationId: resolvedLocationId,
+    ...(currentTimezone ? { timezone: currentTimezone } : {}),
+  };
+
+  const rulesChanged = JSON.stringify(schedule?.rules || []) !== JSON.stringify(desiredSchedule.rules || []);
+  if (!rulesChanged) {
+    return { success: true, skipped: true, scheduleId: resolvedScheduleId, reason: "already_normalized" };
+  }
+
+  const updateResult = await fetchCrmWithFallback(
+    resolvedLocationId,
+    new URL(`/calendars/schedules/${encodeURIComponent(resolvedScheduleId)}`, CRM_API_BASE_URL),
+    {
+      method: "PUT",
+      headers: {
+        Version: "2021-07-28",
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(desiredSchedule),
+    }
+  );
+
+  if (!updateResult.response) {
+    return { success: false, skipped: false, scheduleId: resolvedScheduleId, error: "No CRM response." };
+  }
+
+  if (!updateResult.response.ok) {
+    return {
+      success: false,
+      skipped: false,
+      scheduleId: resolvedScheduleId,
+      status: updateResult.response.status,
+      error: updateResult.bodyText?.slice(0, 300) || "Unable to update CRM availability schedule.",
+    };
+  }
+
+  return { success: true, skipped: false, scheduleId: resolvedScheduleId, status: updateResult.response.status };
+}
+
 async function syncCrmCalendarTemplate(locationId, calendarId, fleet = [], peakWindows = []) {
   const resolvedLocationId = String(locationId || "").trim();
   const resolvedCalendarId = String(calendarId || "").trim();
@@ -3771,6 +3890,74 @@ async function syncCrmCalendarTemplates(locationId, fleet = [], peakWindows = []
       results.push({ success: false, calendarId, error: error?.message || String(error) });
       console.warn("[calendar-template] normalization error", { locationId, calendarId, error: error?.message || String(error) });
     }
+  }
+
+  try {
+    const resolvedLocationId = String(locationId || "").trim();
+    const scheduleSearchResult = await fetchCrmWithFallback(
+      resolvedLocationId,
+      new URL(`/calendars/schedules/search?locationId=${encodeURIComponent(resolvedLocationId)}`, CRM_API_BASE_URL),
+      {
+        method: "GET",
+        headers: {
+          Version: "2021-07-28",
+          Accept: "application/json",
+        },
+      }
+    );
+
+    if (scheduleSearchResult.response?.ok) {
+      let parsedSchedules;
+      try {
+        parsedSchedules = scheduleSearchResult.bodyText ? JSON.parse(scheduleSearchResult.bodyText) : {};
+      } catch {
+        parsedSchedules = {};
+      }
+
+      const schedules = Array.isArray(parsedSchedules?.schedules) ? parsedSchedules.schedules : [];
+      const targetCalendarIds = new Set(uniqueCalendarIds);
+      const matchingSchedules = schedules.filter((schedule) => {
+        const scheduleCalendarIds = Array.isArray(schedule?.calendarIds) ? schedule.calendarIds : [];
+        return scheduleCalendarIds.some((calendarId) => targetCalendarIds.has(String(calendarId || "").trim()));
+      });
+
+      for (const schedule of matchingSchedules) {
+        try {
+          const result = await syncCrmAvailabilitySchedule(resolvedLocationId, schedule, fleet);
+          results.push(result);
+          if (result?.success && !result?.skipped) {
+            console.log("[calendar-availability] normalized", { locationId, scheduleId: schedule?.id || null });
+          } else if (result?.success && result?.skipped) {
+            console.log("[calendar-availability] already normalized", { locationId, scheduleId: schedule?.id || null });
+          } else {
+            console.warn("[calendar-availability] normalization failed", {
+              locationId,
+              scheduleId: schedule?.id || null,
+              error: result?.error || null,
+              status: result?.status || null,
+            });
+          }
+        } catch (error) {
+          results.push({ success: false, scheduleId: schedule?.id || null, error: error?.message || String(error) });
+          console.warn("[calendar-availability] normalization error", {
+            locationId,
+            scheduleId: schedule?.id || null,
+            error: error?.message || String(error),
+          });
+        }
+      }
+    } else if (scheduleSearchResult.response) {
+      console.warn("[calendar-availability] schedule search failed", {
+        locationId,
+        status: scheduleSearchResult.response.status,
+        error: scheduleSearchResult.bodyText?.slice(0, 300) || null,
+      });
+    }
+  } catch (error) {
+    console.warn("[calendar-availability] schedule search skipped", {
+      locationId,
+      error: error?.message || String(error),
+    });
   }
 
   return results;
