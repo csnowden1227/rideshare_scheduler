@@ -17026,35 +17026,40 @@ app.get("/api/get-profile-widget-script/:location_id", async (req, res) => {
 
     const location_id = String(req.params.location_id || "").trim();
     const profileIdColumn = await getProfileIdColumn();
+    const profileColumns = await getTableColumns("profiles");
+    const selectProfileFields = [
+      profileIdColumn,
+      "plan_name",
+      "addon_branding_unlocked",
+      "addon_funnel_unlocked",
+      "addon_tracking_unlocked",
+      "addon_extra_vehicle_count",
+      "business_name",
+      "public_app_url",
+      "business_logo",
+      "brand_color_primary",
+      "brand_color_secondary",
+      "brand_color_accent",
+      "widget_tagline",
+      "maps_api_key",
+      "payment_provider",
+      "tax_rate",
+      "service_fee_type",
+      "service_fee_value",
+      "service_area_type",
+      "service_area_rules",
+      "fleet",
+      "hourly_bookings",
+      "peak_windows",
+      "events",
+      "addons",
+    ].filter((field) => profileColumns.has(field));
+    if (profileColumns.has("fixed_rates")) {
+      selectProfileFields.push("fixed_rates");
+    }
 
     const profileRes = await pool.query(
-      `SELECT
-         ${profileIdColumn},
-         plan_name,
-         addon_branding_unlocked,
-         addon_funnel_unlocked,
-         addon_tracking_unlocked,
-         addon_extra_vehicle_count,
-         business_name,
-         public_app_url,
-         business_logo,
-         brand_color_primary,
-         brand_color_secondary,
-         brand_color_accent,
-         widget_tagline,
-         maps_api_key,
-         payment_provider,
-         tax_rate,
-         service_fee_type,
-         service_fee_value,
-         service_area_type,
-         service_area_rules,
-         fleet,
-         fixed_rates,
-         hourly_bookings,
-         peak_windows,
-         events,
-         addons
+      `SELECT ${selectProfileFields.join(", ")}
        FROM profiles
        WHERE ${profileIdColumn} = $1`,
       [location_id]
