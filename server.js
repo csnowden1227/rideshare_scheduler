@@ -14679,6 +14679,8 @@ async function createBookingRecord(input, {
   triggerWebhook = true,
   req = null,
   enforceTimingValidation = true,
+  calendarConflict = null,
+  waitlistRecommended = false,
 } = {}) {
   const {
     location_id,
@@ -14727,10 +14729,10 @@ async function createBookingRecord(input, {
     checked_bag_count = 0,
     additional_items_aboard = null,
     selected_event_name = null,
-    selected_fixed_destination = null,
-    selected_hourly_booking = null,
-    hourly_hours = null,
-    selected_addons = []
+  selected_fixed_destination = null,
+  selected_hourly_booking = null,
+  hourly_hours = null,
+  selected_addons = []
   } = input;
 
   if (!location_id || !vehicle_slot_id || !first_name || !last_name || !start_time) {
@@ -14989,6 +14991,7 @@ async function createBookingRecord(input, {
 
   const booking_id = result.rows[0]?.id || null;
   const savedBookingMode = String(result.rows[0]?.booking_mode || booking_mode || "standard").trim() || "standard";
+  const waitlistBooking = Boolean(waitlistRecommended || calendarConflict);
   let calendarSync = null;
   let webhookDelivery = {
     attempted: false,
@@ -14999,12 +15002,26 @@ async function createBookingRecord(input, {
 
   if (isBookingConfirmed && booking_id) {
     try {
-      const crmEventId = await syncConfirmedBookingCalendarEvent(booking_id);
-      calendarSync = {
-        attempted: true,
-        success: Boolean(crmEventId),
-        crm_event_id: crmEventId || null,
-      };
+      if (waitlistBooking) {
+        calendarSync = {
+          attempted: false,
+          skipped: true,
+          reason: "Booking marked waitlist due to calendar conflict.",
+        };
+        await pool.query(
+          `UPDATE bookings
+           SET dispatch_status = 'waitlist'
+           WHERE id = $1`,
+          [booking_id]
+        );
+      } else {
+        const crmEventId = await syncConfirmedBookingCalendarEvent(booking_id);
+        calendarSync = {
+          attempted: true,
+          success: Boolean(crmEventId),
+          crm_event_id: crmEventId || null,
+        };
+      }
     } catch (calendarErr) {
       console.error("CRM calendar sync error during booking creation:", calendarErr);
       calendarSync = {
@@ -15234,6 +15251,7 @@ async function createBookingRecord(input, {
       payment_provider: resolvedPaymentProvider,
     },
     calendar_sync: calendarSync,
+    waitlist_recommended: waitlistBooking,
     meta: {
       created_at: new Date().toISOString(),
       source: "booking_widget",
@@ -15250,6 +15268,7 @@ async function createBookingRecord(input, {
 app.post("/api/create-checkout-session", async (req, res) => {
   let bookingId = null;
   try {
+    let calendarConflict = null;
     const locationId = req.body.location_id;
     const vehicleSlotId = req.body.vehicle_slot_id;
     const practiceMode = req.body.practice_mode === true || String(req.body.practice_mode || "").trim() === "1";
@@ -15398,6 +15417,12 @@ app.post("/api/create-checkout-session", async (req, res) => {
       );
 
       if (conflictingEvent) {
+        calendarConflict = {
+          title: conflictingEvent.title,
+          start_time: conflictingEvent.start,
+          end_time: conflictingEvent.end,
+          calendar_id: fleetVehicle.calendar_id,
+        };
         const farmOutLink = appendQueryParams(
           buildDispatchManagerUrl(getPublicAppUrl(req), locationId),
           {
@@ -15425,15 +15450,10 @@ app.post("/api/create-checkout-session", async (req, res) => {
             error: error?.message || error,
           });
         });
-        return res.status(409).json({
-          error: "This vehicle is not available for that time. Please call to check other fleet availability. We can add you to the waitlist.",
-          waitlist_recommended: true,
-          conflict: {
-            title: conflictingEvent.title,
-            start_time: conflictingEvent.start,
-            end_time: conflictingEvent.end,
-            calendar_id: fleetVehicle.calendar_id,
-          },
+        console.warn("[booking-conflict] booking will continue as waitlist-recommended", {
+          locationId,
+          vehicleSlotId,
+          conflict: calendarConflict,
         });
       }
     }
@@ -15502,8 +15522,10 @@ app.post("/api/create-checkout-session", async (req, res) => {
         balance_due_deadline: balanceDueDeadline,
         hours_until_ride: hoursUntilRide,
         payment_provider: paymentProvider,
+        calendar_conflict: calendarConflict,
+        waitlist_recommended: Boolean(calendarConflict),
       },
-      { triggerWebhook: false, req, enforceTimingValidation: false }
+      { triggerWebhook: false, req, enforceTimingValidation: false, calendarConflict, waitlistRecommended: Boolean(calendarConflict) }
     );
 
     bookingId = bookingResult.booking?.id;
@@ -15560,6 +15582,7 @@ app.post("/api/create-checkout-session", async (req, res) => {
       payment_provider: paymentProvider,
       practice_mode: practiceMode,
       booking: bookingResult.booking,
+      waitlist_recommended: Boolean(calendarConflict),
     });
   } catch (err) {
     if (bookingId) {
