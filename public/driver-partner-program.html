@@ -202,6 +202,80 @@
       gap: 18px;
       margin-top: 18px;
     }
+    .fleet-section {
+      margin-top: 18px;
+      background: linear-gradient(180deg, #ffffff 0%, #fbfaf4 100%);
+    }
+    .fleet-intro {
+      margin: 0;
+      line-height: 1.8;
+      color: #334155;
+    }
+    .fleet-group {
+      margin-top: 16px;
+      border: 1px solid var(--brand-line);
+      border-radius: 20px;
+      padding: 18px;
+      background: #fff;
+    }
+    .fleet-group h3 {
+      margin: 0 0 6px;
+      font-size: 18px;
+      color: var(--brand-primary);
+    }
+    .fleet-group p {
+      margin: 0 0 12px;
+      color: var(--muted);
+      line-height: 1.7;
+    }
+    .vehicle-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+    .vehicle-card {
+      border-radius: 18px;
+      border: 1px solid #ece7d0;
+      background: linear-gradient(180deg, #fffdf7 0%, #ffffff 100%);
+      padding: 14px;
+      display: grid;
+      gap: 10px;
+    }
+    .vehicle-image {
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      border-radius: 14px;
+      object-fit: cover;
+      border: 1px solid #eadfba;
+      background: linear-gradient(135deg, rgba(218, 165, 32, 0.20), rgba(65, 66, 76, 0.14));
+    }
+    .vehicle-cta {
+      width: 100%;
+    }
+    .vehicle-label {
+      display: inline-flex;
+      align-items: center;
+      width: fit-content;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: rgba(218, 165, 32, 0.12);
+      color: #7c5b00;
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    .vehicle-card strong {
+      display: block;
+      font-size: 17px;
+      color: var(--brand-primary);
+      line-height: 1.3;
+    }
+    .vehicle-card span {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.6;
+    }
     .grid-2 {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -338,6 +412,9 @@
       .hero-layout {
         grid-template-columns: 1fr;
       }
+      .vehicle-grid {
+        grid-template-columns: 1fr;
+      }
       .grid-2,
       .tag-grid {
         grid-template-columns: 1fr;
@@ -427,6 +504,56 @@
     </section>
 
     <section class="grid">
+      <article class="card fleet-section">
+        <h2>Fleet Template</h2>
+        <p class="fleet-intro">
+          Drivers can present these four cars as the examples in their personal luxury chauffeur page. Use two vehicle categories with two cars in each category.
+          The booking still comes through the platform, and dispatch assigns the right vehicle after the client books.
+        </p>
+
+        <div class="fleet-group">
+          <h3>Luxury XL SUV</h3>
+          <p>Premium SUV category with two vehicle options for clients who want more room, luggage capacity, and executive presence.</p>
+          <div class="vehicle-grid">
+            <div class="vehicle-card">
+              <div class="vehicle-label">Luxury XL SUV</div>
+              <img class="vehicle-image" src="/assets/driver-partner-program/luxury-xl-suv-escalade-esv.png" alt="Cadillac Escalade luxury SUV" />
+              <strong>Cadillac Escalade</strong>
+              <span>Show this as the flagship XL SUV example in the partner page template.</span>
+              <a class="button button-secondary vehicle-cta" href="#" data-vehicle-type="Luxury XL SUV" data-vehicle-name="Cadillac Escalade">Choose This Vehicle</a>
+            </div>
+            <div class="vehicle-card">
+              <div class="vehicle-label">Luxury XL SUV</div>
+              <img class="vehicle-image" src="/assets/driver-partner-program/luxury-xl-suv-suburban.png" alt="Chevy Suburban luxury SUV" />
+              <strong>Chevy Suburban</strong>
+              <span>Use this as the second XL SUV example for larger groups and airport runs.</span>
+              <a class="button button-secondary vehicle-cta" href="#" data-vehicle-type="Luxury XL SUV" data-vehicle-name="Chevy Suburban">Choose This Vehicle</a>
+            </div>
+          </div>
+        </div>
+
+        <div class="fleet-group">
+          <h3>Luxury Sedan</h3>
+          <p>Executive sedan category with two vehicle options for a clean, formal look that works well for business, airport, and private bookings.</p>
+          <div class="vehicle-grid">
+            <div class="vehicle-card">
+              <div class="vehicle-label">Luxury Sedan</div>
+              <img class="vehicle-image" src="/assets/driver-partner-program/luxury-sedan-cts.png" alt="Cadillac CTS luxury sedan" />
+              <strong>Cadillac CTS</strong>
+              <span>Use this as one of the sedan options in the personal chauffeur template.</span>
+              <a class="button button-secondary vehicle-cta" href="#" data-vehicle-type="Luxury Sedan" data-vehicle-name="Cadillac CTS">Choose This Vehicle</a>
+            </div>
+            <div class="vehicle-card">
+              <div class="vehicle-label">Luxury Sedan</div>
+              <img class="vehicle-image" src="/assets/driver-partner-program/luxury-sedan-maybach.png" alt="Mercedes-Benz luxury sedan" />
+              <strong>Mercedes-Benz Sedan</strong>
+              <span>Use this as the second sedan example for a polished premium look.</span>
+              <a class="button button-secondary vehicle-cta" href="#" data-vehicle-type="Luxury Sedan" data-vehicle-name="Mercedes-Benz Sedan">Choose This Vehicle</a>
+            </div>
+          </div>
+        </div>
+      </article>
+
       <article class="card">
         <h2>The Strategy</h2>
         <p>
@@ -553,7 +680,7 @@
           </p>
         </div>
         <div class="step">
-          <div class="step-number">✓</div>
+          <div class="step-number">Paid</div>
           <h3>Activation after payment</h3>
           <p>
             Once the application and payment are complete, the system can activate the partner page and let the driver start sending leads.
@@ -631,6 +758,7 @@
     const previewRole = document.getElementById("preview-role");
     const driverPhotoPreview = document.getElementById("driver-photo-preview");
     const driverPhotoPlaceholder = document.getElementById("driver-photo-placeholder");
+    const vehicleCtas = document.querySelectorAll(".vehicle-cta");
 
     function initialsFor(value) {
       const parts = String(value || "").trim().split(/\s+/).filter(Boolean);
@@ -679,6 +807,15 @@
 
     applyLink.href = applyUrl;
     applyLink.classList.remove("hidden");
+
+    vehicleCtas.forEach((cta) => {
+      const vehicleType = cta.getAttribute("data-vehicle-type") || "";
+      const vehicleName = cta.getAttribute("data-vehicle-name") || "";
+      const target = new URL(applyUrl, window.location.origin);
+      if (vehicleType) target.searchParams.set("vehicle_type", vehicleType);
+      if (vehicleName) target.searchParams.set("vehicle_name", vehicleName);
+      cta.href = target.toString();
+    });
 
     copyPitchBtn.addEventListener("click", async () => {
       try {
