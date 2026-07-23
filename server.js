@@ -5159,6 +5159,58 @@ async function processDriverPrePickupEmailReminders() {
   }
 }
 
+let confirmedBookingCalendarBackfillLoopRunning = false;
+
+async function processConfirmedBookingCalendarBackfill() {
+  if (confirmedBookingCalendarBackfillLoopRunning) return;
+  confirmedBookingCalendarBackfillLoopRunning = true;
+  try {
+    await ensureBookingSyncColumns();
+    const result = await pool.query(
+      `SELECT
+        b.id,
+        b.location_id,
+        b.status,
+        b.start_time,
+        b.end_time,
+        b.calendar_id,
+        b.crm_event_id
+       FROM bookings b
+       WHERE LOWER(COALESCE(b.status, '')) = 'confirmed'
+         AND b.calendar_id IS NOT NULL
+         AND b.start_time IS NOT NULL
+         AND b.end_time IS NOT NULL
+         AND b.crm_event_id IS NULL
+         AND b.start_time >= NOW() - INTERVAL '2 hours'
+       ORDER BY b.start_time ASC, b.id ASC`
+    );
+
+    for (const booking of result.rows) {
+      try {
+        const eventId = await syncConfirmedBookingCalendarEvent(booking.id);
+        console.log("[calendar-sync] backfill result", {
+          bookingId: booking.id,
+          locationId: booking.location_id,
+          success: Boolean(eventId),
+          crmEventId: eventId || null,
+        });
+      } catch (err) {
+        console.error("[calendar-sync] backfill error", {
+          bookingId: booking.id,
+          locationId: booking.location_id,
+          error: err?.message || err,
+        });
+      }
+    }
+  } catch (err) {
+    console.error("[calendar-sync] backfill sweep failed", {
+      error: err?.message || err,
+    });
+  } finally {
+    confirmedBookingCalendarBackfillLoopRunning = false;
+  }
+}
+
 function buildDriverBookingSmsMessage({
   booking,
   paymentState,
@@ -6281,7 +6333,7 @@ async function createCrmAppointment({
   endTime,
   title,
   notes,
-  timeZone = "UTC",
+  timeZone = getCalendarSyncTimeZone(),
 }) {
   if (!locationId || !calendarId || !contactId || !startTime) {
     return null;
@@ -10680,6 +10732,11 @@ function buildInsuranceProviderPreview(booking = {}, settings = {}) {
 }
 
 const BOOKING_DISPLAY_TIMEZONE = String(process.env.BOOKING_DISPLAY_TIMEZONE || "America/Los_Angeles").trim() || "America/Los_Angeles";
+const BOOKING_ACCOUNT_TIMEZONE = String(process.env.BOOKING_ACCOUNT_TIMEZONE || BOOKING_DISPLAY_TIMEZONE).trim() || BOOKING_DISPLAY_TIMEZONE;
+
+function getCalendarSyncTimeZone() {
+  return BOOKING_ACCOUNT_TIMEZONE;
+}
 
 function formatDisplayDateTime(isoValue, timeZone = BOOKING_DISPLAY_TIMEZONE) {
   const value = new Date(isoValue);
@@ -18297,6 +18354,9 @@ app.listen(PORT, () => {
   processDriverPrePickupEmailReminders().catch((err) => {
     console.error("[driver-notify] Failed to initialize pickup reminder sweep:", err);
   });
+  processConfirmedBookingCalendarBackfill().catch((err) => {
+    console.error("[calendar-sync] Failed to initialize confirmed booking backfill:", err);
+  });
   setInterval(() => {
     processDailyInstantBookingNotifications().catch((err) => {
       console.error("[instant-booking] Daily notification loop error:", err);
@@ -18305,6 +18365,11 @@ app.listen(PORT, () => {
   setInterval(() => {
     processDriverPrePickupEmailReminders().catch((err) => {
       console.error("[driver-notify] Pickup reminder loop error:", err);
+    });
+  }, 15 * 60 * 1000);
+  setInterval(() => {
+    processConfirmedBookingCalendarBackfill().catch((err) => {
+      console.error("[calendar-sync] Confirmed booking backfill loop error:", err);
     });
   }, 15 * 60 * 1000);
 });
