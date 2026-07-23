@@ -414,6 +414,9 @@ async function ensureBookingSyncColumns() {
       await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS driver_reminder_email_sent_at TIMESTAMPTZ`);
       await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS driver_reminder_email_last_attempt_at TIMESTAMPTZ`);
       await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS driver_reminder_email_last_error TEXT`);
+      await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS calendar_sync_last_attempt_at TIMESTAMPTZ`);
+      await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS calendar_sync_last_error TEXT`);
+      await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS calendar_sync_last_synced_at TIMESTAMPTZ`);
       await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS customer_confirmation_sms_sent_at TIMESTAMPTZ`);
       await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS customer_confirmation_email_sent_at TIMESTAMPTZ`);
       await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS customer_completed_sms_sent_at TIMESTAMPTZ`);
@@ -4511,6 +4514,13 @@ async function sendDriverBookingEmailForBooking({
   };
 }
 
+async function sendDriverBookingReminderEmailForBooking(options = {}) {
+  return sendDriverBookingEmailForBooking({
+    ...options,
+    emailKind: "reminder",
+  });
+}
+
 async function listCrmContactsForLocation({
   locationId,
   limit = 100,
@@ -5174,14 +5184,17 @@ async function processConfirmedBookingCalendarBackfill() {
         b.start_time,
         b.end_time,
         b.calendar_id,
-        b.crm_event_id
+        b.crm_event_id,
+        b.calendar_sync_last_attempt_at,
+        b.calendar_sync_last_error
        FROM bookings b
        WHERE LOWER(COALESCE(b.status, '')) = 'confirmed'
          AND b.calendar_id IS NOT NULL
          AND b.start_time IS NOT NULL
          AND b.end_time IS NOT NULL
          AND b.crm_event_id IS NULL
-         AND b.start_time >= NOW() - INTERVAL '2 hours'
+         AND b.start_time >= NOW() - INTERVAL '24 hours'
+         AND (b.calendar_sync_last_attempt_at IS NULL OR b.calendar_sync_last_attempt_at < NOW() - INTERVAL '6 hours')
        ORDER BY b.start_time ASC, b.id ASC`
     );
 
@@ -5195,6 +5208,14 @@ async function processConfirmedBookingCalendarBackfill() {
           crmEventId: eventId || null,
         });
       } catch (err) {
+        const errorText = String(err?.message || err || "");
+        await pool.query(
+          `UPDATE bookings
+           SET calendar_sync_last_attempt_at = NOW(),
+               calendar_sync_last_error = $2
+           WHERE id = $1`,
+          [booking.id, errorText.slice(0, 1000)]
+        );
         console.error("[calendar-sync] backfill error", {
           bookingId: booking.id,
           locationId: booking.location_id,
@@ -6474,7 +6495,10 @@ async function syncConfirmedBookingCalendarEvent(bookingId) {
     `UPDATE bookings
      SET crm_contact_id = $1,
          crm_event_id = $2,
-         cancel_unpaid_balance_at = $3
+         cancel_unpaid_balance_at = $3,
+         calendar_sync_last_attempt_at = NOW(),
+         calendar_sync_last_error = NULL,
+         calendar_sync_last_synced_at = NOW()
      WHERE id = $4`,
     [contactId, eventId, cancelUnpaidBalanceAt, booking.id]
   );
