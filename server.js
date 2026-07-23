@@ -1173,6 +1173,28 @@ async function getProfilesColumns() {
   return getTableColumns("profiles");
 }
 
+async function getProfileFixedRates(locationId, profileRow = {}, db = pool) {
+  if (Object.prototype.hasOwnProperty.call(profileRow || {}, "fixed_rates")) {
+    return safeParseJson(profileRow.fixed_rates);
+  }
+
+  if (await tableExists("fixed_rates")) {
+    const fixedRatesColumns = await getTableColumns("fixed_rates");
+    const fixedRatesIdColumn = fixedRatesColumns.has("location_id")
+      ? "location_id"
+      : (fixedRatesColumns.has("user_id") ? "user_id" : null);
+    if (fixedRatesIdColumn) {
+      const fixedRatesRes = await db.query(
+        `SELECT * FROM fixed_rates WHERE ${fixedRatesIdColumn} = $1 AND COALESCE(is_active, true) = true`,
+        [locationId]
+      );
+      return fixedRatesRes.rows;
+    }
+  }
+
+  return [];
+}
+
 async function getBookingProfileRow(locationId, fields = []) {
   const profileColumns = await getProfilesColumns();
   const selectedFields = fields.filter((field) => profileColumns.has(field));
@@ -15887,20 +15909,7 @@ app.get("/api/get-profile/:location_id", requireWizardToken, async (req, res) =>
     if (profileRes.rows.length === 0) return res.status(404).json({ error: "Profile not found" });
 
     const profile = profileRes.rows[0];
-    let parsedFixedRates = safeParseJson(profile.fixed_rates);
-    if (await tableExists("fixed_rates")) {
-      const fixedRatesColumns = await getTableColumns("fixed_rates");
-      const fixedRatesIdColumn = fixedRatesColumns.has("location_id")
-        ? "location_id"
-        : (fixedRatesColumns.has("user_id") ? "user_id" : null);
-      if (fixedRatesIdColumn) {
-      const fixedRatesRes = await client.query(
-        `SELECT * FROM fixed_rates WHERE ${fixedRatesIdColumn} = $1 AND COALESCE(is_active, true) = true`,
-        [location_id]
-      );
-      parsedFixedRates = fixedRatesRes.rows;
-      }
-    }
+    const parsedFixedRates = await getProfileFixedRates(location_id, profile, client);
 
 const parsedEvents = safeParseJson(profile.events);
 const parsedPeakWindows = safeParseJson(profile.peak_windows);
@@ -16784,20 +16793,7 @@ app.post("/api/widget-quote", async (req, res) => {
 
     const profile = profileRes.rows[0];
     const fleet = safeParseJson(profile.fleet);
-    let fixedRates = safeParseJson(profile.fixed_rates);
-    if (await tableExists("fixed_rates")) {
-      const fixedRatesColumns = await getTableColumns("fixed_rates");
-      const fixedRatesIdColumn = fixedRatesColumns.has("location_id")
-        ? "location_id"
-        : (fixedRatesColumns.has("user_id") ? "user_id" : null);
-      if (fixedRatesIdColumn) {
-        const fixedRatesRes = await pool.query(
-          `SELECT * FROM fixed_rates WHERE ${fixedRatesIdColumn} = $1 AND COALESCE(is_active, true) = true`,
-          [location_id]
-        );
-        fixedRates = fixedRatesRes.rows;
-      }
-    }
+    const fixedRates = await getProfileFixedRates(location_id, profile, pool);
     const events = safeParseJson(profile.events);
     const peakWindows = safeParseJson(profile.peak_windows);
     const addons = safeParseJson(profile.addons);
@@ -16966,20 +16962,7 @@ app.get("/api/get-profile-widget/:location_id", async (req, res) => {
     }
 
     const p = profileRes.rows[0];
-    let fixedRates = safeParseJson(p.fixed_rates);
-    if (await tableExists("fixed_rates")) {
-      const fixedRatesColumns = await getTableColumns("fixed_rates");
-      const fixedRatesIdColumn = fixedRatesColumns.has("location_id")
-        ? "location_id"
-        : (fixedRatesColumns.has("user_id") ? "user_id" : null);
-      if (fixedRatesIdColumn) {
-      const fixedRatesRes = await pool.query(
-        `SELECT * FROM fixed_rates WHERE ${fixedRatesIdColumn} = $1 AND COALESCE(is_active, true) = true`,
-        [location_id]
-      );
-      fixedRates = fixedRatesRes.rows;
-      }
-    }
+    const fixedRates = await getProfileFixedRates(location_id, p, pool);
 
     // Map data to return to widget
     // We use the JSONB columns from the profiles table
@@ -17082,20 +17065,7 @@ app.get("/api/get-profile-widget-script/:location_id", async (req, res) => {
     }
 
     const p = profileRes.rows[0];
-    let fixedRates = safeParseJson(p.fixed_rates);
-    if (await tableExists("fixed_rates")) {
-      const fixedRatesColumns = await getTableColumns("fixed_rates");
-      const fixedRatesIdColumn = fixedRatesColumns.has("location_id")
-        ? "location_id"
-        : (fixedRatesColumns.has("user_id") ? "user_id" : null);
-      if (fixedRatesIdColumn) {
-        const fixedRatesRes = await pool.query(
-          `SELECT * FROM fixed_rates WHERE ${fixedRatesIdColumn} = $1 AND COALESCE(is_active, true) = true`,
-          [location_id]
-        );
-        fixedRates = fixedRatesRes.rows;
-      }
-    }
+    const fixedRates = await getProfileFixedRates(location_id, p, pool);
 
     const entitlements = buildPlanEntitlements({
       planName: p.plan_name || "starter",
