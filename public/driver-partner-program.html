@@ -8,8 +8,8 @@
     :root {
       --brand-primary: #0A0A0A;
       --brand-secondary: #41424C;
-      --brand-accent: #DAA520;
-      --brand-line: rgba(218, 165, 32, 0.22);
+      --brand-accent: #E0B13D;
+      --brand-line: rgba(224, 177, 61, 0.22);
       --brand-muted: #5f6470;
       --brand-card-shadow: rgba(10, 10, 10, 0.18);
       --paper: rgba(255, 255, 255, 0.96);
@@ -24,7 +24,7 @@
       font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
       color: var(--ink);
       background:
-        radial-gradient(circle at top left, rgba(218, 165, 32, 0.12), transparent 24%),
+        radial-gradient(circle at top left, rgba(224, 177, 61, 0.12), transparent 24%),
         radial-gradient(circle at top right, rgba(65, 66, 76, 0.12), transparent 28%),
         linear-gradient(180deg, #fbf7ef 0%, #f2ebdd 100%);
       -webkit-text-size-adjust: 100%;
@@ -43,8 +43,8 @@
     }
     .hero-layout {
       display: grid;
-      grid-template-columns: minmax(0, 1.35fr) minmax(280px, 0.9fr);
-      gap: 18px;
+      grid-template-columns: minmax(0, 0.92fr) minmax(440px, 1.18fr);
+      gap: 24px;
       align-items: start;
     }
     .hero-top {
@@ -93,11 +93,11 @@
       margin: 0 0 12px;
       font-size: 38px;
       line-height: 1.05;
-      max-width: 820px;
+      max-width: 500px;
     }
     .hero p {
       margin: 0;
-      max-width: 920px;
+      max-width: 520px;
       line-height: 1.8;
     }
     .band {
@@ -121,7 +121,7 @@
     }
     .preview-panel {
       border-radius: 24px;
-      border: 1px solid rgba(218, 165, 32, 0.22);
+      border: 1px solid rgba(224, 177, 61, 0.22);
       background: linear-gradient(180deg, #fffdf7 0%, #f6f0e4 100%);
       box-shadow: 0 18px 40px rgba(10, 10, 10, 0.08);
       padding: 18px;
@@ -129,7 +129,7 @@
     }
     .brochure-preview {
       display: grid;
-      gap: 14px;
+      gap: 12px;
       align-content: start;
     }
     .preview-panel-header {
@@ -155,7 +155,7 @@
       margin-top: 14px;
       border-radius: 22px;
       background: linear-gradient(180deg, #fff 0%, #fffaf0 100%);
-      border: 1px solid rgba(218, 165, 32, 0.18);
+      border: 1px solid rgba(224, 177, 61, 0.18);
       padding: 16px;
     }
     .preview-card.hero-card {
@@ -173,8 +173,8 @@
       height: 82px;
       border-radius: 18px;
       object-fit: cover;
-      border: 1px solid rgba(218, 165, 32, 0.26);
-      background: linear-gradient(135deg, rgba(218, 165, 32, 0.28), var(--brand-accent));
+      border: 1px solid rgba(224, 177, 61, 0.26);
+      background: linear-gradient(135deg, rgba(224, 177, 61, 0.28), var(--brand-accent));
       box-shadow: 0 10px 24px rgba(10, 10, 10, 0.10);
       display: block;
     }
@@ -186,7 +186,7 @@
       font-weight: 900;
       letter-spacing: -0.04em;
       color: var(--ink);
-      background: linear-gradient(135deg, rgba(218, 165, 32, 0.28), rgba(255, 247, 218, 0.94));
+      background: linear-gradient(135deg, rgba(224, 177, 61, 0.28), rgba(255, 247, 218, 0.94));
     }
     .profile-photo.hidden,
     .profile-placeholder.hidden {
@@ -253,7 +253,7 @@
       border-radius: 999px;
       background: rgba(17, 24, 39, 0.94);
       color: #f5d79b;
-      border: 1px solid rgba(218, 165, 32, 0.35);
+      border: 1px solid rgba(224, 177, 61, 0.35);
       font-size: 12px;
       font-weight: 800;
       letter-spacing: 0.08em;
@@ -298,7 +298,7 @@
       inset: -10px -6px auto;
       height: 42px;
       border-radius: 999px;
-      background: linear-gradient(90deg, rgba(218, 165, 32, 0.0), rgba(218, 165, 32, 0.24), rgba(218, 165, 32, 0.0));
+      background: linear-gradient(90deg, rgba(224, 177, 61, 0.0), rgba(224, 177, 61, 0.24), rgba(224, 177, 61, 0.0));
       filter: blur(10px);
       pointer-events: none;
       opacity: 0.75;
@@ -320,7 +320,7 @@
       position: absolute;
       inset: 0;
       background:
-        radial-gradient(circle at top left, rgba(218, 165, 32, 0.14), transparent 28%),
+        radial-gradient(circle at top left, rgba(224, 177, 61, 0.14), transparent 28%),
         radial-gradient(circle at bottom right, rgba(255, 255, 255, 0.34), transparent 30%);
       pointer-events: none;
       opacity: 0.9;
@@ -337,7 +337,7 @@
       letter-spacing: 0.14em;
       text-transform: uppercase;
       background: rgba(255, 250, 235, 0.86);
-      border: 1px solid rgba(218, 165, 32, 0.18);
+      border: 1px solid rgba(224, 177, 61, 0.18);
       border-radius: 999px;
       padding: 9px 12px;
       backdrop-filter: blur(10px);
@@ -440,15 +440,277 @@
       line-height: 1.75;
       font-size: 14px;
     }
+    .brochure-driver-sample {
+      display: grid;
+      grid-template-columns: 74px 1fr;
+      gap: 12px;
+      align-items: center;
+      margin: 8px 0 14px;
+      padding: 12px;
+      border-radius: 18px;
+      background: rgba(255, 250, 235, 0.92);
+      border: 1px solid rgba(224, 177, 61, 0.18);
+      box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
+    }
+    .brochure-driver-sample img {
+      width: 74px;
+      height: 74px;
+      border-radius: 16px;
+      object-fit: cover;
+      border: 1px solid rgba(224, 177, 61, 0.22);
+      background: linear-gradient(135deg, rgba(224, 177, 61, 0.24), rgba(255, 247, 218, 0.92));
+      box-shadow: 0 8px 20px rgba(10, 10, 10, 0.10);
+    }
+    .brochure-driver-sample-name {
+      margin: 0;
+      font-size: 16px;
+      font-weight: 900;
+      line-height: 1.2;
+      color: var(--ink);
+    }
+    .brochure-driver-sample-role {
+      margin: 4px 0 0;
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--brand-accent);
+    }
+    .snapshot-card {
+      margin-top: 10px;
+      position: relative;
+      z-index: 2;
+      border-radius: 24px;
+      padding: 12px;
+      background: linear-gradient(180deg, rgba(255, 253, 247, 0.92) 0%, rgba(249, 239, 217, 0.82) 100%);
+      border: 1px solid rgba(224, 177, 61, 0.14);
+      box-shadow: 0 22px 42px rgba(15, 23, 42, 0.12);
+      backdrop-filter: blur(8px);
+    }
+    .snapshot-card-header {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+      margin-bottom: 12px;
+      flex-wrap: wrap;
+    }
+    .snapshot-card-title {
+      margin: 0;
+      font-size: 14px;
+      font-weight: 900;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--ink);
+    }
+    .snapshot-card-copy {
+      margin: 10px 0 0;
+      font-size: 13px;
+      line-height: 1.7;
+      color: var(--muted);
+    }
+    .snapshot-carousel {
+      display: grid;
+      gap: 12px;
+    }
+    .snapshot-carousel-frame {
+      position: relative;
+      overflow: hidden;
+      border-radius: 20px;
+      min-height: 360px;
+      background: #0a0a0a;
+      border: 1px solid rgba(224, 177, 61, 0.18);
+      box-shadow: 0 14px 30px rgba(15, 23, 42, 0.12);
+    }
+    .snapshot-carousel-track {
+      display: flex;
+      transition: transform 0.7s cubic-bezier(0.2, 0.8, 0.2, 1);
+      will-change: transform;
+      height: 100%;
+    }
+    .snapshot-carousel-slide {
+      min-width: 100%;
+      display: flex;
+      align-items: stretch;
+      justify-content: center;
+      background: #0a0a0a;
+    }
+    .snapshot-carousel-slide img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      display: block;
+      background: #0a0a0a;
+    }
+    .snapshot-carousel-overlay {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      right: 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      pointer-events: none;
+    }
+    .snapshot-carousel-tag,
+    .snapshot-carousel-count {
+      display: inline-flex;
+      align-items: center;
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: rgba(17, 24, 39, 0.92);
+      color: #f7d57d;
+      border: 1px solid rgba(224, 177, 61, 0.28);
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+    .snapshot-carousel-dots {
+      display: flex;
+      gap: 8px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+    .snapshot-carousel-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+      border: none;
+      background: rgba(65, 66, 76, 0.35);
+      cursor: pointer;
+    }
+    .snapshot-carousel-dot.active {
+      background: var(--brand-accent);
+      transform: scale(1.2);
+    }
+    .brochure-carousel {
+      margin-top: 16px;
+      padding: 18px;
+      border-radius: 28px;
+      background: linear-gradient(180deg, #fffdf7 0%, #f7eedc 100%);
+      border: 1px solid rgba(224, 177, 61, 0.20);
+      box-shadow: 0 24px 60px rgba(15, 23, 42, 0.08);
+    }
+    .carousel-frame {
+      position: relative;
+      overflow: hidden;
+      border-radius: 24px;
+      border: 1px solid rgba(224, 177, 61, 0.18);
+      background: linear-gradient(180deg, #fffef9 0%, #fdf4de 100%);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.8);
+    }
+    .carousel-track {
+      display: flex;
+      transition: transform 0.75s cubic-bezier(0.2, 0.8, 0.2, 1);
+      will-change: transform;
+    }
+    .carousel-slide {
+      min-width: 100%;
+      padding: 0;
+      display: grid;
+      gap: 0;
+      align-content: start;
+    }
+    .carousel-slide img {
+      width: 100%;
+      display: block;
+      height: auto;
+      max-height: none;
+      object-fit: cover;
+      border-radius: 0;
+      border: 1px solid rgba(224, 177, 61, 0.24);
+      box-shadow: 0 18px 40px rgba(15, 23, 42, 0.14);
+      background: #000;
+    }
+    .carousel-meta {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .carousel-tag {
+      display: inline-flex;
+      align-items: center;
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: rgba(17, 24, 39, 0.92);
+      color: #f7d57d;
+      border: 1px solid rgba(224, 177, 61, 0.28);
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+    .carousel-title {
+      margin: 0;
+      font-size: 14px;
+      font-weight: 900;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--ink);
+    }
+    .carousel-copy {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.7;
+      font-size: 14px;
+    }
+    .carousel-controls {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-top: 14px;
+    }
+    .carousel-nav {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 46px;
+      padding: 0 18px;
+      border-radius: 999px;
+      border: 1px solid rgba(224, 177, 61, 0.25);
+      background: rgba(255,255,255,0.92);
+      color: var(--ink);
+      font-weight: 800;
+      cursor: pointer;
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    .carousel-nav:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 10px 20px rgba(15, 23, 42, 0.08);
+    }
+    .carousel-dots {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .carousel-dot {
+      width: 11px;
+      height: 11px;
+      border: 0;
+      border-radius: 999px;
+      background: rgba(65, 66, 76, 0.22);
+      cursor: pointer;
+      transition: transform 0.2s ease, background 0.2s ease;
+    }
+    .carousel-dot.active {
+      background: var(--brand-accent);
+      transform: scale(1.15);
+    }
     .brochure-tag {
       display: inline-flex;
       width: fit-content;
       align-items: center;
       padding: 7px 10px;
       border-radius: 999px;
-      background: rgba(218, 165, 32, 0.12);
+      background: rgba(224, 177, 61, 0.12);
       color: var(--brand-accent);
-      border: 1px solid rgba(218, 165, 32, 0.32);
+      border: 1px solid rgba(224, 177, 61, 0.32);
       font-size: 11px;
       font-weight: 800;
       letter-spacing: 0.08em;
@@ -494,7 +756,7 @@
       padding: 14px;
       border-radius: 18px;
       background: rgba(255, 250, 235, 0.92);
-      border: 1px solid rgba(218, 165, 32, 0.18);
+      border: 1px solid rgba(224, 177, 61, 0.18);
     }
     .brochure-value strong {
       font-size: 18px;
@@ -515,7 +777,7 @@
       padding: 12px 13px;
       border-radius: 14px;
       background: rgba(255, 250, 235, 0.94);
-      border: 1px solid rgba(218, 165, 32, 0.18);
+      border: 1px solid rgba(224, 177, 61, 0.18);
       color: var(--muted);
       line-height: 1.65;
       font-size: 13px;
@@ -599,7 +861,7 @@
       border-radius: 14px;
       object-fit: cover;
       border: 1px solid #eadfba;
-      background: linear-gradient(135deg, rgba(218, 165, 32, 0.20), rgba(65, 66, 76, 0.14));
+      background: linear-gradient(135deg, rgba(224, 177, 61, 0.20), rgba(65, 66, 76, 0.14));
     }
     .vehicle-cta {
       width: 100%;
@@ -610,7 +872,7 @@
       width: fit-content;
       padding: 6px 10px;
       border-radius: 999px;
-      background: rgba(218, 165, 32, 0.12);
+      background: rgba(224, 177, 61, 0.12);
       color: #7c5b00;
       font-size: 11px;
       font-weight: 800;
@@ -677,7 +939,7 @@
       width: 30px;
       height: 30px;
       border-radius: 999px;
-      background: rgba(218, 165, 32, 0.18);
+      background: rgba(224, 177, 61, 0.18);
       color: var(--brand-primary);
       font-weight: 800;
       margin-bottom: 10px;
@@ -730,14 +992,14 @@
     .button-quiet {
       background: var(--soft-warm);
       color: var(--brand-accent);
-      border-color: rgba(218, 165, 32, 0.34);
+      border-color: rgba(224, 177, 61, 0.34);
     }
     .muted {
       color: var(--muted);
     }
     .callout {
       background: linear-gradient(135deg, #fefce8 0%, #fff7ed 100%);
-      border: 1px solid rgba(218, 165, 32, 0.65);
+      border: 1px solid rgba(224, 177, 61, 0.65);
       border-radius: 22px;
       padding: 20px;
     }
@@ -808,7 +1070,7 @@
       display: flex;
       justify-content: space-between;
       gap: 12px;
-      border-bottom: 1px solid rgba(218, 165, 32, 0.22);
+      border-bottom: 1px solid rgba(224, 177, 61, 0.22);
       padding-bottom: 10px;
       color: var(--muted);
       line-height: 1.6;
@@ -881,9 +1143,8 @@
           </div>
           <h1 id="hero-title">Bring the Client. We Bring the Luxury Vehicle.</h1>
           <p id="hero-copy">
-            Build a premium chauffeur business without owning the car. Drivers bring their own clients into a branded booking page,
-            and once the client books an hourly trip at least 48 hours in advance, the platform handles the vehicle, payment,
-            dispatch, support, and operations.
+            Turn your relationships into premium bookings. Give every client a polished chauffeur page, let Chauffeur Deluxe handle
+            the vehicle and dispatch, and position yourself as the driver people trust for luxury service.
           </p>
           <div class="band">
             <span class="chip">Hourly only</span>
@@ -906,7 +1167,7 @@
           <div class="preview-panel-header">
             <div>
               <h2>Personal Page Template</h2>
-              <p>This is the branded template a driver can use to present themselves as a luxury chauffeur.</p>
+              <p>This is the client-facing page a driver uses to sell the experience before the trip is even booked.</p>
             </div>
             <span class="brochure-badge">chauffeursdeluxe.com/partner/john-smith</span>
           </div>
@@ -926,42 +1187,38 @@
               <li>Paid access before activation</li>
             </ul>
           </div>
-          <div class="brochure-shell mini">
-            <div class="brochure-stage" aria-label="Animated trifold brochure preview">
-              <article class="brochure-panel cover">
-                <div>
-                  <p class="brochure-title">Chauffeur Deluxe</p>
-                  <h3 class="brochure-headline">Bring the Client. We Bring the Luxury Vehicle.</h3>
-                  <p class="brochure-copy">
-                    A premium chauffeur partner page for drivers who want to build their own client base without owning the car.
-                  </p>
-                  <span class="brochure-tag">Paid Access Required</span>
-                </div>
-              </article>
-              <article class="brochure-panel center">
-                <div>
-                  <p class="brochure-title">Why It Works</p>
-                  <h3 class="brochure-headline">Premium pages make the client feel included.</h3>
-                  <p class="brochure-copy">
-                    The driver thumbnail sits up top, the brand looks polished, and the client sees a page that feels made for them.
-                  </p>
-                  <ul class="brochure-list">
-                    <li>Driver photo in the top corner</li>
-                    <li>Client-focused booking message</li>
-                    <li>Luxury book-style presentation</li>
-                  </ul>
-                </div>
-              </article>
-              <article class="brochure-panel inside">
-                <div>
-                  <p class="brochure-title">Target Clients</p>
-                  <h3 class="brochure-headline">Hotels, airports, events, and executive travel.</h3>
-                  <p class="brochure-copy">
-                    This brochure is built to entice the right booking and make the customer want to click through immediately.
-                  </p>
-                </div>
-              </article>
+          <div class="snapshot-card hero-card">
+            <div class="snapshot-card-header">
+              <p class="snapshot-card-title">Driver Page Snapshot</p>
+              <span class="brochure-tag" style="margin-top:0;">Top-right preview</span>
             </div>
+            <div class="snapshot-carousel" data-snapshot-carousel>
+              <div class="snapshot-carousel-frame">
+                <div class="snapshot-carousel-track">
+                  <article class="snapshot-carousel-slide">
+                    <img src="/assets/driver-partner-program/driver-page-snapshot.png" alt="Driver personal page snapshot" />
+                  </article>
+                  <article class="snapshot-carousel-slide">
+                    <img src="/assets/driver-partner-program/brochure-carousel/brochure 5.png" alt="Chauffeurs Deluxe brochure front" />
+                  </article>
+                  <article class="snapshot-carousel-slide">
+                    <img src="/assets/driver-partner-program/brochure-carousel/brochure 6.png" alt="Chauffeurs Deluxe brochure back" />
+                  </article>
+                </div>
+                <div class="snapshot-carousel-overlay">
+                  <span class="snapshot-carousel-tag">Driver Page Preview</span>
+                  <span class="snapshot-carousel-count" id="snapshot-carousel-count">1 / 3</span>
+                </div>
+              </div>
+              <div class="snapshot-carousel-dots" aria-label="Driver page preview slides">
+                <button class="snapshot-carousel-dot active" type="button" aria-label="Show preview 1" data-snapshot-dot="0"></button>
+                <button class="snapshot-carousel-dot" type="button" aria-label="Show preview 2" data-snapshot-dot="1"></button>
+                <button class="snapshot-carousel-dot" type="button" aria-label="Show preview 3" data-snapshot-dot="2"></button>
+              </div>
+            </div>
+            <p class="snapshot-card-copy">
+              The top-right preview now rotates through the driver snapshot and supporting brochure visuals.
+            </p>
           </div>
         </aside>
       </div>
@@ -971,95 +1228,36 @@
       <div class="brochure-header">
         <div>
           <p class="section-kicker">Animated Trifold Preview</p>
-          <h2>Open the brochure like a luxury book</h2>
+          <h2>Show the brochure like a luxury sales pitch</h2>
           <p class="fleet-intro">
-            This section is designed to feel like the driver is opening a premium sales brochure. It is meant to be eye-catching,
-            memorable, and personal so their client can picture themselves in the experience.
+            This section speaks directly to the driver and walks them toward the decision. It shows the premium look, the client
+            journey, and the reason this page converts better than a plain sign-up form.
           </p>
         </div>
         <div class="brochure-badge">chauffeursdeluxe.com/partner/john-smith</div>
       </div>
       <div class="brochure-toolbar">
-        <button id="brochure-toggle" class="button button-secondary" type="button" aria-expanded="false">Open brochure</button>
-        <p class="muted" style="margin: 0;">Hover on desktop or tap on mobile to open the trifold.</p>
+        <button id="brochure-toggle" class="button button-secondary" type="button" aria-pressed="false">Pause rotation</button>
+        <p class="muted" style="margin: 0;">The carousel rotates through the front and back brochures automatically.</p>
       </div>
-      <div class="brochure-shell">
-        <div class="brochure-stage" aria-label="Animated trifold brochure preview">
-          <article class="brochure-panel cover">
-            <div>
-              <p class="brochure-title">Chauffeur Deluxe</p>
-              <h3 class="brochure-headline">Bring the Client. We Bring the Luxury Vehicle.</h3>
-              <p class="brochure-copy">
-                A premium chauffeur partner page for drivers who want to build their own client base without owning the car.
-              </p>
-              <span class="brochure-tag">Paid Access Required</span>
-              <div class="brochure-value">
-                <strong>Your client sees a page built for them.</strong>
-                <span>
-                  The driver photo, service style, and booking page can be personalized so the customer feels like this brochure
-                  was made for their trip, their event, and their VIP moment.
-                </span>
-              </div>
-            </div>
-            <div class="brochure-footer">
-              <div><strong>Driver Partner Program</strong></div>
-              <div>Hourly bookings 48+ hours ahead</div>
-            </div>
-          </article>
-
-          <article class="brochure-panel center">
-            <div>
-              <p class="brochure-title">How It Works</p>
-              <h3 class="brochure-headline">One link. One booking. One dispatcher.</h3>
-              <p class="brochure-copy">
-                Each driver gets a personal booking page, a thumbnail, and a branded path into the dispatcher manager so the booking
-                gets handled correctly from the start.
-              </p>
-              <ul class="brochure-list">
-                <li>Driver shares their personal page</li>
-                <li>Client books an hourly ride in advance</li>
-                <li>Dispatch assigns the right vehicle</li>
-              </ul>
-              <div class="brochure-mini-grid">
-                <div class="brochure-mini">
-                  <strong>Personal link</strong>
-                  chauffeursdeluxe.com/partner/john-smith
-                </div>
-                <div class="brochure-mini">
-                  <strong>Client-ready angle</strong>
-                  Hotels, airport pickups, corporate travel, weddings, and executive assistants.
-                </div>
-              </div>
-            </div>
-            <a class="button button-secondary brochure-cta" href="/driver-partner-subscription">Start Paid Signup</a>
-          </article>
-
-          <article class="brochure-panel inside">
-            <div>
-              <p class="brochure-title">Target Clients</p>
-              <h3 class="brochure-headline">Show this to the right people.</h3>
-              <p class="brochure-copy">
-                The brochure is built to help drivers attract the clients most likely to book premium hourly service.
-              </p>
-              <ul class="brochure-list">
-                <li>Hotels and concierges</li>
-                <li>Airports and corporate offices</li>
-                <li>Weddings, events, and planners</li>
-                <li>Executive assistants and private families</li>
-              </ul>
-              <div class="brochure-mini-grid">
-                <div class="brochure-mini">
-                  <strong>Why it converts</strong>
-                  It feels like a premium invitation, not a plain form.
-                </div>
-                <div class="brochure-mini">
-                  <strong>What to say</strong>
-                  This is your own luxury booking page. Share it with your best clients.
-                </div>
-              </div>
-            </div>
-            <a class="button button-primary brochure-cta" href="/addons.html#driver-partner-access">Review Pricing</a>
-          </article>
+      <div class="brochure-carousel" data-brochure-carousel>
+        <div class="carousel-frame">
+          <div class="carousel-track">
+            <article class="carousel-slide">
+              <img src="/assets/driver-partner-program/brochure-carousel/brochure 5.png" alt="Chauffeurs Deluxe brochure front" />
+            </article>
+            <article class="carousel-slide">
+              <img src="/assets/driver-partner-program/brochure-carousel/brochure 6.png" alt="Chauffeurs Deluxe brochure back" />
+            </article>
+          </div>
+        </div>
+        <div class="carousel-controls">
+          <button class="carousel-nav" id="brochure-prev" type="button" aria-label="Previous brochure">Previous</button>
+          <div class="carousel-dots" aria-label="Brochure carousel slides">
+            <button class="carousel-dot active" type="button" aria-label="Show brochure front" data-carousel-dot="0"></button>
+            <button class="carousel-dot" type="button" aria-label="Show brochure back" data-carousel-dot="1"></button>
+          </div>
+          <button class="carousel-nav" id="brochure-next" type="button" aria-label="Next brochure">Next</button>
         </div>
       </div>
     </section>
@@ -1121,42 +1319,42 @@
 
       <article class="card">
         <p class="section-kicker">Step 2 of 5</p>
-        <h2>The Strategy</h2>
-        <p>
-          Position drivers as business development partners. They are not just hired hands. They are the people who bring the client,
-          while your company handles the luxury fleet, insurance, scheduling, payment collection, support, and dispatch.
-        </p>
+          <h2>The Opportunity</h2>
+          <p>
+            Most drivers already know people who would book them. The opportunity is turning those relationships into a real luxury
+            business without the overhead of buying and managing a fleet.
+          </p>
         <div class="step-list">
           <div class="step">
             <div class="step-number">1</div>
-            <h3>Recruit the right drivers</h3>
+            <h3>Sell them a business, not a shift</h3>
             <p>
-              Focus on chauffeurs, executive drivers, limo drivers, hospitality pros, veterans, security-minded drivers, and any
-              operator who can confidently build relationships. They do not need to own a luxury vehicle to participate.
+              Focus on chauffeurs, executive drivers, limo drivers, hospitality pros, veterans, security-minded drivers, and anyone
+              who already has relationships that can become repeat premium bookings.
             </p>
           </div>
           <div class="step">
             <div class="step-number">2</div>
-            <h3>Give each driver a personal link</h3>
+            <h3>Give them a page they can sell</h3>
             <p>
-              Every driver gets a branded booking URL and QR code. They share that link with people they already meet in hotels,
-              airports, offices, churches, weddings, conferences, and concierge relationships.
+              Every driver gets a branded booking URL and QR code they can share with executives, hotels, realtors, planners, and
+              everyone already asking them for a trusted ride.
             </p>
           </div>
           <div class="step">
             <div class="step-number">3</div>
-            <h3>Keep the trip scheduled</h3>
+            <h3>Keep the booking planned and premium</h3>
             <p>
-              Only hourly reservations booked at least 48 hours in advance are allowed through this channel. That gives the platform
-              time to assign the right vehicle and keep operations clean.
+              Only hourly reservations booked at least 48 hours in advance are allowed through this channel. That keeps the promise
+              premium, planned, and easy to fulfill.
             </p>
           </div>
           <div class="step">
             <div class="step-number">4</div>
-            <h3>We provide the vehicle</h3>
+            <h3>We handle the fleet behind the scenes</h3>
             <p>
-              The platform supplies the sedan, SUV, Sprinter, or executive van. The client experiences a fully branded service,
-              while the driver simply arrives, drives, and completes the trip.
+              The platform supplies the sedan, SUV, Sprinter, or executive van. The driver stays focused on the relationship while
+              Chauffeur Deluxe handles the vehicle, payment, support, and dispatch.
             </p>
           </div>
         </div>
@@ -1168,8 +1366,8 @@
       <article class="card">
         <h2>Why Drivers Say Yes</h2>
         <p>
-          Drivers usually struggle with one of two problems: they own a vehicle and carry all the overhead, or they do not own
-          one and cannot access premium clients. This model solves both.
+          This model solves the biggest driver pain points at once: no luxury vehicle purchase, no fleet overhead, no dispatch
+          headaches, and no need to chase every booking from scratch.
         </p>
         <ul>
           <li>No vehicle purchase required.</li>
@@ -1191,42 +1389,43 @@
 
     <section class="card" style="margin-top: 18px; background: linear-gradient(180deg, #ffffff 0%, #fbf4df 100%);">
       <p class="section-kicker">Step 3 of 5</p>
-      <h2>How It Connects To Dispatch</h2>
-      <p>
-        The recruiting page brings in the lead, but the dispatcher manager turns that lead into a finished trip.
-        Once a client books through a driver's personal link, the booking enters the dispatch workflow so your team can review the trip,
-        assign the right vehicle, watch for conflicts, and keep the operation clean.
-      </p>
+          <h2>How It Connects To Dispatch</h2>
+          <p>
+        The driver brings the lead, but the dispatcher manager turns that lead into a finished trip.
+        Once a client books through a driver's personal link, the booking enters the dispatch workflow so your team can review the
+        trip, assign the right vehicle, and keep the operation clean.
+          </p>
       <div class="grid-2" style="margin-top: 14px;">
         <div class="step">
           <div class="step-number">A</div>
-          <h3>Driver brings the client</h3>
-          <p>
-            The chauffeur shares their personal booking page. The client books an hourly reservation at least 48 hours in advance.
-          </p>
+            <h3>Driver brings the client</h3>
+            <p>
+            The chauffeur shares their personal booking page. The client sees a premium sales experience and books an hourly
+            reservation at least 48 hours in advance.
+            </p>
         </div>
         <div class="step">
           <div class="step-number">B</div>
-          <h3>Dispatcher manager receives the booking</h3>
-          <p>
+            <h3>Dispatcher manager receives the booking</h3>
+            <p>
             Your internal team sees the reservation in dispatch, assigns the vehicle, checks for conflicts, and keeps the booking
             visible if it needs waitlist attention.
-          </p>
+            </p>
         </div>
         <div class="step">
           <div class="step-number">C</div>
-          <h3>Operations stay in one place</h3>
-          <p>
+            <h3>Operations stay in one place</h3>
+            <p>
             The driver does not have to run payments or logistics. The platform routes the booking into the dispatcher workflow
             and your team keeps control of fulfillment.
-          </p>
+            </p>
         </div>
         <div class="step">
           <div class="step-number">D</div>
-          <h3>Trip is assigned and paid</h3>
-          <p>
+            <h3>Trip is assigned and paid</h3>
+            <p>
             Once dispatch clears the trip, the platform handles the rest and pays the driver after completion.
-          </p>
+            </p>
         </div>
       </div>
       <div class="button-row">
@@ -1344,8 +1543,18 @@
     const copyLinkBtn = document.getElementById("copy-link-btn");
     const applyLink = document.getElementById("apply-link");
     const previewPageLink = document.getElementById("preview-page-link");
-    const brochureShell = document.querySelector(".brochure-shell");
+    const snapshotCarousel = document.querySelector("[data-snapshot-carousel]");
+    const snapshotCarouselTrack = snapshotCarousel?.querySelector(".snapshot-carousel-track");
+    const snapshotCarouselSlides = snapshotCarousel ? Array.from(snapshotCarousel.querySelectorAll(".snapshot-carousel-slide")) : [];
+    const snapshotCarouselDots = snapshotCarousel ? Array.from(snapshotCarousel.querySelectorAll("[data-snapshot-dot]")) : [];
+    const snapshotCarouselCount = document.getElementById("snapshot-carousel-count");
     const brochureToggle = document.getElementById("brochure-toggle");
+    const brochureCarousel = document.querySelector("[data-brochure-carousel]");
+    const brochureTrack = brochureCarousel?.querySelector(".carousel-track");
+    const brochureSlides = brochureCarousel ? Array.from(brochureCarousel.querySelectorAll(".carousel-slide")) : [];
+    const brochureDots = brochureCarousel ? Array.from(brochureCarousel.querySelectorAll("[data-carousel-dot]")) : [];
+    const brochurePrev = document.getElementById("brochure-prev");
+    const brochureNext = document.getElementById("brochure-next");
     const previewName = document.getElementById("preview-name");
     const previewRole = document.getElementById("preview-role");
     const driverPhotoPreview = document.getElementById("driver-photo-preview");
@@ -1418,12 +1627,99 @@
       cta.href = target.toString();
     });
 
-    if (brochureShell && brochureToggle) {
-      brochureToggle.addEventListener("click", () => {
-        const isOpen = brochureShell.classList.toggle("open");
-        brochureToggle.setAttribute("aria-expanded", String(isOpen));
-        brochureToggle.textContent = isOpen ? "Close brochure" : "Open brochure";
+    if (snapshotCarousel && snapshotCarouselTrack && snapshotCarouselSlides.length) {
+      let snapshotIndex = 0;
+      let snapshotTimer = null;
+      const snapshotDelayMs = 4200;
+
+      const updateSnapshotCarousel = () => {
+        snapshotCarouselTrack.style.transform = `translateX(-${snapshotIndex * 100}%)`;
+        snapshotCarouselDots.forEach((dot, index) => dot.classList.toggle("active", index === snapshotIndex));
+        if (snapshotCarouselCount) {
+          snapshotCarouselCount.textContent = `${snapshotIndex + 1} / ${snapshotCarouselSlides.length}`;
+        }
+      };
+
+      const goToSnapshot = (index) => {
+        snapshotIndex = (index + snapshotCarouselSlides.length) % snapshotCarouselSlides.length;
+        updateSnapshotCarousel();
+      };
+
+      const restartSnapshotTimer = () => {
+        if (snapshotTimer) window.clearInterval(snapshotTimer);
+        snapshotTimer = window.setInterval(() => {
+          goToSnapshot(snapshotIndex + 1);
+        }, snapshotDelayMs);
+      };
+
+      snapshotCarouselDots.forEach((dot) => {
+        dot.addEventListener("click", () => {
+          const index = Number(dot.getAttribute("data-snapshot-dot") || "0");
+          goToSnapshot(index);
+          restartSnapshotTimer();
+        });
       });
+
+      updateSnapshotCarousel();
+      restartSnapshotTimer();
+    }
+
+    if (brochureCarousel && brochureTrack && brochureSlides.length) {
+      let currentBrochureIndex = 0;
+      let brochureTimer = null;
+      const brochureDelayMs = 4500;
+
+      const updateBrochureCarousel = () => {
+        brochureTrack.style.transform = `translateX(-${currentBrochureIndex * 100}%)`;
+        brochureDots.forEach((dot, index) => dot.classList.toggle("active", index === currentBrochureIndex));
+      };
+
+      const goToBrochure = (index) => {
+        currentBrochureIndex = (index + brochureSlides.length) % brochureSlides.length;
+        updateBrochureCarousel();
+      };
+
+      const restartBrochureTimer = () => {
+        if (brochureTimer) window.clearInterval(brochureTimer);
+        brochureTimer = window.setInterval(() => {
+          goToBrochure(currentBrochureIndex + 1);
+        }, brochureDelayMs);
+      };
+
+      brochurePrev?.addEventListener("click", () => {
+        goToBrochure(currentBrochureIndex - 1);
+        restartBrochureTimer();
+      });
+
+      brochureNext?.addEventListener("click", () => {
+        goToBrochure(currentBrochureIndex + 1);
+        restartBrochureTimer();
+      });
+
+      brochureDots.forEach((dot) => {
+        dot.addEventListener("click", () => {
+          const index = Number(dot.getAttribute("data-carousel-dot") || "0");
+          goToBrochure(index);
+          restartBrochureTimer();
+        });
+      });
+
+      brochureToggle?.addEventListener("click", () => {
+        const isPaused = brochureToggle.getAttribute("aria-pressed") === "true";
+        if (isPaused) {
+          brochureToggle.setAttribute("aria-pressed", "false");
+          brochureToggle.textContent = "Pause rotation";
+          restartBrochureTimer();
+        } else {
+          brochureToggle.setAttribute("aria-pressed", "true");
+          brochureToggle.textContent = "Resume rotation";
+          if (brochureTimer) window.clearInterval(brochureTimer);
+          brochureTimer = null;
+        }
+      });
+
+      updateBrochureCarousel();
+      restartBrochureTimer();
     }
   </script>
 </body>

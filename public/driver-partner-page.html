@@ -1091,6 +1091,8 @@
 
     let widgetLoaded = false;
     let carouselIndex = 0;
+    let carouselOrder = [];
+    let carouselOrderPosition = 0;
     let carouselTimer = null;
 
     const carouselSlides = [
@@ -1132,6 +1134,15 @@
       return parts.slice(0, 2).map((part) => part[0]).join("").toUpperCase();
     }
 
+    function shuffleCarouselOrder() {
+      carouselOrder = carouselSlides.map((_, index) => index);
+      for (let i = carouselOrder.length - 1; i > 0; i -= 1) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [carouselOrder[i], carouselOrder[j]] = [carouselOrder[j], carouselOrder[i]];
+      }
+      carouselOrderPosition = 0;
+    }
+
     function renderCarousel(index) {
       if (!carouselSlides.length) return;
       const slide = carouselSlides[index % carouselSlides.length];
@@ -1155,6 +1166,10 @@
       carouselThumbsEl.querySelectorAll(".carousel-thumb").forEach((btn) => {
         btn.addEventListener("click", () => {
           carouselIndex = Number(btn.dataset.index || 0);
+          const matchedPosition = carouselOrder.indexOf(carouselIndex);
+          if (matchedPosition >= 0) {
+            carouselOrderPosition = matchedPosition;
+          }
           renderCarousel(carouselIndex);
           restartCarouselTimer();
         });
@@ -1164,7 +1179,12 @@
     function restartCarouselTimer() {
       if (carouselTimer) window.clearInterval(carouselTimer);
       carouselTimer = window.setInterval(() => {
-        carouselIndex = (carouselIndex + 1) % carouselSlides.length;
+        if (!carouselOrder.length) shuffleCarouselOrder();
+        carouselOrderPosition += 1;
+        if (carouselOrderPosition >= carouselOrder.length) {
+          shuffleCarouselOrder();
+        }
+        carouselIndex = carouselOrder[carouselOrderPosition % carouselOrder.length];
         renderCarousel(carouselIndex);
       }, 4200);
     }
@@ -1188,11 +1208,9 @@
     });
 
     if (carouselSlides.length) {
-      carouselImageEl.src = carouselSlides[0].src;
-      carouselTitleEl.textContent = carouselSlides[0].title;
-      carouselCopyEl.textContent = carouselSlides[0].copy;
-      carouselPositionEl.textContent = `1 / ${carouselSlides.length}`;
-      renderCarousel(0);
+      shuffleCarouselOrder();
+      carouselIndex = carouselOrder[0];
+      renderCarousel(carouselIndex);
       restartCarouselTimer();
     }
 
