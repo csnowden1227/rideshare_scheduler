@@ -6,14 +6,14 @@
   <title>Partner Dispatch Onboarding</title>
   <style>
     :root {
-      --ink: #0f172a;
-      --muted: #64748b;
-      --line: #ddd6fe;
-      --accent: #5b21b6;
-      --accent-2: #0f766e;
-      --card: rgba(255, 255, 255, 0.92);
-      --danger: #dc2626;
-      --success: #15803d;
+      --ink: #0a0a0a;
+      --muted: #41424c;
+      --line: rgba(218, 165, 32, 0.24);
+      --accent: #daa520;
+      --accent-2: #41424c;
+      --card: rgba(255, 255, 255, 0.94);
+      --danger: #9f1239;
+      --success: #0f766e;
     }
     * { box-sizing: border-box; }
     body {
@@ -21,8 +21,9 @@
       font-family: Arial, Helvetica, sans-serif;
       color: var(--ink);
       background:
-        radial-gradient(circle at top right, rgba(91, 33, 182, 0.08), transparent 24%),
-        linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
+        radial-gradient(circle at top right, rgba(218, 165, 32, 0.10), transparent 24%),
+        radial-gradient(circle at top left, rgba(65, 66, 76, 0.10), transparent 20%),
+        linear-gradient(180deg, #fbf7ef 0%, #f2ebdd 100%);
       min-height: 100vh;
     }
     .wrap {
@@ -36,7 +37,7 @@
       box-shadow: 0 18px 42px rgba(15, 23, 42, 0.06);
     }
     .hero {
-      background: linear-gradient(135deg, #111827 0%, #5b21b6 52%, #0f766e 100%);
+      background: linear-gradient(135deg, #0a0a0a 0%, #41424c 56%, #daa520 160%);
       color: #fff;
     }
     .hero p, .section p {
@@ -63,7 +64,7 @@
     .section h2 {
       margin: 0 0 12px;
       font-size: 28px;
-      color: var(--accent);
+      color: var(--ink);
       line-height: 1.1;
     }
     .grid-2 {
@@ -84,7 +85,7 @@
       width: 100%;
       padding: 12px 14px;
       border-radius: 14px;
-      border: 1px solid #cbd5e1;
+      border: 1px solid rgba(218, 165, 32, 0.24);
       background: #fff;
       color: var(--ink);
       font-size: 14px;
@@ -128,12 +129,12 @@
     }
     .btn-primary {
       background: linear-gradient(135deg, var(--accent), var(--accent-2));
-      color: #fff;
+      color: #0a0a0a;
     }
     .btn-secondary {
       background: #fff;
       color: var(--accent);
-      border: 1px solid #c4b5fd;
+      border: 1px solid rgba(218, 165, 32, 0.34);
     }
     .status {
       margin-top: 14px;
@@ -162,9 +163,9 @@
       margin-top: 18px;
       padding: 18px;
       border-radius: 18px;
-      border: 1px solid #fecaca;
-      background: #fef2f2;
-      color: #7f1d1d;
+      border: 1px solid rgba(218, 165, 32, 0.26);
+      background: linear-gradient(180deg, rgba(255, 250, 235, 0.95) 0%, rgba(255, 245, 214, 0.92) 100%);
+      color: #5b4320;
       line-height: 1.75;
       display: none;
     }
@@ -172,7 +173,7 @@
       margin: 0 0 10px;
       font-size: 20px;
       line-height: 1.15;
-      color: #991b1b;
+      color: #0a0a0a;
     }
     .help-card p {
       margin: 0 0 10px;

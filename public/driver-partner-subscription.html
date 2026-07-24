@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Driver Partner Subscription</title>
+  <style>
+    :root {
+      --ink: #0a0a0a;
+      --charcoal: #41424c;
+      --gold: #daa520;
+      --gold-soft: rgba(218, 165, 32, 0.16);
+      --line: rgba(218, 165, 32, 0.24);
+      --paper: rgba(255, 255, 255, 0.94);
+      --muted: #4b5563;
+      --shadow: 0 24px 54px rgba(10, 10, 10, 0.16);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top left, rgba(218, 165, 32, 0.12), transparent 24%),
+        radial-gradient(circle at top right, rgba(65, 66, 76, 0.10), transparent 26%),
+        linear-gradient(180deg, #fbf7ef 0%, #f2ebdd 100%);
+      min-height: 100vh;
+    }
+    .wrap {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 24px 16px 40px;
+    }
+    .hero {
+      border-radius: 30px;
+      padding: 28px;
+      background:
+        radial-gradient(circle at top right, rgba(218, 165, 32, 0.12), transparent 24%),
+        linear-gradient(135deg, #0a0a0a 0%, #41424c 58%, #daa520 160%);
+      color: #fff;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+    .eyebrow {
+      margin: 0 0 10px;
+      font-size: 12px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 0.16em;
+      color: rgba(255,255,255,0.82);
+    }
+    h1 {
+      margin: 0;
+      font-size: clamp(34px, 4.6vw, 64px);
+      line-height: 0.96;
+      letter-spacing: -0.05em;
+      max-width: 12ch;
+    }
+    .hero-copy {
+      margin: 14px 0 0;
+      max-width: 68ch;
+      line-height: 1.85;
+      color: rgba(255,255,255,0.88);
+    }
+    .hero-badges {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 18px;
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 10px 14px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.12);
+      border: 1px solid rgba(218,165,32,0.22);
+      color: #fff;
+      font-size: 12px;
+      font-weight: 900;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.12fr) minmax(320px, 0.88fr);
+      gap: 18px;
+      margin-top: 18px;
+      align-items: start;
+    }
+    .panel {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      padding: 22px;
+      box-shadow: 0 14px 32px rgba(10,10,10,0.06);
+    }
+    .panel h2 {
+      margin: 0 0 10px;
+      font-size: 26px;
+      line-height: 1.12;
+      color: var(--ink);
+    }
+    .panel p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.8;
+    }
+    .price-card {
+      border-radius: 22px;
+      padding: 20px;
+      background: linear-gradient(180deg, #fffdf7 0%, #fff7e9 100%);
+      border: 1px solid rgba(218, 165, 32, 0.20);
+    }
+    .price {
+      font-size: 42px;
+      line-height: 1;
+      font-weight: 900;
+      letter-spacing: -0.05em;
+      margin: 8px 0 6px;
+      color: var(--ink);
+    }
+    .price span {
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      color: var(--muted);
+    }
+    .list {
+      margin: 14px 0 0;
+      padding-left: 18px;
+      color: #374151;
+      line-height: 1.8;
+    }
+    .form {
+      display: grid;
+      gap: 14px;
+      margin-top: 18px;
+    }
+    .field {
+      display: grid;
+      gap: 8px;
+    }
+    label {
+      font-size: 11px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: #5b6471;
+    }
+    input {
+      width: 100%;
+      border: 1px solid rgba(218,165,32,0.22);
+      border-radius: 14px;
+      padding: 13px 14px;
+      font-size: 15px;
+      background: #fff;
+      color: var(--ink);
+      outline: none;
+    }
+    input:focus {
+      border-color: rgba(218,165,32,0.62);
+      box-shadow: 0 0 0 3px rgba(218,165,32,0.12);
+    }
+    .note {
+      margin-top: 14px;
+      border-radius: 18px;
+      padding: 16px 18px;
+      background: rgba(255,255,255,0.75);
+      border: 1px solid rgba(218,165,32,0.16);
+      color: var(--muted);
+      line-height: 1.75;
+      font-size: 13px;
+    }
+    .btn-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 18px;
+    }
+    .button {
+      appearance: none;
+      border: 0;
+      cursor: pointer;
+      min-height: 54px;
+      padding: 0 20px;
+      border-radius: 16px;
+      font-size: 14px;
+      font-weight: 800;
+      transition: transform 0.18s ease, filter 0.18s ease;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .button:hover {
+      transform: translateY(-1px);
+      filter: brightness(0.98);
+    }
+    .button-primary {
+      background: linear-gradient(135deg, #f6df8c, #daa520);
+      color: #0a0a0a;
+      box-shadow: 0 16px 28px rgba(218,165,32,0.22);
+    }
+    .button-secondary {
+      background: #fff;
+      color: var(--ink);
+      border: 1px solid var(--line);
+    }
+    .status {
+      margin-top: 14px;
+      font-size: 14px;
+      font-weight: 700;
+      color: #0f766e;
+    }
+    .status.error {
+      color: #9f1239;
+    }
+    @media (max-width: 960px) {
+      .grid {
+        grid-template-columns: 1fr;
+      }
+    }
+    @media (max-width: 640px) {
+      .wrap { padding: 16px 12px 32px; }
+      .hero, .panel { border-radius: 22px; }
+      .hero { padding: 20px 18px; }
+      .panel h2 { font-size: 22px; }
+      .price { font-size: 36px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="hero">
+      <p class="eyebrow">Driver Partner Subscription</p>
+      <h1>Subscribe, then build your driver page.</h1>
+      <p class="hero-copy">
+        This is the dedicated signup and subscription step for Chauffeurs Deluxe. After checkout, we’ll send you directly to the setup wizard so you can add your name, photo, service area, calendar, and vehicle choices.
+      </p>
+      <div class="hero-badges">
+        <span class="badge">Monthly subscription</span>
+        <span class="badge">Branded driver page</span>
+        <span class="badge">Setup wizard next</span>
+        <span class="badge">Premium access</span>
+      </div>
+    </section>
+
+    <div class="grid">
+      <section class="panel">
+        <h2>Subscription Checkout</h2>
+        <p>Enter the basics below and we’ll take you to Stripe checkout for your driver partner subscription.</p>
+
+        <form id="subscription-form" class="form">
+          <div class="field">
+            <label for="display_name">Driver Name</label>
+            <input id="display_name" placeholder="Your Name" required />
+          </div>
+          <div class="field">
+            <label for="business_name">Business Name</label>
+            <input id="business_name" placeholder="Chauffeurs Deluxe Driver" />
+          </div>
+          <div class="field">
+            <label for="driver_email">Email</label>
+            <input id="driver_email" type="email" placeholder="driver@example.com" required />
+          </div>
+          <div class="btn-row">
+            <button class="button button-primary" id="subscribe-btn" type="submit">Subscribe and Continue</button>
+            <a class="button button-secondary" href="/driver-partner-program">Back to Program</a>
+          </div>
+          <div id="status" class="status" style="display:none;"></div>
+        </form>
+
+        <div class="note">
+          After checkout, you’ll be sent to the setup wizard to finish your driver page. The wizard is where you add the photo, calendar URL, map radius, and which vehicles to show.
+        </div>
+      </section>
+
+      <aside class="panel">
+        <div class="price-card">
+          <h2 style="margin-bottom:0;">Chauffeurs Deluxe Driver Partner</h2>
+          <div class="price">$79 <span>/ month</span></div>
+          <p>Premium driver partner access for the branded page and setup flow.</p>
+          <ul class="list">
+            <li>Branded chauffeur page access</li>
+            <li>Subscription billing through Stripe</li>
+            <li>Setup wizard after payment</li>
+            <li>Driver page and partner tools</li>
+          </ul>
+        </div>
+        <div class="note" style="margin-top:16px;">
+          This page is separate from the invite-based onboarding form so your existing partner onboarding stays untouched.
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <script>
+    const query = new URLSearchParams(window.location.search);
+    const statusEl = document.getElementById("status");
+    const subscribeBtn = document.getElementById("subscribe-btn");
+    const displayNameEl = document.getElementById("display_name");
+    const businessNameEl = document.getElementById("business_name");
+    const driverEmailEl = document.getElementById("driver_email");
+    const form = document.getElementById("subscription-form");
+
+    function showStatus(message, isError = false) {
+      statusEl.textContent = message;
+      statusEl.style.display = "block";
+      statusEl.classList.toggle("error", Boolean(isError));
+    }
+
+    displayNameEl.value = query.get("display_name") || "";
+    businessNameEl.value = query.get("business_name") || "";
+    driverEmailEl.value = query.get("driver_email") || "";
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const displayName = displayNameEl.value.trim();
+      const businessName = businessNameEl.value.trim();
+      const driverEmail = driverEmailEl.value.trim();
+
+      if (!displayName) return showStatus("Driver name is required.", true);
+      if (!driverEmail) return showStatus("Email is required.", true);
+
+      subscribeBtn.disabled = true;
+      subscribeBtn.textContent = "Opening checkout...";
+
+      try {
+        const response = await fetch("/api/driver-partner/subscription-checkout-session", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            display_name: displayName,
+            business_name: businessName,
+            driver_email: driverEmail,
+          }),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.error || "Unable to create subscription checkout.");
+        if (!data.checkout_url) throw new Error("Checkout session did not return a payment link.");
+        window.location.href = data.checkout_url;
+      } catch (error) {
+        showStatus(error.message || "Unable to start subscription checkout.", true);
+        subscribeBtn.disabled = false;
+        subscribeBtn.textContent = "Subscribe and Continue";
+      }
+    });
+  </script>
+</body>
+</html>

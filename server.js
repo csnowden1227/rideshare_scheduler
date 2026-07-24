@@ -7991,6 +7991,12 @@ app.get("/partner-onboarding.html", (req, res) => {
 app.get("/partner-onboarding", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "partner-onboarding.html"));
 });
+app.get("/driver-partner-subscription.html", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "driver-partner-subscription.html"));
+});
+app.get("/driver-partner-subscription", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "driver-partner-subscription.html"));
+});
 app.get("/dispatch-network-manager.html", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "dispatch-network-manager.html"));
 });
@@ -11587,6 +11593,37 @@ async function createStripeAddonCheckoutSession({
   return stripeFormRequest("/v1/checkout/sessions", params, "POST", apiKey);
 }
 
+async function createDriverPartnerSubscriptionCheckoutSession({
+  apiKey = envStripeSecretKey,
+  displayName = "",
+  businessName = "",
+  customerEmail = "",
+  successUrl,
+  cancelUrl,
+}) {
+  if (!apiKey) {
+    throw new Error("Stripe is not configured.");
+  }
+
+  const params = {
+    mode: "subscription",
+    success_url: successUrl,
+    cancel_url: cancelUrl,
+    customer_email: String(customerEmail || "").trim() || undefined,
+    "metadata[product]": "driver_partner_subscription",
+    "metadata[display_name]": String(displayName || "").trim(),
+    "metadata[business_name]": String(businessName || "").trim(),
+    "line_items[0][quantity]": 1,
+    "line_items[0][price_data][currency]": "usd",
+    "line_items[0][price_data][unit_amount]": 7900,
+    "line_items[0][price_data][recurring][interval]": "month",
+    "line_items[0][price_data][product_data][name]": "Chauffeurs Deluxe Driver Partner Subscription",
+    "line_items[0][price_data][product_data][description]": "Monthly access to the Chauffeurs Deluxe driver partner page and setup flow.",
+  };
+
+  return stripeFormRequest("/v1/checkout/sessions", params, "POST", apiKey);
+}
+
 function buildDispatchManagerUrl(baseUrl, ownerLocationId, partnerId = null) {
   return appendQueryParams(`${baseUrl}/dispatch-network-manager.html`, {
     location_id: ownerLocationId,
@@ -12362,6 +12399,39 @@ app.post("/api/partners/onboard/:token", async (req, res) => {
     return res.status(500).json({ error: err.message || "Failed to onboard partner." });
   } finally {
     client.release();
+  }
+});
+
+app.post("/api/driver-partner/subscription-checkout-session", async (req, res) => {
+  try {
+    const displayName = String(req.body.display_name || "").trim();
+    const businessName = String(req.body.business_name || "").trim() || "Chauffeurs Deluxe Driver";
+    const customerEmail = String(req.body.driver_email || req.body.email || "").trim();
+    const successUrl = appendQueryParams(`${getPublicAppUrl(req)}/driver-partner-setup`, {
+      payment: "success",
+      display_name: displayName || undefined,
+      driver_email: customerEmail || undefined,
+      session_id: "{CHECKOUT_SESSION_ID}",
+    }, { rawKeys: ["session_id"] });
+    const cancelUrl = appendQueryParams(`${getPublicAppUrl(req)}/driver-partner-subscription`, {
+      payment: "cancel",
+    });
+
+    const session = await createDriverPartnerSubscriptionCheckoutSession({
+      displayName,
+      businessName,
+      customerEmail,
+      successUrl,
+      cancelUrl,
+    });
+
+    return res.json({
+      success: true,
+      checkout_url: session.url,
+    });
+  } catch (err) {
+    console.error("Driver partner subscription checkout error:", err);
+    return res.status(500).json({ error: err.message || "Failed to create the driver subscription checkout session." });
   }
 });
 
