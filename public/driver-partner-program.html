@@ -1188,37 +1188,30 @@
             </ul>
           </div>
           <div class="snapshot-card hero-card">
-            <div class="snapshot-card-header">
-              <p class="snapshot-card-title">Driver Page Snapshot</p>
-              <span class="brochure-tag" style="margin-top:0;">Top-right preview</span>
-            </div>
             <div class="snapshot-carousel" data-snapshot-carousel>
               <div class="snapshot-carousel-frame">
                 <div class="snapshot-carousel-track">
                   <article class="snapshot-carousel-slide">
-                    <img src="/assets/driver-partner-program/driver-page-snapshot.png" alt="Driver personal page snapshot" />
+                    <img src="/assets/driver-partner-program/brochure-carousel/brochure 1.png" alt="Brochure snippet 1" />
                   </article>
                   <article class="snapshot-carousel-slide">
-                    <img src="/assets/driver-partner-program/brochure-carousel/brochure 5.png" alt="Chauffeurs Deluxe brochure front" />
+                    <img src="/assets/driver-partner-program/brochure-carousel/brochure 2.png" alt="Brochure snippet 2" />
                   </article>
                   <article class="snapshot-carousel-slide">
-                    <img src="/assets/driver-partner-program/brochure-carousel/brochure 6.png" alt="Chauffeurs Deluxe brochure back" />
+                    <img src="/assets/driver-partner-program/brochure-carousel/brochure 3.png" alt="Brochure snippet 3" />
+                  </article>
+                  <article class="snapshot-carousel-slide">
+                    <img src="/assets/driver-partner-program/brochure-carousel/brochure 4.png" alt="Brochure snippet 4" />
+                  </article>
+                  <article class="snapshot-carousel-slide">
+                    <img src="/assets/driver-partner-program/brochure-carousel/brochure 5.png" alt="Brochure snippet 5" />
+                  </article>
+                  <article class="snapshot-carousel-slide">
+                    <img src="/assets/driver-partner-program/brochure-carousel/brochure 6.png" alt="Brochure snippet 6" />
                   </article>
                 </div>
-                <div class="snapshot-carousel-overlay">
-                  <span class="snapshot-carousel-tag">Driver Page Preview</span>
-                  <span class="snapshot-carousel-count" id="snapshot-carousel-count">1 / 3</span>
-                </div>
-              </div>
-              <div class="snapshot-carousel-dots" aria-label="Driver page preview slides">
-                <button class="snapshot-carousel-dot active" type="button" aria-label="Show preview 1" data-snapshot-dot="0"></button>
-                <button class="snapshot-carousel-dot" type="button" aria-label="Show preview 2" data-snapshot-dot="1"></button>
-                <button class="snapshot-carousel-dot" type="button" aria-label="Show preview 3" data-snapshot-dot="2"></button>
               </div>
             </div>
-            <p class="snapshot-card-copy">
-              The top-right preview now rotates through the driver snapshot and supporting brochure visuals.
-            </p>
           </div>
         </aside>
       </div>
@@ -1238,16 +1231,22 @@
       </div>
       <div class="brochure-toolbar">
         <button id="brochure-toggle" class="button button-secondary" type="button" aria-pressed="false">Pause rotation</button>
-        <p class="muted" style="margin: 0;">The carousel rotates through the front and back brochures automatically.</p>
+        <p class="muted" style="margin: 0;">The carousel rotates through the four full brochure pages automatically.</p>
       </div>
       <div class="brochure-carousel" data-brochure-carousel>
         <div class="carousel-frame">
           <div class="carousel-track">
             <article class="carousel-slide">
-              <img src="/assets/driver-partner-program/brochure-carousel/brochure 5.png" alt="Chauffeurs Deluxe brochure front" />
+              <img src="/assets/driver-partner-program/brochure-pages/brochure-page-1.png" alt="Brochure page 1" />
             </article>
             <article class="carousel-slide">
-              <img src="/assets/driver-partner-program/brochure-carousel/brochure 6.png" alt="Chauffeurs Deluxe brochure back" />
+              <img src="/assets/driver-partner-program/brochure-pages/brochure-page-2.png" alt="Brochure page 2" />
+            </article>
+            <article class="carousel-slide">
+              <img src="/assets/driver-partner-program/brochure-pages/brochure-page-3.png" alt="Brochure page 3" />
+            </article>
+            <article class="carousel-slide">
+              <img src="/assets/driver-partner-program/brochure-pages/brochure-page-4.png" alt="Brochure page 4" />
             </article>
           </div>
         </div>
@@ -1255,7 +1254,9 @@
           <button class="carousel-nav" id="brochure-prev" type="button" aria-label="Previous brochure">Previous</button>
           <div class="carousel-dots" aria-label="Brochure carousel slides">
             <button class="carousel-dot active" type="button" aria-label="Show brochure front" data-carousel-dot="0"></button>
-            <button class="carousel-dot" type="button" aria-label="Show brochure back" data-carousel-dot="1"></button>
+            <button class="carousel-dot" type="button" aria-label="Show brochure page 2" data-carousel-dot="1"></button>
+            <button class="carousel-dot" type="button" aria-label="Show brochure page 3" data-carousel-dot="2"></button>
+            <button class="carousel-dot" type="button" aria-label="Show brochure page 4" data-carousel-dot="3"></button>
           </div>
           <button class="carousel-nav" id="brochure-next" type="button" aria-label="Next brochure">Next</button>
         </div>
@@ -1630,7 +1631,7 @@
     if (snapshotCarousel && snapshotCarouselTrack && snapshotCarouselSlides.length) {
       let snapshotIndex = 0;
       let snapshotTimer = null;
-      const snapshotDelayMs = 4200;
+      const snapshotDelayMs = 3800;
 
       const updateSnapshotCarousel = () => {
         snapshotCarouselTrack.style.transform = `translateX(-${snapshotIndex * 100}%)`;
