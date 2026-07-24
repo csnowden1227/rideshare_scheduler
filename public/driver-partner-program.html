@@ -15,8 +15,8 @@
       --paper: rgba(255, 255, 255, 0.96);
       --soft: #f8fafc;
       --soft-warm: #fffaf0;
-      --ink: #111827;
-      --muted: #64748b;
+      --ink: #0A0A0A;
+      --muted: #41424C;
     }
     * { box-sizing: border-box; }
     body {
@@ -25,8 +25,8 @@
       color: var(--ink);
       background:
         radial-gradient(circle at top left, rgba(218, 165, 32, 0.12), transparent 24%),
-        radial-gradient(circle at top right, rgba(65, 66, 76, 0.16), transparent 28%),
-        linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
+        radial-gradient(circle at top right, rgba(65, 66, 76, 0.12), transparent 28%),
+        linear-gradient(180deg, #fbf7ef 0%, #f2ebdd 100%);
       -webkit-text-size-adjust: 100%;
     }
     .wrap {
@@ -123,9 +123,9 @@
       border-radius: 24px;
       border: 1px solid rgba(218, 165, 32, 0.22);
       background: linear-gradient(180deg, #fffdf7 0%, #f6f0e4 100%);
-      box-shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
+      box-shadow: 0 18px 40px rgba(10, 10, 10, 0.08);
       padding: 18px;
-      color: #111827;
+      color: var(--ink);
     }
     .brochure-preview {
       display: grid;
@@ -147,7 +147,7 @@
     }
     .preview-panel p {
       margin: 0;
-      color: #475569;
+      color: var(--muted);
       line-height: 1.7;
       font-size: 14px;
     }
@@ -174,8 +174,8 @@
       border-radius: 18px;
       object-fit: cover;
       border: 1px solid rgba(218, 165, 32, 0.26);
-      background: linear-gradient(135deg, #f4e6b0, #c8a045);
-      box-shadow: 0 10px 24px rgba(15, 23, 42, 0.10);
+      background: linear-gradient(135deg, rgba(218, 165, 32, 0.28), var(--brand-accent));
+      box-shadow: 0 10px 24px rgba(10, 10, 10, 0.10);
       display: block;
     }
     .profile-placeholder {
@@ -185,7 +185,7 @@
       font-size: 22px;
       font-weight: 900;
       letter-spacing: -0.04em;
-      color: #111827;
+      color: var(--ink);
       background: linear-gradient(135deg, rgba(218, 165, 32, 0.28), rgba(255, 247, 218, 0.94));
     }
     .profile-photo.hidden,
@@ -197,19 +197,19 @@
       font-size: 20px;
       font-weight: 900;
       line-height: 1.2;
-      color: #111827;
+      color: var(--ink);
     }
     .preview-role {
       margin: 4px 0 0;
       font-size: 12px;
       text-transform: uppercase;
       letter-spacing: 0.12em;
-      color: #8a6a12;
+      color: var(--brand-accent);
     }
     .preview-bullets {
       margin: 14px 0 0;
       padding-left: 18px;
-      color: #374151;
+      color: var(--muted);
       line-height: 1.7;
       font-size: 13px;
     }
@@ -424,7 +424,7 @@
       font-weight: 800;
       text-transform: uppercase;
       letter-spacing: 0.14em;
-      color: #8a6a12;
+      color: var(--brand-accent);
     }
     .brochure-headline {
       margin: 10px 0 12px;
@@ -436,7 +436,7 @@
     }
     .brochure-copy {
       margin: 0;
-      color: #4b5563;
+      color: var(--muted);
       line-height: 1.75;
       font-size: 14px;
     }
@@ -447,7 +447,7 @@
       padding: 7px 10px;
       border-radius: 999px;
       background: rgba(218, 165, 32, 0.12);
-      color: #8a6a12;
+      color: var(--brand-accent);
       border: 1px solid rgba(218, 165, 32, 0.32);
       font-size: 11px;
       font-weight: 800;
@@ -458,7 +458,7 @@
     .brochure-list {
       margin: 0;
       padding-left: 18px;
-      color: #374151;
+      color: var(--muted);
       line-height: 1.8;
     }
     .brochure-list li {
@@ -476,13 +476,13 @@
       align-items: end;
       flex-wrap: wrap;
       margin-top: 18px;
-      color: #4b5563;
+      color: var(--muted);
       font-size: 12px;
       letter-spacing: 0.08em;
       text-transform: uppercase;
     }
     .brochure-footer strong {
-      color: #111827;
+      color: var(--ink);
       font-size: 13px;
       letter-spacing: 0.04em;
       text-transform: none;
@@ -498,11 +498,11 @@
     }
     .brochure-value strong {
       font-size: 18px;
-      color: #111827;
+      color: var(--ink);
       line-height: 1.25;
     }
     .brochure-value span {
-      color: #4b5563;
+      color: var(--muted);
       line-height: 1.7;
       font-size: 13px;
     }
@@ -516,13 +516,13 @@
       border-radius: 14px;
       background: rgba(255, 250, 235, 0.94);
       border: 1px solid rgba(218, 165, 32, 0.18);
-      color: #4b5563;
+      color: var(--muted);
       line-height: 1.65;
       font-size: 13px;
     }
     .brochure-mini strong {
       display: block;
-      color: #111827;
+      color: var(--ink);
       margin-bottom: 3px;
       font-size: 13px;
       letter-spacing: 0.03em;
@@ -556,7 +556,7 @@
     .fleet-intro {
       margin: 0;
       line-height: 1.8;
-      color: #334155;
+      color: var(--muted);
     }
     .fleet-group {
       margin-top: 16px;
@@ -588,7 +588,7 @@
     .vehicle-card {
       border-radius: 18px;
       border: 1px solid #ece7d0;
-      background: linear-gradient(180deg, #fffdf7 0%, #ffffff 100%);
+      background: linear-gradient(180deg, #fffdf7 0%, #fffaf0 100%);
       padding: 14px;
       display: grid;
       gap: 10px;
@@ -652,7 +652,7 @@
       color: var(--ink);
     }
     .card p, .card li {
-      color: #334155;
+      color: var(--muted);
       line-height: 1.8;
     }
     .card ul {
@@ -668,7 +668,7 @@
       border: 1px solid var(--brand-line);
       border-radius: 18px;
       padding: 16px;
-      background: linear-gradient(180deg, #ffffff 0%, #fafaff 100%);
+      background: linear-gradient(180deg, #ffffff 0%, #fbf4df 100%);
     }
     .step-number {
       display: inline-flex;
@@ -729,15 +729,15 @@
     }
     .button-quiet {
       background: var(--soft-warm);
-      color: #92400e;
-      border-color: #fdba74;
+      color: var(--brand-accent);
+      border-color: rgba(218, 165, 32, 0.34);
     }
     .muted {
       color: var(--muted);
     }
     .callout {
       background: linear-gradient(135deg, #fefce8 0%, #fff7ed 100%);
-      border: 1px solid #fcd34d;
+      border: 1px solid rgba(218, 165, 32, 0.65);
       border-radius: 22px;
       padding: 20px;
     }
@@ -752,7 +752,7 @@
       border-radius: 16px;
       padding: 14px 16px;
       background: #fff;
-      color: #334155;
+      color: var(--muted);
       line-height: 1.6;
     }
     .tag strong {
@@ -792,7 +792,7 @@
       border: 1px solid var(--brand-line);
       border-radius: 22px;
       padding: 20px;
-      background: linear-gradient(180deg, #fffdf7 0%, #ffffff 100%);
+      background: linear-gradient(180deg, #fffdf7 0%, #fffaf0 100%);
     }
     .price-card h3 {
       margin: 0 0 8px;
@@ -808,9 +808,9 @@
       display: flex;
       justify-content: space-between;
       gap: 12px;
-      border-bottom: 1px solid #f1e7c5;
+      border-bottom: 1px solid rgba(218, 165, 32, 0.22);
       padding-bottom: 10px;
-      color: #334155;
+      color: var(--muted);
       line-height: 1.6;
     }
     .price-line strong {
@@ -1189,7 +1189,7 @@
       </article>
     </section>
 
-    <section class="card" style="margin-top: 18px; background: linear-gradient(180deg, #ffffff 0%, #fafaff 100%);">
+    <section class="card" style="margin-top: 18px; background: linear-gradient(180deg, #ffffff 0%, #fbf4df 100%);">
       <p class="section-kicker">Step 3 of 5</p>
       <h2>How It Connects To Dispatch</h2>
       <p>
