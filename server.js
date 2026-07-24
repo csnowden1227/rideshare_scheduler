@@ -11615,7 +11615,7 @@ async function createDriverPartnerSubscriptionCheckoutSession({
     "metadata[business_name]": String(businessName || "").trim(),
     "line_items[0][quantity]": 1,
     "line_items[0][price_data][currency]": "usd",
-    "line_items[0][price_data][unit_amount]": 7900,
+    "line_items[0][price_data][unit_amount]": 9900,
     "line_items[0][price_data][recurring][interval]": "month",
     "line_items[0][price_data][product_data][name]": "Chauffeurs Deluxe Driver Partner Subscription",
     "line_items[0][price_data][product_data][description]": "Monthly access to the Chauffeurs Deluxe driver partner page and setup flow.",

@@ -31,14 +31,17 @@
       margin: 0 auto;
       padding: 24px 16px 40px;
     }
-    .hero {
+    .hero,
+    .panel {
       border-radius: 30px;
+      box-shadow: var(--shadow);
+    }
+    .hero {
       padding: 28px;
       background:
         radial-gradient(circle at top right, rgba(218, 165, 32, 0.12), transparent 24%),
         linear-gradient(135deg, #0a0a0a 0%, #41424c 58%, #daa520 160%);
       color: #fff;
-      box-shadow: var(--shadow);
       overflow: hidden;
     }
     .eyebrow {
@@ -84,7 +87,7 @@
     }
     .grid {
       display: grid;
-      grid-template-columns: minmax(0, 1.12fr) minmax(320px, 0.88fr);
+      grid-template-columns: minmax(320px, 0.88fr) minmax(0, 1.12fr);
       gap: 18px;
       margin-top: 18px;
       align-items: start;
@@ -92,9 +95,7 @@
     .panel {
       background: var(--paper);
       border: 1px solid var(--line);
-      border-radius: 24px;
       padding: 22px;
-      box-shadow: 0 14px 32px rgba(10,10,10,0.06);
     }
     .panel h2 {
       margin: 0 0 10px;
@@ -218,9 +219,7 @@
       color: #9f1239;
     }
     @media (max-width: 960px) {
-      .grid {
-        grid-template-columns: 1fr;
-      }
+      .grid { grid-template-columns: 1fr; }
     }
     @media (max-width: 640px) {
       .wrap { padding: 16px 12px 32px; }
@@ -237,7 +236,7 @@
       <p class="eyebrow">Driver Partner Subscription</p>
       <h1>Subscribe, then build your driver page.</h1>
       <p class="hero-copy">
-        This is the dedicated signup and subscription step for Chauffeurs Deluxe. After checkout, we’ll send you directly to the setup wizard so you can add your name, photo, service area, calendar, and vehicle choices.
+        This is the dedicated signup and subscription step for Chauffeurs Deluxe. After checkout, we will send you directly to the setup wizard so you can add your name, photo, service area, calendar, and vehicle choices.
       </p>
       <div class="hero-badges">
         <span class="badge">Monthly subscription</span>
@@ -248,9 +247,26 @@
     </section>
 
     <div class="grid">
+      <aside class="panel">
+        <div class="price-card">
+          <h2 style="margin-bottom:0;">Chauffeurs Deluxe Driver Partner</h2>
+          <div class="price">$99 <span>/ month</span></div>
+          <p>Premium driver partner access for the branded page and setup flow.</p>
+          <ul class="list">
+            <li>Branded chauffeur page access</li>
+            <li>Subscription billing through Stripe</li>
+            <li>Setup wizard after payment</li>
+            <li>Driver page and partner tools</li>
+          </ul>
+        </div>
+        <div class="note" style="margin-top:16px;">
+          This page is separate from the invite-based onboarding form so your existing partner onboarding stays untouched.
+        </div>
+      </aside>
+
       <section class="panel">
         <h2>Subscription Checkout</h2>
-        <p>Enter the basics below and we’ll take you to Stripe checkout for your driver partner subscription.</p>
+        <p>Enter the basics below and we will take you to Stripe checkout for your driver partner subscription.</p>
 
         <form id="subscription-form" class="form">
           <div class="field">
@@ -273,26 +289,9 @@
         </form>
 
         <div class="note">
-          After checkout, you’ll be sent to the setup wizard to finish your driver page. The wizard is where you add the photo, calendar URL, map radius, and which vehicles to show.
+          After checkout, you will be sent to the setup wizard to finish your driver page. The wizard is where you add the photo, calendar URL, map radius, and which vehicles to show.
         </div>
       </section>
-
-      <aside class="panel">
-        <div class="price-card">
-          <h2 style="margin-bottom:0;">Chauffeurs Deluxe Driver Partner</h2>
-          <div class="price">$79 <span>/ month</span></div>
-          <p>Premium driver partner access for the branded page and setup flow.</p>
-          <ul class="list">
-            <li>Branded chauffeur page access</li>
-            <li>Subscription billing through Stripe</li>
-            <li>Setup wizard after payment</li>
-            <li>Driver page and partner tools</li>
-          </ul>
-        </div>
-        <div class="note" style="margin-top:16px;">
-          This page is separate from the invite-based onboarding form so your existing partner onboarding stays untouched.
-        </div>
-      </aside>
     </div>
   </div>
 
