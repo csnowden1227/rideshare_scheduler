@@ -262,7 +262,7 @@
     saveBtn?.addEventListener("click", saveSetup);
     previewBtn?.addEventListener("click", () => {
       const slug = slugify(displayNameEl?.value || "john-smith");
-      const previewUrl = `/driver-partner-page.html?driver_name=${encodeURIComponent(displayNameEl?.value || "Your Name")}&driver_title=${encodeURIComponent("Luxury Chauffeur")}&slug=${encodeURIComponent(`chauffeursdeluxe.com/partner/${slug}`)}${photoData ? `&driver_photo=${encodeURIComponent(photoData)}` : ""}`;
+      const previewUrl = `/partner/${encodeURIComponent(slug)}?driver_name=${encodeURIComponent(displayNameEl?.value || "Your Name")}&driver_title=${encodeURIComponent("Luxury Chauffeur")}${photoData ? `&driver_photo=${encodeURIComponent(photoData)}` : ""}`;
       window.open(previewUrl, "_blank", "noopener,noreferrer");
     });
   }

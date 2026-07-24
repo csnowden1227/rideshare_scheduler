@@ -895,7 +895,7 @@
             <a id="personal-link" class="button button-primary hidden" href="#" target="_blank" rel="noopener noreferrer">Open Personal Booking Link</a>
             <button id="copy-link-btn" class="button button-secondary hidden" type="button">Copy Booking Link</button>
             <a id="apply-link" class="button button-quiet hidden" href="#" target="_blank" rel="noopener noreferrer">Apply and Pay for Access</a>
-            <a id="preview-page-link" class="button button-secondary" href="/driver-partner-page.html" target="_blank" rel="noopener noreferrer">Preview Personal Page</a>
+            <a id="preview-page-link" class="button button-secondary" href="/partner/john-smith" target="_blank" rel="noopener noreferrer">Preview Personal Page</a>
           </div>
           <div id="hero-status" class="muted" style="margin-top: 14px; color: rgba(255,255,255,0.9); line-height: 1.8;">
             Driver partner pages are paid access. A driver must apply, subscribe to the partner page, and stay active in good standing before the personal booking link is enabled.
@@ -1031,7 +1031,7 @@
                 </div>
               </div>
             </div>
-            <a class="button button-secondary brochure-cta" href="/partner-onboarding.html">Start Paid Signup</a>
+            <a class="button button-secondary brochure-cta" href="/partner-onboarding">Start Paid Signup</a>
           </article>
 
           <article class="brochure-panel inside">
@@ -1115,7 +1115,7 @@
           </div>
         </div>
         <div class="section-cta">
-          <a class="button button-primary" href="/partner-onboarding.html">Start Paid Partner Signup</a>
+          <a class="button button-primary" href="/partner-onboarding">Start Paid Partner Signup</a>
         </div>
       </article>
 
@@ -1281,7 +1281,7 @@
         </div>
       </div>
       <div class="section-cta">
-        <a class="button button-primary" href="/partner-onboarding.html">Start Your Application</a>
+        <a class="button button-primary" href="/partner-onboarding">Start Your Application</a>
       </div>
     </section>
 
@@ -1401,7 +1401,7 @@
     applyLink.classList.remove("hidden");
 
     if (previewPageLink) {
-      const previewUrl = new URL("/driver-partner-page.html", window.location.origin);
+      const previewUrl = new URL("/partner/john-smith", window.location.origin);
       if (driverName) previewUrl.searchParams.set("driver_name", driverName);
       if (driverTitle) previewUrl.searchParams.set("driver_title", driverTitle);
       if (driverPhoto) previewUrl.searchParams.set("driver_photo", driverPhoto);

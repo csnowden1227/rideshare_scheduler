@@ -1454,6 +1454,7 @@ async function ensureProfileDriverPageColumns() {
       await pool.query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS driver_photo_data TEXT`);
       await pool.query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS driver_page_vehicle_cards JSONB`);
       await pool.query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS driver_calendar_url TEXT`);
+      await pool.query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS driver_page_slug TEXT`);
     })().catch((err) => {
       profileDriverPageColumnsReady = null;
       throw err;
@@ -1519,6 +1520,29 @@ function slugifyForDashboard(value) {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 64) || "john-smith";
+}
+
+function normalizeDriverPageSlug(value, fallbackValue = "john-smith") {
+  const raw = String(value || "").trim();
+  const fallbackSlug = slugifyForDashboard(fallbackValue || "john-smith") || "john-smith";
+  if (!raw) {
+    return `/partner/${fallbackSlug}`;
+  }
+  const cleaned = raw
+    .replace(/^https?:\/\/[^/]+/i, "")
+    .replace(/^\/+/, "")
+    .replace(/\/+$/, "");
+  const parts = cleaned.split("/").filter(Boolean);
+  let slugPart = "";
+  if (parts[0] && parts[0].toLowerCase() === "partner") {
+    slugPart = parts[1] || "";
+  } else if (parts.length >= 2) {
+    slugPart = parts[parts.length - 1] || "";
+  } else {
+    slugPart = parts[0] || "";
+  }
+  const normalizedSlug = slugifyForDashboard(slugPart || fallbackSlug) || fallbackSlug;
+  return `/partner/${normalizedSlug}`;
 }
 
 function normalizeDriverPageVehicleCards(value) {
@@ -7964,6 +7988,9 @@ app.get("/rideshare-onboarding.html", (req, res) => {
 app.get("/partner-onboarding.html", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "partner-onboarding.html"));
 });
+app.get("/partner-onboarding", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "partner-onboarding.html"));
+});
 app.get("/dispatch-network-manager.html", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "dispatch-network-manager.html"));
 });
@@ -7976,7 +8003,16 @@ app.get("/network-dispatch.html", (req, res) => {
 app.get("/driver-partner-program.html", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "driver-partner-program.html"));
 });
+app.get("/driver-partner-program", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "driver-partner-program.html"));
+});
 app.get("/driver-partner-page.html", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "driver-partner-page.html"));
+});
+app.get("/partner/:slug", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "driver-partner-page.html"));
+});
+app.get("/partner", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "driver-partner-page.html"));
 });
 app.get("/driver-partner-setup.html", requireWizardToken, (req, res) => {

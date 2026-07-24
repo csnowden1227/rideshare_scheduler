@@ -142,6 +142,9 @@ export function registerDriverWizardRoutes(app, deps) {
       const displayName = String(req.body.display_name || "").trim();
       const driverEmail = deps.normalizeDriverEmail(req.body.driver_email);
       const driverCalendarUrl = String(req.body.driver_calendar_url || "").trim() || null;
+      const driverPageSlug = deps.normalizeDriverPageSlug
+        ? deps.normalizeDriverPageSlug(req.body.driver_page_slug || req.body.page_slug || displayName, displayName)
+        : `/partner/${String(displayName || "john-smith").trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "john-smith"}`;
       const stripeAccountId = String(req.body.stripe_account_id || "").trim() || null;
       const driverPhotoData = deps.normalizeImageDataUrl(req.body.driver_photo_data);
       const driverPageVehicleCards = deps.normalizeDriverPageVehicleCards(req.body.driver_page_vehicle_cards || []);
@@ -158,6 +161,7 @@ export function registerDriverWizardRoutes(app, deps) {
 
       pushField(profileIdColumn, locationId);
       pushField("driver_display_name", displayName || null);
+      pushField("driver_page_slug", driverPageSlug || null);
       pushField("driver_email", driverEmail || null);
       pushField("driver_calendar_url", driverCalendarUrl);
       pushField("stripe_account_id", stripeAccountId);
@@ -191,6 +195,7 @@ export function registerDriverWizardRoutes(app, deps) {
       return res.json({
         success: true,
         location_id: locationId,
+        driver_page_slug: driverPageSlug,
         driver_calendar_url: driverCalendarUrl || "",
         stripe_account_id: stripeAccountId || "",
       });

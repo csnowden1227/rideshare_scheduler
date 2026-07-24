@@ -1035,7 +1035,7 @@
       <h3>Become a Chauffeurs Deluxe Driver</h3>
       <p><strong>Your Clients. Our Fleet. Your Income.</strong></p>
       <p><strong>Build Your Chauffeur Business Without the Overhead.<br />No Need To Buy Luxury To Drive Luxury.</strong></p>
-      <a class="join-cta" href="/driver-partner-program.html">Become a Chauffeurs Deluxe Driver</a>
+      <a class="join-cta" href="/driver-partner-program">Become a Chauffeurs Deluxe Driver</a>
     </section>
 
     <footer class="site-footer">
@@ -1065,7 +1065,9 @@
     const driverRole = (query.get("driver_title") || "Luxury Chauffeur").trim();
     const defaultDriverPhoto = "/assets/driver-partner-program/driver-thumbnail-default.jpg";
     const driverPhoto = (query.get("driver_photo") || query.get("photo_url") || defaultDriverPhoto).trim();
-    const slug = (query.get("slug") || "chauffeursdeluxe.com/partner/john-smith").trim();
+    const pathnameSlugMatch = window.location.pathname.match(/^\/partner\/([^/]+)\/?$/i);
+    const pathnameSlug = pathnameSlugMatch ? pathnameSlugMatch[1] : "";
+    const slug = (query.get("slug") || (pathnameSlug ? `chauffeursdeluxe.com/partner/${pathnameSlug}` : "chauffeursdeluxe.com/partner/john-smith")).trim();
     const locationId = (query.get("location_id") || query.get("loc") || query.get("locationId") || "").trim();
     const backendBase = (query.get("backend_url") || query.get("backendUrl") || "").trim().replace(/\/$/, "");
 
