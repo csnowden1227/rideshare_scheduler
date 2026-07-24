@@ -17,6 +17,7 @@ import { google } from 'googleapis';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import * as turf from '@turf/turf';
+import { registerDriverWizardRoutes } from './driver-wizard-routes.js';
 
 const { Pool, Client } = pkg;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -189,6 +190,8 @@ let profilePricingColumnsReady = null;
 let profileEntitlementColumnsReady = null;
 let profilePaymentProviderColumnsReady = null;
 let profileServiceAreaColumnsReady = null;
+let profileDriverPageColumnsReady = null;
+let profileDriverDashboardColumnsReady = null;
 let profileIdColumnPromise = null;
 let profileOnDemandNurtureColumnReady = null;
 let saasAddonPurchasesTableReady = null;
@@ -1328,6 +1331,7 @@ async function ensureProfilePaymentProviderColumns() {
   if (!profilePaymentProviderColumnsReady) {
     profilePaymentProviderColumnsReady = (async () => {
       await pool.query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS stripe_test_secret_key TEXT`);
+      await pool.query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS stripe_account_id TEXT`);
       await pool.query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS paypal_client_id TEXT`);
       await pool.query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS paypal_client_secret TEXT`);
       await pool.query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS paypal_environment TEXT`);
@@ -1442,6 +1446,29 @@ async function ensureProfileServiceAreaColumns() {
   return profileServiceAreaColumnsReady;
 }
 
+async function ensureProfileDriverPageColumns() {
+  if (!profileDriverPageColumnsReady) {
+    profileDriverPageColumnsReady = (async () => {
+      await pool.query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS driver_display_name TEXT`);
+      await pool.query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS driver_email TEXT`);
+      await pool.query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS driver_photo_data TEXT`);
+      await pool.query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS driver_page_vehicle_cards JSONB`);
+      await pool.query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS driver_calendar_url TEXT`);
+    })().catch((err) => {
+      profileDriverPageColumnsReady = null;
+      throw err;
+    });
+  }
+  return profileDriverPageColumnsReady;
+}
+
+async function ensureProfileDriverDashboardColumns() {
+  if (!profileDriverDashboardColumnsReady) {
+    profileDriverDashboardColumnsReady = ensureProfileDriverPageColumns();
+  }
+  return profileDriverDashboardColumnsReady;
+}
+
 async function ensureProfileOnDemandNurtureColumn() {
   if (!profileOnDemandNurtureColumnReady) {
     profileOnDemandNurtureColumnReady = (async () => {
@@ -1483,6 +1510,29 @@ function normalizeDriverPhone(value) {
 
 function normalizeDriverEmail(value) {
   return String(value || "").trim().toLowerCase().slice(0, 160);
+}
+
+function slugifyForDashboard(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 64) || "john-smith";
+}
+
+function normalizeDriverPageVehicleCards(value) {
+  const parsed = Array.isArray(value) ? value : safeParseJson(value, []);
+  if (!Array.isArray(parsed)) return [];
+  return parsed
+    .map((item) => ({
+      vehicle_key: String(item?.vehicle_key || "").trim(),
+      vehicle_name: String(item?.vehicle_name || "").trim(),
+      vehicle_category: String(item?.vehicle_category || "").trim(),
+      image_url: String(item?.image_url || "").trim(),
+      enabled: item?.enabled !== false,
+    }))
+    .filter((item) => item.vehicle_key || item.vehicle_name);
 }
 
 function normalizeImageDataUrl(value, maxLength = 2_500_000) {
@@ -1981,6 +2031,7 @@ async function getTrackingSessionByToken({ token, role = "customer" }) {
       p.brand_color_accent,
       p.widget_tagline,
       p.payment_provider,
+      p.driver_calendar_url,
       p.fleet
      FROM trip_tracking_sessions s
      INNER JOIN bookings b ON b.id = s.booking_id
@@ -2168,6 +2219,9 @@ function buildTrackingSessionClientShape(session) {
     driver_photo_data: session.driver_photo_data || "",
     business_name: session.business_name || "Chauffeur Deluxe",
     maps_api_key: session.maps_api_key || "",
+    driver_calendar_url: String(session.driver_calendar_url || "").trim(),
+    customer_tracking_url: trackingUrls.customer_url || "",
+    driver_tracking_url: trackingUrls.driver_url || "",
     customer_tracking_token: session.customer_token,
     driver_tracking_token: session.driver_token,
     payment_provider: normalizePaymentProvider(session.payment_provider || "stripe"),
@@ -7925,6 +7979,30 @@ app.get("/driver-partner-program.html", (req, res) => {
 app.get("/driver-partner-page.html", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "driver-partner-page.html"));
 });
+app.get("/driver-partner-setup.html", requireWizardToken, (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "driver-partner-setup.html"));
+});
+app.get("/driver-partner-setup", requireWizardToken, (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "driver-partner-setup.html"));
+});
+app.get("/driver-dashboard.html", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "driver-dashboard.html"));
+});
+app.get("/driver-dashboard", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "driver-dashboard.html"));
+});
+app.get("/driver-wizard", requireWizardToken, (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "driver-partner-setup.html"));
+});
+app.get("/driver-wizard.html", requireWizardToken, (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "driver-partner-setup.html"));
+});
+app.get("/driver-widget", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "driver-wizard.js"));
+});
+app.get("/driver-widget.js", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "driver-wizard.js"));
+});
 app.get("/saas-sales.html", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "saas-sales.html"));
 });
@@ -11495,117 +11573,6 @@ function buildPartnerConnectStatusUrl(baseUrl, ownerLocationId, partnerId, state
   });
 }
 
-async function ensureStripeConnectedAccountForPartner({
-  ownerLocationId,
-  partnerId,
-  partnerEmail = null,
-  partnerBusinessName = null,
-}) {
-  if (!ownerLocationId || !partnerId) {
-    throw new Error("owner_location_id and partner_id are required for Stripe Connect.");
-  }
-
-  const partnerLookup = await pool.query(
-    `SELECT id, owner_location_id, business_name, email, stripe_account_id
-     FROM partners
-     WHERE id = $1
-       AND owner_location_id = $2
-     LIMIT 1`,
-    [partnerId, ownerLocationId]
-  );
-
-  if (!partnerLookup.rows.length) {
-    throw new Error("Partner not found for Stripe Connect onboarding.");
-  }
-
-  const partner = partnerLookup.rows[0];
-  if (String(partner.stripe_account_id || "").trim()) {
-    return {
-      partner,
-      stripeAccountId: String(partner.stripe_account_id).trim(),
-      created: false,
-    };
-  }
-
-  const paymentProfile = await getPaymentProfileForLocation(ownerLocationId);
-  const provider = normalizePaymentProvider(paymentProfile.provider);
-  if (provider !== "stripe" || !paymentProfile.stripeSecretKey) {
-    throw new Error("The source operator must have Stripe configured to onboard partners for network payouts.");
-  }
-
-  const account = await stripeFormRequest("/v1/accounts", {
-    type: "express",
-    country: "US",
-    email: String(partnerEmail || partner.email || "").trim() || undefined,
-    "business_profile[name]": String(partnerBusinessName || partner.business_name || "").trim() || undefined,
-    "capabilities[transfers][requested]": true,
-  }, "POST", paymentProfile.stripeSecretKey);
-
-  const stripeAccountId = String(account?.id || "").trim();
-  if (!stripeAccountId) {
-    throw new Error("Stripe did not return a connected account ID.");
-  }
-
-  await pool.query(
-    `UPDATE partners
-     SET stripe_account_id = $2,
-         updated_at = NOW()
-     WHERE id = $1`,
-    [partnerId, stripeAccountId]
-  );
-
-  return {
-    partner: {
-      ...partner,
-      stripe_account_id: stripeAccountId,
-    },
-    stripeAccountId,
-    created: true,
-  };
-}
-
-async function createStripeConnectOnboardingLinkForPartner({
-  ownerLocationId,
-  partnerId,
-  partnerEmail = null,
-  partnerBusinessName = null,
-  baseUrl,
-  refreshUrl = null,
-  returnUrl = null,
-}) {
-  const paymentProfile = await getPaymentProfileForLocation(ownerLocationId);
-  const provider = normalizePaymentProvider(paymentProfile.provider);
-  if (provider !== "stripe" || !paymentProfile.stripeSecretKey) {
-    throw new Error("The source operator must have Stripe configured before creating partner payout onboarding links.");
-  }
-
-  const connected = await ensureStripeConnectedAccountForPartner({
-    ownerLocationId,
-    partnerId,
-    partnerEmail,
-    partnerBusinessName,
-  });
-  const resolvedBaseUrl = baseUrl || getPublicAppUrl();
-  const resolvedRefreshUrl = refreshUrl || buildPartnerConnectStatusUrl(resolvedBaseUrl, ownerLocationId, partnerId, "refresh");
-  const resolvedReturnUrl = returnUrl || buildPartnerConnectStatusUrl(resolvedBaseUrl, ownerLocationId, partnerId, "complete");
-
-  const link = await stripeFormRequest("/v1/account_links", {
-    account: connected.stripeAccountId,
-    refresh_url: resolvedRefreshUrl,
-    return_url: resolvedReturnUrl,
-    type: "account_onboarding",
-  }, "POST", paymentProfile.stripeSecretKey);
-
-  return {
-    stripe_account_id: connected.stripeAccountId,
-    onboarding_url: link?.url || null,
-    expires_at: link?.expires_at
-      ? new Date(Number(link.expires_at) * 1000).toISOString()
-      : null,
-    created_account: connected.created,
-  };
-}
-
 async function createStripeTransferForPartnerPayout({
   ownerLocationId,
   destinationAccountId,
@@ -13278,10 +13245,7 @@ app.post("/api/tracking/status", async (req, res) => {
       [existingSession.id, status]
     );
 
-    const shouldTriggerCustomerTracking =
-      status === "en_route_to_pickup" &&
-      existingSession.status !== "en_route_to_pickup" &&
-      !existingSession.customer_notified_en_route_at;
+    const shouldTriggerCustomerTracking = false;
     const shouldTriggerCustomerArrived =
       status === "arrived_at_pickup" &&
       existingSession.status !== "arrived_at_pickup" &&
@@ -13291,15 +13255,6 @@ app.post("/api/tracking/status", async (req, res) => {
       status === "completed" &&
       existingSession.status !== "completed" &&
       !existingSession.customer_followup_sent_at;
-
-    if (shouldTriggerCustomerTracking) {
-      await client.query(
-        `UPDATE trip_tracking_sessions
-         SET customer_notified_en_route_at = NOW()
-         WHERE id = $1`,
-        [existingSession.id]
-      );
-    }
 
     if (shouldTriggerPostRideFollowup) {
       await client.query(
@@ -13332,7 +13287,7 @@ app.post("/api/tracking/status", async (req, res) => {
       reason: "Status change does not require a direct customer tracking SMS.",
     };
 
-    if (shouldTriggerCustomerTracking || shouldTriggerPostRideFollowup) {
+    if (shouldTriggerCustomerArrived || shouldTriggerPostRideFollowup) {
       try {
         const webhookResult = await triggerTrackingStatusWebhook({
           req,
@@ -13358,7 +13313,7 @@ app.post("/api/tracking/status", async (req, res) => {
       }
     }
 
-    if (shouldTriggerCustomerTracking || shouldTriggerCustomerArrived || shouldTriggerPostRideFollowup) {
+    if (shouldTriggerCustomerArrived || shouldTriggerPostRideFollowup) {
       try {
         const smsResult = shouldTriggerPostRideFollowup
           ? await sendCustomerPostRideFollowupSms({
@@ -13476,13 +13431,12 @@ app.post("/api/tracking/session/practice-notify", async (req, res) => {
     const fullSession = await getTrackingSessionById(sessionRow.id);
     assertTrackingAccess(fullSession || {});
 
-    const shouldTriggerCustomerTracking = !sessionRow.customer_notified_en_route_at;
+    const shouldTriggerCustomerTracking = false;
 
     await client.query(
       `UPDATE trip_tracking_sessions
        SET status = 'en_route_to_pickup',
            started_at = COALESCE(started_at, NOW()),
-           customer_notified_en_route_at = COALESCE(customer_notified_en_route_at, NOW()),
            updated_at = NOW()
        WHERE id = $1`,
       [sessionRow.id]
@@ -13493,66 +13447,16 @@ app.post("/api/tracking/session/practice-notify", async (req, res) => {
     let statusWebhook = {
       triggered: false,
       skipped: true,
-      reason: "Practice tracking SMS was already sent for this session.",
+      reason: "Practice route does not auto-send customer tracking SMS.",
     };
     let directCustomerSms = {
       attempted: false,
       skipped: true,
-      reason: "Practice tracking SMS was already sent for this session.",
+      reason: "Practice route keeps the customer tracking link visible for the driver to text manually.",
     };
 
-    if (shouldTriggerCustomerTracking) {
-      try {
-        const webhookResult = await triggerTrackingStatusWebhook({
-          req,
-          trackingSessionId: sessionRow.id,
-          status: "en_route_to_pickup",
-        });
-        statusWebhook = {
-          triggered: Boolean(webhookResult.success),
-          skipped: Boolean(webhookResult.skipped),
-          status: webhookResult.status || null,
-          reason: webhookResult.error || null,
-          response_preview: webhookResult.response_preview || null,
-          customer_tracking_url: webhookResult.customer_tracking_url || null,
-          follow_up_url: webhookResult.follow_up_url || null,
-        };
-      } catch (webhookError) {
-        console.error("Practice tracking notification webhook error:", webhookError);
-        statusWebhook = {
-          triggered: false,
-          skipped: false,
-          reason: webhookError?.message || "Practice tracking notification failed.",
-        };
-      }
-
-      try {
-        const smsResult = await sendCustomerEnRouteTrackingSms({
-          trackingSessionId: sessionRow.id,
-          req,
-        });
-        directCustomerSms = {
-          attempted: true,
-          skipped: Boolean(smsResult.skipped),
-          success: Boolean(smsResult.success),
-          reason: smsResult.reason || null,
-          error: smsResult.error || null,
-          status: smsResult.status || null,
-          tokenSource: smsResult.tokenSource || null,
-          customer_tracking_url: smsResult.customer_tracking_url || null,
-          portal_url: smsResult.portal_url || null,
-          plan_name: smsResult.plan_name || null,
-        };
-      } catch (smsError) {
-        console.error("Practice direct customer en-route SMS error:", smsError);
-        directCustomerSms = {
-          attempted: true,
-          skipped: false,
-          success: false,
-          reason: smsError?.message || "Practice direct customer en-route SMS failed.",
-        };
-      }
-    }
+    // Practice route keeps the customer tracking link visible for the driver,
+    // but it does not auto-send customer SMS from the backend.
 
     return res.json({
       success: true,
@@ -16998,6 +16902,7 @@ app.get("/api/get-profile/:location_id", requireWizardToken, async (req, res) =>
     await ensureProfileEntitlementColumns();
     await ensureProfilePaymentProviderColumns();
     await ensureProfileServiceAreaColumns();
+    await ensureProfileDriverPageColumns();
     client = await pool.connect();
     await ensureProfilePricingColumns();
     const profileIdColumn = await getProfileIdColumn();
@@ -17043,6 +16948,11 @@ res.json({
   brand_color_secondary: sanitizedBranding.brand_color_secondary || DEFAULT_BRAND_COLORS.secondary,
   brand_color_accent: sanitizedBranding.brand_color_accent || DEFAULT_BRAND_COLORS.accent,
   widget_tagline: sanitizedBranding.widget_tagline || "",
+  driver_email: normalizeDriverEmail(profile.driver_email || ""),
+  driver_photo_data: profile.driver_photo_data || "",
+  driver_calendar_url: String(profile.driver_calendar_url || "").trim(),
+  stripe_account_id: String(profile.stripe_account_id || "").trim(),
+  driver_page_vehicle_cards: normalizeDriverPageVehicleCards(profile.driver_page_vehicle_cards || []),
   on_demand_nurture: normalizeOnDemandNurtureConfig(safeParseJson(profile.on_demand_nurture, profile.on_demand_nurture || {})),
   maps_api_key: profile.maps_api_key,
   crm_api_key: profile.crm_api_key || "",
@@ -17135,6 +17045,122 @@ res.json({
     res.status(500).json({ error: "Server error" });
   } finally {
     if (client) client.release();
+  }
+});
+
+app.get("/api/driver-dashboard/:location_id", async (req, res) => {
+  try {
+    const locationId = String(req.params.location_id || "").trim();
+    if (!locationId) {
+      return res.status(400).json({ error: "location_id is required." });
+    }
+
+    await ensureProfileDriverDashboardColumns();
+    await ensureBookingSyncColumns();
+    const profileIdColumn = await getProfileIdColumn();
+    const profileRes = await pool.query(
+      `SELECT * FROM profiles WHERE ${profileIdColumn} = $1 LIMIT 1`,
+      [locationId]
+    );
+    if (!profileRes.rows.length) {
+      return res.status(404).json({ error: "Profile not found." });
+    }
+
+    const profile = profileRes.rows[0];
+    const vehicleCards = normalizeDriverPageVehicleCards(profile.driver_page_vehicle_cards || []);
+    const bookingsRes = await pool.query(
+      `SELECT *
+       FROM bookings
+       WHERE location_id = $1
+       ORDER BY COALESCE(start_time, updated_at, created_at) DESC
+       LIMIT 20`,
+      [locationId]
+    );
+
+    const now = Date.now();
+    const upcomingBookings = bookingsRes.rows
+      .filter((booking) => booking.start_time && new Date(booking.start_time).getTime() >= now - (15 * 60 * 1000))
+      .sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime())
+      .slice(0, 10)
+      .map((booking) => {
+        const conflict = Boolean(booking.dispatch_status && String(booking.dispatch_status).toLowerCase() === "waitlist")
+          || Boolean(booking.waitlist_recommended);
+        return {
+          id: booking.id,
+          booking_mode: booking.booking_mode || "standard",
+          customer_name: [booking.first_name, booking.last_name].filter(Boolean).join(" ").trim() || "Customer",
+          pickup_address: booking.pickup_address || "",
+          dropoff_address: booking.dropoff_address || "",
+          start_time: booking.start_time || null,
+          end_time: booking.end_time || null,
+          status: booking.status || "pending",
+          dispatch_status: booking.dispatch_status || null,
+          waitlist: conflict,
+          vehicle_slot_id: booking.vehicle_slot_id || null,
+          vehicle_type: booking.vehicle_type || null,
+          payment_status: booking.payment_status || null,
+        };
+      });
+
+    const notificationSourceRows = bookingsRes.rows
+      .flatMap((booking) => {
+        const items = [];
+        const pushItem = (kind, label, timestamp, detail) => {
+          if (!timestamp) return;
+          items.push({
+            kind,
+            label,
+            timestamp,
+            detail,
+            booking_id: booking.id,
+          });
+        };
+        pushItem("driver_confirmation_email", "Driver confirmation email sent", booking.driver_confirmation_email_sent_at, booking.vehicle_type || booking.vehicle_slot_id || "Ride");
+        pushItem("driver_reminder_email", "Driver reminder email sent", booking.driver_reminder_email_sent_at, booking.vehicle_type || booking.vehicle_slot_id || "Ride");
+        pushItem("driver_assignment_sms", "Driver assignment SMS sent", booking.driver_assignment_sms_sent_at, booking.vehicle_type || booking.vehicle_slot_id || "Ride");
+        pushItem("driver_paid_in_full_sms", "Driver paid-in-full SMS sent", booking.driver_paid_in_full_sms_sent_at, booking.vehicle_type || booking.vehicle_slot_id || "Ride");
+        pushItem("waitlist", "Booking moved to waitlist", booking.dispatch_status && String(booking.dispatch_status).toLowerCase() === "waitlist" ? booking.updated_at : null, booking.vehicle_type || booking.vehicle_slot_id || "Ride");
+        return items;
+      })
+      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+      .slice(0, 12);
+
+    const serviceAreaRules = normalizeServiceAreaRules(profile.service_area_rules);
+    return res.json({
+      success: true,
+      location_id: locationId,
+      driver: {
+        display_name: String(profile.driver_display_name || profile.business_name || "Your Driver Page").trim(),
+        email: normalizeDriverEmail(profile.driver_email || ""),
+        photo_data: profile.driver_photo_data || "",
+        page_slug: `chauffeursdeluxe.com/partner/${slugifyForDashboard(profile.driver_display_name || profile.business_name || "john-smith")}`,
+      },
+      page: {
+        calendar_url: String(profile.driver_calendar_url || "").trim(),
+        vehicle_cards: vehicleCards,
+      },
+      service_area: {
+        type: normalizeServiceAreaType(profile.service_area_type),
+        rules: serviceAreaRules,
+        lat: profile.service_lat != null ? Number(profile.service_lat) : null,
+        lng: profile.service_lng != null ? Number(profile.service_lng) : null,
+        radius: profile.service_radius != null ? Number(profile.service_radius) : null,
+      },
+      crm: {
+        webhook_url: profile.crm_webhook_url || null,
+        payment_provider: normalizePaymentProvider(profile.payment_provider),
+      },
+      stats: {
+        total_bookings: bookingsRes.rows.length,
+        upcoming_bookings: upcomingBookings.length,
+        waitlist_bookings: bookingsRes.rows.filter((booking) => String(booking.dispatch_status || "").toLowerCase() === "waitlist" || booking.waitlist_recommended).length,
+      },
+      upcoming_bookings: upcomingBookings,
+      notifications: notificationSourceRows,
+    });
+  } catch (err) {
+    console.error("Driver dashboard load error:", err);
+    return res.status(500).json({ error: err.message || "Failed to load driver dashboard." });
   }
 });
 
@@ -18046,6 +18072,7 @@ app.get("/api/get-profile-widget/:location_id", async (req, res) => {
     await ensureProfileEntitlementColumns();
     await ensureProfilePaymentProviderColumns();
     await ensureProfileServiceAreaColumns();
+    await ensureProfileDriverPageColumns();
     const profileIdColumn = await getProfileIdColumn();
 
     // Fetch profile (the source of truth)
@@ -18091,6 +18118,10 @@ app.get("/api/get-profile-widget/:location_id", async (req, res) => {
         brand_color_secondary: sanitizedBranding.brand_color_secondary || DEFAULT_BRAND_COLORS.secondary,
         brand_color_accent: sanitizedBranding.brand_color_accent || DEFAULT_BRAND_COLORS.accent,
         widget_tagline: sanitizedBranding.widget_tagline || "",
+        driver_email: normalizeDriverEmail(p.driver_email || ""),
+        driver_photo_data: p.driver_photo_data || "",
+        driver_calendar_url: String(p.driver_calendar_url || "").trim(),
+        driver_page_vehicle_cards: normalizeDriverPageVehicleCards(p.driver_page_vehicle_cards || []),
         maps_api_key: p.maps_api_key,
         maps_key: p.maps_api_key,
         payment_provider: normalizePaymentProvider(p.payment_provider),
@@ -18114,6 +18145,23 @@ app.get("/api/get-profile-widget/:location_id", async (req, res) => {
   }
 });
 
+registerDriverWizardRoutes(app, {
+  pool,
+  requireWizardToken,
+  getProfileIdColumn,
+  getTableColumns,
+  ensureProfilePaymentProviderColumns,
+  ensureProfileDriverPageColumns,
+  ensureProfileServiceAreaColumns,
+  ensureProfilePricingColumns,
+  normalizeDriverEmail,
+  normalizeImageDataUrl,
+  normalizeDriverPageVehicleCards,
+  getPaymentProfileForLocation,
+  getPublicAppUrl,
+  stripeFormRequest,
+});
+
 app.get("/api/get-profile-widget-script/:location_id", async (req, res) => {
   try {
     const callback = String(req.query.callback || "").trim();
@@ -18124,6 +18172,7 @@ app.get("/api/get-profile-widget-script/:location_id", async (req, res) => {
     const location_id = String(req.params.location_id || "").trim();
     const profileIdColumn = await getProfileIdColumn();
     const profileColumns = await getTableColumns("profiles");
+    await ensureProfileDriverPageColumns();
     const selectProfileFields = [
       profileIdColumn,
       "plan_name",
@@ -18134,6 +18183,9 @@ app.get("/api/get-profile-widget-script/:location_id", async (req, res) => {
       "business_name",
       "public_app_url",
       "business_logo",
+      "driver_email",
+      "driver_photo_data",
+      "driver_page_vehicle_cards",
       "brand_color_primary",
       "brand_color_secondary",
       "brand_color_accent",
@@ -18199,6 +18251,10 @@ app.get("/api/get-profile-widget-script/:location_id", async (req, res) => {
         brand_color_secondary: sanitizedBranding.brand_color_secondary || DEFAULT_BRAND_COLORS.secondary,
         brand_color_accent: sanitizedBranding.brand_color_accent || DEFAULT_BRAND_COLORS.accent,
         widget_tagline: sanitizedBranding.widget_tagline || "",
+        driver_email: normalizeDriverEmail(p.driver_email || ""),
+        driver_photo_data: p.driver_photo_data || "",
+        driver_calendar_url: String(p.driver_calendar_url || "").trim(),
+        driver_page_vehicle_cards: normalizeDriverPageVehicleCards(p.driver_page_vehicle_cards || []),
         maps_api_key: p.maps_api_key,
         maps_key: p.maps_api_key,
         payment_provider: normalizePaymentProvider(p.payment_provider),

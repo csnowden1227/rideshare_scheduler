@@ -1,0 +1,846 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Driver Partner Setup</title>
+  <style>
+    :root {
+      --ink: #111827;
+      --charcoal: #17181d;
+      --gold: #d4af37;
+      --gold-soft: rgba(212,175,55,0.16);
+      --gold-line: rgba(212,175,55,0.22);
+      --cream: #fffaf0;
+      --panel: #ffffff;
+      --panel-soft: #fff9ee;
+      --muted: #5d6878;
+      --shadow: 0 22px 50px rgba(15, 23, 42, 0.12);
+      --line: rgba(17, 24, 39, 0.08);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top left, rgba(212,175,55,0.12), transparent 24%),
+        radial-gradient(circle at top right, rgba(17,24,39,0.06), transparent 24%),
+        linear-gradient(180deg, #fffdf8 0%, #f7f1e7 100%);
+      min-height: 100vh;
+    }
+    .wrap {
+      max-width: 1360px;
+      margin: 0 auto;
+      padding: 22px 16px 36px;
+    }
+    .hero {
+      border-radius: 32px;
+      padding: 24px;
+      background:
+        radial-gradient(circle at top right, rgba(212,175,55,0.12), transparent 22%),
+        linear-gradient(135deg, #111216 0%, #1d2027 48%, #262930 100%);
+      color: #fff;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+      position: relative;
+    }
+    .hero::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background:
+        linear-gradient(115deg, rgba(255,255,255,0.06), transparent 28%),
+        radial-gradient(circle at 18% 12%, rgba(255,255,255,0.08), transparent 18%);
+      pointer-events: none;
+    }
+    .hero-grid {
+      position: relative;
+      z-index: 1;
+      display: grid;
+      grid-template-columns: minmax(0, 1.1fr) minmax(360px, 0.9fr);
+      gap: 20px;
+      align-items: start;
+    }
+    .eyebrow {
+      margin: 0 0 8px;
+      color: rgba(255,255,255,0.78);
+      text-transform: uppercase;
+      letter-spacing: 0.16em;
+      font-size: 12px;
+      font-weight: 900;
+    }
+    h1 {
+      margin: 0;
+      font-size: clamp(36px, 4.8vw, 66px);
+      line-height: 0.95;
+      letter-spacing: -0.05em;
+      max-width: 12ch;
+    }
+    .hero-copy {
+      margin: 16px 0 0;
+      max-width: 66ch;
+      color: rgba(255,255,255,0.88);
+      line-height: 1.9;
+      font-size: 16px;
+    }
+    .hero-badges {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 18px;
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 10px 14px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.10);
+      border: 1px solid rgba(212,175,55,0.20);
+      color: #fff;
+      font-size: 12px;
+      font-weight: 900;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    .hero-note {
+      margin-top: 16px;
+      display: inline-flex;
+      align-items: center;
+      width: fit-content;
+      max-width: 100%;
+      padding: 11px 14px;
+      border-radius: 16px;
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.10);
+      color: rgba(255,255,255,0.86);
+      line-height: 1.7;
+      font-size: 13px;
+    }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 26px;
+      box-shadow: 0 12px 28px rgba(15, 23, 42, 0.06);
+      padding: 20px;
+    }
+    .card-title {
+      margin: 0 0 8px;
+      font-size: 20px;
+      line-height: 1.2;
+      color: var(--charcoal);
+    }
+    .card-copy {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.75;
+      font-size: 14px;
+    }
+    .grid {
+      display: grid;
+      gap: 18px;
+      margin-top: 18px;
+    }
+    .two-col {
+      display: grid;
+      grid-template-columns: minmax(0, 1.05fr) minmax(320px, 0.95fr);
+      gap: 18px;
+      align-items: start;
+    }
+    .field-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+    .field {
+      display: grid;
+      gap: 8px;
+    }
+    .field label {
+      font-size: 11px;
+      font-weight: 900;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: #657184;
+    }
+    .input,
+    .select,
+    .textarea {
+      width: 100%;
+      border: 1px solid #d9dfeb;
+      border-radius: 14px;
+      padding: 13px 14px;
+      font-size: 15px;
+      color: var(--ink);
+      background: #fff;
+      outline: none;
+      transition: border-color 0.18s ease, box-shadow 0.18s ease;
+    }
+    .input:focus,
+    .select:focus,
+    .textarea:focus {
+      border-color: rgba(212,175,55,0.55);
+      box-shadow: 0 0 0 3px rgba(212,175,55,0.12);
+    }
+    .textarea {
+      min-height: 110px;
+      resize: vertical;
+    }
+    .photo-upload {
+      display: grid;
+      grid-template-columns: 108px 1fr;
+      gap: 14px;
+      align-items: center;
+    }
+    .photo-preview,
+    .photo-placeholder {
+      width: 108px;
+      height: 108px;
+      border-radius: 24px;
+      object-fit: cover;
+      display: block;
+      border: 1px solid rgba(212,175,55,0.22);
+      box-shadow: 0 12px 24px rgba(15, 23, 42, 0.10);
+    }
+    .photo-placeholder {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(135deg, rgba(212,175,55,0.26), rgba(255,247,218,0.96));
+      color: #1d1d1d;
+      font-weight: 900;
+      font-size: 28px;
+      letter-spacing: -0.04em;
+    }
+    .photo-preview.hidden,
+    .photo-placeholder.hidden {
+      display: none;
+    }
+    .helper {
+      color: #6a7382;
+      line-height: 1.65;
+      font-size: 13px;
+    }
+    .map-shell {
+      border-radius: 24px;
+      border: 1px solid rgba(212,175,55,0.18);
+      background: linear-gradient(180deg, #fffdf8 0%, #fff5e6 100%);
+      overflow: hidden;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.7);
+    }
+    .service-map-card,
+    .service-geofence-card {
+      margin-top: 16px;
+    }
+    .service-section-title {
+      margin: 0 0 14px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid rgba(212,175,55,0.16);
+      font-size: 18px;
+      font-style: italic;
+      font-weight: 900;
+      letter-spacing: -0.03em;
+      text-transform: uppercase;
+      color: #111216;
+    }
+    .service-section-copy {
+      margin: 0 0 16px;
+      color: #6a7382;
+      line-height: 1.7;
+      font-size: 13px;
+    }
+    .map-preview {
+      position: relative;
+      min-height: 340px;
+      background:
+        linear-gradient(135deg, rgba(17,24,39,0.04), transparent 28%),
+        linear-gradient(90deg, rgba(17,24,39,0.06) 1px, transparent 1px),
+        linear-gradient(0deg, rgba(17,24,39,0.06) 1px, transparent 1px),
+        linear-gradient(180deg, #fefaf1 0%, #f7ecd1 100%);
+      background-size: auto, 34px 34px, 34px 34px, auto;
+      border-bottom: 1px solid rgba(212,175,55,0.14);
+      overflow: hidden;
+    }
+    .map-ring {
+      position: absolute;
+      inset: 14% 18%;
+      border-radius: 999px;
+      border: 3px solid rgba(212,175,55,0.55);
+      box-shadow: 0 0 0 22px rgba(212,175,55,0.12), 0 0 0 56px rgba(212,175,55,0.05);
+    }
+    .map-pin {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      width: 34px;
+      height: 34px;
+      border-radius: 999px;
+      background: linear-gradient(135deg, #111216, #2a2d36);
+      border: 3px solid #f7e5a0;
+      box-shadow: 0 10px 22px rgba(15, 23, 42, 0.22);
+    }
+    .map-pin::after {
+      content: "";
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 12px;
+      height: 12px;
+      transform: translate(-50%, -50%);
+      border-radius: 999px;
+      background: #f7e5a0;
+    }
+    .map-label {
+      position: absolute;
+      padding: 8px 10px;
+      border-radius: 999px;
+      background: rgba(17,24,39,0.92);
+      color: #f7e5a0;
+      border: 1px solid rgba(212,175,55,0.24);
+      font-size: 11px;
+      font-weight: 900;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      box-shadow: 0 10px 18px rgba(15, 23, 42, 0.12);
+    }
+    .map-label.one { left: 12px; top: 14px; }
+    .map-label.two { right: 12px; top: 18px; }
+    .map-label.three { left: 18px; bottom: 18px; }
+    .map-label.four { right: 18px; bottom: 18px; }
+    .zone-list {
+      display: grid;
+      gap: 10px;
+      padding: 14px;
+    }
+    .service-map-tools {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 270px;
+      gap: 12px;
+      align-items: center;
+      margin: 16px 0 10px;
+    }
+    .service-map-tools .input {
+      min-height: 40px;
+    }
+    .service-map-status {
+      margin: 0 0 14px;
+      font-size: 12px;
+      color: #00a34a;
+    }
+    .service-map-status.error {
+      color: #b45309;
+    }
+    .service-map-coords {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+      margin-top: 12px;
+    }
+    .service-map-coords .field label {
+      font-size: 11px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: #7d889b;
+    }
+    .zone-row {
+      display: grid;
+      grid-template-columns: 110px 1fr auto;
+      gap: 10px;
+      align-items: center;
+    }
+    .zone-row strong {
+      color: var(--charcoal);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    .tag-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      min-height: 42px;
+      padding: 8px;
+      border: 1px dashed rgba(212,175,55,0.28);
+      border-radius: 14px;
+      background: rgba(255,255,255,0.82);
+    }
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 10px;
+      border-radius: 999px;
+      background: rgba(212,175,55,0.12);
+      color: #7a5a10;
+      font-size: 12px;
+      font-weight: 800;
+      border: 1px solid rgba(212,175,55,0.16);
+    }
+    .tag button {
+      border: 0;
+      background: transparent;
+      color: inherit;
+      cursor: pointer;
+      font-size: 14px;
+      line-height: 1;
+    }
+    .service-ready-bar {
+      margin-top: 18px;
+      border-radius: 16px;
+      padding: 14px 18px;
+      background: #20293c;
+      color: #fff;
+      text-align: center;
+      font-size: 13px;
+      font-weight: 900;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+    .button-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 18px;
+    }
+    .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 52px;
+      padding: 14px 18px;
+      border-radius: 16px;
+      border: 1px solid transparent;
+      text-decoration: none;
+      font-weight: 900;
+      font-size: 14px;
+      cursor: pointer;
+      transition: transform 0.16s ease, filter 0.16s ease;
+    }
+    .button:hover {
+      transform: translateY(-1px);
+      filter: brightness(0.98);
+    }
+    .button-primary {
+      background: linear-gradient(135deg, #111216, #2a2d36);
+      color: #fff;
+    }
+    .button-secondary {
+      background: #fff;
+      color: #7a5a10;
+      border-color: rgba(212,175,55,0.24);
+    }
+    .button-ghost {
+      background: rgba(212,175,55,0.12);
+      color: #7a5a10;
+      border-color: rgba(212,175,55,0.18);
+    }
+    .fleet-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+    .fleet-card {
+      border-radius: 20px;
+      border: 1px solid rgba(212,175,55,0.16);
+      overflow: hidden;
+      background: linear-gradient(180deg, #fffdf8 0%, #ffffff 100%);
+      box-shadow: 0 12px 24px rgba(15, 23, 42, 0.06);
+    }
+    .fleet-image {
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      object-fit: cover;
+      display: block;
+      background: linear-gradient(135deg, rgba(212,175,55,0.18), rgba(17,24,39,0.08));
+    }
+    .fleet-body {
+      padding: 14px;
+      display: grid;
+      gap: 10px;
+    }
+    .fleet-body h3 {
+      margin: 0;
+      font-size: 18px;
+      line-height: 1.15;
+      color: var(--charcoal);
+    }
+    .fleet-body p {
+      margin: 0;
+      color: #596575;
+      line-height: 1.7;
+      font-size: 13px;
+    }
+    .fleet-footer {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+      color: #846108;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-size: 11px;
+      font-weight: 900;
+    }
+    .toggle-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+    .toggle-card {
+      border-radius: 18px;
+      border: 1px solid rgba(212,175,55,0.16);
+      background: linear-gradient(180deg, #fffdf8 0%, #fffaf3 100%);
+      padding: 12px;
+      display: grid;
+      gap: 10px;
+    }
+    .toggle-card img {
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      object-fit: cover;
+      border-radius: 14px;
+      border: 1px solid rgba(212,175,55,0.12);
+    }
+    .toggle-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: flex-start;
+    }
+    .toggle-row strong {
+      display: block;
+      color: var(--charcoal);
+      font-size: 14px;
+      margin-bottom: 4px;
+    }
+    .toggle-row span {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.5;
+    }
+    .toggle-check {
+      width: 18px;
+      height: 18px;
+      margin-top: 2px;
+      accent-color: var(--gold);
+    }
+    .status {
+      margin-top: 14px;
+      padding: 12px 14px;
+      border-radius: 14px;
+      background: #f8f5eb;
+      color: #5c4a1a;
+      border: 1px solid rgba(212,175,55,0.18);
+      line-height: 1.75;
+      font-size: 13px;
+    }
+    .status.error {
+      background: #fff1f1;
+      color: #8b1f1f;
+      border-color: rgba(220, 38, 38, 0.18);
+    }
+    .summary {
+      display: grid;
+      gap: 14px;
+    }
+    .summary-box {
+      border-radius: 20px;
+      border: 1px solid rgba(212,175,55,0.16);
+      background: linear-gradient(180deg, #fffdf8 0%, #fff7e7 100%);
+      padding: 14px;
+      display: grid;
+      gap: 10px;
+    }
+    .summary-box strong {
+      color: var(--charcoal);
+      font-size: 15px;
+    }
+    .summary-box span {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.75;
+    }
+    .small {
+      color: #697585;
+      font-size: 12px;
+      line-height: 1.65;
+    }
+    .divider {
+      height: 1px;
+      background: rgba(212,175,55,0.16);
+      margin: 18px 0;
+    }
+    .hidden { display: none !important; }
+    @media (max-width: 980px) {
+      .hero-grid,
+      .two-col {
+        grid-template-columns: 1fr;
+      }
+      .fleet-grid,
+      .toggle-grid,
+      .field-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+    @media (max-width: 640px) {
+      .wrap { padding: 14px 12px 28px; }
+      .hero,
+      .panel {
+        border-radius: 24px;
+      }
+      .hero {
+        padding: 18px;
+      }
+      .photo-upload {
+        grid-template-columns: 1fr;
+      }
+      .photo-preview,
+      .photo-placeholder {
+        width: 96px;
+        height: 96px;
+      }
+      .map-preview {
+        min-height: 280px;
+      }
+      .zone-row {
+        grid-template-columns: 1fr;
+      }
+      .button-row {
+        display: grid;
+      }
+      .button {
+        width: 100%;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="hero">
+      <div class="hero-grid">
+        <div>
+          <p class="eyebrow">Driver Partner Setup</p>
+          <h1>Build your page. Pick your service area. Keep CRM notifications private.</h1>
+          <p class="hero-copy">
+            This setup page is for the chauffeur only. It lets you add your photo, public name, email, map zoning, and the
+            vehicles you want to feature on your personal page. Your phone number is not advertised here. Notifications stay
+            inside the CRM.
+          </p>
+          <div class="hero-badges">
+            <span class="badge">Photo + name</span>
+            <span class="badge">Map zoning</span>
+            <span class="badge">Geofencing</span>
+            <span class="badge">Vehicle selection</span>
+          </div>
+          <div class="hero-note">
+            Chauffeur Deluxe keeps the webhook, LeadConnector routing, and payment handling on the backend. You only control the
+            public-facing driver page settings here.
+          </div>
+        </div>
+
+        <div class="summary">
+          <div class="summary-box">
+            <strong>What you control</strong>
+            <span>Driver photo, display name, email, service area, and which vehicle cards are shown on the page.</span>
+          </div>
+          <div class="summary-box">
+            <strong>What stays hidden</strong>
+            <span>Driver phone numbers and backend CRM/payment settings remain platform-side.</span>
+          </div>
+          <div class="summary-box">
+            <strong>Where notifications go</strong>
+            <span>Booking confirmation goes out from the backend. The driver uses the tracking URL to switch to en route, then the backend sends the customer tracking link.</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div class="grid two-col">
+      <section class="panel">
+        <h2 class="card-title">Driver Page Details</h2>
+        <p class="card-copy">
+          These settings shape the public personal page. Keep the presentation premium and simple so clients see the chauffeur
+          first.
+        </p>
+
+        <div class="divider"></div>
+
+        <div class="field-grid">
+          <div class="field">
+            <label for="display_name">Public display name</label>
+            <input id="display_name" class="input" type="text" placeholder="Your Name" />
+          </div>
+          <div class="field">
+            <label for="driver_email">Email</label>
+            <input id="driver_email" class="input" type="email" placeholder="driver@example.com" />
+          </div>
+        </div>
+
+        <div class="field" style="margin-top:14px;">
+          <label for="driver_calendar_url">CRM calendar URL</label>
+          <input id="driver_calendar_url" class="input" type="url" placeholder="https://crm.example.com/calendar/..." />
+          <p class="helper" style="margin-top:10px;">
+            This calendar link is assigned in the CRM and carried into the driver magic link for the booking.
+          </p>
+        </div>
+
+        <div class="field" style="margin-top:14px;">
+          <label>Driver photo</label>
+          <div class="photo-upload">
+            <div>
+              <img id="photo_preview" class="photo-preview hidden" alt="Driver photo preview" />
+              <div id="photo_placeholder" class="photo-placeholder">CD</div>
+            </div>
+            <div>
+              <input id="photo_upload" class="input" type="file" accept="image/*" />
+              <p class="helper" style="margin-top:10px;">
+                Use a clean portrait-style photo. This image appears at the top of the driver's personal page.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div class="divider"></div>
+
+        <h3 class="card-title" style="font-size:18px;">Vehicles to feature on the page</h3>
+        <p class="card-copy">
+          Select the vehicles you want showcased on the personal page. The page uses four premium cards, but you can hide any
+          option you do not want to feature.
+        </p>
+
+        <div class="toggle-grid" style="margin-top:14px;">
+          <label class="toggle-card">
+            <img src="/assets/driver-partner-program/luxury-sedan-maybach.png" alt="Luxury Sedan Maybach" />
+            <div class="toggle-row">
+              <div>
+                <strong>Mercedes-Maybach Sedan</strong>
+                <span>Flagship executive sedan presentation.</span>
+              </div>
+              <input class="toggle-check vehicle-toggle" type="checkbox" data-vehicle-key="maybach" data-vehicle-name="Mercedes-Maybach Sedan" data-vehicle-category="Luxury Sedan" data-image-url="/assets/driver-partner-program/luxury-sedan-maybach.png" checked />
+            </div>
+          </label>
+
+          <label class="toggle-card">
+            <img src="/assets/driver-partner-program/luxury-sedan-cts.png" alt="Cadillac CTS" />
+            <div class="toggle-row">
+              <div>
+                <strong>Cadillac CTS</strong>
+                <span>Sleek sedan option for executive travel.</span>
+              </div>
+              <input class="toggle-check vehicle-toggle" type="checkbox" data-vehicle-key="cts" data-vehicle-name="Cadillac CTS" data-vehicle-category="Luxury Sedan" data-image-url="/assets/driver-partner-program/luxury-sedan-cts.png" checked />
+            </div>
+          </label>
+
+          <label class="toggle-card">
+            <img src="/assets/driver-partner-program/luxury-xl-suv-escalade-esv.png" alt="Cadillac Escalade ESV" />
+            <div class="toggle-row">
+              <div>
+                <strong>Cadillac Escalade ESV</strong>
+                <span>Premium XL SUV with a luxury presence.</span>
+              </div>
+              <input class="toggle-check vehicle-toggle" type="checkbox" data-vehicle-key="escalade" data-vehicle-name="Cadillac Escalade ESV" data-vehicle-category="Luxury XL SUV" data-image-url="/assets/driver-partner-program/luxury-xl-suv-escalade-esv.png" checked />
+            </div>
+          </label>
+
+          <label class="toggle-card">
+            <img src="/assets/driver-partner-program/luxury-xl-suv-suburban.png" alt="Chevrolet Suburban" />
+            <div class="toggle-row">
+              <div>
+                <strong>Chevrolet Suburban</strong>
+                <span>Large group travel and airport presence.</span>
+              </div>
+              <input class="toggle-check vehicle-toggle" type="checkbox" data-vehicle-key="suburban" data-vehicle-name="Chevrolet Suburban" data-vehicle-category="Luxury XL SUV" data-image-url="/assets/driver-partner-program/luxury-xl-suv-suburban.png" checked />
+            </div>
+          </label>
+        </div>
+
+        <div class="status" id="save_hint">
+          The selected vehicles will appear on the driver's page in the same premium style as the fleet cards.
+        </div>
+      </section>
+
+      <aside class="panel">
+        <div class="service-map-card">
+          <h2 class="service-section-title">Service Radius Reference Map</h2>
+          <p class="service-section-copy">
+            Use this separate map to search, position, and adjust your main service radius. In City / County / ZIP mode, it
+            stays available as a visual reference while your saved boundary rules remain the true booking criteria.
+          </p>
+          <div class="service-map-tools">
+            <input id="service_map_search" class="input" type="text" placeholder="Search city or zip code..." />
+            <button type="button" id="use_location_btn" class="button button-secondary" style="min-height:40px;">Use My Location</button>
+          </div>
+          <div class="service-map-status" id="autocomplete_status">Address autocomplete is ready.</div>
+          <div class="map-shell">
+            <div class="map-preview" id="map_preview">
+              <div class="map-label one">North</div>
+              <div class="map-label two">East</div>
+              <div class="map-label three">West</div>
+              <div class="map-label four">South</div>
+              <div class="map-ring" id="map_ring"></div>
+              <div class="map-pin"></div>
+            </div>
+          </div>
+          <div class="service-map-coords">
+            <div class="field">
+              <label for="service_lat">Latitude</label>
+              <input id="service_lat" class="input" type="number" step="0.000001" placeholder="29.7604" />
+            </div>
+            <div class="field">
+              <label for="service_lng">Longitude</label>
+              <input id="service_lng" class="input" type="number" step="0.000001" placeholder="-95.3698" />
+            </div>
+            <div class="field">
+              <label for="service_radius">Radius (miles)</label>
+              <input id="service_radius" class="input" type="number" min="5" max="150" step="1" value="30" />
+            </div>
+          </div>
+        </div>
+
+        <div class="service-geofence-card">
+          <h2 class="service-section-title">Simple Radius Geofence</h2>
+          <p class="service-section-copy">
+            Keep it simple: set a center point and a mile radius. That radius becomes the service boundary for the driver
+            page and for backend booking checks.
+          </p>
+          <div class="service-ready-bar" id="save_hint">Radius map ready</div>
+        </div>
+
+        <div class="service-geofence-card">
+          <h2 class="service-section-title">Driver Payout Setup</h2>
+          <p class="service-section-copy">
+            Connect Stripe so the driver can receive automated payouts through Stripe Connect. Chauffeur Deluxe keeps the
+            platform-side routing and payout split logic.
+          </p>
+          <div class="field">
+            <label for="stripe_account_id">Stripe Connect Account ID</label>
+            <input id="stripe_account_id" class="input" type="text" placeholder="acct_..." readonly />
+            <p class="helper" style="margin-top:10px;">
+              If the account is not linked yet, use the button below to create the driver payout onboarding flow.
+            </p>
+          </div>
+          <div class="button-row" style="margin-top:14px;">
+            <button id="stripe_connect_btn" class="button button-secondary" type="button">Connect Stripe Payouts</button>
+          </div>
+          <div class="status" id="stripe_status" style="margin-top:14px;">Stripe payout account not linked yet.</div>
+        </div>
+
+        <div class="status" style="margin-top:14px;">
+          The driver never sees backend phone routing here. Notifications are handled from the backend.
+        </div>
+
+        <div class="button-row">
+          <button id="save_btn" class="button button-primary" type="button">Save Setup</button>
+          <button id="preview_btn" class="button button-secondary" type="button">Preview Page State</button>
+        </div>
+        <div class="status hidden" id="save_status"></div>
+      </aside>
+    </div>
+  </div>
+  <script src="/driver-wizard-client.js"></script>
+</body>
+</html>
+

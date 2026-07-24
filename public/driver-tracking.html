@@ -199,6 +199,23 @@
       color: var(--brand-muted);
       margin-top: 8px;
     }
+    .link-actions {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 12px;
+    }
+    .link-text {
+      word-break: break-all;
+      font-size: 14px;
+      line-height: 1.7;
+      color: #0f172a;
+    }
+    .link-single {
+      display: grid;
+      gap: 10px;
+      margin-top: 12px;
+    }
     .status {
       margin-top: 14px;
       font-size: 14px;
@@ -299,6 +316,25 @@
             <div class="small-note">Before tapping <strong>En Route</strong>, make sure the active driver name, mobile number, and photo are right so the customer sees the right person and the driver receives their own tracking link.</div>
           </div>
 
+          <div class="box box-teal">
+            <span class="label">Customer Tracking Link</span>
+            <div class="value link-text" id="customer-tracking-url">Loading...</div>
+            <div class="link-actions">
+              <button id="copy-customer-link-btn" class="btn btn-secondary" type="button">Copy Link</button>
+              <button id="open-customer-link-btn" class="btn btn-primary" type="button">Open Link</button>
+            </div>
+            <div class="small-note">Send this link by text when you tap <strong>En Route</strong>. The booking confirmation email already goes out from the backend.</div>
+          </div>
+
+          <div class="box">
+            <span class="label">Assigned CRM Calendar</span>
+            <div class="value link-text" id="driver-calendar-url">No calendar assigned yet.</div>
+            <div class="link-single">
+              <button id="open-driver-calendar-btn" class="btn btn-secondary" type="button">Open Calendar</button>
+            </div>
+            <div class="small-note">This CRM calendar belongs to the driver magic link and should match the assigned booking calendar.</div>
+          </div>
+
           <div class="box">
             <span class="label">Pickup</span>
             <div class="value" id="pickup-address">Loading...</div>
@@ -363,6 +399,8 @@
     let currentSession = null;
     let savedDriverProfiles = [];
     let pendingDriverPhotoData = "";
+    let customerTrackingUrl = "";
+    let driverCalendarUrl = "";
 
     function setText(id, value) {
       const el = document.getElementById(id);
@@ -461,6 +499,26 @@
       setText("customer-view-driver", driverLine);
       setText("customer-view-plate", vehiclePlate ? `License Plate: ${vehiclePlate}` : "Vehicle plate will appear once saved in the setup wizard.");
       setImagePreview("customer-view-vehicle", session?.vehicle_image || "", "Vehicle photo");
+    }
+
+    function refreshCustomerTrackingUrl(session, response = {}) {
+      customerTrackingUrl = String(
+        session?.customer_tracking_url ||
+        response?.customer_url ||
+        ""
+      ).trim();
+      setText("customer-tracking-url", customerTrackingUrl || "Customer tracking link will appear here.");
+      const openButton = document.getElementById("open-customer-link-btn");
+      const copyButton = document.getElementById("copy-customer-link-btn");
+      if (openButton) openButton.disabled = !customerTrackingUrl;
+      if (copyButton) copyButton.disabled = !customerTrackingUrl;
+    }
+
+    function refreshDriverCalendarUrl(session) {
+      driverCalendarUrl = String(session?.driver_calendar_url || "").trim();
+      setText("driver-calendar-url", driverCalendarUrl || "No calendar assigned yet.");
+      const openButton = document.getElementById("open-driver-calendar-btn");
+      if (openButton) openButton.disabled = !driverCalendarUrl;
     }
 
     function updateBookingStatusBadge(dispatchStatus) {
@@ -827,6 +885,8 @@
 
         applyBranding(currentSession.branding || {}, currentSession.business_name || "");
         refreshCustomerView(currentSession);
+        refreshCustomerTrackingUrl(currentSession, data);
+        refreshDriverCalendarUrl(currentSession);
         applyDriverProfileToForm(null);
         await loadDriverProfiles();
         await loadGoogleMaps(currentSession.maps_api_key || "");
@@ -835,6 +895,12 @@
       } catch (error) {
         setText("driver-status-message", error.message || "Unable to load tracking session.");
       }
+    }
+
+    async function copyCustomerTrackingUrl() {
+      if (!customerTrackingUrl) return;
+      await navigator.clipboard.writeText(customerTrackingUrl);
+      setText("driver-status-message", "Customer tracking link copied. Send it by text to the customer.");
     }
 
     function startTracking() {
@@ -917,7 +983,11 @@
           body: JSON.stringify({ token, status })
         });
         setText("trip-status", data.status || status);
-        setText("driver-status-message", `Trip status updated to ${data.status || status}.`);
+        if (status === "en_route_to_pickup") {
+          setText("driver-status-message", "Trip updated to en route. Copy the customer tracking link and text it to the customer.");
+        } else {
+          setText("driver-status-message", `Trip status updated to ${data.status || status}.`);
+        }
       } catch (error) {
         setText("driver-status-message", error.message || "Unable to update trip status.");
       }
@@ -981,6 +1051,30 @@
 
     document.getElementById("open-dispatch-manager-btn")?.addEventListener("click", () => {
       openDispatchManagerFromTracking();
+    });
+
+    document.getElementById("copy-customer-link-btn")?.addEventListener("click", async () => {
+      try {
+        await copyCustomerTrackingUrl();
+      } catch (error) {
+        setText("driver-status-message", error.message || "Unable to copy customer tracking link.");
+      }
+    });
+
+    document.getElementById("open-customer-link-btn")?.addEventListener("click", () => {
+      if (!customerTrackingUrl) {
+        setText("driver-status-message", "Customer tracking link is not available yet.");
+        return;
+      }
+      window.open(customerTrackingUrl, "_blank", "noopener,noreferrer");
+    });
+
+    document.getElementById("open-driver-calendar-btn")?.addEventListener("click", () => {
+      if (!driverCalendarUrl) {
+        setText("driver-status-message", "Assigned CRM calendar is not available yet.");
+        return;
+      }
+      window.open(driverCalendarUrl, "_blank", "noopener,noreferrer");
     });
 
     document.querySelectorAll("[data-status]").forEach((button) => {
