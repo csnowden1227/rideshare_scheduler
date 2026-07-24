@@ -1522,9 +1522,20 @@ function slugifyForDashboard(value) {
     .slice(0, 64) || "john-smith";
 }
 
+function buildDriverPageSlugFromName(value, fallbackValue = "john-smith") {
+  const fallbackSlug = slugifyForDashboard(fallbackValue || "john-smith") || "john-smith";
+  const raw = String(value || "").trim();
+  if (!raw) {
+    return fallbackSlug;
+  }
+  const nameParts = raw.split(/\s+/).filter(Boolean);
+  const slugSource = nameParts.length >= 2 ? `${nameParts[0]} ${nameParts[1]}` : nameParts[0];
+  return slugifyForDashboard(slugSource || fallbackSlug) || fallbackSlug;
+}
+
 function normalizeDriverPageSlug(value, fallbackValue = "john-smith") {
   const raw = String(value || "").trim();
-  const fallbackSlug = slugifyForDashboard(fallbackValue || "john-smith") || "john-smith";
+  const fallbackSlug = buildDriverPageSlugFromName(fallbackValue || "john-smith", "john-smith") || "john-smith";
   if (!raw) {
     return buildDriverPageSubdomainUrl(fallbackSlug);
   }
@@ -1541,7 +1552,7 @@ function normalizeDriverPageSlug(value, fallbackValue = "john-smith") {
   } else {
     slugPart = parts[0] || "";
   }
-  const normalizedSlug = slugifyForDashboard(slugPart || fallbackSlug) || fallbackSlug;
+  const normalizedSlug = buildDriverPageSlugFromName(slugPart || fallbackSlug, fallbackSlug) || fallbackSlug;
   return buildDriverPageSubdomainUrl(normalizedSlug);
 }
 
@@ -1561,7 +1572,7 @@ const CHAUFFEURS_DELUXE_RESERVED_SUBDOMAINS = new Set([
 
 function normalizeChauffeursSubdomain(value, fallbackValue = "john-smith") {
   const raw = String(value || "").trim();
-  const fallbackSlug = slugifyForDashboard(fallbackValue || "john-smith") || "john-smith";
+  const fallbackSlug = buildDriverPageSlugFromName(fallbackValue || "john-smith", "john-smith") || "john-smith";
   if (!raw) {
     return fallbackSlug;
   }
@@ -1570,9 +1581,9 @@ function normalizeChauffeursSubdomain(value, fallbackValue = "john-smith") {
   const rootSuffix = `.${CHAUFFEURS_DELUXE_ROOT_DOMAIN}`;
   if (hostLike.endsWith(rootSuffix)) {
     const subdomain = hostLike.slice(0, -rootSuffix.length);
-    return slugifyForDashboard(subdomain || fallbackSlug) || fallbackSlug;
+    return buildDriverPageSlugFromName(subdomain || fallbackSlug, fallbackSlug) || fallbackSlug;
   }
-  return slugifyForDashboard(hostLike || fallbackSlug) || fallbackSlug;
+  return buildDriverPageSlugFromName(hostLike || fallbackSlug, fallbackSlug) || fallbackSlug;
 }
 
 function buildDriverPageSubdomainUrl(subdomain, pathSuffix = "/") {
@@ -17312,7 +17323,7 @@ app.get("/api/driver-dashboard/:location_id", async (req, res) => {
         display_name: String(profile.driver_display_name || profile.business_name || "Your Driver Page").trim(),
         email: normalizeDriverEmail(profile.driver_email || ""),
         photo_data: profile.driver_photo_data || "",
-        page_slug: buildDriverPageSubdomainUrl(slugifyForDashboard(profile.driver_display_name || profile.business_name || "john-smith")),
+        page_slug: buildDriverPageSubdomainUrl(buildDriverPageSlugFromName(profile.driver_display_name || profile.business_name || "john-smith")),
       },
       page: {
         calendar_url: String(profile.driver_calendar_url || "").trim(),
