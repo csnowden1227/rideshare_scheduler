@@ -932,7 +932,7 @@
             <div class="brand-copy">
               <h1>Chauffeur Deluxe</h1>
             </div>
-            <span class="slug" id="page-slug">chauffeursdeluxe.com/partner/john-smith</span>
+            <span class="slug" id="page-slug">john-smith.chauffeursdeluxe.com</span>
           </div>
 
           <div class="driver-lockup">
@@ -1035,7 +1035,7 @@
       <h3>Become a Chauffeurs Deluxe Driver</h3>
       <p><strong>Your Clients. Our Fleet. Your Income.</strong></p>
       <p><strong>Build Your Chauffeur Business Without the Overhead.<br />No Need To Buy Luxury To Drive Luxury.</strong></p>
-      <a class="join-cta" href="/driver-partner-program">Become a Chauffeurs Deluxe Driver</a>
+      <a class="join-cta" href="https://driver-partner-program.chauffeursdeluxe.com/">Become a Chauffeurs Deluxe Driver</a>
     </section>
 
     <footer class="site-footer">
@@ -1065,9 +1065,44 @@
     const driverRole = (query.get("driver_title") || "Luxury Chauffeur").trim();
     const defaultDriverPhoto = "/assets/driver-partner-program/driver-thumbnail-default.jpg";
     const driverPhoto = (query.get("driver_photo") || query.get("photo_url") || defaultDriverPhoto).trim();
+    const rootDomain = "chauffeursdeluxe.com";
+    const hostname = String(window.location.hostname || "").toLowerCase();
     const pathnameSlugMatch = window.location.pathname.match(/^\/partner\/([^/]+)\/?$/i);
     const pathnameSlug = pathnameSlugMatch ? pathnameSlugMatch[1] : "";
-    const slug = (query.get("slug") || (pathnameSlug ? `chauffeursdeluxe.com/partner/${pathnameSlug}` : "chauffeursdeluxe.com/partner/john-smith")).trim();
+    const hostSuffix = `.${rootDomain}`;
+    const hostSlug = hostname.endsWith(hostSuffix) ? hostname.slice(0, -hostSuffix.length) : "";
+    const reservedSubdomains = new Set(["www", "driver-partner-program", "driver-partner-subscription", "driver-partner-setup", "partner-onboarding"]);
+    const subdomainSlug = hostSlug && !reservedSubdomains.has(hostSlug) ? hostSlug : "";
+    const normalizePageUrl = (value) => {
+      const raw = String(value || "").trim();
+      if (!raw) {
+        return "";
+      }
+      if (/^https?:\/\//i.test(raw)) {
+        try {
+          const parsed = new URL(raw);
+          const parsedHost = String(parsed.hostname || "").toLowerCase();
+          const parsedSuffix = `.${rootDomain}`;
+          if (parsedHost.endsWith(parsedSuffix)) {
+            const parsedSubdomain = parsedHost.slice(0, -parsedSuffix.length);
+            if (parsedSubdomain && !reservedSubdomains.has(parsedSubdomain)) {
+              return `https://${parsedSubdomain}.${rootDomain}/`;
+            }
+          }
+        } catch {
+          // Fall through to the path parsing below.
+        }
+      }
+      const partnerMatch = raw.match(/\/partner\/([^/?#]+)/i);
+      if (partnerMatch?.[1]) {
+        return `https://${partnerMatch[1]}.${rootDomain}/`;
+      }
+      if (raw.startsWith("/")) {
+        return `https://${pathnameSlug || "john-smith"}.${rootDomain}/`;
+      }
+      return `https://${raw}.${rootDomain}/`;
+    };
+    const slug = normalizePageUrl(query.get("slug") || (subdomainSlug ? `https://${subdomainSlug}.${rootDomain}/` : pathnameSlug ? `https://${pathnameSlug}.${rootDomain}/` : `https://john-smith.${rootDomain}/`)) || `https://john-smith.${rootDomain}/`;
     const locationId = (query.get("location_id") || query.get("loc") || query.get("locationId") || "").trim();
     const backendBase = (query.get("backend_url") || query.get("backendUrl") || "").trim().replace(/\/$/, "");
 

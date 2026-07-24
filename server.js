@@ -1526,7 +1526,7 @@ function normalizeDriverPageSlug(value, fallbackValue = "john-smith") {
   const raw = String(value || "").trim();
   const fallbackSlug = slugifyForDashboard(fallbackValue || "john-smith") || "john-smith";
   if (!raw) {
-    return `/partner/${fallbackSlug}`;
+    return buildDriverPageSubdomainUrl(fallbackSlug);
   }
   const cleaned = raw
     .replace(/^https?:\/\/[^/]+/i, "")
@@ -1542,7 +1542,59 @@ function normalizeDriverPageSlug(value, fallbackValue = "john-smith") {
     slugPart = parts[0] || "";
   }
   const normalizedSlug = slugifyForDashboard(slugPart || fallbackSlug) || fallbackSlug;
-  return `/partner/${normalizedSlug}`;
+  return buildDriverPageSubdomainUrl(normalizedSlug);
+}
+
+const CHAUFFEURS_DELUXE_ROOT_DOMAIN = "chauffeursdeluxe.com";
+const CHAUFFEURS_DELUXE_RESERVED_SUBDOMAINS = new Set([
+  "www",
+  "api",
+  "app",
+  "crm",
+  "admin",
+  "dashboard",
+  "go",
+  "mail",
+  "support",
+  "static",
+]);
+
+function normalizeChauffeursSubdomain(value, fallbackValue = "john-smith") {
+  const raw = String(value || "").trim();
+  const fallbackSlug = slugifyForDashboard(fallbackValue || "john-smith") || "john-smith";
+  if (!raw) {
+    return fallbackSlug;
+  }
+  const withoutProtocol = raw.replace(/^https?:\/\/[^/]+/i, "").replace(/^\/+/, "");
+  const hostLike = withoutProtocol.split(/[/?#]/)[0].toLowerCase();
+  const rootSuffix = `.${CHAUFFEURS_DELUXE_ROOT_DOMAIN}`;
+  if (hostLike.endsWith(rootSuffix)) {
+    const subdomain = hostLike.slice(0, -rootSuffix.length);
+    return slugifyForDashboard(subdomain || fallbackSlug) || fallbackSlug;
+  }
+  return slugifyForDashboard(hostLike || fallbackSlug) || fallbackSlug;
+}
+
+function buildDriverPageSubdomainUrl(subdomain, pathSuffix = "/") {
+  const normalizedSubdomain = normalizeChauffeursSubdomain(subdomain, "john-smith") || "john-smith";
+  const normalizedPath = String(pathSuffix || "/").startsWith("/") ? String(pathSuffix || "/") : `/${String(pathSuffix || "/")}`;
+  return `https://${normalizedSubdomain}.${CHAUFFEURS_DELUXE_ROOT_DOMAIN}${normalizedPath}`;
+}
+
+function getChauffeursSubdomainFromRequest(req = null) {
+  const host = String(req?.hostname || req?.get?.("host") || "").trim().toLowerCase().split(":")[0];
+  if (!host) {
+    return "";
+  }
+  const rootSuffix = `.${CHAUFFEURS_DELUXE_ROOT_DOMAIN}`;
+  if (!host.endsWith(rootSuffix)) {
+    return "";
+  }
+  const subdomain = host.slice(0, -rootSuffix.length);
+  if (!subdomain || CHAUFFEURS_DELUXE_RESERVED_SUBDOMAINS.has(subdomain)) {
+    return "";
+  }
+  return subdomain;
 }
 
 function normalizeDriverPageVehicleCards(value) {
@@ -7986,16 +8038,16 @@ app.get("/rideshare-onboarding.html", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "rideshare-onboarding.html"));
 });
 app.get("/partner-onboarding.html", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "partner-onboarding.html"));
+  return res.redirect(301, buildDriverPageSubdomainUrl("partner-onboarding"));
 });
 app.get("/partner-onboarding", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "partner-onboarding.html"));
+  return res.redirect(301, buildDriverPageSubdomainUrl("partner-onboarding"));
 });
 app.get("/driver-partner-subscription.html", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "driver-partner-subscription.html"));
+  return res.redirect(301, buildDriverPageSubdomainUrl("driver-partner-subscription"));
 });
 app.get("/driver-partner-subscription", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "driver-partner-subscription.html"));
+  return res.redirect(301, buildDriverPageSubdomainUrl("driver-partner-subscription"));
 });
 app.get("/dispatch-network-manager.html", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "dispatch-network-manager.html"));
@@ -8007,25 +8059,26 @@ app.get("/network-dispatch.html", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "network-dispatch.html"));
 });
 app.get("/driver-partner-program.html", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "driver-partner-program.html"));
+  return res.redirect(301, buildDriverPageSubdomainUrl("driver-partner-program"));
 });
 app.get("/driver-partner-program", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "driver-partner-program.html"));
+  return res.redirect(301, buildDriverPageSubdomainUrl("driver-partner-program"));
 });
 app.get("/driver-partner-page.html", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "driver-partner-page.html"));
+  return res.redirect(301, buildDriverPageSubdomainUrl("john-smith"));
 });
 app.get("/partner/:slug", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "driver-partner-page.html"));
+  const slug = normalizeChauffeursSubdomain(req.params.slug || "john-smith", "john-smith");
+  return res.redirect(301, buildDriverPageSubdomainUrl(slug));
 });
 app.get("/partner", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "driver-partner-page.html"));
+  return res.redirect(301, buildDriverPageSubdomainUrl("john-smith"));
 });
 app.get("/driver-partner-setup.html", requireWizardToken, (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "driver-partner-setup.html"));
+  return res.redirect(301, appendQueryParams(buildDriverPageSubdomainUrl("driver-partner-setup"), req.query));
 });
 app.get("/driver-partner-setup", requireWizardToken, (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "driver-partner-setup.html"));
+  return res.redirect(301, appendQueryParams(buildDriverPageSubdomainUrl("driver-partner-setup"), req.query));
 });
 app.get("/driver-dashboard.html", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "driver-dashboard.html"));
@@ -8034,16 +8087,36 @@ app.get("/driver-dashboard", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "driver-dashboard.html"));
 });
 app.get("/driver-wizard", requireWizardToken, (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "driver-partner-setup.html"));
+  return res.redirect(301, appendQueryParams(buildDriverPageSubdomainUrl("driver-partner-setup"), req.query));
 });
 app.get("/driver-wizard.html", requireWizardToken, (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "driver-partner-setup.html"));
+  return res.redirect(301, appendQueryParams(buildDriverPageSubdomainUrl("driver-partner-setup"), req.query));
 });
 app.get("/driver-widget", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "driver-wizard.js"));
 });
 app.get("/driver-widget.js", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "driver-wizard.js"));
+});
+app.get("/", (req, res, next) => {
+  const subdomain = getChauffeursSubdomainFromRequest(req);
+  if (!subdomain) {
+    return next();
+  }
+
+  if (subdomain === "driver-partner-program") {
+    return res.sendFile(path.join(__dirname, "public", "driver-partner-program.html"));
+  }
+
+  if (subdomain === "driver-partner-subscription" || subdomain === "partner-onboarding") {
+    return res.sendFile(path.join(__dirname, "public", "driver-partner-subscription.html"));
+  }
+
+  if (subdomain === "driver-partner-setup" || subdomain === "driver-wizard") {
+    return requireWizardToken(req, res, () => res.sendFile(path.join(__dirname, "public", "driver-partner-setup.html")));
+  }
+
+  return res.sendFile(path.join(__dirname, "public", "driver-partner-page.html"));
 });
 app.get("/saas-sales.html", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "saas-sales.html"));
@@ -12407,13 +12480,13 @@ app.post("/api/driver-partner/subscription-checkout-session", async (req, res) =
     const displayName = String(req.body.display_name || "").trim();
     const businessName = String(req.body.business_name || "").trim() || "Chauffeurs Deluxe Driver";
     const customerEmail = String(req.body.driver_email || req.body.email || "").trim();
-    const successUrl = appendQueryParams(`${getPublicAppUrl(req)}/driver-partner-setup`, {
+    const successUrl = appendQueryParams(buildDriverPageSubdomainUrl("driver-partner-setup"), {
       payment: "success",
       display_name: displayName || undefined,
       driver_email: customerEmail || undefined,
       session_id: "{CHECKOUT_SESSION_ID}",
     }, { rawKeys: ["session_id"] });
-    const cancelUrl = appendQueryParams(`${getPublicAppUrl(req)}/driver-partner-subscription`, {
+    const cancelUrl = appendQueryParams(buildDriverPageSubdomainUrl("driver-partner-subscription"), {
       payment: "cancel",
     });
 
@@ -17239,7 +17312,7 @@ app.get("/api/driver-dashboard/:location_id", async (req, res) => {
         display_name: String(profile.driver_display_name || profile.business_name || "Your Driver Page").trim(),
         email: normalizeDriverEmail(profile.driver_email || ""),
         photo_data: profile.driver_photo_data || "",
-        page_slug: `chauffeursdeluxe.com/partner/${slugifyForDashboard(profile.driver_display_name || profile.business_name || "john-smith")}`,
+        page_slug: buildDriverPageSubdomainUrl(slugifyForDashboard(profile.driver_display_name || profile.business_name || "john-smith")),
       },
       page: {
         calendar_url: String(profile.driver_calendar_url || "").trim(),
