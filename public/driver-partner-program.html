@@ -509,81 +509,20 @@
       line-height: 1.7;
       color: var(--muted);
     }
-    .snapshot-carousel {
-      display: grid;
-      gap: 12px;
-    }
-    .snapshot-carousel-frame {
+    .snapshot-preview-frame {
       position: relative;
       overflow: hidden;
       border-radius: 20px;
-      min-height: 360px;
       background: #0a0a0a;
       border: 1px solid rgba(224, 177, 61, 0.18);
       box-shadow: 0 14px 30px rgba(15, 23, 42, 0.12);
     }
-    .snapshot-carousel-track {
-      display: flex;
-      transition: transform 0.7s cubic-bezier(0.2, 0.8, 0.2, 1);
-      will-change: transform;
-      height: 100%;
-    }
-    .snapshot-carousel-slide {
-      min-width: 100%;
-      display: flex;
-      align-items: stretch;
-      justify-content: center;
-      background: #0a0a0a;
-    }
-    .snapshot-carousel-slide img {
+    .snapshot-preview-frame img {
       width: 100%;
-      height: 100%;
+      height: auto;
       object-fit: contain;
       display: block;
       background: #0a0a0a;
-    }
-    .snapshot-carousel-overlay {
-      position: absolute;
-      top: 12px;
-      left: 12px;
-      right: 12px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 12px;
-      pointer-events: none;
-    }
-    .snapshot-carousel-tag,
-    .snapshot-carousel-count {
-      display: inline-flex;
-      align-items: center;
-      padding: 8px 12px;
-      border-radius: 999px;
-      background: rgba(17, 24, 39, 0.92);
-      color: #f7d57d;
-      border: 1px solid rgba(224, 177, 61, 0.28);
-      font-size: 11px;
-      font-weight: 800;
-      letter-spacing: 0.12em;
-      text-transform: uppercase;
-    }
-    .snapshot-carousel-dots {
-      display: flex;
-      gap: 8px;
-      justify-content: center;
-      flex-wrap: wrap;
-    }
-    .snapshot-carousel-dot {
-      width: 10px;
-      height: 10px;
-      border-radius: 999px;
-      border: none;
-      background: rgba(65, 66, 76, 0.35);
-      cursor: pointer;
-    }
-    .snapshot-carousel-dot.active {
-      background: var(--brand-accent);
-      transform: scale(1.2);
     }
     .brochure-carousel {
       margin-top: 16px;
@@ -1156,7 +1095,7 @@
             <a id="personal-link" class="button button-primary hidden" href="#" target="_blank" rel="noopener noreferrer">Open Personal Booking Link</a>
             <button id="copy-link-btn" class="button button-secondary hidden" type="button">Copy Booking Link</button>
             <a id="apply-link" class="button button-quiet hidden" href="#" target="_blank" rel="noopener noreferrer">Apply and Pay for Access</a>
-            <a id="preview-page-link" class="button button-secondary" href="https://john-smith.chauffeursdeluxe.com/" target="_blank" rel="noopener noreferrer">Preview Personal Page</a>
+            <a id="preview-page-link" class="button button-secondary" href="https://first-last.chauffeursdeluxe.com/" target="_blank" rel="noopener noreferrer">Preview Personal Page</a>
           </div>
           <div id="hero-status" class="muted" style="margin-top: 14px; color: rgba(255,255,255,0.9); line-height: 1.8;">
             Driver partner pages are paid access. A driver must apply, subscribe to the partner page, and stay active in good standing before the personal booking link is enabled.
@@ -1169,49 +1108,10 @@
               <h2>Personal Page Template</h2>
               <p>This is the client-facing page a driver uses to sell the experience before the trip is even booked.</p>
             </div>
-            <span class="brochure-badge">john-smith.chauffeursdeluxe.com</span>
+            <span class="brochure-badge">first-last.chauffeursdeluxe.com</span>
           </div>
-          <div class="preview-card hero-card">
-            <div class="profile-media">
-              <img id="driver-photo-preview" class="profile-photo hidden" alt="Driver thumbnail preview" />
-              <div id="driver-photo-placeholder" class="profile-placeholder">CD</div>
-              <div>
-                <p class="preview-name" id="preview-name">Your Name</p>
-                <p class="preview-role" id="preview-role">Luxury Chauffeur</p>
-              </div>
-            </div>
-            <ul class="preview-bullets">
-              <li>Personal booking link</li>
-              <li>Driver thumbnail</li>
-              <li>QR code sharing page</li>
-              <li>Paid access before activation</li>
-            </ul>
-          </div>
-          <div class="snapshot-card hero-card">
-            <div class="snapshot-carousel" data-snapshot-carousel>
-              <div class="snapshot-carousel-frame">
-                <div class="snapshot-carousel-track">
-                  <article class="snapshot-carousel-slide">
-                    <img src="/assets/driver-partner-program/brochure-carousel/brochure 1.png" alt="Brochure snippet 1" />
-                  </article>
-                  <article class="snapshot-carousel-slide">
-                    <img src="/assets/driver-partner-program/brochure-carousel/brochure 2.png" alt="Brochure snippet 2" />
-                  </article>
-                  <article class="snapshot-carousel-slide">
-                    <img src="/assets/driver-partner-program/brochure-carousel/brochure 3.png" alt="Brochure snippet 3" />
-                  </article>
-                  <article class="snapshot-carousel-slide">
-                    <img src="/assets/driver-partner-program/brochure-carousel/brochure 4.png" alt="Brochure snippet 4" />
-                  </article>
-                  <article class="snapshot-carousel-slide">
-                    <img src="/assets/driver-partner-program/brochure-carousel/brochure 5.png" alt="Brochure snippet 5" />
-                  </article>
-                  <article class="snapshot-carousel-slide">
-                    <img src="/assets/driver-partner-program/brochure-carousel/brochure 6.png" alt="Brochure snippet 6" />
-                  </article>
-                </div>
-              </div>
-            </div>
+          <div class="snapshot-preview-frame">
+            <img src="/assets/driver-partner-program/driver-page-snapshot.png" alt="Driver personal page snapshot" />
           </div>
         </aside>
       </div>
@@ -1227,7 +1127,7 @@
             journey, and the reason this page converts better than a plain sign-up form.
           </p>
         </div>
-        <div class="brochure-badge">john-smith.chauffeursdeluxe.com</div>
+        <div class="brochure-badge">first-last.chauffeursdeluxe.com</div>
       </div>
       <div class="brochure-toolbar">
         <button id="brochure-toggle" class="button button-secondary" type="button" aria-pressed="false">Pause rotation</button>
@@ -1604,14 +1504,14 @@
     heroTitle.textContent = driverName ? `${driverName}, build your own chauffeur business` : "Bring the Client. We Bring the Luxury Vehicle.";
     heroCopy.textContent = pitchText;
     heroStatus.textContent = `Ideal for hourly bookings only, with a 48-hour advance minimum so ${companyName} can assign the right vehicle and handle dispatch cleanly.`;
-    previewName.textContent = driverName || "Your Name";
-    previewRole.textContent = driverTitle || "Luxury Chauffeur";
+    if (previewName) previewName.textContent = driverName || "Your Name";
+    if (previewRole) previewRole.textContent = driverTitle || "Luxury Chauffeur";
 
-    if (driverPhoto) {
+    if (driverPhotoPreview && driverPhotoPlaceholder && driverPhoto) {
       driverPhotoPreview.src = driverPhoto;
       driverPhotoPreview.classList.remove("hidden");
       driverPhotoPlaceholder.classList.add("hidden");
-    } else {
+    } else if (driverPhotoPreview && driverPhotoPlaceholder) {
       driverPhotoPlaceholder.textContent = initialsFor(driverName || companyName);
       driverPhotoPlaceholder.classList.remove("hidden");
       driverPhotoPreview.classList.add("hidden");
@@ -1637,7 +1537,7 @@
     applyLink.classList.remove("hidden");
 
     if (previewPageLink) {
-      const previewUrl = new URL(buildSubdomainUrl("john-smith"));
+      const previewUrl = new URL(buildSubdomainUrl("first-last"));
       if (driverName) previewUrl.searchParams.set("driver_name", driverName);
       if (driverTitle) previewUrl.searchParams.set("driver_title", driverTitle);
       if (driverPhoto) previewUrl.searchParams.set("driver_photo", driverPhoto);
