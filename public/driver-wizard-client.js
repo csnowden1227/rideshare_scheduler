@@ -9,6 +9,8 @@
   const driverEmailEl = document.getElementById("driver_email");
   const driverCalendarUrlEl = document.getElementById("driver_calendar_url");
   const stripeAccountIdEl = document.getElementById("stripe_account_id");
+  const stripeLiveSecretKeyEl = document.getElementById("stripe_live_secret_key");
+  const stripeTestSecretKeyEl = document.getElementById("stripe_test_secret_key");
   const stripeConnectBtn = document.getElementById("stripe_connect_btn");
   const stripeStatusEl = document.getElementById("stripe_status");
   const photoUploadEl = document.getElementById("photo_upload");
@@ -48,7 +50,7 @@
       .join(" ")
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/^-+|-+$/g, "")
-      .slice(0, 48) || "john-smith";
+      .slice(0, 48) || "first-last";
   }
 
   function showStatus(message, isError = false) {
@@ -123,6 +125,8 @@
       driverEmailEl.value = data.driver_email || "";
       driverCalendarUrlEl.value = data.driver_calendar_url || "";
       stripeAccountIdEl.value = data.stripe_account_id || "";
+      if (stripeLiveSecretKeyEl) stripeLiveSecretKeyEl.value = data.stripe_secret_key || "";
+      if (stripeTestSecretKeyEl) stripeTestSecretKeyEl.value = data.stripe_test_secret_key || "";
       photoData = data.driver_photo_data || defaultPhotoData;
       renderPhotoPreview(photoData);
       serviceLatEl.value = data.service_lat ?? 29.7604;
@@ -168,6 +172,8 @@
         driver_email: driverEmail,
         driver_calendar_url: String(driverCalendarUrlEl.value || "").trim(),
         stripe_account_id: String(stripeAccountIdEl.value || "").trim(),
+        stripe_secret_key: String(stripeLiveSecretKeyEl?.value || "").trim(),
+        stripe_test_secret_key: String(stripeTestSecretKeyEl?.value || "").trim(),
         driver_photo_data: photoData || defaultPhotoData,
         driver_page_vehicle_cards: selectedVehicleCards(),
         service_area_rules: { cities: [], counties: [], zips: [] },
@@ -265,7 +271,7 @@
     stripeConnectBtn?.addEventListener("click", connectStripePayouts);
     saveBtn?.addEventListener("click", saveSetup);
     previewBtn?.addEventListener("click", () => {
-      const slug = slugify(displayNameEl?.value || "john-smith");
+      const slug = slugify(displayNameEl?.value || "first-last");
       const previewUrl = `https://${encodeURIComponent(slug)}.chauffeursdeluxe.com/?driver_name=${encodeURIComponent(displayNameEl?.value || "Your Name")}&driver_title=${encodeURIComponent("Luxury Chauffeur")}${photoData ? `&driver_photo=${encodeURIComponent(photoData)}` : ""}`;
       window.open(previewUrl, "_blank", "noopener,noreferrer");
     });

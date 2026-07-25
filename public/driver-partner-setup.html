@@ -822,6 +822,19 @@
               If the account is not linked yet, use the button below to create the driver payout onboarding flow.
             </p>
           </div>
+          <div class="field-grid" style="margin-top:14px;">
+            <div class="field">
+              <label for="stripe_live_secret_key">Stripe live secret key</label>
+              <input id="stripe_live_secret_key" class="input" type="password" placeholder="sk_live_..." />
+            </div>
+            <div class="field">
+              <label for="stripe_test_secret_key">Stripe test secret key</label>
+              <input id="stripe_test_secret_key" class="input" type="password" placeholder="sk_test_..." />
+            </div>
+          </div>
+          <p class="helper" style="margin-top:10px;">
+            Keep these private. The live key is for production and the test key is for sandbox validation.
+          </p>
           <div class="button-row" style="margin-top:14px;">
             <button id="stripe_connect_btn" class="button button-secondary" type="button">Connect Stripe Payouts</button>
           </div>
