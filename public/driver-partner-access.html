@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Driver Partner Access</title>
+  <style>
+    :root {
+      --ink: #0a0a0a;
+      --charcoal: #41424c;
+      --gold: #daa520;
+      --gold-soft: rgba(218, 165, 32, 0.16);
+      --line: rgba(218, 165, 32, 0.24);
+      --paper: rgba(255, 255, 255, 0.95);
+      --muted: #5b6471;
+      --shadow: 0 24px 54px rgba(10, 10, 10, 0.14);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top left, rgba(218,165,32,0.12), transparent 24%),
+        radial-gradient(circle at top right, rgba(65,66,76,0.10), transparent 26%),
+        linear-gradient(180deg, #fbf7ef 0%, #f2ebdd 100%);
+      min-height: 100vh;
+    }
+    .wrap {
+      max-width: 1040px;
+      margin: 0 auto;
+      padding: 24px 16px 40px;
+    }
+    .hero,
+    .panel {
+      border-radius: 28px;
+      box-shadow: var(--shadow);
+    }
+    .hero {
+      padding: 28px;
+      background:
+        radial-gradient(circle at top right, rgba(218,165,32,0.12), transparent 24%),
+        linear-gradient(135deg, #0a0a0a 0%, #41424c 56%, #daa520 150%);
+      color: #fff;
+      position: relative;
+      overflow: hidden;
+    }
+    .hero::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background:
+        linear-gradient(115deg, rgba(255,255,255,0.08), transparent 28%),
+        radial-gradient(circle at 18% 12%, rgba(255,255,255,0.08), transparent 18%);
+      pointer-events: none;
+    }
+    .hero > * {
+      position: relative;
+      z-index: 1;
+    }
+    .eyebrow {
+      margin: 0 0 8px;
+      font-size: 12px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 0.16em;
+      color: rgba(255,255,255,0.82);
+    }
+    h1 {
+      margin: 0;
+      font-size: clamp(34px, 4.8vw, 60px);
+      line-height: 0.98;
+      letter-spacing: -0.05em;
+      max-width: 12ch;
+    }
+    .hero-copy {
+      margin: 14px 0 0;
+      max-width: 62ch;
+      line-height: 1.85;
+      color: rgba(255,255,255,0.88);
+    }
+    .hero-badges {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 18px;
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 10px 14px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.12);
+      border: 1px solid rgba(218,165,32,0.22);
+      color: #fff;
+      font-size: 12px;
+      font-weight: 900;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(300px, 0.78fr);
+      gap: 18px;
+      margin-top: 18px;
+      align-items: start;
+    }
+    .panel {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      padding: 22px;
+    }
+    .panel h2 {
+      margin: 0 0 10px;
+      font-size: 26px;
+      line-height: 1.12;
+      color: var(--ink);
+    }
+    .panel p {
+      margin: 0;
+      line-height: 1.8;
+      color: var(--muted);
+    }
+    .field {
+      display: grid;
+      gap: 8px;
+      margin-top: 16px;
+    }
+    label {
+      font-size: 11px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: #657184;
+    }
+    input {
+      width: 100%;
+      border: 1px solid rgba(218,165,32,0.22);
+      border-radius: 14px;
+      padding: 13px 14px;
+      font-size: 15px;
+      background: #fff;
+      color: var(--ink);
+      outline: none;
+    }
+    input:focus {
+      border-color: rgba(218,165,32,0.62);
+      box-shadow: 0 0 0 3px rgba(218,165,32,0.12);
+    }
+    .btn-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 18px;
+    }
+    .button {
+      appearance: none;
+      border: 0;
+      cursor: pointer;
+      min-height: 52px;
+      padding: 0 18px;
+      border-radius: 16px;
+      font-size: 14px;
+      font-weight: 800;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      text-decoration: none;
+      transition: transform 0.18s ease, filter 0.18s ease;
+    }
+    .button:hover {
+      transform: translateY(-1px);
+      filter: brightness(0.98);
+    }
+    .button-primary {
+      background: linear-gradient(135deg, #f6df8c, #d9a72f);
+      color: #0a0a0a;
+      box-shadow: 0 16px 28px rgba(218,165,32,0.22);
+    }
+    .button-secondary {
+      background: #fff;
+      color: var(--ink);
+      border: 1px solid var(--line);
+    }
+    .note {
+      margin-top: 16px;
+      border-radius: 18px;
+      padding: 16px 18px;
+      background: rgba(255,255,255,0.76);
+      border: 1px solid rgba(218,165,32,0.16);
+      color: var(--muted);
+      line-height: 1.75;
+      font-size: 13px;
+    }
+    .status {
+      margin-top: 14px;
+      font-size: 14px;
+      font-weight: 700;
+      color: #0f766e;
+      display: none;
+    }
+    .status.error {
+      color: #9f1239;
+    }
+    .quick-links {
+      display: grid;
+      gap: 12px;
+    }
+    .quick-card {
+      border-radius: 22px;
+      padding: 18px;
+      background: linear-gradient(180deg, #fffdf7 0%, #fff7ea 100%);
+      border: 1px solid rgba(218,165,32,0.18);
+    }
+    .quick-card h3 {
+      margin: 0 0 8px;
+      font-size: 18px;
+      color: var(--ink);
+    }
+    .small {
+      color: var(--muted);
+      line-height: 1.7;
+      font-size: 13px;
+    }
+    @media (max-width: 860px) {
+      .grid { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 640px) {
+      .wrap { padding: 16px 12px 32px; }
+      .hero, .panel { border-radius: 22px; }
+      .hero { padding: 20px 18px; }
+      .panel h2 { font-size: 22px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="hero">
+      <p class="eyebrow">Driver Partner Access</p>
+      <h1>Resend your setup link.</h1>
+      <p class="hero-copy">
+        Enter the same email you used during signup and we’ll send a fresh time-limited magic link to your driver setup
+        wizard. This keeps access simple without needing a password.
+      </p>
+      <div class="hero-badges">
+        <span class="badge">Magic link access</span>
+        <span class="badge">Time limited</span>
+        <span class="badge">Signup email required</span>
+      </div>
+    </section>
+
+    <div class="grid">
+      <section class="panel">
+        <h2>Resend Setup Link</h2>
+        <p>Use this if your setup link expired, got buried in your inbox, or you need to reopen the wizard later.</p>
+
+        <form id="resend-form">
+          <div class="field">
+            <label for="email">Email used at signup</label>
+            <input id="email" type="email" placeholder="driver@example.com" required />
+          </div>
+          <div class="btn-row">
+            <button id="resend-btn" class="button button-primary" type="submit">Resend setup link</button>
+            <a class="button button-secondary" href="https://driver-partner-subscription.chauffeursdeluxe.com/">Back to subscription</a>
+          </div>
+          <div id="status" class="status"></div>
+        </form>
+
+        <div class="note">
+          For security, we only send a new link to the email address used on the partner signup. If you recently paid,
+          check the inbox for the original setup message before requesting another copy.
+        </div>
+      </section>
+
+      <aside class="quick-links">
+        <div class="quick-card">
+          <h3>What the link opens</h3>
+          <p class="small">
+            The secure setup wizard where the driver adds their photo, calendar, service radius, and featured vehicle cards.
+          </p>
+        </div>
+        <div class="quick-card">
+          <h3>Need a new signup?</h3>
+          <p class="small">
+            If you have not subscribed yet, start on the partner program page and complete checkout before requesting access.
+          </p>
+          <div class="btn-row" style="margin-top:14px;">
+            <a class="button button-secondary" href="https://driver-partner-program.chauffeursdeluxe.com/">View partner program</a>
+          </div>
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <script>
+    const query = new URLSearchParams(window.location.search);
+    const form = document.getElementById("resend-form");
+    const emailEl = document.getElementById("email");
+    const statusEl = document.getElementById("status");
+    const resendBtn = document.getElementById("resend-btn");
+
+    function setStatus(message, isError = false) {
+      statusEl.textContent = message;
+      statusEl.style.display = "block";
+      statusEl.classList.toggle("error", Boolean(isError));
+    }
+
+    emailEl.value = query.get("email") || query.get("driver_email") || "";
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const email = String(emailEl.value || "").trim();
+      if (!email) {
+        setStatus("Please enter the email used at signup.", true);
+        return;
+      }
+
+      resendBtn.disabled = true;
+      resendBtn.textContent = "Sending...";
+
+      try {
+        const response = await fetch("/api/driver-partner/resend-setup-link", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email }),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.error || "Unable to resend the setup link.");
+        setStatus(data.message || "A fresh setup link has been sent.");
+      } catch (error) {
+        setStatus(error.message || "Unable to resend the setup link.", true);
+      } finally {
+        resendBtn.disabled = false;
+        resendBtn.textContent = "Resend setup link";
+      }
+    });
+  </script>
+</body>
+</html>

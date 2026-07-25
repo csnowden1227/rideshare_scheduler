@@ -1412,7 +1412,7 @@
           }
           const partnerMatch = parsed.pathname.match(/^\/partner\/([^/?#]+)/i);
           if (partnerMatch?.[1]) return buildSubdomainUrl(partnerMatch[1]);
-          const reservedMatch = parsed.pathname.match(/^\/(driver-partner-program|driver-partner-subscription|driver-partner-setup|partner-onboarding)\/?$/i);
+          const reservedMatch = parsed.pathname.match(/^\/(driver-partner-program|driver-partner-subscription|driver-partner-setup|driver-partner-access|partner-onboarding)\/?$/i);
           if (reservedMatch?.[1]) return buildSubdomainUrl(reservedMatch[1]);
         } catch {
           // Fall through to the simple cleanup below.

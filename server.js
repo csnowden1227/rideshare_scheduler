@@ -201,10 +201,12 @@ let shortLinksTableReady = null;
 let customerAccountTablesReady = null;
 let insuranceModuleTablesReady = null;
 let instantBookingNotificationTablesReady = null;
+let driverPartnerSetupAccessTokensReady = null;
 
 const CUSTOMER_ACCOUNT_SESSION_COOKIE = "crm_customer_session";
 const CUSTOMER_ACCOUNT_SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 30;
 const CUSTOMER_PASSWORD_RESET_TTL_MS = 1000 * 60 * 60;
+const DEFAULT_DRIVER_PARTNER_LOCATION_ID = "mamDGnLGy7zhvZmCPDku";
 
 const DEFAULT_BRAND_COLORS = {
   primary: "#082f49",
@@ -616,6 +618,35 @@ async function ensureCustomerAccountTables() {
     });
   }
   return customerAccountTablesReady;
+}
+
+async function ensureDriverPartnerSetupAccessTokensTable() {
+  if (!driverPartnerSetupAccessTokensReady) {
+    driverPartnerSetupAccessTokensReady = (async () => {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS driver_partner_setup_access_tokens (
+          email_normalized TEXT PRIMARY KEY,
+          email TEXT NOT NULL,
+          location_id TEXT NOT NULL,
+          display_name TEXT,
+          business_name TEXT,
+          setup_token TEXT NOT NULL UNIQUE,
+          token_expires_at TIMESTAMPTZ NOT NULL,
+          last_sent_at TIMESTAMPTZ,
+          resend_count INTEGER NOT NULL DEFAULT 0,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_driver_partner_setup_access_tokens_email ON driver_partner_setup_access_tokens (email_normalized)`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_driver_partner_setup_access_tokens_token ON driver_partner_setup_access_tokens (setup_token)`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_driver_partner_setup_access_tokens_expires ON driver_partner_setup_access_tokens (token_expires_at)`);
+    })().catch((err) => {
+      driverPartnerSetupAccessTokensReady = null;
+      throw err;
+    });
+  }
+  return driverPartnerSetupAccessTokensReady;
 }
 
 async function ensureInsuranceModuleTables() {
@@ -1519,11 +1550,11 @@ function slugifyForDashboard(value) {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
-    .slice(0, 64) || "john-smith";
+    .slice(0, 64) || "first-last";
 }
 
-function buildDriverPageSlugFromName(value, fallbackValue = "john-smith") {
-  const fallbackSlug = slugifyForDashboard(fallbackValue || "john-smith") || "john-smith";
+function buildDriverPageSlugFromName(value, fallbackValue = "first-last") {
+  const fallbackSlug = slugifyForDashboard(fallbackValue || "first-last") || "first-last";
   const raw = String(value || "").trim();
   if (!raw) {
     return fallbackSlug;
@@ -1533,9 +1564,9 @@ function buildDriverPageSlugFromName(value, fallbackValue = "john-smith") {
   return slugifyForDashboard(slugSource || fallbackSlug) || fallbackSlug;
 }
 
-function normalizeDriverPageSlug(value, fallbackValue = "john-smith") {
+function normalizeDriverPageSlug(value, fallbackValue = "first-last") {
   const raw = String(value || "").trim();
-  const fallbackSlug = buildDriverPageSlugFromName(fallbackValue || "john-smith", "john-smith") || "john-smith";
+  const fallbackSlug = buildDriverPageSlugFromName(fallbackValue || "first-last", "first-last") || "first-last";
   if (!raw) {
     return buildDriverPageSubdomainUrl(fallbackSlug);
   }
@@ -1568,11 +1599,16 @@ const CHAUFFEURS_DELUXE_RESERVED_SUBDOMAINS = new Set([
   "mail",
   "support",
   "static",
+  "driver-partner-program",
+  "driver-partner-subscription",
+  "driver-partner-setup",
+  "driver-partner-access",
+  "partner-onboarding",
 ]);
 
-function normalizeChauffeursSubdomain(value, fallbackValue = "john-smith") {
+function normalizeChauffeursSubdomain(value, fallbackValue = "first-last") {
   const raw = String(value || "").trim();
-  const fallbackSlug = buildDriverPageSlugFromName(fallbackValue || "john-smith", "john-smith") || "john-smith";
+  const fallbackSlug = buildDriverPageSlugFromName(fallbackValue || "first-last", "first-last") || "first-last";
   if (!raw) {
     return fallbackSlug;
   }
@@ -1587,7 +1623,7 @@ function normalizeChauffeursSubdomain(value, fallbackValue = "john-smith") {
 }
 
 function buildDriverPageSubdomainUrl(subdomain, pathSuffix = "/") {
-  const normalizedSubdomain = normalizeChauffeursSubdomain(subdomain, "john-smith") || "john-smith";
+  const normalizedSubdomain = normalizeChauffeursSubdomain(subdomain, "first-last") || "first-last";
   const normalizedPath = String(pathSuffix || "/").startsWith("/") ? String(pathSuffix || "/") : `/${String(pathSuffix || "/")}`;
   return `https://${normalizedSubdomain}.${CHAUFFEURS_DELUXE_ROOT_DOMAIN}${normalizedPath}`;
 }
@@ -4917,6 +4953,182 @@ async function sendCrmEmailToContact({
   };
 }
 
+function buildDriverPartnerSetupAccessUrl({ token, locationId = DEFAULT_DRIVER_PARTNER_LOCATION_ID }) {
+  const url = new URL(buildDriverPageSubdomainUrl("driver-partner-setup"));
+  if (locationId) url.searchParams.set("location_id", String(locationId).trim());
+  if (token) url.searchParams.set("token", String(token).trim());
+  return url.toString();
+}
+
+function buildDriverPartnerSetupAccessEmailContent({
+  displayName = "",
+  businessName = "",
+  setupUrl = "",
+  expiresInHours = 72,
+}) {
+  const safeDisplayName = String(displayName || "").trim();
+  const safeBusinessName = String(businessName || "Chauffeur Deluxe").trim() || "Chauffeur Deluxe";
+  const greetingName = safeDisplayName || safeBusinessName || "there";
+  const safeUrl = String(setupUrl || "").trim();
+  const hoursLabel = Number.isFinite(Number(expiresInHours)) ? Number(expiresInHours) : 72;
+
+  return {
+    subject: "Your Chauffeur Deluxe setup link",
+    message: [
+      `Hi ${greetingName},`,
+      "",
+      "Your Chauffeur Deluxe setup link is ready.",
+      safeUrl,
+      "",
+      `This link is time-limited and can be used to open your driver partner setup wizard for the next ${hoursLabel} hours.`,
+      "If you need another copy later, use the resend link page to request a fresh magic link.",
+      "",
+      "Chauffeur Deluxe",
+    ].join("\n"),
+    html: `
+      <div style="font-family: Arial, Helvetica, sans-serif; color:#111827; line-height:1.7;">
+        <p style="margin:0 0 14px;">Hi ${escapeHtml(greetingName)},</p>
+        <p style="margin:0 0 14px;">Your Chauffeur Deluxe setup link is ready.</p>
+        <p style="margin:0 0 18px;">
+          <a href="${escapeHtml(safeUrl)}" style="display:inline-block;background:#d4af37;color:#111827;text-decoration:none;font-weight:700;padding:12px 18px;border-radius:12px;">Open Setup Wizard</a>
+        </p>
+        <p style="margin:0 0 14px;">If the button does not open correctly, copy this link into your browser:</p>
+        <p style="margin:0 0 14px;word-break:break-all;"><a href="${escapeHtml(safeUrl)}" style="color:#41424c;">${escapeHtml(safeUrl)}</a></p>
+        <p style="margin:0;">This link is time-limited and works for the next ${hoursLabel} hours.</p>
+      </div>
+    `,
+  };
+}
+
+async function issueDriverPartnerSetupAccessLink({
+  email,
+  locationId = DEFAULT_DRIVER_PARTNER_LOCATION_ID,
+  displayName = "",
+  businessName = "",
+  sendEmail = false,
+  forceNewToken = false,
+}) {
+  const normalizedEmail = normalizeDriverEmail(email || "");
+  if (!normalizedEmail) {
+    return { success: false, status: 400, error: "Email is required." };
+  }
+
+  const normalizedLocationId = String(locationId || DEFAULT_DRIVER_PARTNER_LOCATION_ID).trim() || DEFAULT_DRIVER_PARTNER_LOCATION_ID;
+  await ensureDriverPartnerSetupAccessTokensTable();
+
+  const existingResult = await pool.query(
+    `SELECT email_normalized, email, location_id, display_name, business_name, setup_token, token_expires_at, last_sent_at, resend_count
+     FROM driver_partner_setup_access_tokens
+     WHERE email_normalized = $1
+     LIMIT 1`,
+    [normalizedEmail]
+  );
+  const existing = existingResult.rows[0] || null;
+
+  const now = Date.now();
+  const lastSentAtMs = existing?.last_sent_at ? new Date(existing.last_sent_at).getTime() : 0;
+  if (sendEmail && lastSentAtMs && now - lastSentAtMs < 60 * 1000) {
+    return {
+      success: false,
+      status: 429,
+      error: "Please wait a minute before requesting another link.",
+    };
+  }
+
+  const shouldReuseToken = existing && !forceNewToken && existing.token_expires_at && new Date(existing.token_expires_at).getTime() > now;
+  const setupToken = shouldReuseToken ? String(existing.setup_token || "").trim() : randomUUID().replace(/-/g, "");
+  const tokenExpiresAt = new Date(now + (1000 * 60 * 60 * 72));
+
+  const upsertResult = await pool.query(
+    `INSERT INTO driver_partner_setup_access_tokens (
+       email_normalized, email, location_id, display_name, business_name, setup_token, token_expires_at, last_sent_at, resend_count, created_at, updated_at
+     ) VALUES (
+       $1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW()
+     )
+     ON CONFLICT (email_normalized) DO UPDATE SET
+       email = EXCLUDED.email,
+       location_id = EXCLUDED.location_id,
+       display_name = EXCLUDED.display_name,
+       business_name = EXCLUDED.business_name,
+       setup_token = EXCLUDED.setup_token,
+       token_expires_at = EXCLUDED.token_expires_at,
+       last_sent_at = EXCLUDED.last_sent_at,
+       resend_count = EXCLUDED.resend_count,
+       updated_at = NOW()
+     RETURNING email_normalized, email, location_id, display_name, business_name, setup_token, token_expires_at, last_sent_at, resend_count`,
+    [
+      normalizedEmail,
+      normalizedEmail,
+      normalizedLocationId,
+      String(displayName || "").trim() || null,
+      String(businessName || "").trim() || null,
+      setupToken,
+      tokenExpiresAt,
+      sendEmail ? new Date() : null,
+      sendEmail ? ((existing?.resend_count || 0) + 1) : 0,
+    ]
+  );
+
+  const record = upsertResult.rows[0] || null;
+  const setupUrl = buildDriverPartnerSetupAccessUrl({
+    token: setupToken,
+    locationId: normalizedLocationId,
+  });
+
+  if (!sendEmail) {
+    return {
+      success: true,
+      setup_url: setupUrl,
+      token: setupToken,
+      record,
+    };
+  }
+
+  const contactId = await upsertCrmContact({
+    locationId: normalizedLocationId,
+    email: normalizedEmail,
+    firstName: String(displayName || "").trim().split(/\s+/)[0] || "",
+    crmAuthOptions: {},
+  });
+  if (!contactId) {
+    return {
+      success: false,
+      status: 500,
+      error: "Unable to prepare the CRM contact for the setup link.",
+    };
+  }
+
+  const emailContent = buildDriverPartnerSetupAccessEmailContent({
+    displayName: String(displayName || record?.display_name || "").trim(),
+    businessName: String(businessName || record?.business_name || "").trim(),
+    setupUrl,
+    expiresInHours: 72,
+  });
+  const sendResult = await sendCrmEmailToContact({
+    locationId: normalizedLocationId,
+    contactId,
+    subject: emailContent.subject,
+    message: emailContent.message,
+    html: emailContent.html,
+  });
+
+  if (!sendResult.success) {
+    return {
+      success: false,
+      status: sendResult.status || 500,
+      error: sendResult.error || "Unable to send the setup link.",
+    };
+  }
+
+  return {
+    success: true,
+    setup_url: setupUrl,
+    token: setupToken,
+    email_sent: true,
+    record,
+  };
+}
+
 async function sendDriverBookingEmailForBooking({
   bookingId,
   locationId,
@@ -7897,12 +8109,34 @@ function getWizardToken(req) {
   );
 }
 
-function requireWizardToken(req, res, next) {
+async function isValidDriverPartnerSetupToken(token) {
+  const normalizedToken = String(token || "").trim();
+  if (!normalizedToken) return false;
+
+  const expectedToken = String(process.env.SETUP_WIZARD_TOKEN || "").trim();
+  if (expectedToken && normalizedToken === expectedToken) return true;
+
+  await ensureDriverPartnerSetupAccessTokensTable();
+  const result = await pool.query(
+    `SELECT token_expires_at
+     FROM driver_partner_setup_access_tokens
+     WHERE setup_token = $1
+     LIMIT 1`,
+    [normalizedToken]
+  );
+  const row = result.rows[0] || null;
+  if (!row?.token_expires_at) return false;
+  const expiresAt = new Date(row.token_expires_at);
+  if (Number.isNaN(expiresAt.getTime())) return false;
+  return expiresAt.getTime() > Date.now();
+}
+
+async function requireWizardToken(req, res, next) {
   const expectedToken = process.env.SETUP_WIZARD_TOKEN;
   if (!expectedToken) return next();
 
   const providedToken = getWizardToken(req);
-  if (providedToken && String(providedToken) === String(expectedToken)) {
+  if (providedToken && await isValidDriverPartnerSetupToken(providedToken)) {
     return next();
   }
 
@@ -8054,6 +8288,12 @@ app.get("/partner-onboarding.html", (req, res) => {
 app.get("/partner-onboarding", (req, res) => {
   return res.redirect(301, buildDriverPageSubdomainUrl("partner-onboarding"));
 });
+app.get("/driver-partner-access.html", (req, res) => {
+  return res.redirect(301, buildDriverPageSubdomainUrl("driver-partner-access"));
+});
+app.get("/driver-partner-access", (req, res) => {
+  return res.redirect(301, buildDriverPageSubdomainUrl("driver-partner-access"));
+});
 app.get("/driver-partner-subscription.html", (req, res) => {
   return res.redirect(301, buildDriverPageSubdomainUrl("driver-partner-subscription"));
 });
@@ -8076,14 +8316,14 @@ app.get("/driver-partner-program", (req, res) => {
   return res.redirect(301, buildDriverPageSubdomainUrl("driver-partner-program"));
 });
 app.get("/driver-partner-page.html", (req, res) => {
-  return res.redirect(301, buildDriverPageSubdomainUrl("john-smith"));
+  return res.redirect(301, buildDriverPageSubdomainUrl("first-last"));
 });
 app.get("/partner/:slug", (req, res) => {
-  const slug = normalizeChauffeursSubdomain(req.params.slug || "john-smith", "john-smith");
+  const slug = normalizeChauffeursSubdomain(req.params.slug || "first-last", "first-last");
   return res.redirect(301, buildDriverPageSubdomainUrl(slug));
 });
 app.get("/partner", (req, res) => {
-  return res.redirect(301, buildDriverPageSubdomainUrl("john-smith"));
+  return res.redirect(301, buildDriverPageSubdomainUrl("first-last"));
 });
 app.get("/driver-partner-setup.html", requireWizardToken, (req, res) => {
   return res.redirect(301, appendQueryParams(buildDriverPageSubdomainUrl("driver-partner-setup"), req.query));
@@ -8117,6 +8357,10 @@ app.get("/", (req, res, next) => {
 
   if (subdomain === "driver-partner-program") {
     return res.sendFile(path.join(__dirname, "public", "driver-partner-program.html"));
+  }
+
+  if (subdomain === "driver-partner-access") {
+    return res.sendFile(path.join(__dirname, "public", "driver-partner-access.html"));
   }
 
   if (subdomain === "driver-partner-subscription" || subdomain === "partner-onboarding") {
@@ -12491,10 +12735,25 @@ app.post("/api/driver-partner/subscription-checkout-session", async (req, res) =
     const displayName = String(req.body.display_name || "").trim();
     const businessName = String(req.body.business_name || "").trim() || "Chauffeurs Deluxe Driver";
     const customerEmail = String(req.body.driver_email || req.body.email || "").trim();
+    const locationId = String(req.body.location_id || DEFAULT_DRIVER_PARTNER_LOCATION_ID).trim() || DEFAULT_DRIVER_PARTNER_LOCATION_ID;
+    const issuedLink = await issueDriverPartnerSetupAccessLink({
+      email: customerEmail,
+      locationId,
+      displayName,
+      businessName,
+      sendEmail: false,
+      forceNewToken: true,
+    });
+    if (!issuedLink?.success || !issuedLink?.token) {
+      return res.status(400).json({ error: issuedLink?.error || "Unable to prepare the setup access link." });
+    }
+
     const successUrl = appendQueryParams(buildDriverPageSubdomainUrl("driver-partner-setup"), {
       payment: "success",
       display_name: displayName || undefined,
       driver_email: customerEmail || undefined,
+      location_id: locationId,
+      token: issuedLink.token,
       session_id: "{CHECKOUT_SESSION_ID}",
     }, { rawKeys: ["session_id"] });
     const cancelUrl = appendQueryParams(buildDriverPageSubdomainUrl("driver-partner-subscription"), {
@@ -12516,6 +12775,37 @@ app.post("/api/driver-partner/subscription-checkout-session", async (req, res) =
   } catch (err) {
     console.error("Driver partner subscription checkout error:", err);
     return res.status(500).json({ error: err.message || "Failed to create the driver subscription checkout session." });
+  }
+});
+
+app.post("/api/driver-partner/resend-setup-link", async (req, res) => {
+  try {
+    const email = normalizeDriverEmail(req.body.email || req.body.driver_email || "");
+    const locationId = String(req.body.location_id || DEFAULT_DRIVER_PARTNER_LOCATION_ID).trim() || DEFAULT_DRIVER_PARTNER_LOCATION_ID;
+    if (!email) {
+      return res.status(400).json({ error: "Email is required." });
+    }
+
+    const result = await issueDriverPartnerSetupAccessLink({
+      email,
+      locationId,
+      displayName: String(req.body.display_name || "").trim(),
+      businessName: String(req.body.business_name || "").trim(),
+      sendEmail: true,
+      forceNewToken: true,
+    });
+
+    if (!result?.success) {
+      return res.status(result?.status || 500).json({ error: result?.error || "Unable to resend the setup link." });
+    }
+
+    return res.json({
+      success: true,
+      message: "A fresh setup link has been sent to the email address on file.",
+    });
+  } catch (err) {
+    console.error("Driver partner resend link error:", err);
+    return res.status(500).json({ error: err.message || "Unable to resend the setup link." });
   }
 });
 
@@ -17323,7 +17613,7 @@ app.get("/api/driver-dashboard/:location_id", async (req, res) => {
         display_name: String(profile.driver_display_name || profile.business_name || "Your Driver Page").trim(),
         email: normalizeDriverEmail(profile.driver_email || ""),
         photo_data: profile.driver_photo_data || "",
-        page_slug: buildDriverPageSubdomainUrl(buildDriverPageSlugFromName(profile.driver_display_name || profile.business_name || "john-smith")),
+        page_slug: buildDriverPageSubdomainUrl(buildDriverPageSlugFromName(profile.driver_display_name || profile.business_name || "first-last")),
       },
       page: {
         calendar_url: String(profile.driver_calendar_url || "").trim(),

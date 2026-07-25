@@ -1135,7 +1135,7 @@
     const pathnameSlug = pathnameSlugMatch ? pathnameSlugMatch[1] : "";
     const hostSuffix = `.${rootDomain}`;
     const hostSlug = hostname.endsWith(hostSuffix) ? hostname.slice(0, -hostSuffix.length) : "";
-    const reservedSubdomains = new Set(["www", "driver-partner-program", "driver-partner-subscription", "driver-partner-setup", "partner-onboarding"]);
+    const reservedSubdomains = new Set(["www", "driver-partner-program", "driver-partner-subscription", "driver-partner-setup", "driver-partner-access", "partner-onboarding"]);
     const subdomainSlug = hostSlug && !reservedSubdomains.has(hostSlug) ? hostSlug : "";
     const normalizePageUrl = (value) => {
       const raw = String(value || "").trim();
