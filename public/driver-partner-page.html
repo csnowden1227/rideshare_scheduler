@@ -444,6 +444,64 @@
       object-fit: cover;
       display: block;
     }
+    .snapshot-carousel {
+      display: grid;
+      gap: 12px;
+    }
+    .snapshot-carousel-frame {
+      position: relative;
+      overflow: hidden;
+      border-radius: 20px;
+      min-height: 760px;
+      background: #0a0a0a;
+      border: 1px solid rgba(224, 177, 61, 0.18);
+      box-shadow: 0 14px 30px rgba(15, 23, 42, 0.12);
+    }
+    .snapshot-carousel-track {
+      display: flex;
+      transition: transform 0.7s cubic-bezier(0.2, 0.8, 0.2, 1);
+      will-change: transform;
+      height: 100%;
+    }
+    .snapshot-carousel-slide {
+      min-width: 100%;
+      display: flex;
+      align-items: stretch;
+      justify-content: center;
+      background: #0a0a0a;
+    }
+    .snapshot-carousel-slide img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      display: block;
+      background: #0a0a0a;
+    }
+    .snapshot-carousel-overlay {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      right: 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      pointer-events: none;
+    }
+    .snapshot-carousel-tag,
+    .snapshot-carousel-count {
+      display: inline-flex;
+      align-items: center;
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: rgba(17, 24, 39, 0.92);
+      color: #f7d57d;
+      border: 1px solid rgba(224, 177, 61, 0.28);
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
     .brochure-wrap {
       border-radius: 28px;
       background: linear-gradient(180deg, #fffdf7 0%, #fff4df 100%);
@@ -910,11 +968,10 @@
       .driver-name {
         font-size: clamp(28px, 8vw, 42px);
       }
-      .carousel-stage,
-      .carousel-image {
+      .snapshot-carousel-frame {
         min-height: 520px;
       }
-      .carousel-overlay {
+      .snapshot-carousel-overlay {
         padding: 14px;
       }
       .section {
@@ -932,7 +989,7 @@
             <div class="brand-copy">
               <h1>Chauffeur Deluxe</h1>
             </div>
-            <span class="slug" id="page-slug">john-smith.chauffeursdeluxe.com</span>
+            <span class="slug" id="page-slug">first-last.chauffeursdeluxe.com</span>
           </div>
 
           <div class="driver-lockup">
@@ -998,31 +1055,38 @@
             <div>
               <h2>Animated Brochure Carousel</h2>
               <p>
-                The right side of the page rotates through brochure art automatically so the experience feels alive, premium,
-                and customer-ready.
+                The right side of the page rotates through the same six brochure pages automatically so the experience feels
+                alive, premium, and customer-ready.
               </p>
             </div>
             <span class="brochure-pill" id="carousel-status">Auto shuffling</span>
           </div>
 
-          <div class="brochure-carousel" id="brochure-carousel" aria-label="Animated brochure carousel">
-            <div class="carousel-stage">
-              <img id="carousel-image" class="carousel-image" alt="Chauffeur Deluxe brochure panel" />
-              <div class="carousel-overlay">
-                <div class="carousel-topline">
-                  <span class="carousel-tag">Animated brochure</span>
-                  <span class="carousel-tag" id="carousel-position">1 / 6</span>
-                </div>
-                <div class="carousel-copy-block">
-                  <div>
-                    <h3 class="carousel-title" id="carousel-title">Travel in comfort. Arrive in style.</h3>
-                    <p class="carousel-copy" id="carousel-copy">
-                      A luxury brochure presentation that reinforces premium service, privacy, and confidence before the client
-                      ever books.
-                    </p>
-                  </div>
-                  <div class="carousel-thumb-row" id="carousel-thumbs" aria-label="Brochure thumbnails"></div>
-                </div>
+          <div class="snapshot-carousel" data-snapshot-carousel>
+            <div class="snapshot-carousel-frame">
+              <div class="snapshot-carousel-track">
+                <article class="snapshot-carousel-slide">
+                  <img src="/assets/driver-partner-program/brochure-carousel/brochure 1.png" alt="Brochure snippet 1" />
+                </article>
+                <article class="snapshot-carousel-slide">
+                  <img src="/assets/driver-partner-program/brochure-carousel/brochure 2.png" alt="Brochure snippet 2" />
+                </article>
+                <article class="snapshot-carousel-slide">
+                  <img src="/assets/driver-partner-program/brochure-carousel/brochure 3.png" alt="Brochure snippet 3" />
+                </article>
+                <article class="snapshot-carousel-slide">
+                  <img src="/assets/driver-partner-program/brochure-carousel/brochure 4.png" alt="Brochure snippet 4" />
+                </article>
+                <article class="snapshot-carousel-slide">
+                  <img src="/assets/driver-partner-program/brochure-carousel/brochure 5.png" alt="Brochure snippet 5" />
+                </article>
+                <article class="snapshot-carousel-slide">
+                  <img src="/assets/driver-partner-program/brochure-carousel/brochure 6.png" alt="Brochure snippet 6" />
+                </article>
+              </div>
+              <div class="snapshot-carousel-overlay">
+                <span class="snapshot-carousel-tag">Animated brochure</span>
+                <span class="snapshot-carousel-count" id="snapshot-carousel-count">1 / 6</span>
               </div>
             </div>
           </div>
@@ -1098,11 +1162,11 @@
         return `https://${partnerMatch[1]}.${rootDomain}/`;
       }
       if (raw.startsWith("/")) {
-        return `https://${pathnameSlug || "john-smith"}.${rootDomain}/`;
+        return `https://${pathnameSlug || "first-last"}.${rootDomain}/`;
       }
       return `https://${raw}.${rootDomain}/`;
     };
-    const slug = normalizePageUrl(query.get("slug") || (subdomainSlug ? `https://${subdomainSlug}.${rootDomain}/` : pathnameSlug ? `https://${pathnameSlug}.${rootDomain}/` : `https://john-smith.${rootDomain}/`)) || `https://john-smith.${rootDomain}/`;
+    const slug = normalizePageUrl(query.get("slug") || (subdomainSlug ? `https://${subdomainSlug}.${rootDomain}/` : pathnameSlug ? `https://${pathnameSlug}.${rootDomain}/` : `https://first-last.${rootDomain}/`)) || `https://first-last.${rootDomain}/`;
     const locationId = (query.get("location_id") || query.get("loc") || query.get("locationId") || "").trim();
     const backendBase = (query.get("backend_url") || query.get("backendUrl") || "").trim().replace(/\/$/, "");
 
@@ -1111,13 +1175,11 @@
     const driverPhotoEl = document.getElementById("driver-photo");
     const driverPlaceholderEl = document.getElementById("driver-placeholder");
     const slugEl = document.getElementById("page-slug");
-    const brochureShell = document.getElementById("brochure-shell");
-    const carouselImageEl = document.getElementById("carousel-image");
-    const carouselTitleEl = document.getElementById("carousel-title");
-    const carouselCopyEl = document.getElementById("carousel-copy");
-    const carouselPositionEl = document.getElementById("carousel-position");
+    const snapshotCarousel = document.querySelector("[data-snapshot-carousel]");
+    const snapshotCarouselTrack = snapshotCarousel?.querySelector(".snapshot-carousel-track");
+    const snapshotCarouselSlides = snapshotCarousel ? Array.from(snapshotCarousel.querySelectorAll(".snapshot-carousel-slide")) : [];
+    const snapshotCarouselCount = document.getElementById("snapshot-carousel-count");
     const carouselStatusEl = document.getElementById("carousel-status");
-    const carouselThumbsEl = document.getElementById("carousel-thumbs");
     const bookNowBtn = document.getElementById("book-now-btn");
     const widgetModal = document.getElementById("widget-modal");
     const widgetCloseBtn = document.getElementById("widget-close-btn");
@@ -1125,33 +1187,10 @@
     const widgetLoading = document.getElementById("widget-loading");
 
     let widgetLoaded = false;
-    let carouselIndex = 0;
-    let carouselOrder = [];
-    let carouselOrderPosition = 0;
-    let carouselTimer = null;
-
-    const carouselSlides = [
-      {
-        src: "/assets/driver-partner-program/brochure-pages/brochure-page-1.png",
-        title: "Travel in comfort. Arrive in style.",
-        copy: "The opening brochure page gives the driver page a polished luxury feel from the very first view.",
-      },
-      {
-        src: "/assets/driver-partner-program/brochure-pages/brochure-page-2.png",
-        title: "Beyond transportation.",
-        copy: "A concierge-style page that helps the driver sell more than a ride and present a full experience.",
-      },
-      {
-        src: "/assets/driver-partner-program/brochure-pages/brochure-page-3.png",
-        title: "Your journey elevated.",
-        copy: "A hospitality-focused panel that highlights comfort, premium service, and a high-end client feel.",
-      },
-      {
-        src: "/assets/driver-partner-program/brochure-pages/brochure-page-4.png",
-        title: "Our luxury fleet.",
-        copy: "The final page keeps the carousel moving and lets the driver present the fleet in a premium way.",
-      },
-    ];
+    let snapshotIndex = 0;
+    let snapshotOrder = [];
+    let snapshotOrderPosition = 0;
+    let snapshotTimer = null;
 
     function initialsFor(value) {
       const parts = String(value || "").trim().split(/\s+/).filter(Boolean);
@@ -1159,58 +1198,36 @@
       return parts.slice(0, 2).map((part) => part[0]).join("").toUpperCase();
     }
 
-    function shuffleCarouselOrder() {
-      carouselOrder = carouselSlides.map((_, index) => index);
-      for (let i = carouselOrder.length - 1; i > 0; i -= 1) {
+    function shuffleSnapshotOrder() {
+      snapshotOrder = snapshotCarouselSlides.map((_, index) => index);
+      for (let i = snapshotOrder.length - 1; i > 0; i -= 1) {
         const j = Math.floor(Math.random() * (i + 1));
-        [carouselOrder[i], carouselOrder[j]] = [carouselOrder[j], carouselOrder[i]];
+        [snapshotOrder[i], snapshotOrder[j]] = [snapshotOrder[j], snapshotOrder[i]];
       }
-      carouselOrderPosition = 0;
+      snapshotOrderPosition = 0;
     }
 
-    function renderCarousel(index) {
-      if (!carouselSlides.length) return;
-      const slide = carouselSlides[index % carouselSlides.length];
-      carouselImageEl.classList.add("fade-out");
-      window.setTimeout(() => {
-        carouselImageEl.src = slide.src;
-        carouselTitleEl.textContent = slide.title;
-        carouselCopyEl.textContent = slide.copy;
-        carouselPositionEl.textContent = `${index + 1} / ${carouselSlides.length}`;
+    function renderSnapshotCarousel(index) {
+      if (!snapshotCarouselSlides.length || !snapshotCarouselTrack) return;
+      snapshotCarouselTrack.style.transform = `translateX(-${index * 100}%)`;
+      if (snapshotCarouselCount) {
+        snapshotCarouselCount.textContent = `${index + 1} / ${snapshotCarouselSlides.length}`;
+      }
+      if (carouselStatusEl) {
         carouselStatusEl.textContent = `Panel ${index + 1}`;
-        carouselImageEl.classList.remove("fade-out");
-      }, 180);
-
-      carouselThumbsEl.innerHTML = carouselSlides
-        .map((item, thumbIndex) => {
-          const active = thumbIndex === index ? "active" : "";
-          return `<button type="button" class="carousel-thumb ${active}" aria-label="Show brochure ${thumbIndex + 1}" data-index="${thumbIndex}"><img src="${item.src}" alt=""></button>`;
-        })
-        .join("");
-
-      carouselThumbsEl.querySelectorAll(".carousel-thumb").forEach((btn) => {
-        btn.addEventListener("click", () => {
-          carouselIndex = Number(btn.dataset.index || 0);
-          const matchedPosition = carouselOrder.indexOf(carouselIndex);
-          if (matchedPosition >= 0) {
-            carouselOrderPosition = matchedPosition;
-          }
-          renderCarousel(carouselIndex);
-          restartCarouselTimer();
-        });
-      });
+      }
     }
 
-    function restartCarouselTimer() {
-      if (carouselTimer) window.clearInterval(carouselTimer);
-      carouselTimer = window.setInterval(() => {
-        if (!carouselOrder.length) shuffleCarouselOrder();
-        carouselOrderPosition += 1;
-        if (carouselOrderPosition >= carouselOrder.length) {
-          shuffleCarouselOrder();
+    function restartSnapshotTimer() {
+      if (snapshotTimer) window.clearInterval(snapshotTimer);
+      snapshotTimer = window.setInterval(() => {
+        if (!snapshotOrder.length) shuffleSnapshotOrder();
+        snapshotOrderPosition += 1;
+        if (snapshotOrderPosition >= snapshotOrder.length) {
+          shuffleSnapshotOrder();
         }
-        carouselIndex = carouselOrder[carouselOrderPosition % carouselOrder.length];
-        renderCarousel(carouselIndex);
+        snapshotIndex = snapshotOrder[snapshotOrderPosition % snapshotOrder.length];
+        renderSnapshotCarousel(snapshotIndex);
       }, 4200);
     }
 
@@ -1228,15 +1245,11 @@
       driverPhotoEl.classList.add("hidden");
     }
 
-    brochureShell.addEventListener("click", () => {
-      brochureShell.classList.toggle("open");
-    });
-
-    if (carouselSlides.length) {
-      shuffleCarouselOrder();
-      carouselIndex = carouselOrder[0];
-      renderCarousel(carouselIndex);
-      restartCarouselTimer();
+    if (snapshotCarouselSlides.length) {
+      shuffleSnapshotOrder();
+      snapshotIndex = snapshotOrder[0];
+      renderSnapshotCarousel(snapshotIndex);
+      restartSnapshotTimer();
     }
 
     function resolveWidgetBase() {
