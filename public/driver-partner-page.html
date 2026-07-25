@@ -212,6 +212,17 @@
       letter-spacing: -0.05em;
       max-width: 14ch;
     }
+    .hero-subtitle {
+      margin: 14px 0 0;
+      color: rgba(255,255,255,0.88);
+      font-size: clamp(16px, 1.6vw, 22px);
+      line-height: 1.05;
+      font-weight: 800;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      max-width: 14ch;
+      white-space: pre-line;
+    }
     .driver-role {
       margin: 8px 0 0;
       color: rgba(255,255,255,0.78);
@@ -273,19 +284,15 @@
       width: 100%;
       margin-top: 2px;
     }
-    .hero-support {
-      margin: 0;
-      width: 100%;
+    .hero-support-strip {
+      display: block;
+      width: min(100%, 920px);
       max-width: 920px;
-      color: rgba(255,255,255,0.78);
-      font-size: 16px;
-      line-height: 1.95;
-      letter-spacing: 0.01em;
-      text-align: left;
-    }
-    .hero-support strong {
-      color: #fff;
-      font-weight: 800;
+      height: auto;
+      margin: 4px 0 0;
+      object-fit: contain;
+      border-radius: 0;
+      filter: drop-shadow(0 10px 22px rgba(0, 0, 0, 0.18));
     }
     .hero-cta.secondary {
       background: rgba(255,255,255,0.08);
@@ -1003,7 +1010,8 @@
             </div>
           </div>
 
-          <h2 class="driver-name" style="margin-top:0;" id="hero-title">A private chauffeur page built for premium bookings.</h2>
+          <h2 class="driver-name" style="margin-top:0;" id="hero-title">THE PRIVATE<br />CHAUFFEUR<br />EXPERIENCE.</h2>
+          <p class="hero-subtitle" id="hero-subtitle">LUXURY<br />WITHOUT<br />COMPROMISE.</p>
         </div>
 
         <div class="hero-middle">
@@ -1036,8 +1044,7 @@
           </div>
 
           <p class="hero-copy" id="hero-copy">
-            A polished client-facing page that spotlights the driver, showcases the fleet, and keeps the booking experience
-            elegant, private, and easy to trust.
+            READY TO EXPERIENCE FIRST CLASS? Book your luxury ride in minutes and let us take care of the rest.
           </p>
         </div>
 
@@ -1045,21 +1052,22 @@
           <div class="hero-cta-row">
             <button class="hero-cta primary" id="book-now-btn" type="button">Book Now</button>
           </div>
-          <p class="hero-support">
-            <strong>Private bookings.</strong> Premium vehicles. Chauffeur Deluxe handles the rest behind the scenes.
-          </p>
+          <img
+            class="hero-support-strip"
+            src="/assets/driver-partner-program/hero-support-strip.png"
+            alt="On time every time, professional chauffeurs, discreet and secure, service that exceeds, Los Angeles, Dallas, Miami"
+          />
         </div>
 
         <aside class="brochure-wrap">
           <div class="brochure-header">
             <div>
-              <h2>Animated Brochure Carousel</h2>
+              <h2>EXPERIENCE THE DIFFERENCE</h2>
               <p>
-                The right side of the page rotates through the same six brochure pages automatically so the experience feels
-                alive, premium, and customer-ready.
+                Whether its a family vacation or daily concierge executive chauffeur services, we deliver a seamless experience
+                from start to finish.
               </p>
             </div>
-            <span class="brochure-pill" id="carousel-status">Auto shuffling</span>
           </div>
 
           <div class="snapshot-carousel" data-snapshot-carousel>
@@ -1085,7 +1093,6 @@
                 </article>
               </div>
               <div class="snapshot-carousel-overlay">
-                <span class="snapshot-carousel-tag">Animated brochure</span>
                 <span class="snapshot-carousel-count" id="snapshot-carousel-count">1 / 6</span>
               </div>
             </div>
@@ -1179,7 +1186,6 @@
     const snapshotCarouselTrack = snapshotCarousel?.querySelector(".snapshot-carousel-track");
     const snapshotCarouselSlides = snapshotCarousel ? Array.from(snapshotCarousel.querySelectorAll(".snapshot-carousel-slide")) : [];
     const snapshotCarouselCount = document.getElementById("snapshot-carousel-count");
-    const carouselStatusEl = document.getElementById("carousel-status");
     const bookNowBtn = document.getElementById("book-now-btn");
     const widgetModal = document.getElementById("widget-modal");
     const widgetCloseBtn = document.getElementById("widget-close-btn");
@@ -1212,9 +1218,6 @@
       snapshotCarouselTrack.style.transform = `translateX(-${index * 100}%)`;
       if (snapshotCarouselCount) {
         snapshotCarouselCount.textContent = `${index + 1} / ${snapshotCarouselSlides.length}`;
-      }
-      if (carouselStatusEl) {
-        carouselStatusEl.textContent = `Panel ${index + 1}`;
       }
     }
 
