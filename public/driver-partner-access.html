@@ -301,6 +301,13 @@
     const locationIdEl = document.getElementById("location_id");
     const statusEl = document.getElementById("status");
     const resendBtn = document.getElementById("resend-btn");
+    const demoEmail = "laquorotkins@gmail.com";
+    const demoLocationId = "ouXMpSTMKm4kREXw3kzP";
+
+    function resolveDemoLocationId(email) {
+      return String(email || "").trim().toLowerCase() === demoEmail ? demoLocationId : "";
+    }
+
     function setStatus(message, isError = false) {
       statusEl.textContent = message;
       statusEl.style.display = "block";
@@ -309,8 +316,18 @@
 
     emailEl.value = query.get("email") || query.get("driver_email") || "";
     if (locationIdEl) {
-      locationIdEl.value = query.get("location_id") || query.get("loc") || query.get("locationId") || "";
+      locationIdEl.value = query.get("location_id") || query.get("loc") || query.get("locationId") || resolveDemoLocationId(emailEl.value);
     }
+
+    emailEl.addEventListener("input", () => {
+      if (!locationIdEl) return;
+      const demoResolved = resolveDemoLocationId(emailEl.value);
+      if (demoResolved) {
+        locationIdEl.value = demoResolved;
+      } else if (String(locationIdEl.value || "").trim() === demoLocationId) {
+        locationIdEl.value = "";
+      }
+    });
 
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
@@ -318,6 +335,10 @@
       if (!email) {
         setStatus("Please enter the email used at signup.", true);
         return;
+      }
+
+      if (locationIdEl && !String(locationIdEl.value || "").trim()) {
+        locationIdEl.value = resolveDemoLocationId(email);
       }
 
       resendBtn.disabled = true;
