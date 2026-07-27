@@ -206,7 +206,11 @@ let driverPartnerSetupAccessTokensReady = null;
 const CUSTOMER_ACCOUNT_SESSION_COOKIE = "crm_customer_session";
 const CUSTOMER_ACCOUNT_SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 30;
 const CUSTOMER_PASSWORD_RESET_TTL_MS = 1000 * 60 * 60;
-const DEFAULT_DRIVER_PARTNER_LOCATION_ID = "mamDGnLGy7zhvZmCPDku";
+const DEFAULT_DRIVER_PARTNER_LOCATION_ID = "ouXMpSTMKm4kREXw3kzP";
+
+function buildDriverPartnerProgramLocationId() {
+  return `dp_${randomUUID().replace(/-/g, "").slice(0, 20)}`;
+}
 
 const DEFAULT_BRAND_COLORS = {
   primary: "#082f49",
@@ -8318,6 +8322,29 @@ app.get("/driver-partner-program", (req, res) => {
 app.get("/driver-partner-page.html", (req, res) => {
   return res.redirect(301, buildDriverPageSubdomainUrl("first-last"));
 });
+app.get("/api/driver-page-location/:slug", async (req, res) => {
+  try {
+    const slug = normalizeChauffeursSubdomain(req.params.slug || "", "first-last");
+    if (!slug) {
+      return res.status(400).json({ error: "slug is required." });
+    }
+    const demoSlugs = new Set(["john-smith", "first-last", "driver-name"]);
+    if (!demoSlugs.has(slug)) {
+      return res.status(404).json({ error: "Driver page not found." });
+    }
+
+    return res.json({
+      success: true,
+      slug,
+      location_id: DEFAULT_DRIVER_PARTNER_LOCATION_ID,
+      driver_page_slug: slug,
+      driver_display_name: slug === "john-smith" ? "John Smith" : "Chauffeur Deluxe Driver",
+    });
+  } catch (err) {
+    console.error("Driver page location lookup error:", err);
+    return res.status(500).json({ error: err.message || "Failed to resolve driver page location." });
+  }
+});
 app.get("/partner/:slug", (req, res) => {
   const slug = normalizeChauffeursSubdomain(req.params.slug || "first-last", "first-last");
   return res.redirect(301, buildDriverPageSubdomainUrl(slug));
@@ -12735,7 +12762,8 @@ app.post("/api/driver-partner/subscription-checkout-session", async (req, res) =
     const displayName = String(req.body.display_name || "").trim();
     const businessName = String(req.body.business_name || "").trim() || "Chauffeurs Deluxe Driver";
     const customerEmail = String(req.body.driver_email || req.body.email || "").trim();
-    const locationId = String(req.body.location_id || DEFAULT_DRIVER_PARTNER_LOCATION_ID).trim() || DEFAULT_DRIVER_PARTNER_LOCATION_ID;
+    const incomingLocationId = String(req.body.location_id || "").trim();
+    const locationId = incomingLocationId || buildDriverPartnerProgramLocationId();
     const issuedLink = await issueDriverPartnerSetupAccessLink({
       email: customerEmail,
       locationId,
@@ -12781,7 +12809,8 @@ app.post("/api/driver-partner/subscription-checkout-session", async (req, res) =
 app.post("/api/driver-partner/resend-setup-link", async (req, res) => {
   try {
     const email = normalizeDriverEmail(req.body.email || req.body.driver_email || "");
-    const locationId = String(req.body.location_id || DEFAULT_DRIVER_PARTNER_LOCATION_ID).trim() || DEFAULT_DRIVER_PARTNER_LOCATION_ID;
+    const incomingLocationId = String(req.body.location_id || "").trim();
+    const locationId = incomingLocationId || buildDriverPartnerProgramLocationId();
     if (!email) {
       return res.status(400).json({ error: "Email is required." });
     }

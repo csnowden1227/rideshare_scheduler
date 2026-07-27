@@ -1,6 +1,7 @@
 (function () {
   const query = new URLSearchParams(window.location.search);
-  const locationId = (query.get("location_id") || "mamDGnLGy7zhvZmCPDku").trim();
+  const locationId = (query.get("location_id") || "ouXMpSTMKm4kREXw3kzP").trim();
+  const demoLocationId = "ouXMpSTMKm4kREXw3kzP";
   const wizardToken = (query.get("token") || "").trim();
   const stripeConnectState = String(query.get("stripe_connect") || "").trim();
   const backendHeaders = wizardToken ? { "X-Setup-Wizard-Token": wizardToken } : {};
@@ -33,6 +34,7 @@
 
   const defaultPhotoData = "/assets/driver-partner-program/driver-thumbnail-default.jpg";
   let photoData = defaultPhotoData;
+  const demoVehicleKeys = new Set(["maybach", "cts", "escalade"]);
 
   function initialsFor(value) {
     const parts = String(value || "").trim().split(/\s+/).filter(Boolean);
@@ -100,6 +102,12 @@
     mapRingEl.style.transform = `scale(${scale})`;
   }
 
+  function applyDemoVehicleDefaults() {
+    document.querySelectorAll(".vehicle-toggle").forEach((el) => {
+      el.checked = demoVehicleKeys.has(String(el.dataset.vehicleKey || ""));
+    });
+  }
+
   function applyStripeConnectState() {
     if (stripeConnectState === "refresh") {
       showStripeStatus("Stripe onboarding session expired or needs to be refreshed.", true);
@@ -143,9 +151,16 @@
           const enabledCard = cards.find((card) => String(card.vehicle_key || "") === String(el.dataset.vehicleKey || ""));
           if (enabledCard) el.checked = enabledCard.enabled !== false;
         });
+      } else if (locationId === demoLocationId) {
+        applyDemoVehicleDefaults();
       }
       updateMapRing();
     } catch (error) {
+      if (locationId === demoLocationId) {
+        applyDemoVehicleDefaults();
+        updateMapRing();
+        return;
+      }
       showStatus(error?.message || "Unable to load profile data.", true);
     }
   }

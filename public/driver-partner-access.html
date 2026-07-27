@@ -260,6 +260,7 @@
             <label for="email">Email used at signup</label>
             <input id="email" type="email" placeholder="driver@example.com" required />
           </div>
+          <input id="location_id" type="hidden" />
           <div class="btn-row">
             <button id="resend-btn" class="button button-primary" type="submit">Resend setup link</button>
             <a class="button button-secondary" href="https://driver-partner-subscription.chauffeursdeluxe.com/">Back to subscription</a>
@@ -297,9 +298,9 @@
     const query = new URLSearchParams(window.location.search);
     const form = document.getElementById("resend-form");
     const emailEl = document.getElementById("email");
+    const locationIdEl = document.getElementById("location_id");
     const statusEl = document.getElementById("status");
     const resendBtn = document.getElementById("resend-btn");
-
     function setStatus(message, isError = false) {
       statusEl.textContent = message;
       statusEl.style.display = "block";
@@ -307,6 +308,9 @@
     }
 
     emailEl.value = query.get("email") || query.get("driver_email") || "";
+    if (locationIdEl) {
+      locationIdEl.value = query.get("location_id") || query.get("loc") || query.get("locationId") || "";
+    }
 
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
@@ -323,7 +327,10 @@
         const response = await fetch("/api/driver-partner/resend-setup-link", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email }),
+          body: JSON.stringify({
+            email,
+            location_id: String(locationIdEl?.value || "").trim(),
+          }),
         });
         const data = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(data.error || "Unable to resend the setup link.");

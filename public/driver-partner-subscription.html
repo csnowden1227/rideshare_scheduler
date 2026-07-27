@@ -281,6 +281,7 @@
             <label for="driver_email">Email</label>
             <input id="driver_email" type="email" placeholder="driver@example.com" required />
           </div>
+          <input id="location_id" type="hidden" />
           <div class="btn-row">
             <button class="button button-primary" id="subscribe-btn" type="submit">Subscribe and Continue</button>
             <a class="button button-secondary" href="https://driver-partner-program.chauffeursdeluxe.com/">Back to Program</a>
@@ -303,8 +304,8 @@
     const displayNameEl = document.getElementById("display_name");
     const businessNameEl = document.getElementById("business_name");
     const driverEmailEl = document.getElementById("driver_email");
+    const locationIdEl = document.getElementById("location_id");
     const form = document.getElementById("subscription-form");
-
     function showStatus(message, isError = false) {
       statusEl.textContent = message;
       statusEl.style.display = "block";
@@ -314,6 +315,9 @@
     displayNameEl.value = query.get("display_name") || "";
     businessNameEl.value = query.get("business_name") || "";
     driverEmailEl.value = query.get("driver_email") || "";
+    if (locationIdEl) {
+      locationIdEl.value = query.get("location_id") || query.get("loc") || query.get("locationId") || "";
+    }
 
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
@@ -335,6 +339,7 @@
             display_name: displayName,
             business_name: businessName,
             driver_email: driverEmail,
+            location_id: String(locationIdEl?.value || "").trim(),
           }),
         });
         const data = await response.json().catch(() => ({}));

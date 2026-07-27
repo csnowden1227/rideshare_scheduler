@@ -1025,7 +1025,7 @@
             <div class="section-copy">
               <h2>Featured Fleet</h2>
               <p>
-                Four curated vehicle options sit beside the driver profile so the page feels like a luxury showcase of the fleet.
+                We offer these luxury vehicles. Just click book now, select your vehicle, enter the number of service hours needed, choose an addon from drinks on ice, charcuterie board, beach chairs and more...
               </p>
             </div>
           </div>
@@ -1179,7 +1179,8 @@
       return `https://${raw}.${rootDomain}/`;
     };
     const slug = normalizePageUrl(query.get("slug") || (subdomainSlug ? `https://${subdomainSlug}.${rootDomain}/` : pathnameSlug ? `https://${pathnameSlug}.${rootDomain}/` : `https://first-last.${rootDomain}/`)) || `https://first-last.${rootDomain}/`;
-    const locationId = (query.get("location_id") || query.get("loc") || query.get("locationId") || "").trim();
+    const defaultDemoLocationId = "ouXMpSTMKm4kREXw3kzP";
+    let locationId = (query.get("location_id") || query.get("loc") || query.get("locationId") || "").trim();
     const backendBase = (query.get("backend_url") || query.get("backendUrl") || "").trim().replace(/\/$/, "");
 
     const driverNameEl = document.getElementById("driver-name");
@@ -1202,6 +1203,7 @@
     let snapshotOrder = [];
     let snapshotOrderPosition = 0;
     let snapshotTimer = null;
+    let locationLookupPromise = null;
 
     function initialsFor(value) {
       const parts = String(value || "").trim().split(/\s+/).filter(Boolean);
@@ -1239,6 +1241,35 @@
       }, 4200);
     }
 
+    async function resolveLocationId() {
+      if (locationId) return locationId;
+      if (!locationLookupPromise) {
+        const lookupSlug = (subdomainSlug || pathnameSlug || "").trim();
+        if (lookupSlug) {
+          locationLookupPromise = fetch(`${resolveWidgetBase()}/api/driver-page-location/${encodeURIComponent(lookupSlug)}`, {
+            cache: "no-store",
+          })
+            .then(async (response) => {
+              const data = await response.json().catch(() => ({}));
+              if (response.ok && data?.location_id) {
+                locationId = String(data.location_id).trim();
+                return locationId;
+              }
+              return "";
+            })
+            .catch(() => "");
+        } else {
+          locationLookupPromise = Promise.resolve("");
+        }
+      }
+
+      const resolved = await locationLookupPromise;
+      if (resolved) return resolved;
+
+      locationId = defaultDemoLocationId;
+      return locationId;
+    }
+
     driverNameEl.textContent = driverName;
     driverRoleEl.textContent = driverRole;
     slugEl.textContent = slug;
@@ -1266,8 +1297,9 @@
       return "http://localhost:3000";
     }
 
-    function loadWidgetIntoModal() {
+    async function loadWidgetIntoModal() {
       if (widgetLoaded) return;
+      await resolveLocationId();
       const base = resolveWidgetBase();
       const widgetRoot = document.createElement("div");
       widgetRoot.id = "chauffeur-booking-widget";
@@ -1276,6 +1308,7 @@
       const script = document.createElement("script");
       const params = new URLSearchParams();
       if (locationId) params.set("loc", locationId);
+      params.set("hourly_only", "1");
       params.set("mode", "live");
       script.src = `${base}/widget.js${params.toString() ? `?${params.toString()}` : ""}`;
       script.async = true;
@@ -1289,10 +1322,10 @@
       document.body.appendChild(script);
     }
 
-    function openWidgetModal() {
+    async function openWidgetModal() {
       widgetModal.classList.add("open");
       widgetModal.setAttribute("aria-hidden", "false");
-      loadWidgetIntoModal();
+      await loadWidgetIntoModal();
     }
 
     function closeWidgetModal() {
