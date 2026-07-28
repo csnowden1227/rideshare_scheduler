@@ -1603,11 +1603,6 @@ const CHAUFFEURS_DELUXE_RESERVED_SUBDOMAINS = new Set([
   "mail",
   "support",
   "static",
-  "driver-partner-program",
-  "driver-partner-subscription",
-  "driver-partner-setup",
-  "driver-partner-access",
-  "partner-onboarding",
 ]);
 
 function normalizeChauffeursSubdomain(value, fallbackValue = "first-last") {
