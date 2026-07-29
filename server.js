@@ -8363,7 +8363,7 @@ app.get("/api/driver-page-location/:slug", async (req, res) => {
     if (!slug) {
       return res.status(400).json({ error: "slug is required." });
     }
-    const demoSlugs = new Set(["john-smith", "first-last", "driver-name"]);
+    const demoSlugs = new Set(["laquor-otkins", "john-smith", "first-last", "driver-name"]);
     if (!demoSlugs.has(slug)) {
       return res.status(404).json({ error: "Driver page not found." });
     }
@@ -8373,7 +8373,9 @@ app.get("/api/driver-page-location/:slug", async (req, res) => {
       slug,
       location_id: DEFAULT_DRIVER_PARTNER_LOCATION_ID,
       driver_page_slug: slug,
-      driver_display_name: slug === "john-smith" ? "John Smith" : "Chauffeur Deluxe Driver",
+      driver_display_name:
+        slug === "laquor-otkins" ? "Laquor Otkins" :
+        slug === "john-smith" ? "John Smith" : "Chauffeur Deluxe Driver",
     });
   } catch (err) {
     console.error("Driver page location lookup error:", err);
