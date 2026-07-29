@@ -221,6 +221,38 @@
       line-height: 1.65;
       font-size: 13px;
     }
+    .account-id-note {
+      display: inline-flex;
+      align-items: center;
+      width: fit-content;
+      padding: 7px 11px;
+      border-radius: 999px;
+      background: rgba(212,175,55,0.12);
+      border: 1px solid rgba(212,175,55,0.30);
+      color: #6d5413;
+      font-size: 11px;
+      font-weight: 900;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    .stripe-account-field {
+      padding: 16px;
+      border-radius: 18px;
+      background: linear-gradient(180deg, rgba(212,175,55,0.08), rgba(255,250,240,0.88));
+      border: 1px solid rgba(212,175,55,0.22);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.8);
+    }
+    .stripe-account-field .input {
+      font-family: "Consolas", "Courier New", monospace;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      background: #fffdf6;
+      border-color: rgba(212,175,55,0.42);
+    }
+    .stripe-account-field .input::placeholder {
+      color: #9a8b63;
+      font-weight: 700;
+    }
     .map-shell {
       border-radius: 24px;
       border: 1px solid rgba(212,175,55,0.18);
@@ -815,12 +847,13 @@
             Connect Stripe so the driver can receive automated payouts through Stripe Connect. Chauffeur Deluxe keeps the
             platform-side routing and payout split logic.
           </p>
-          <div class="field">
+          <div class="field stripe-account-field">
+            <div class="account-id-note">Paste connected account ID</div>
             <label for="stripe_account_id">Stripe Connect Account ID</label>
             <input id="stripe_account_id" class="input" type="text" placeholder="acct_..." />
             <p class="helper" style="margin-top:10px;">
-              If the account is not linked yet, use the button below to create the driver payout onboarding flow.
-              You can also paste the connected account ID here for testing or manual setup.
+              This is where the connected Stripe account ID goes. Paste the `acct_...` value here after onboarding, or
+              use the button below to create the driver payout onboarding flow.
             </p>
           </div>
           <div class="field-grid" style="margin-top:14px;">
