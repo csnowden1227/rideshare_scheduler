@@ -207,6 +207,7 @@ const CUSTOMER_ACCOUNT_SESSION_COOKIE = "crm_customer_session";
 const CUSTOMER_ACCOUNT_SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 30;
 const CUSTOMER_PASSWORD_RESET_TTL_MS = 1000 * 60 * 60;
 const DEFAULT_DRIVER_PARTNER_LOCATION_ID = "ouXMpSTMKm4kREXw3kzP";
+const DRIVER_PARTNER_PROGRAM_DEMO_LOCATION_IDS = new Set([DEFAULT_DRIVER_PARTNER_LOCATION_ID]);
 
 function buildDriverPartnerProgramLocationId() {
   return `dp_${randomUUID().replace(/-/g, "").slice(0, 20)}`;
@@ -7709,6 +7710,45 @@ async function getPaymentProfileForLocation(locationId, options = {}) {
   }
 }
 
+function isDriverPartnerProgramLocationId(locationId) {
+  const normalized = String(locationId || "").trim();
+  if (!normalized) return false;
+  if (DRIVER_PARTNER_PROGRAM_DEMO_LOCATION_IDS.has(normalized)) return true;
+  return normalized.startsWith("dp_");
+}
+
+async function getDriverPartnerProgramStripeRoutingForLocation(locationId, amount) {
+  if (!isDriverPartnerProgramLocationId(locationId)) {
+    return null;
+  }
+
+  await ensureProfilePaymentProviderColumns();
+  const profileIdColumn = await getProfileIdColumn();
+  const result = await pool.query(
+    `SELECT stripe_account_id
+     FROM profiles
+     WHERE ${profileIdColumn} = $1
+     LIMIT 1`,
+    [String(locationId)]
+  );
+  const destinationAccountId = String(result.rows[0]?.stripe_account_id || "").trim();
+  if (!destinationAccountId) {
+    return null;
+  }
+
+  const amountCents = Math.max(0, Math.round(Number(amount || 0) * 100));
+  const transferAmountCents = Math.floor(amountCents / 2);
+  if (!transferAmountCents) {
+    return null;
+  }
+
+  return {
+    destinationAccountId,
+    transferAmountCents,
+    splitPercent: 50,
+  };
+}
+
 function getPayPalApiBase(environment = "live") {
   return normalizePayPalEnvironment(environment) === "sandbox"
     ? "https://api-m.sandbox.paypal.com"
@@ -8616,6 +8656,10 @@ app.get("/pay/balance/:bookingId", async (req, res) => {
 
     if (provider === "stripe") {
       const connectRouting = await getStripeConnectChargeRoutingForBooking(bookingId, balanceDue);
+      const driverProgramRouting = connectRouting
+        ? null
+        : await getDriverPartnerProgramStripeRoutingForLocation(bookingRow.location_id, balanceDue);
+      const checkoutRouting = connectRouting || driverProgramRouting;
       const successUrl = appendQueryParams(`${baseUrl}/payment-complete.html`, {
         checkout: "success",
         session_id: "{CHECKOUT_SESSION_ID}",
@@ -8642,14 +8686,22 @@ app.get("/pay/balance/:bookingId", async (req, res) => {
         description: `${bookingRow.vehicle_slot_id || "Private ride"} balance payment`,
         successUrl,
         cancelUrl,
-        connectDestinationAccountId: connectRouting?.destinationAccountId || null,
-        connectTransferAmountCents: connectRouting?.transferAmountCents || null,
-        extraMetadata: connectRouting ? {
-          dispatch_assignment_id: connectRouting.dispatchAssignmentId,
-          assigned_partner_id: connectRouting.partnerId,
-          connect_transfer_amount_cents: connectRouting.transferAmountCents,
-          payout_id: connectRouting.payoutId,
-        } : {},
+        connectDestinationAccountId: checkoutRouting?.destinationAccountId || null,
+        connectTransferAmountCents: checkoutRouting?.transferAmountCents || null,
+        extraMetadata: checkoutRouting ? (
+          connectRouting
+            ? {
+                dispatch_assignment_id: connectRouting.dispatchAssignmentId,
+                assigned_partner_id: connectRouting.partnerId,
+                connect_transfer_amount_cents: checkoutRouting.transferAmountCents,
+                payout_id: connectRouting.payoutId,
+              }
+            : {
+                driver_program_split_percent: "50",
+                driver_program_location_id: String(bookingRow.location_id || ""),
+                connect_transfer_amount_cents: checkoutRouting.transferAmountCents,
+              }
+        ) : {},
       });
       return res.redirect(session?.url || cancelUrl);
     }
@@ -8769,6 +8821,7 @@ app.get("/pay/test-run/:bookingId", async (req, res) => {
       const successUrl = appendQueryParams(successUrlBase, {
         session_id: "{CHECKOUT_SESSION_ID}",
       }, { rawKeys: ["session_id"] });
+      const driverProgramRouting = await getDriverPartnerProgramStripeRoutingForLocation(bookingRow.location_id, totalPrice);
       const session = await createStripeCheckoutSessionForAmount({
         apiKey: paymentProfile.stripeSecretKey,
         amount: totalPrice,
@@ -8785,6 +8838,12 @@ app.get("/pay/test-run/:bookingId", async (req, res) => {
         description: `${bookingRow.vehicle_slot_id || "Vehicle"} test run payment`,
         successUrl,
         cancelUrl,
+        connectDestinationAccountId: driverProgramRouting?.destinationAccountId || null,
+        connectTransferAmountCents: driverProgramRouting?.transferAmountCents || null,
+        extraMetadata: driverProgramRouting ? {
+          driver_program_split_percent: String(driverProgramRouting.splitPercent),
+          driver_program_location_id: String(bookingRow.location_id || ""),
+        } : {},
       });
       return res.redirect(session?.url || cancelUrl);
     }
@@ -16504,6 +16563,7 @@ app.post("/api/create-checkout-session", async (req, res) => {
       ? `Rideshare Chauffeur Reservation ${companyName} Payment`
       : `Rideshare Chauffeur Reservation ${companyName} Deposit`;
     const checkoutActionLabel = payInFull ? "Payment" : "Deposit";
+    const driverProgramRouting = await getDriverPartnerProgramStripeRoutingForLocation(req.body.location_id || null, amountToCharge);
 
     const session = await createStripeCheckoutSessionForAmount({
       apiKey: paymentProfile.stripeSecretKey,
@@ -16521,6 +16581,12 @@ app.post("/api/create-checkout-session", async (req, res) => {
       description: `${vehicleType} ${checkoutActionLabel.toLowerCase()} for ${businessName}`,
       successUrl,
       cancelUrl,
+      connectDestinationAccountId: driverProgramRouting?.destinationAccountId || null,
+      connectTransferAmountCents: driverProgramRouting?.transferAmountCents || null,
+      extraMetadata: driverProgramRouting ? {
+        driver_program_split_percent: String(driverProgramRouting.splitPercent),
+        driver_program_location_id: String(req.body.location_id || ""),
+      } : {},
     });
 
     return res.json({
