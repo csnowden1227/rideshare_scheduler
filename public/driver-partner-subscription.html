@@ -316,7 +316,12 @@
     businessNameEl.value = query.get("business_name") || "";
     driverEmailEl.value = query.get("driver_email") || "";
     if (locationIdEl) {
-      locationIdEl.value = query.get("location_id") || query.get("loc") || query.get("locationId") || "";
+      locationIdEl.value =
+        query.get("location_id") ||
+        query.get("loc") ||
+        query.get("locationId") ||
+        window.sessionStorage.getItem("driver_partner_location_id") ||
+        "";
     }
 
     form.addEventListener("submit", async (event) => {
@@ -345,6 +350,10 @@
         const data = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(data.error || "Unable to create subscription checkout.");
         if (!data.checkout_url) throw new Error("Checkout session did not return a payment link.");
+        if (data.location_id && locationIdEl) {
+          locationIdEl.value = data.location_id;
+          window.sessionStorage.setItem("driver_partner_location_id", data.location_id);
+        }
         window.location.href = data.checkout_url;
       } catch (error) {
         showStatus(error.message || "Unable to start subscription checkout.", true);

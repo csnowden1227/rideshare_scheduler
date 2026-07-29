@@ -12855,6 +12855,8 @@ app.post("/api/driver-partner/subscription-checkout-session", async (req, res) =
     return res.json({
       success: true,
       checkout_url: session.url,
+      location_id: locationId,
+      driver_page_slug: buildDriverPageSlugFromName(displayName || "first-last"),
     });
   } catch (err) {
     console.error("Driver partner subscription checkout error:", err);
