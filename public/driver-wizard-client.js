@@ -287,7 +287,15 @@
     saveBtn?.addEventListener("click", saveSetup);
     previewBtn?.addEventListener("click", () => {
       const slug = slugify(displayNameEl?.value || "first-last");
-      const previewUrl = `https://${encodeURIComponent(slug)}.chauffeursdeluxe.com/?driver_name=${encodeURIComponent(displayNameEl?.value || "Your Name")}&driver_title=${encodeURIComponent("Luxury Chauffeur")}${photoData ? `&driver_photo=${encodeURIComponent(photoData)}` : ""}`;
+      const previewParams = new URLSearchParams({
+        driver_name: displayNameEl?.value || "Your Name",
+        driver_title: "Luxury Chauffeur",
+        location_id: locationId,
+      });
+      if (photoData) {
+        previewParams.set("driver_photo", photoData);
+      }
+      const previewUrl = `https://${encodeURIComponent(slug)}.chauffeursdeluxe.com/?${previewParams.toString()}`;
       window.open(previewUrl, "_blank", "noopener,noreferrer");
     });
   }
