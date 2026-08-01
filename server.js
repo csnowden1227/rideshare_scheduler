@@ -1593,6 +1593,11 @@ function normalizeDriverPageSlug(value, fallbackValue = "first-last") {
 }
 
 const CHAUFFEURS_DELUXE_ROOT_DOMAIN = "chauffeursdeluxe.com";
+const CHAUFFEURS_DELUXE_DRIVER_PARENT_DOMAIN = "drivers.chauffeursdeluxe.com";
+const CHAUFFEURS_DELUXE_DRIVER_PARENT_DOMAINS = [
+  CHAUFFEURS_DELUXE_DRIVER_PARENT_DOMAIN,
+  CHAUFFEURS_DELUXE_ROOT_DOMAIN,
+];
 const CHAUFFEURS_DELUXE_RESERVED_SUBDOMAINS = new Set([
   "www",
   "api",
@@ -1614,10 +1619,12 @@ function normalizeChauffeursSubdomain(value, fallbackValue = "first-last") {
   }
   const withoutProtocol = raw.replace(/^https?:\/\/[^/]+/i, "").replace(/^\/+/, "");
   const hostLike = withoutProtocol.split(/[/?#]/)[0].toLowerCase();
-  const rootSuffix = `.${CHAUFFEURS_DELUXE_ROOT_DOMAIN}`;
-  if (hostLike.endsWith(rootSuffix)) {
-    const subdomain = hostLike.slice(0, -rootSuffix.length);
-    return buildDriverPageSlugFromName(subdomain || fallbackSlug, fallbackSlug) || fallbackSlug;
+  for (const driverRootDomain of CHAUFFEURS_DELUXE_DRIVER_PARENT_DOMAINS) {
+    const rootSuffix = `.${driverRootDomain}`;
+    if (hostLike.endsWith(rootSuffix)) {
+      const subdomain = hostLike.slice(0, -rootSuffix.length);
+      return buildDriverPageSlugFromName(subdomain || fallbackSlug, fallbackSlug) || fallbackSlug;
+    }
   }
   return buildDriverPageSlugFromName(hostLike || fallbackSlug, fallbackSlug) || fallbackSlug;
 }
@@ -1625,7 +1632,7 @@ function normalizeChauffeursSubdomain(value, fallbackValue = "first-last") {
 function buildDriverPageSubdomainUrl(subdomain, pathSuffix = "/") {
   const normalizedSubdomain = normalizeChauffeursSubdomain(subdomain, "first-last") || "first-last";
   const normalizedPath = String(pathSuffix || "/").startsWith("/") ? String(pathSuffix || "/") : `/${String(pathSuffix || "/")}`;
-  return `https://${normalizedSubdomain}.${CHAUFFEURS_DELUXE_ROOT_DOMAIN}${normalizedPath}`;
+  return `https://${normalizedSubdomain}.${CHAUFFEURS_DELUXE_DRIVER_PARENT_DOMAIN}${normalizedPath}`;
 }
 
 function getChauffeursSubdomainFromRequest(req = null) {
@@ -1633,15 +1640,18 @@ function getChauffeursSubdomainFromRequest(req = null) {
   if (!host) {
     return "";
   }
-  const rootSuffix = `.${CHAUFFEURS_DELUXE_ROOT_DOMAIN}`;
-  if (!host.endsWith(rootSuffix)) {
-    return "";
+  for (const driverRootDomain of CHAUFFEURS_DELUXE_DRIVER_PARENT_DOMAINS) {
+    const rootSuffix = `.${driverRootDomain}`;
+    if (!host.endsWith(rootSuffix)) {
+      continue;
+    }
+    const subdomain = host.slice(0, -rootSuffix.length);
+    if (!subdomain || CHAUFFEURS_DELUXE_RESERVED_SUBDOMAINS.has(subdomain)) {
+      return "";
+    }
+    return subdomain;
   }
-  const subdomain = host.slice(0, -rootSuffix.length);
-  if (!subdomain || CHAUFFEURS_DELUXE_RESERVED_SUBDOMAINS.has(subdomain)) {
-    return "";
-  }
-  return subdomain;
+  return "";
 }
 
 function normalizeDriverPageVehicleCards(value) {
@@ -8414,6 +8424,10 @@ app.get("/driver-widget.js", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "driver-wizard.js"));
 });
 app.get("/", (req, res, next) => {
+  const host = String(req.hostname || req.get?.("host") || "").trim().toLowerCase().split(":")[0];
+  if (host === CHAUFFEURS_DELUXE_DRIVER_PARENT_DOMAIN) {
+    return res.sendFile(path.join(__dirname, "public", "driver-partner-program.html"));
+  }
   const subdomain = getChauffeursSubdomainFromRequest(req);
   if (!subdomain) {
     return next();
@@ -8927,6 +8941,7 @@ async function saveConfigHandler(req, res) {
   try {
     const {
       location_id,
+      display_name,
       business_name,
       business_logo,
       brand_color_primary,
@@ -8988,6 +9003,8 @@ async function saveConfigHandler(req, res) {
     const existingProfile = existingProfileRes.rows[0] || {};
     const hasBusinessLogoField = Object.prototype.hasOwnProperty.call(req.body || {}, "business_logo");
     const incomingBusinessLogo = hasBusinessLogoField ? business_logo : existingProfile.business_logo;
+    const driverDisplayName = String(display_name || existingProfile.driver_display_name || business_name || existingProfile.business_name || "").trim();
+    const driverPageSlug = buildDriverPageSlugFromName(driverDisplayName || business_name || "first-last");
     const previousFleet = safeParseJson(existingProfile.fleet, []);
     const normalizedPlanName = normalizePlanName(plan_name || existingProfile.plan_name || "starter");
     const entitlements = buildPlanEntitlements({
@@ -9017,6 +9034,8 @@ async function saveConfigHandler(req, res) {
     };
 
     pushProfileField(profileIdColumn, location_id);
+    pushProfileField("driver_display_name", driverDisplayName || null);
+    pushProfileField("driver_page_slug", driverPageSlug || null);
     pushProfileField("business_name", business_name);
     pushProfileField("business_logo", sanitizedBranding.business_logo || null);
     pushProfileField("brand_color_primary", sanitizedBranding.brand_color_primary || DEFAULT_BRAND_COLORS.primary);
@@ -17516,6 +17535,8 @@ res.json({
   entitlements,
 
   business_name: profile.business_name,
+  driver_display_name: String(profile.driver_display_name || profile.display_name || profile.business_name || "").trim(),
+  driver_page_slug: String(profile.driver_page_slug || "").trim(),
   public_app_url: profile.public_app_url || "",
   business_logo: shrinkWidgetLogoPayload(sanitizedBranding.business_logo || ""),
   brand_color_primary: sanitizedBranding.brand_color_primary || DEFAULT_BRAND_COLORS.primary,
@@ -17707,7 +17728,7 @@ app.get("/api/driver-dashboard/:location_id", async (req, res) => {
         display_name: String(profile.driver_display_name || profile.business_name || "Your Driver Page").trim(),
         email: normalizeDriverEmail(profile.driver_email || ""),
         photo_data: profile.driver_photo_data || "",
-        page_slug: buildDriverPageSubdomainUrl(buildDriverPageSlugFromName(profile.driver_display_name || profile.business_name || "first-last")),
+        page_slug: buildDriverPageSubdomainUrl(buildDriverPageSlugFromName(profile.driver_page_slug || profile.driver_display_name || profile.business_name || "first-last")),
       },
       page: {
         calendar_url: String(profile.driver_calendar_url || "").trim(),

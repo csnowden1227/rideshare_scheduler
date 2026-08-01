@@ -1095,7 +1095,7 @@
             <a id="personal-link" class="button button-primary hidden" href="#" target="_blank" rel="noopener noreferrer">Open Personal Booking Link</a>
             <button id="copy-link-btn" class="button button-secondary hidden" type="button">Copy Booking Link</button>
             <a id="apply-link" class="button button-quiet hidden" href="#" target="_blank" rel="noopener noreferrer">Apply and Pay for Access</a>
-            <a id="preview-page-link" class="button button-secondary" href="https://first-last.chauffeursdeluxe.com/" target="_blank" rel="noopener noreferrer">Preview Personal Page</a>
+            <a id="preview-page-link" class="button button-secondary" href="https://first-last.drivers.chauffeursdeluxe.com/" target="_blank" rel="noopener noreferrer">Preview Personal Page</a>
           </div>
           <div id="hero-status" class="muted" style="margin-top: 14px; color: rgba(255,255,255,0.9); line-height: 1.8;">
             Driver partner pages are paid access. A driver must apply, subscribe to the partner page, and stay active in good standing before the personal booking link is enabled.
@@ -1108,7 +1108,7 @@
               <h2>Personal Page Template</h2>
               <p>This is the client-facing page a driver uses to sell the experience before the trip is even booked.</p>
             </div>
-            <span class="brochure-badge">first-last.chauffeursdeluxe.com</span>
+            <span class="brochure-badge">first-last.drivers.chauffeursdeluxe.com</span>
           </div>
           <div class="snapshot-preview-frame">
             <img src="/assets/driver-partner-program/driver-page-snapshot.png" alt="Driver personal page snapshot" />
@@ -1127,7 +1127,7 @@
             journey, and the reason this page converts better than a plain sign-up form.
           </p>
         </div>
-        <div class="brochure-badge">first-last.chauffeursdeluxe.com</div>
+        <div class="brochure-badge">first-last.drivers.chauffeursdeluxe.com</div>
       </div>
       <div class="brochure-toolbar">
         <button id="brochure-toggle" class="button button-secondary" type="button" aria-pressed="false">Pause rotation</button>
@@ -1376,7 +1376,7 @@
             thumbnail, and vehicle selection template.
           </p>
           <div class="button-row">
-            <a id="final-cta" class="button button-primary" href="https://driver-partner-subscription.chauffeursdeluxe.com/">Apply and Pay for Access</a>
+            <a id="final-cta" class="button button-primary" href="https://driver-partner-subscription.drivers.chauffeursdeluxe.com/">Apply and Pay for Access</a>
           </div>
         </div>
         <div class="price-card">
@@ -1396,7 +1396,8 @@
 
   <script>
     const query = new URLSearchParams(window.location.search);
-    const rootDomain = "chauffeursdeluxe.com";
+    const rootDomain = "drivers.chauffeursdeluxe.com";
+    const legacyRootDomain = "chauffeursdeluxe.com";
     const buildSubdomainUrl = (subdomain) => `https://${String(subdomain || "").trim().replace(/^\.+|\.+$/g, "")}.${rootDomain}/`;
     const normalizePublicUrl = (value, fallbackSubdomain) => {
       const raw = String(value || "").trim();
@@ -1405,10 +1406,12 @@
         try {
           const parsed = new URL(raw);
           const parsedHost = String(parsed.hostname || "").toLowerCase();
-          const rootSuffix = `.${rootDomain}`;
-          if (parsedHost.endsWith(rootSuffix)) {
-            const parsedSubdomain = parsedHost.slice(0, -rootSuffix.length);
-            if (parsedSubdomain) return buildSubdomainUrl(parsedSubdomain);
+          for (const parsedDomain of [rootDomain, legacyRootDomain]) {
+            const rootSuffix = `.${parsedDomain}`;
+            if (parsedHost.endsWith(rootSuffix)) {
+              const parsedSubdomain = parsedHost.slice(0, -rootSuffix.length);
+              if (parsedSubdomain) return buildSubdomainUrl(parsedSubdomain);
+            }
           }
           const partnerMatch = parsed.pathname.match(/^\/partner\/([^/?#]+)/i);
           if (partnerMatch?.[1]) return buildSubdomainUrl(partnerMatch[1]);

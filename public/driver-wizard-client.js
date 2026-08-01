@@ -295,7 +295,7 @@
       if (photoData) {
         previewParams.set("driver_photo", photoData);
       }
-      const previewUrl = `https://${encodeURIComponent(slug)}.chauffeursdeluxe.com/?${previewParams.toString()}`;
+      const previewUrl = `https://${encodeURIComponent(slug)}.drivers.chauffeursdeluxe.com/?${previewParams.toString()}`;
       window.open(previewUrl, "_blank", "noopener,noreferrer");
     });
   }
