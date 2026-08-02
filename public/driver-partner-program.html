@@ -1505,13 +1505,52 @@
     applyLink.href = applyUrl;
     applyLink.classList.remove("hidden");
 
+    async function buildPreviewLinkUrl() {
+      const fallbackUrl = new URL(buildSubdomainUrl("first-last"));
+      if (driverName) fallbackUrl.searchParams.set("driver_name", driverName);
+      if (driverTitle) fallbackUrl.searchParams.set("driver_title", driverTitle);
+      fallbackUrl.searchParams.set("location_id", query.get("location_id") || query.get("locationId") || "ouXMpSTMKm4kREXw3kzP");
+
+      const slug = String(driverName || "first-last")
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "") || "first-last";
+      const previewPayload = {
+        driver_name: driverName || "Your Name",
+        driver_title: driverTitle || "Luxury Chauffeur",
+        location_id: query.get("location_id") || query.get("locationId") || "ouXMpSTMKm4kREXw3kzP",
+        driver_page_slug: slug,
+        driver_photo_data: driverPhoto || "",
+      };
+
+      try {
+        const response = await fetch("/api/driver-preview-sessions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(previewPayload),
+        });
+        if (response.ok) {
+          const data = await response.json();
+          if (data?.preview_url) return data.preview_url;
+          if (data?.token) return `https://${slug}.${rootDomain}/?preview_token=${encodeURIComponent(data.token)}`;
+        }
+      } catch (err) {
+        console.warn("Unable to create preview session for program page.", err);
+      }
+      return fallbackUrl.toString();
+    }
+
     if (previewPageLink) {
-      const previewUrl = new URL(buildSubdomainUrl("first-last"));
-      if (driverName) previewUrl.searchParams.set("driver_name", driverName);
-      if (driverTitle) previewUrl.searchParams.set("driver_title", driverTitle);
-      if (driverPhoto) previewUrl.searchParams.set("driver_photo", driverPhoto);
-      previewUrl.searchParams.set("location_id", query.get("location_id") || query.get("locationId") || "ouXMpSTMKm4kREXw3kzP");
-      previewPageLink.href = previewUrl.toString();
+      buildPreviewLinkUrl().then((url) => {
+        previewPageLink.href = url;
+      }).catch(() => {
+        previewPageLink.href = buildSubdomainUrl("first-last");
+      });
+      previewPageLink.addEventListener("click", async (event) => {
+        event.preventDefault();
+        const nextUrl = await buildPreviewLinkUrl();
+        window.open(nextUrl, "_blank", "noopener,noreferrer");
+      });
     }
 
     vehicleCtas.forEach((cta) => {

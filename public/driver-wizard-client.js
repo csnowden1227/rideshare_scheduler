@@ -285,17 +285,33 @@
     radiusEl?.addEventListener("input", updateMapRing);
     stripeConnectBtn?.addEventListener("click", connectStripePayouts);
     saveBtn?.addEventListener("click", saveSetup);
-    previewBtn?.addEventListener("click", () => {
+    previewBtn?.addEventListener("click", async () => {
       const slug = slugify(displayNameEl?.value || "first-last");
-      const previewParams = new URLSearchParams({
+      const previewPayload = {
         driver_name: displayNameEl?.value || "Your Name",
         driver_title: "Luxury Chauffeur",
         location_id: locationId,
-      });
-      if (photoData) {
-        previewParams.set("driver_photo", photoData);
+        driver_page_slug: slug,
+        driver_photo_data: photoData || defaultPhotoData,
+      };
+      let previewUrl = `https://${encodeURIComponent(slug)}.drivers.chauffeursdeluxe.com/?driver_name=${encodeURIComponent(previewPayload.driver_name)}&driver_title=${encodeURIComponent(previewPayload.driver_title)}&location_id=${encodeURIComponent(previewPayload.location_id)}`;
+      try {
+        const response = await fetch("/api/driver-preview-sessions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(previewPayload),
+        });
+        if (response.ok) {
+          const data = await response.json();
+          if (data?.preview_url) {
+            previewUrl = data.preview_url;
+          } else if (data?.token) {
+            previewUrl = `https://${encodeURIComponent(slug)}.drivers.chauffeursdeluxe.com/?preview_token=${encodeURIComponent(data.token)}`;
+          }
+        }
+      } catch (err) {
+        console.warn("Preview session creation failed, falling back to direct preview URL.", err);
       }
-      const previewUrl = `https://${encodeURIComponent(slug)}.drivers.chauffeursdeluxe.com/?${previewParams.toString()}`;
       window.open(previewUrl, "_blank", "noopener,noreferrer");
     });
   }

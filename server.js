@@ -22,6 +22,38 @@ import { registerDriverWizardRoutes } from './driver-wizard-routes.js';
 const { Pool, Client } = pkg;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
+const driverPreviewSessions = new Map();
+const DRIVER_PREVIEW_SESSION_TTL_MS = 15 * 60 * 1000;
+
+function cleanupDriverPreviewSessions(now = Date.now()) {
+  for (const [token, session] of driverPreviewSessions.entries()) {
+    if (!session || !session.expires_at || session.expires_at <= now) {
+      driverPreviewSessions.delete(token);
+    }
+  }
+}
+
+function createDriverPreviewSession(payload) {
+  cleanupDriverPreviewSessions();
+  const token = randomBytes(16).toString("hex");
+  driverPreviewSessions.set(token, {
+    payload: payload || {},
+    expires_at: Date.now() + DRIVER_PREVIEW_SESSION_TTL_MS
+  });
+  return token;
+}
+
+function getDriverPreviewSession(token) {
+  if (!token) return null;
+  cleanupDriverPreviewSessions();
+  const session = driverPreviewSessions.get(String(token).trim());
+  if (!session) return null;
+  if (session.expires_at && session.expires_at <= Date.now()) {
+    driverPreviewSessions.delete(String(token).trim());
+    return null;
+  }
+  return session.payload || null;
+}
 
 function sendPublicHtmlPage(res, fileName) {
   res.type("html");
@@ -8390,6 +8422,43 @@ app.get("/api/driver-page-location/:slug", async (req, res) => {
   } catch (err) {
     console.error("Driver page location lookup error:", err);
     return res.status(500).json({ error: err.message || "Failed to resolve driver page location." });
+  }
+});
+app.post("/api/driver-preview-sessions", (req, res) => {
+  try {
+    const driverName = normalizeDriverName(req.body?.driver_name || "Your Name");
+    const driverTitle = String(req.body?.driver_title || "Luxury Chauffeur").trim() || "Luxury Chauffeur";
+    const locationId = String(req.body?.location_id || "").trim() || DEFAULT_DRIVER_PARTNER_LOCATION_ID;
+    const driverPhotoData = normalizeImageDataUrl(req.body?.driver_photo_data || req.body?.driver_photo || "");
+    const driverPageSlug = normalizeChauffeursSubdomain(req.body?.driver_page_slug || req.body?.slug || driverName || "first-last", "first-last") || "first-last";
+    const token = createDriverPreviewSession({
+      driver_name: driverName,
+      driver_title: driverTitle,
+      location_id: locationId,
+      driver_photo_data: driverPhotoData || null,
+      driver_page_slug: driverPageSlug
+    });
+    return res.json({
+      success: true,
+      token,
+      preview_token: token,
+      preview_url: buildDriverPageSubdomainUrl(driverPageSlug, `?preview_token=${encodeURIComponent(token)}`)
+    });
+  } catch (err) {
+    console.error("Driver preview session error:", err);
+    return res.status(500).json({ error: err.message || "Failed to create preview session." });
+  }
+});
+app.get("/api/driver-preview-sessions/:token", (req, res) => {
+  try {
+    const payload = getDriverPreviewSession(req.params.token || "");
+    if (!payload) {
+      return res.status(404).json({ error: "Preview session not found or expired." });
+    }
+    return res.json({ success: true, ...payload });
+  } catch (err) {
+    console.error("Driver preview lookup error:", err);
+    return res.status(500).json({ error: err.message || "Failed to load preview session." });
   }
 });
 app.get("/partner/:slug", (req, res) => {

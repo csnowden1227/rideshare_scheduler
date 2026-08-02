@@ -1137,10 +1137,11 @@
 
   <script>
     const query = new URLSearchParams(window.location.search);
-    const driverName = (query.get("driver_name") || "Your Name").trim();
-    const driverRole = (query.get("driver_title") || "Luxury Chauffeur").trim();
+    const previewToken = (query.get("preview_token") || "").trim();
+    let driverName = (query.get("driver_name") || "Your Name").trim();
+    let driverRole = (query.get("driver_title") || "Luxury Chauffeur").trim();
     const defaultDriverPhoto = "/assets/driver-partner-program/driver-thumbnail-default.jpg";
-    const driverPhoto = (query.get("driver_photo") || query.get("photo_url") || defaultDriverPhoto).trim();
+    let driverPhoto = (query.get("driver_photo") || query.get("photo_url") || defaultDriverPhoto).trim();
     const rootDomain = "drivers.chauffeursdeluxe.com";
     const legacyRootDomain = "chauffeursdeluxe.com";
     const hostname = String(window.location.hostname || "").toLowerCase();
@@ -1187,7 +1188,7 @@
       }
       return `https://${raw}.${rootDomain}/`;
     };
-    const slug = normalizePageUrl(query.get("slug") || (subdomainSlug ? `https://${subdomainSlug}.${rootDomain}/` : pathnameSlug ? `https://${pathnameSlug}.${rootDomain}/` : `https://first-last.${rootDomain}/`)) || `https://first-last.${rootDomain}/`;
+    let slug = normalizePageUrl(query.get("slug") || (subdomainSlug ? `https://${subdomainSlug}.${rootDomain}/` : pathnameSlug ? `https://${pathnameSlug}.${rootDomain}/` : `https://first-last.${rootDomain}/`)) || `https://first-last.${rootDomain}/`;
     const defaultDemoLocationId = "ouXMpSTMKm4kREXw3kzP";
     let locationId = (query.get("location_id") || query.get("loc") || query.get("locationId") || "").trim();
     const backendBase = (query.get("backend_url") || query.get("backendUrl") || "").trim().replace(/\/$/, "");
@@ -1218,6 +1219,43 @@
       const parts = String(value || "").trim().split(/\s+/).filter(Boolean);
       if (!parts.length) return "CD";
       return parts.slice(0, 2).map((part) => part[0]).join("").toUpperCase();
+    }
+
+    function applyDriverHeader() {
+      driverNameEl.textContent = driverName;
+      driverRoleEl.textContent = driverRole;
+      slugEl.textContent = slug;
+
+      if (driverPhoto) {
+        driverPhotoEl.src = driverPhoto;
+        driverPhotoEl.classList.remove("hidden");
+        driverPlaceholderEl.classList.add("hidden");
+      } else {
+        driverPlaceholderEl.textContent = initialsFor(driverName);
+        driverPlaceholderEl.classList.remove("hidden");
+        driverPhotoEl.classList.add("hidden");
+      }
+    }
+
+    async function loadPreviewSession() {
+      if (!previewToken) return;
+      try {
+        const response = await fetch(`/api/driver-preview-sessions/${encodeURIComponent(previewToken)}`);
+        if (!response.ok) return;
+        const data = await response.json().catch(() => ({}));
+        if (!data?.success) return;
+        driverName = String(data.driver_name || driverName || "Your Name").trim();
+        driverRole = String(data.driver_title || driverRole || "Luxury Chauffeur").trim();
+        driverPhoto = String(data.driver_photo_data || data.driver_photo || driverPhoto || defaultDriverPhoto).trim();
+        locationId = String(data.location_id || locationId || defaultDemoLocationId).trim();
+        const previewSlug = String(data.driver_page_slug || "").trim();
+        if (previewSlug) {
+          slug = normalizePageUrl(`https://${previewSlug}.${rootDomain}/`) || slug;
+        }
+        applyDriverHeader();
+      } catch (err) {
+        console.warn("Preview session lookup failed.", err);
+      }
     }
 
     function shuffleSnapshotOrder() {
@@ -1279,19 +1317,8 @@
       return locationId;
     }
 
-    driverNameEl.textContent = driverName;
-    driverRoleEl.textContent = driverRole;
-    slugEl.textContent = slug;
-
-    if (driverPhoto) {
-      driverPhotoEl.src = driverPhoto;
-      driverPhotoEl.classList.remove("hidden");
-      driverPlaceholderEl.classList.add("hidden");
-    } else {
-      driverPlaceholderEl.textContent = initialsFor(driverName);
-      driverPlaceholderEl.classList.remove("hidden");
-      driverPhotoEl.classList.add("hidden");
-    }
+    applyDriverHeader();
+    void loadPreviewSession();
 
     if (snapshotCarouselSlides.length) {
       shuffleSnapshotOrder();
