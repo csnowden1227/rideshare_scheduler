@@ -20,10 +20,22 @@
   const radiusEl = document.getElementById("service_radius");
   const serviceLatEl = document.getElementById("service_lat");
   const serviceLngEl = document.getElementById("service_lng");
+  const serviceMapSearchEl = document.getElementById("service_map_search");
+  const useLocationBtn = document.getElementById("use_location_btn");
   const saveBtn = document.getElementById("save_btn");
   const previewBtn = document.getElementById("preview_btn");
   const saveStatusEl = document.getElementById("save_status");
   const mapRingEl = document.getElementById("map_ring");
+  const mapPreviewEl = document.getElementById("map_preview");
+  const autocompleteStatusEl = document.getElementById("autocomplete_status");
+
+  let mapsScriptPromise = null;
+  let map = null;
+  let marker = null;
+  let circle = null;
+  let geocoder = null;
+  let autocomplete = null;
+  let mapReady = false;
 
   const vehicleLabels = {
     maybach: { name: "Mercedes-Maybach Sedan", category: "Luxury Sedan", image_url: "/assets/driver-partner-program/luxury-sedan-maybach.png" },
@@ -102,6 +114,221 @@
     mapRingEl.style.transform = `scale(${scale})`;
   }
 
+  function setAutocompleteStatus(message, isError = false) {
+    if (!autocompleteStatusEl) return;
+    autocompleteStatusEl.textContent = message;
+    autocompleteStatusEl.classList.toggle("error", Boolean(isError));
+  }
+
+  function setMapFromInputs() {
+    if (!map || !circle || !marker) return;
+    const lat = parseFloat(serviceLatEl?.value);
+    const lng = parseFloat(serviceLngEl?.value);
+    const radius = parseFloat(radiusEl?.value) || 30;
+    if (Number.isNaN(lat) || Number.isNaN(lng)) return;
+
+    const pos = { lat, lng };
+    map.setCenter(pos);
+    map.setZoom(11);
+    marker.setPosition(pos);
+    circle.setCenter(pos);
+    circle.setRadius(radius * 1609.34);
+  }
+
+  function syncInputsFromMap() {
+    if (!circle || !marker) return;
+    const center = circle.getCenter();
+    if (!center) return;
+    serviceLatEl.value = center.lat().toFixed(6);
+    serviceLngEl.value = center.lng().toFixed(6);
+    radiusEl.value = Math.round(circle.getRadius() / 1609.34);
+    marker.setPosition(center);
+    updateMapRing();
+  }
+
+  function moveServiceMapToLocation(lat, lng) {
+    const latitude = Number(lat);
+    const longitude = Number(lng);
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return;
+
+    if (serviceLatEl) serviceLatEl.value = latitude.toFixed(6);
+    if (serviceLngEl) serviceLngEl.value = longitude.toFixed(6);
+    if (map) map.setCenter({ lat: latitude, lng: longitude });
+    if (marker) marker.setPosition({ lat: latitude, lng: longitude });
+    if (circle) circle.setCenter({ lat: latitude, lng: longitude });
+    updateMapRing();
+  }
+
+  function updateCircleFromInput() {
+    if (!circle) {
+      updateMapRing();
+      return;
+    }
+    const r = parseFloat(radiusEl?.value || 30) || 30;
+    circle.setRadius(r * 1609.34);
+    updateMapRing();
+  }
+
+  function useCurrentLocation() {
+    if (!navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition((position) => {
+      if (!position?.coords) return;
+      moveServiceMapToLocation(position.coords.latitude, position.coords.longitude);
+      if (map) {
+        map.setZoom(11);
+      }
+    });
+  }
+
+  async function loadGoogleMapsScript(apiKey) {
+    const key = String(apiKey || "").trim();
+    if (!key) {
+      return false;
+    }
+    if (window.google?.maps) {
+      return true;
+    }
+    if (mapsScriptPromise) {
+      return mapsScriptPromise;
+    }
+
+    mapsScriptPromise = new Promise((resolve, reject) => {
+      const existing = document.querySelector('script[data-driver-wizard-maps="true"]');
+      if (existing) {
+        existing.addEventListener("load", () => resolve(true), { once: true });
+        existing.addEventListener("error", () => reject(new Error("Google Maps failed to load.")), { once: true });
+        return;
+      }
+
+      const script = document.createElement("script");
+      script.dataset.driverWizardMaps = "true";
+      script.async = true;
+      script.defer = true;
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&libraries=places,geometry&v=weekly&loading=async&auth_referrer_policy=origin&callback=__cdDriverWizardMapsReady`;
+      script.onerror = () => reject(new Error("Google Maps failed to load."));
+      window.__cdDriverWizardMapsReady = () => resolve(true);
+      document.head.appendChild(script);
+    });
+
+    return mapsScriptPromise;
+  }
+
+  async function initServiceMap(lat = 34.0522, lng = -118.2437, radiusMiles = 30) {
+    if (!window.google?.maps || !mapPreviewEl) return;
+
+    const center = {
+      lat: Number(lat) || 34.0522,
+      lng: Number(lng) || -118.2437,
+    };
+
+    map = new google.maps.Map(mapPreviewEl, {
+      center,
+      zoom: 10,
+      mapTypeControl: false,
+      streetViewControl: false,
+      fullscreenControl: true,
+      clickableIcons: false,
+      gestureHandling: "cooperative",
+    });
+    geocoder = new google.maps.Geocoder();
+
+    marker = new google.maps.Marker({
+      position: center,
+      map,
+      draggable: true,
+    });
+
+    circle = new google.maps.Circle({
+      map,
+      center,
+      radius: (Number(radiusMiles) || 30) * 1609.34,
+      fillColor: "#d4af37",
+      fillOpacity: 0.18,
+      strokeColor: "#b58900",
+      strokeOpacity: 0.95,
+      strokeWeight: 3,
+      visible: true,
+      editable: true,
+      draggable: true,
+      zIndex: 1,
+    });
+
+    circle.addListener("center_changed", syncInputsFromMap);
+    circle.addListener("radius_changed", syncInputsFromMap);
+    marker.addListener("drag", () => {
+      if (circle) circle.setCenter(marker.getPosition());
+    });
+
+    const attachAutocomplete = () => {
+      if (!serviceMapSearchEl || !window.google?.maps?.places?.Autocomplete) {
+        setAutocompleteStatus("Address autocomplete unavailable. Manual city or ZIP entry is enabled.", true);
+        return;
+      }
+
+      if (serviceMapSearchEl.dataset.autocompleteEnhanced === "true") {
+        return;
+      }
+
+      autocomplete = new google.maps.places.Autocomplete(serviceMapSearchEl, {
+        componentRestrictions: { country: "us" },
+        fields: ["formatted_address", "geometry", "name", "place_id"],
+        types: ["geocode"],
+      });
+      serviceMapSearchEl.dataset.autocompleteEnhanced = "true";
+
+      autocomplete.addListener("place_changed", () => {
+        const place = autocomplete.getPlace();
+        const location = place?.geometry?.location;
+        if (!location || typeof location.lat !== "function" || typeof location.lng !== "function") {
+          return;
+        }
+        moveServiceMapToLocation(location.lat(), location.lng());
+        if (circle) circle.setCenter({ lat: location.lat(), lng: location.lng() });
+        if (marker) marker.setPosition({ lat: location.lat(), lng: location.lng() });
+      });
+
+      serviceMapSearchEl.addEventListener("keydown", async (event) => {
+        if (event.key !== "Enter" || !geocoder) return;
+        event.preventDefault();
+        const query = String(serviceMapSearchEl.value || "").trim();
+        if (!query) return;
+        try {
+          const response = await geocoder.geocode({ address: query });
+          const match = response?.results?.[0];
+          const location = match?.geometry?.location;
+          if (!location) return;
+          moveServiceMapToLocation(location.lat(), location.lng());
+          if (circle) circle.setCenter({ lat: location.lat(), lng: location.lng() });
+          if (marker) marker.setPosition({ lat: location.lat(), lng: location.lng() });
+        } catch (err) {
+          console.error("Driver wizard geocode search failed:", err);
+        }
+      });
+
+      setAutocompleteStatus("Address autocomplete is ready.");
+    };
+
+    attachAutocomplete();
+
+    if (radiusEl) {
+      radiusEl.addEventListener("input", updateCircleFromInput);
+    }
+    if (serviceLatEl) {
+      serviceLatEl.addEventListener("input", setMapFromInputs);
+    }
+    if (serviceLngEl) {
+      serviceLngEl.addEventListener("input", setMapFromInputs);
+    }
+    if (useLocationBtn && !useLocationBtn.dataset.bound) {
+      useLocationBtn.dataset.bound = "true";
+      useLocationBtn.addEventListener("click", useCurrentLocation);
+    }
+
+    mapReady = true;
+    syncInputsFromMap();
+    updateMapRing();
+  }
+
   function applyDemoVehicleDefaults() {
     document.querySelectorAll(".vehicle-toggle").forEach((el) => {
       el.checked = demoVehicleKeys.has(String(el.dataset.vehicleKey || ""));
@@ -145,6 +372,24 @@
           ? `Stripe payout account linked: ${data.stripe_account_id}`
           : "Stripe payout account not linked yet."
       );
+      try {
+        const mapsLoaded = await loadGoogleMapsScript(data.maps_api_key || "");
+        if (mapsLoaded) {
+          await initServiceMap(
+            data.service_lat ?? 29.7604,
+            data.service_lng ?? -95.3698,
+            data.service_radius ?? 30
+          );
+          if (mapReady) {
+            setAutocompleteStatus("Address autocomplete is ready.");
+          }
+        } else {
+          setAutocompleteStatus("Map not available yet. Add a Maps API key to enable search and drag radius controls.", true);
+        }
+      } catch (mapsError) {
+        console.warn("Driver wizard map load failed:", mapsError);
+        setAutocompleteStatus("Map failed to load. Check the Maps API key and allowed referrers.", true);
+      }
       const cards = Array.isArray(data.driver_page_vehicle_cards) ? data.driver_page_vehicle_cards : [];
       if (cards.length) {
         document.querySelectorAll(".vehicle-toggle").forEach((el) => {
@@ -282,7 +527,7 @@
       reader.readAsDataURL(file);
     });
 
-    radiusEl?.addEventListener("input", updateMapRing);
+    radiusEl?.addEventListener("input", updateCircleFromInput);
     stripeConnectBtn?.addEventListener("click", connectStripePayouts);
     saveBtn?.addEventListener("click", saveSetup);
     previewBtn?.addEventListener("click", async () => {
