@@ -237,6 +237,16 @@
             <input id="insurance-webhook-url" type="text" readonly />
           </div>
         </div>
+        <div class="field-grid two">
+          <div>
+            <label for="insurance-telematics-webhook-url">Telematics Webhook URL</label>
+            <input id="insurance-telematics-webhook-url" type="url" placeholder="https://carrier.example.com/ingest/telematics" />
+          </div>
+          <div>
+            <label for="insurance-telematics-webhook-secret">Telematics Webhook Secret</label>
+            <input id="insurance-telematics-webhook-secret" type="text" placeholder="shared-secret-for-telematics" />
+          </div>
+        </div>
         <div class="field-grid">
           <div>
             <label for="insurance-state-rules">State Rules (JSON)</label>
@@ -392,6 +402,8 @@
         byId("insurance-embed-url").value = settings.embed_url || "";
         byId("insurance-webhook-secret").value = settings.webhook_secret || "";
         byId("insurance-webhook-url").value = webhookUrl || "";
+        byId("insurance-telematics-webhook-url").value = settings.telematics_webhook_url || "";
+        byId("insurance-telematics-webhook-secret").value = settings.telematics_webhook_secret || "";
         byId("insurance-state-rules").value = JSON.stringify(Array.isArray(settings.state_rules) ? settings.state_rules : [], null, 2);
         byId("insurance-notes").value = settings.notes || "";
         byId("booking-coverage-option").value = settings.coverage_option || "tnc_period_3";
@@ -475,6 +487,8 @@
             brand_name: byId("insurance-brand-name").value,
             embed_url: byId("insurance-embed-url").value,
             webhook_secret: byId("insurance-webhook-secret").value,
+            telematics_webhook_url: byId("insurance-telematics-webhook-url").value,
+            telematics_webhook_secret: byId("insurance-telematics-webhook-secret").value,
             state_rules: stateRules,
             notes: byId("insurance-notes").value,
           };

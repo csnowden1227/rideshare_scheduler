@@ -382,6 +382,74 @@ function safeParseJson(data, fallback = []) {
   }
 }
 
+function safeParseJsonObject(data, fallback = {}) {
+  const parsed = safeParseJson(data, fallback);
+  return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : fallback;
+}
+
+function safeParseJsonArray(data, fallback = []) {
+  const parsed = safeParseJson(data, fallback);
+  return Array.isArray(parsed) ? parsed : fallback;
+}
+
+function normalizeTimestampIso(value) {
+  if (!value) return null;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+}
+
+function getTrackingDeviceMeta(req = {}, body = {}) {
+  const headers = req?.headers || {};
+  const osMeta = {
+    user_agent: String(headers["user-agent"] || body.user_agent || "").trim() || null,
+    app_name: String(body.app_name || headers["x-app-name"] || "").trim() || null,
+    app_version: String(body.app_version || headers["x-app-version"] || "").trim() || null,
+    os_name: String(body.os_name || headers["x-os-name"] || "").trim() || null,
+    os_version: String(body.os_version || headers["x-os-version"] || "").trim() || null,
+    platform: String(body.platform || headers["x-device-platform"] || "").trim() || null,
+  };
+  Object.keys(osMeta).forEach((key) => {
+    if (osMeta[key] == null) {
+      delete osMeta[key];
+    }
+  });
+
+  return {
+    appVersion: String(body.app_version || headers["x-app-version"] || "").trim() || null,
+    deviceTimestamp:
+      normalizeTimestampIso(
+        body.device_timestamp ||
+        body.device_recorded_at ||
+        body.client_timestamp ||
+        body.recorded_at ||
+        body.timestamp ||
+        null
+      ),
+    osMeta,
+    telematicsFlags: safeParseJsonObject(body.telematics_flags ?? body.telematics_flags_json, {}),
+  };
+}
+
+function buildTrackingStatusHistoryEntry({
+  status,
+  deviceTimestamp = null,
+  serverTimestamp = new Date().toISOString(),
+  source = "driver",
+  appVersion = null,
+  osMeta = {},
+  telematicsFlags = {},
+}) {
+  return {
+    status,
+    device_timestamp: deviceTimestamp,
+    server_timestamp: serverTimestamp,
+    source,
+    app_version: appVersion || null,
+    os_meta: osMeta && Object.keys(osMeta).length ? osMeta : {},
+    telematics_flags: telematicsFlags && Object.keys(telematicsFlags).length ? telematicsFlags : {},
+  };
+}
+
 function normalizeCustomerEmail(value) {
   return String(value || "").trim().toLowerCase().slice(0, 160);
 }
@@ -702,6 +770,8 @@ async function ensureInsuranceModuleTables() {
       await pool.query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS insurance_notes TEXT`);
       await pool.query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS insurance_coverage_option TEXT`);
       await pool.query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS insurance_activation_rule TEXT`);
+      await pool.query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS insurance_telematics_webhook_url TEXT`);
+      await pool.query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS insurance_telematics_webhook_secret TEXT`);
 
       await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS insurance_provider TEXT`);
       await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS insurance_quote_id TEXT`);
@@ -991,6 +1061,7 @@ async function ensureTripTrackingTables() {
           id TEXT PRIMARY KEY,
           booking_id BIGINT NOT NULL UNIQUE REFERENCES bookings(id) ON DELETE CASCADE,
           location_id TEXT NOT NULL,
+          vehicle_id TEXT,
           driver_token TEXT NOT NULL UNIQUE,
           customer_token TEXT NOT NULL UNIQUE,
           status TEXT NOT NULL DEFAULT 'driver_assigned',
@@ -1002,6 +1073,20 @@ async function ensureTripTrackingTables() {
           last_location_at TIMESTAMPTZ,
           started_at TIMESTAMPTZ,
           ended_at TIMESTAMPTZ,
+          device_started_at TIMESTAMPTZ,
+          device_ended_at TIMESTAMPTZ,
+          pickup_lat DOUBLE PRECISION,
+          pickup_lng DOUBLE PRECISION,
+          dropoff_lat DOUBLE PRECISION,
+          dropoff_lng DOUBLE PRECISION,
+          route_distance_miles NUMERIC,
+          route_duration_minutes INTEGER,
+          booking_duration_minutes INTEGER,
+          status_history_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+          telematics_flags_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+          app_version TEXT,
+          os_meta JSONB NOT NULL DEFAULT '{}'::jsonb,
+          insurance_policy_token TEXT,
           created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
           updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
@@ -1016,6 +1101,21 @@ async function ensureTripTrackingTables() {
       await pool.query(`ALTER TABLE trip_tracking_sessions ADD COLUMN IF NOT EXISTS driver_phone TEXT`);
       await pool.query(`ALTER TABLE trip_tracking_sessions ADD COLUMN IF NOT EXISTS driver_email TEXT`);
       await pool.query(`ALTER TABLE trip_tracking_sessions ADD COLUMN IF NOT EXISTS driver_photo_data TEXT`);
+      await pool.query(`ALTER TABLE trip_tracking_sessions ADD COLUMN IF NOT EXISTS vehicle_id TEXT`);
+      await pool.query(`ALTER TABLE trip_tracking_sessions ADD COLUMN IF NOT EXISTS device_started_at TIMESTAMPTZ`);
+      await pool.query(`ALTER TABLE trip_tracking_sessions ADD COLUMN IF NOT EXISTS device_ended_at TIMESTAMPTZ`);
+      await pool.query(`ALTER TABLE trip_tracking_sessions ADD COLUMN IF NOT EXISTS pickup_lat DOUBLE PRECISION`);
+      await pool.query(`ALTER TABLE trip_tracking_sessions ADD COLUMN IF NOT EXISTS pickup_lng DOUBLE PRECISION`);
+      await pool.query(`ALTER TABLE trip_tracking_sessions ADD COLUMN IF NOT EXISTS dropoff_lat DOUBLE PRECISION`);
+      await pool.query(`ALTER TABLE trip_tracking_sessions ADD COLUMN IF NOT EXISTS dropoff_lng DOUBLE PRECISION`);
+      await pool.query(`ALTER TABLE trip_tracking_sessions ADD COLUMN IF NOT EXISTS route_distance_miles NUMERIC`);
+      await pool.query(`ALTER TABLE trip_tracking_sessions ADD COLUMN IF NOT EXISTS route_duration_minutes INTEGER`);
+      await pool.query(`ALTER TABLE trip_tracking_sessions ADD COLUMN IF NOT EXISTS booking_duration_minutes INTEGER`);
+      await pool.query(`ALTER TABLE trip_tracking_sessions ADD COLUMN IF NOT EXISTS status_history_json JSONB NOT NULL DEFAULT '[]'::jsonb`);
+      await pool.query(`ALTER TABLE trip_tracking_sessions ADD COLUMN IF NOT EXISTS telematics_flags_json JSONB NOT NULL DEFAULT '{}'::jsonb`);
+      await pool.query(`ALTER TABLE trip_tracking_sessions ADD COLUMN IF NOT EXISTS app_version TEXT`);
+      await pool.query(`ALTER TABLE trip_tracking_sessions ADD COLUMN IF NOT EXISTS os_meta JSONB NOT NULL DEFAULT '{}'::jsonb`);
+      await pool.query(`ALTER TABLE trip_tracking_sessions ADD COLUMN IF NOT EXISTS insurance_policy_token TEXT`);
 
       await pool.query(`
         CREATE TABLE IF NOT EXISTS trip_tracking_points (
@@ -1026,6 +1126,10 @@ async function ensureTripTrackingTables() {
           heading DOUBLE PRECISION,
           speed DOUBLE PRECISION,
           accuracy DOUBLE PRECISION,
+          device_recorded_at TIMESTAMPTZ,
+          app_version TEXT,
+          os_meta JSONB NOT NULL DEFAULT '{}'::jsonb,
+          telematics_flags_json JSONB NOT NULL DEFAULT '{}'::jsonb,
           recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
       `);
@@ -1062,6 +1166,7 @@ async function ensureTripTrackingTables() {
       await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_driver_profiles_location_vehicle_name ON driver_profiles(location_id, vehicle_slot_id, LOWER(driver_name))`);
       await pool.query(`ALTER TABLE driver_profiles ADD COLUMN IF NOT EXISTS driver_phone TEXT`);
       await pool.query(`ALTER TABLE driver_profiles ADD COLUMN IF NOT EXISTS driver_email TEXT`);
+      await pool.query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS insurance_policy_token TEXT`);
       await pool.query(`
         WITH ranked AS (
           SELECT
@@ -2070,7 +2175,8 @@ async function ensureTrackingSessionForBookingInternal({ bookingId, locationId, 
   await ensureTripTrackingTables();
 
   const bookingLookup = await pool.query(
-    `SELECT id, location_id, vehicle_slot_id
+    `SELECT id, location_id, vehicle_slot_id, pickup_lat, pickup_lng, dropoff_lat, dropoff_lng,
+            route_distance_miles, route_duration_minutes, booking_duration_minutes, start_time, end_time
      FROM bookings
      WHERE id = $1
      LIMIT 1`,
@@ -2089,7 +2195,7 @@ async function ensureTrackingSessionForBookingInternal({ bookingId, locationId, 
 
   const profileIdColumn = await getProfileIdColumn();
   const profileLookup = await pool.query(
-    `SELECT plan_name, addon_branding_unlocked, addon_funnel_unlocked, addon_tracking_unlocked, addon_extra_vehicle_count, fleet, public_app_url
+    `SELECT plan_name, addon_branding_unlocked, addon_funnel_unlocked, addon_tracking_unlocked, addon_extra_vehicle_count, fleet, public_app_url, insurance_policy_token
      FROM profiles
      WHERE ${profileIdColumn} = $1
      LIMIT 1`,
@@ -2129,13 +2235,106 @@ async function ensureTrackingSessionForBookingInternal({ bookingId, locationId, 
   const defaultDriverName = String(defaultVehicleDriver?.driver_name || "").trim() || null;
   const defaultDriverPhone = normalizeDriverPhone(defaultVehicleDriver?.driver_phone || "") || null;
   const defaultDriverEmail = normalizeDriverEmail(defaultVehicleDriver?.driver_email || "") || null;
+  const deviceMeta = getTrackingDeviceMeta(req, req?.body || {});
+  const initialStatusHistory = [
+    buildTrackingStatusHistoryEntry({
+      status: "driver_assigned",
+      deviceTimestamp: deviceMeta.deviceTimestamp,
+      source: "system",
+      appVersion: deviceMeta.appVersion,
+      osMeta: deviceMeta.osMeta,
+      telematicsFlags: deviceMeta.telematicsFlags,
+    }),
+  ];
+  const vehicleId = String(booking.vehicle_slot_id || "").trim() || null;
+  const insurancePolicyToken = String(profileLookup.rows[0]?.insurance_policy_token || "").trim() || null;
+  const pickupLat = Number.isFinite(Number(booking.pickup_lat)) ? Number(booking.pickup_lat) : null;
+  const pickupLng = Number.isFinite(Number(booking.pickup_lng)) ? Number(booking.pickup_lng) : null;
+  const dropoffLat = Number.isFinite(Number(booking.dropoff_lat)) ? Number(booking.dropoff_lat) : null;
+  const dropoffLng = Number.isFinite(Number(booking.dropoff_lng)) ? Number(booking.dropoff_lng) : null;
+  const routeDistanceMiles = Number.isFinite(Number(booking.route_distance_miles)) ? Number(booking.route_distance_miles) : null;
+  const routeDurationMinutes = Number.isFinite(Number(booking.route_duration_minutes)) ? Number(booking.route_duration_minutes) : null;
+  const bookingDurationMinutes = Number.isFinite(Number(booking.booking_duration_minutes)) ? Number(booking.booking_duration_minutes) : null;
 
   await pool.query(
     `INSERT INTO trip_tracking_sessions (
-      id, booking_id, location_id, driver_token, customer_token, status, driver_display_name, driver_phone, driver_email, created_at, updated_at
-    ) VALUES ($1,$2,$3,$4,$5,'driver_assigned',$6,$7,$8,NOW(),NOW())`,
-    [id, bookingId, resolvedLocationId, driverToken, customerToken, defaultDriverName, defaultDriverPhone, defaultDriverEmail]
+      id, booking_id, location_id, vehicle_id, driver_token, customer_token, status,
+      driver_display_name, driver_phone, driver_email,
+      pickup_lat, pickup_lng, dropoff_lat, dropoff_lng,
+      route_distance_miles, route_duration_minutes, booking_duration_minutes,
+      device_started_at, status_history_json, telematics_flags_json, app_version, os_meta,
+      insurance_policy_token,
+      created_at, updated_at
+    ) VALUES (
+      $1,$2,$3,$4,$5,$6,'driver_assigned',
+      $7,$8,$9,
+      $10,$11,$12,$13,
+      $14,$15,$16,
+      $17,$18::jsonb,$19::jsonb,$20,$21::jsonb,
+      $22,
+      NOW(),NOW()
+    )`,
+    [
+      id,
+      bookingId,
+      resolvedLocationId,
+      vehicleId,
+      driverToken,
+      customerToken,
+      defaultDriverName,
+      defaultDriverPhone,
+      defaultDriverEmail,
+      pickupLat,
+      pickupLng,
+      dropoffLat,
+      dropoffLng,
+      routeDistanceMiles,
+      routeDurationMinutes,
+      bookingDurationMinutes,
+      deviceMeta.deviceTimestamp,
+      JSON.stringify(initialStatusHistory),
+      JSON.stringify(deviceMeta.telematicsFlags || {}),
+      deviceMeta.appVersion,
+      JSON.stringify(deviceMeta.osMeta || {}),
+      insurancePolicyToken,
+    ]
   );
+
+  void sendInsuranceTelematicsWebhook({
+    req,
+    session: {
+      id,
+      booking_id: bookingId,
+      location_id: resolvedLocationId,
+      vehicle_id: vehicleId,
+      driver_display_name: defaultDriverName,
+      driver_phone: defaultDriverPhone,
+      driver_email: defaultDriverEmail,
+      pickup_lat: pickupLat,
+      pickup_lng: pickupLng,
+      dropoff_lat: dropoffLat,
+      dropoff_lng: dropoffLng,
+      route_distance_miles: routeDistanceMiles,
+      route_duration_minutes: routeDurationMinutes,
+      booking_duration_minutes: bookingDurationMinutes,
+      status_history_json: initialStatusHistory,
+      telematics_flags_json: deviceMeta.telematicsFlags || {},
+      app_version: deviceMeta.appVersion,
+      os_meta: deviceMeta.osMeta || {},
+      insurance_policy_token: insurancePolicyToken,
+      status: "driver_assigned",
+      start_time: booking.start_time || null,
+      end_time: booking.end_time || null,
+    },
+    booking,
+    eventType: "session_created",
+    eventSource: "system",
+    deviceTimestamp: deviceMeta.deviceTimestamp,
+    status: "driver_assigned",
+    deviceMeta,
+  }).catch((err) => {
+    console.error("Insurance telematics session_created delivery error:", err);
+  });
 
   return {
     session: {
@@ -2148,6 +2347,20 @@ async function ensureTrackingSessionForBookingInternal({ bookingId, locationId, 
       driver_display_name: defaultDriverName,
       driver_phone: defaultDriverPhone,
       driver_email: defaultDriverEmail,
+      vehicle_id: vehicleId,
+      pickup_lat: pickupLat,
+      pickup_lng: pickupLng,
+      dropoff_lat: dropoffLat,
+      dropoff_lng: dropoffLng,
+      route_distance_miles: routeDistanceMiles,
+      route_duration_minutes: routeDurationMinutes,
+      booking_duration_minutes: bookingDurationMinutes,
+      device_started_at: deviceMeta.deviceTimestamp,
+      status_history_json: initialStatusHistory,
+      telematics_flags_json: deviceMeta.telematicsFlags || {},
+      app_version: deviceMeta.appVersion,
+      os_meta: deviceMeta.osMeta || {},
+      insurance_policy_token: insurancePolicyToken,
       public_app_url: profileLookup.rows[0]?.public_app_url || null,
     },
     tracking_session_id: id,
@@ -2197,6 +2410,7 @@ async function getTrackingSessionByToken({ token, role = "customer" }) {
       p.widget_tagline,
       p.payment_provider,
       p.driver_calendar_url,
+      p.insurance_policy_token AS profile_insurance_policy_token,
       p.fleet
      FROM trip_tracking_sessions s
      INNER JOIN bookings b ON b.id = s.booking_id
@@ -2247,6 +2461,7 @@ async function getTrackingSessionById(sessionId) {
       p.brand_color_accent,
       p.widget_tagline,
       p.payment_provider,
+      p.insurance_policy_token AS profile_insurance_policy_token,
       p.fleet
      FROM trip_tracking_sessions s
      INNER JOIN bookings b ON b.id = s.booking_id
@@ -2345,6 +2560,7 @@ function buildTrackingSessionClientShape(session) {
     tracking_session_id: session.id,
     booking_id: session.booking_id,
     location_id: session.location_id,
+    vehicle_id: session.vehicle_id || session.vehicle_slot_id || "",
     status: session.status,
     current_lat: session.current_lat,
     current_lng: session.current_lng,
@@ -2354,6 +2570,8 @@ function buildTrackingSessionClientShape(session) {
     last_location_at: session.last_location_at,
     started_at: session.started_at,
     ended_at: session.ended_at,
+    device_started_at: session.device_started_at || null,
+    device_ended_at: session.device_ended_at || null,
     customer_name: customerName,
     customer_email: session.customer_email || "",
       customer_phone: normalizePhoneNumber(session.customer_phone || ""),
@@ -2365,6 +2583,9 @@ function buildTrackingSessionClientShape(session) {
     dropoff_lng: session.dropoff_lng,
     start_time: session.start_time,
     end_time: session.end_time,
+    route_distance_miles: session.route_distance_miles ?? null,
+    route_duration_minutes: session.route_duration_minutes ?? null,
+    booking_duration_minutes: session.booking_duration_minutes ?? null,
     total_price: session.total_price,
     vehicle_slot_id: session.vehicle_slot_id || "",
     vehicle_type: vehicleRecord?.vehicle_type || "",
@@ -2382,6 +2603,11 @@ function buildTrackingSessionClientShape(session) {
       driver_phone: normalizeDriverPhone(session.driver_phone || ""),
     driver_email: session.driver_email || "",
     driver_photo_data: session.driver_photo_data || "",
+    app_version: session.app_version || "",
+    os_meta: safeParseJsonObject(session.os_meta, {}),
+    status_history: safeParseJsonArray(session.status_history_json, []),
+    telematics_flags: safeParseJsonObject(session.telematics_flags_json, {}),
+    insurance_policy_token: session.insurance_policy_token || session.profile_insurance_policy_token || "",
     business_name: session.business_name || "Chauffeur Deluxe",
     maps_api_key: session.maps_api_key || "",
     driver_calendar_url: String(session.driver_calendar_url || "").trim(),
@@ -11678,6 +11904,9 @@ function buildInsuranceSettingsShape(profile = {}) {
     embed_url: String(profile.insurance_embed_url || "").trim() || null,
     webhook_secret: String(profile.insurance_webhook_secret || "").trim() || null,
     notes: String(profile.insurance_notes || "").trim() || null,
+    policy_token: String(profile.insurance_policy_token || "").trim() || null,
+    telematics_webhook_url: String(profile.insurance_telematics_webhook_url || "").trim() || null,
+    telematics_webhook_secret: String(profile.insurance_telematics_webhook_secret || "").trim() || null,
     state_rules: safeParseJson(profile.insurance_state_rules, []),
     coverage_option: coverageMeta.code,
     coverage_option_label: coverageMeta.label,
@@ -11749,6 +11978,175 @@ async function logInsuranceEvent({
       JSON.stringify(payload || {}),
     ]
   );
+}
+
+function buildInsuranceTelematicsPayload({
+  session = {},
+  booking = {},
+  eventType = "",
+  eventSource = "driver",
+  lat = null,
+  lng = null,
+  heading = null,
+  speed = null,
+  accuracy = null,
+  deviceTimestamp = null,
+  serverTimestamp = new Date().toISOString(),
+  status = null,
+  deviceMeta = {},
+}) {
+  return {
+    event_type: String(eventType || "").trim() || "trip.telematics_update",
+    event_source: eventSource,
+    event_timestamp: serverTimestamp,
+    device_timestamp: deviceTimestamp || null,
+    location_id: String(session.location_id || booking.location_id || "").trim() || null,
+    booking_id: Number(session.booking_id || booking.booking_id || booking.id || 0) || null,
+    tracking_session_id: session.id || null,
+    policy_token: String(session.insurance_policy_token || booking.insurance_policy_token || "").trim() || null,
+    booking: {
+      vehicle_id: String(session.vehicle_id || booking.vehicle_id || session.vehicle_slot_id || booking.vehicle_slot_id || "").trim() || null,
+      vehicle_slot_id: String(session.vehicle_slot_id || booking.vehicle_slot_id || "").trim() || null,
+      driver_profile_id: String(session.driver_profile_id || "").trim() || null,
+      driver_name: String(session.driver_display_name || "").trim() || null,
+      driver_phone: String(session.driver_phone || "").trim() || null,
+      driver_email: String(session.driver_email || "").trim() || null,
+      pickup_lat: Number.isFinite(Number(session.pickup_lat ?? booking.pickup_lat)) ? Number(session.pickup_lat ?? booking.pickup_lat) : null,
+      pickup_lng: Number.isFinite(Number(session.pickup_lng ?? booking.pickup_lng)) ? Number(session.pickup_lng ?? booking.pickup_lng) : null,
+      dropoff_lat: Number.isFinite(Number(session.dropoff_lat ?? booking.dropoff_lat)) ? Number(session.dropoff_lat ?? booking.dropoff_lat) : null,
+      dropoff_lng: Number.isFinite(Number(session.dropoff_lng ?? booking.dropoff_lng)) ? Number(session.dropoff_lng ?? booking.dropoff_lng) : null,
+      miles: Number.isFinite(Number(session.route_distance_miles ?? booking.route_distance_miles)) ? Number(session.route_distance_miles ?? booking.route_distance_miles) : null,
+      duration_minutes: Number.isFinite(Number(session.route_duration_minutes ?? booking.route_duration_minutes))
+        ? Number(session.route_duration_minutes ?? booking.route_duration_minutes)
+        : null,
+      booking_duration_minutes: Number.isFinite(Number(session.booking_duration_minutes ?? booking.booking_duration_minutes))
+        ? Number(session.booking_duration_minutes ?? booking.booking_duration_minutes)
+        : null,
+      start_time: session.start_time || booking.start_time || null,
+      end_time: session.end_time || booking.end_time || null,
+      status: status || session.status || null,
+    },
+    point: {
+      lat: lat,
+      lng: lng,
+      heading: heading,
+      speed: speed,
+      accuracy: accuracy,
+    },
+    telemetry: {
+      status_history: safeParseJsonArray(session.status_history_json, []),
+      telematics_flags: safeParseJsonObject(session.telematics_flags_json, {}),
+      app_version: session.app_version || deviceMeta.appVersion || null,
+      os_meta: safeParseJsonObject(session.os_meta, deviceMeta.osMeta || {}),
+    },
+  };
+}
+
+async function sendInsuranceTelematicsWebhook({
+  req = null,
+  session = {},
+  booking = {},
+  eventType = "",
+  eventSource = "driver",
+  lat = null,
+  lng = null,
+  heading = null,
+  speed = null,
+  accuracy = null,
+  deviceTimestamp = null,
+  serverTimestamp = new Date().toISOString(),
+  status = null,
+  deviceMeta = {},
+}) {
+  const profileLookup = await pool.query(
+    `SELECT insurance_telematics_webhook_url, insurance_telematics_webhook_secret, insurance_provider
+     FROM profiles
+     WHERE location_id = $1
+     LIMIT 1`,
+    [String(session.location_id || booking.location_id || "").trim()]
+  );
+  const profile = profileLookup.rows[0] || {};
+  const webhookUrl = String(profile.insurance_telematics_webhook_url || "").trim();
+  const webhookSecret = String(profile.insurance_telematics_webhook_secret || "").trim();
+  if (!webhookUrl) {
+    return {
+      attempted: false,
+      success: false,
+      skipped: true,
+      reason: "No insurance telematics webhook URL configured.",
+    };
+  }
+
+  const payload = buildInsuranceTelematicsPayload({
+    session,
+    booking,
+    eventType,
+    eventSource,
+    lat,
+    lng,
+    heading,
+    speed,
+    accuracy,
+    deviceTimestamp,
+    serverTimestamp,
+    status,
+    deviceMeta,
+  });
+
+  const result = {
+    attempted: true,
+    success: false,
+    skipped: false,
+    status: null,
+    error: null,
+    payload,
+  };
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
+    try {
+      const response = await fetch(webhookUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(webhookSecret ? { "x-insurance-webhook-secret": webhookSecret } : {}),
+          "x-insurance-provider": String(profile.insurance_provider || "inshur").trim() || "inshur",
+        },
+        body: JSON.stringify(payload),
+        signal: controller.signal,
+      });
+
+      result.status = response.status;
+      result.success = response.ok;
+      if (!response.ok) {
+        result.error = (await response.text()).slice(0, 500);
+      }
+    } finally {
+      clearTimeout(timeout);
+    }
+  } catch (err) {
+    result.error = err?.message || "Failed to deliver insurance telematics webhook.";
+  }
+
+  await logInsuranceEvent({
+    locationId: session.location_id || booking.location_id || null,
+    bookingId: session.booking_id || booking.id || null,
+    provider: profile.insurance_provider || null,
+    eventType: `telematics.${eventType || "update"}`,
+    payload: {
+      ...payload,
+      delivery: {
+        webhook_url_present: true,
+        success: result.success,
+        status: result.status,
+        skipped: result.skipped,
+        error: result.error,
+      },
+    },
+  });
+
+  return result;
 }
 
 function computeInsuranceShellPremium(booking = {}) {
@@ -13794,6 +14192,7 @@ app.post("/api/tracking/location", async (req, res) => {
     const heading = parseOptionalNumber(req.body.heading);
     const speed = parseOptionalNumber(req.body.speed);
     const accuracy = parseOptionalNumber(req.body.accuracy);
+    const deviceMeta = getTrackingDeviceMeta(req, req.body || {});
 
     if (!token || lat === null || lng === null) {
       return res.status(400).json({ error: "token, lat, and lng are required." });
@@ -13825,19 +14224,75 @@ app.post("/api/tracking/location", async (req, res) => {
            heading = $4,
            speed = $5,
            accuracy = $6,
+           device_started_at = COALESCE(device_started_at, $7),
+           app_version = COALESCE(app_version, $8),
+           os_meta = CASE
+             WHEN os_meta = '{}'::jsonb AND $9::jsonb <> '{}'::jsonb THEN $9::jsonb
+             ELSE os_meta
+           END,
+           telematics_flags_json = CASE
+             WHEN $10::jsonb <> '{}'::jsonb THEN $10::jsonb
+             ELSE telematics_flags_json
+           END,
            last_location_at = NOW(),
            started_at = COALESCE(started_at, NOW()),
            updated_at = NOW()
        WHERE id = $1`,
-      [session.id, lat, lng, heading, speed, accuracy]
+      [
+        session.id,
+        lat,
+        lng,
+        heading,
+        speed,
+        accuracy,
+        deviceMeta.deviceTimestamp,
+        deviceMeta.appVersion,
+        JSON.stringify(deviceMeta.osMeta || {}),
+        JSON.stringify(deviceMeta.telematicsFlags || {}),
+      ]
     );
 
     await pool.query(
       `INSERT INTO trip_tracking_points (
-        id, tracking_session_id, lat, lng, heading, speed, accuracy, recorded_at
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,NOW())`,
-      [randomUUID(), session.id, lat, lng, heading, speed, accuracy]
+        id, tracking_session_id, lat, lng, heading, speed, accuracy, device_recorded_at, app_version, os_meta, telematics_flags_json, recorded_at
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11::jsonb,NOW())`,
+      [
+        randomUUID(),
+        session.id,
+        lat,
+        lng,
+        heading,
+        speed,
+        accuracy,
+        deviceMeta.deviceTimestamp,
+        deviceMeta.appVersion,
+        JSON.stringify(deviceMeta.osMeta || {}),
+        JSON.stringify(deviceMeta.telematicsFlags || {}),
+      ]
     );
+
+    void sendInsuranceTelematicsWebhook({
+      req,
+      session: {
+        ...fullSession,
+        status: session.status,
+        device_started_at: fullSession?.device_started_at || deviceMeta.deviceTimestamp,
+        telemetry_event_source: "driver",
+      },
+      booking: fullSession || {},
+      eventType: "location_update",
+      eventSource: "driver",
+      lat,
+      lng,
+      heading,
+      speed,
+      accuracy,
+      deviceTimestamp: deviceMeta.deviceTimestamp,
+      status: session.status,
+      deviceMeta,
+    }).catch((err) => {
+      console.error("Insurance telematics location delivery error:", err);
+    });
 
     return res.json({
       success: true,
@@ -13857,6 +14312,7 @@ app.post("/api/tracking/status", async (req, res) => {
 
     const token = String(req.body.token || "").trim();
     const status = normalizeTrackingStatus(req.body.status);
+    const deviceMeta = getTrackingDeviceMeta(req, req.body || {});
 
     if (!token) {
       return res.status(400).json({ error: "token is required." });
@@ -13894,10 +14350,45 @@ app.post("/api/tracking/status", async (req, res) => {
              WHEN $2 = 'completed' THEN NOW()
              ELSE ended_at
            END,
+           device_started_at = CASE
+             WHEN $2 <> 'driver_assigned' THEN COALESCE(device_started_at, $3)
+             ELSE device_started_at
+           END,
+           device_ended_at = CASE
+             WHEN $2 = 'completed' THEN COALESCE($3, NOW())
+             ELSE device_ended_at
+           END,
+           app_version = COALESCE(app_version, $5),
+           os_meta = CASE
+             WHEN os_meta = '{}'::jsonb AND $6::jsonb <> '{}'::jsonb THEN $6::jsonb
+             ELSE os_meta
+           END,
+           telematics_flags_json = CASE
+             WHEN $7::jsonb <> '{}'::jsonb THEN $7::jsonb
+             ELSE telematics_flags_json
+           END,
+           status_history_json = COALESCE(status_history_json, '[]'::jsonb) || $4::jsonb,
            updated_at = NOW()
        WHERE id = $1
        RETURNING id, status`,
-      [existingSession.id, status]
+      [
+        existingSession.id,
+        status,
+        deviceMeta.deviceTimestamp,
+        JSON.stringify([
+          buildTrackingStatusHistoryEntry({
+            status,
+            deviceTimestamp: deviceMeta.deviceTimestamp,
+            source: "driver",
+            appVersion: deviceMeta.appVersion,
+            osMeta: deviceMeta.osMeta,
+            telematicsFlags: deviceMeta.telematicsFlags,
+          }),
+        ]),
+        deviceMeta.appVersion,
+        JSON.stringify(deviceMeta.osMeta || {}),
+        JSON.stringify(deviceMeta.telematicsFlags || {}),
+      ]
     );
 
     const shouldTriggerCustomerTracking = false;
@@ -13930,6 +14421,22 @@ app.post("/api/tracking/status", async (req, res) => {
     }
 
     await client.query("COMMIT");
+
+    void sendInsuranceTelematicsWebhook({
+      req,
+      session: {
+        ...(fullSession || {}),
+        status,
+      },
+      booking: fullSession || {},
+      eventType: "status_update",
+      eventSource: "driver",
+      deviceTimestamp: deviceMeta.deviceTimestamp,
+      status,
+      deviceMeta,
+    }).catch((err) => {
+      console.error("Insurance telematics status delivery error:", err);
+    });
 
     let statusWebhook = {
       triggered: false,
@@ -17838,7 +18345,8 @@ app.get("/api/insurance/settings/:location_id", requireWizardToken, async (req, 
     const profileLookup = await pool.query(
       `SELECT location_id, business_name, insurance_enabled, insurance_provider, insurance_program_id,
               insurance_api_key_ref, insurance_embed_mode, insurance_brand_name, insurance_state_rules,
-              insurance_embed_url, insurance_webhook_secret, insurance_notes,
+              insurance_embed_url, insurance_webhook_secret, insurance_notes, insurance_policy_token,
+              insurance_telematics_webhook_url, insurance_telematics_webhook_secret,
               insurance_coverage_option, insurance_activation_rule
        FROM profiles
        WHERE location_id = $1
@@ -17884,6 +18392,9 @@ app.post("/api/insurance/settings/:location_id", requireWizardToken, async (req,
       String(req.body.embed_url || "").trim() || null,
       String(req.body.webhook_secret || "").trim() || null,
       String(req.body.notes || "").trim() || null,
+      String(req.body.policy_token || "").trim() || null,
+      String(req.body.telematics_webhook_url || "").trim() || null,
+      String(req.body.telematics_webhook_secret || "").trim() || null,
       normalizeInsuranceCoverageOption(req.body.coverage_option),
       normalizeInsuranceActivationRule(req.body.activation_rule),
       locationId,
@@ -17900,12 +18411,16 @@ app.post("/api/insurance/settings/:location_id", requireWizardToken, async (req,
            insurance_embed_url = $8,
            insurance_webhook_secret = $9,
            insurance_notes = $10,
-           insurance_coverage_option = $11,
-           insurance_activation_rule = $12
-       WHERE location_id = $13
+           insurance_policy_token = $11,
+           insurance_telematics_webhook_url = $12,
+           insurance_telematics_webhook_secret = $13,
+           insurance_coverage_option = $14,
+           insurance_activation_rule = $15
+       WHERE location_id = $16
        RETURNING location_id, business_name, insurance_enabled, insurance_provider, insurance_program_id,
                  insurance_api_key_ref, insurance_embed_mode, insurance_brand_name, insurance_state_rules,
-                 insurance_embed_url, insurance_webhook_secret, insurance_notes,
+                 insurance_embed_url, insurance_webhook_secret, insurance_notes, insurance_policy_token,
+                 insurance_telematics_webhook_url, insurance_telematics_webhook_secret,
                  insurance_coverage_option, insurance_activation_rule`,
       values
     );
@@ -17948,7 +18463,10 @@ app.get("/api/insurance/booking/:bookingId", requireWizardToken, async (req, res
               p.insurance_state_rules,
               p.insurance_embed_url,
               p.insurance_webhook_secret,
-              p.insurance_notes
+              p.insurance_notes,
+              p.insurance_policy_token,
+              p.insurance_telematics_webhook_url,
+              p.insurance_telematics_webhook_secret
        FROM bookings b
        LEFT JOIN profiles p ON p.location_id = b.location_id
        WHERE b.id = $1
@@ -17990,7 +18508,10 @@ app.get("/api/insurance/provider-preview/:bookingId", requireWizardToken, async 
               p.insurance_state_rules,
               p.insurance_embed_url,
               p.insurance_webhook_secret,
-              p.insurance_notes
+              p.insurance_notes,
+              p.insurance_policy_token,
+              p.insurance_telematics_webhook_url,
+              p.insurance_telematics_webhook_secret
        FROM bookings b
        LEFT JOIN profiles p ON p.location_id = b.location_id
        WHERE b.id = $1
@@ -18025,7 +18546,8 @@ app.post("/api/insurance/quote", requireWizardToken, async (req, res) => {
     const bookingLookup = await pool.query(
       `SELECT b.*, p.business_name, p.insurance_enabled, p.insurance_provider, p.insurance_program_id,
               p.insurance_api_key_ref, p.insurance_embed_mode, p.insurance_brand_name, p.insurance_state_rules,
-              p.insurance_embed_url, p.insurance_webhook_secret, p.insurance_notes
+              p.insurance_embed_url, p.insurance_webhook_secret, p.insurance_notes,
+              p.insurance_policy_token, p.insurance_telematics_webhook_url, p.insurance_telematics_webhook_secret
        FROM bookings b
        LEFT JOIN profiles p ON p.location_id = b.location_id
        WHERE b.id = $1
@@ -18387,6 +18909,7 @@ app.post("/api/insurance/webhook/:location_id", async (req, res) => {
     const payload = req.body || {};
     const quoteId = String(payload.quote_id || payload.quoteId || "").trim();
     const policyId = String(payload.policy_id || payload.policyId || "").trim();
+    const policyToken = String(payload.policy_token || payload.policyToken || payload.insurance_policy_token || "").trim();
     const eventType = String(payload.event_type || payload.eventType || "carrier.update").trim();
     const nextStatus = payload.status ? normalizeInsuranceStatus(payload.status) : null;
 
@@ -18401,6 +18924,15 @@ app.post("/api/insurance/webhook/:location_id", async (req, res) => {
         [locationId, policyId || null, quoteId || null]
       );
       matchedBooking = bookingLookup.rows[0] || null;
+    }
+
+    if (policyToken) {
+      await pool.query(
+        `UPDATE profiles
+         SET insurance_policy_token = COALESCE($2, insurance_policy_token)
+         WHERE location_id = $1`,
+        [locationId, policyToken]
+      );
     }
 
     if (matchedBooking && nextStatus) {
