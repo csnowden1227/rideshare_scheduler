@@ -520,6 +520,14 @@ async function ensureBookingSyncColumns() {
       await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS vehicle_slot_id TEXT`);
       await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS vehicle_type TEXT`);
       await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS calendar_id TEXT`);
+      await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS security_service_id TEXT`);
+      await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS security_service_name TEXT`);
+      await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS security_service_hours NUMERIC`);
+      await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS security_service_hourly_rate NUMERIC`);
+      await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS security_service_fee_per_hour NUMERIC`);
+      await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS security_service_total NUMERIC`);
+      await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS security_calendar_id TEXT`);
+      await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS security_service_bundle_with_vehicle BOOLEAN DEFAULT false`);
       await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS driver_assignment_sms_sent_at TIMESTAMPTZ`);
       await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS driver_paid_in_full_sms_sent_at TIMESTAMPTZ`);
       await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS driver_sms_last_attempt_at TIMESTAMPTZ`);
@@ -1598,6 +1606,7 @@ async function ensureProfilePricingColumns() {
       await pool.query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS service_fee_type TEXT`);
       await pool.query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS service_fee_value NUMERIC`);
       await pool.query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS hourly_bookings JSONB`);
+      await pool.query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS security_services JSONB`);
     })().catch((err) => {
       profilePricingColumnsReady = null;
       throw err;
@@ -9295,6 +9304,7 @@ async function saveConfigHandler(req, res) {
       fixed_rates = [],
       peak_windows = [],
       hourly_bookings = [],
+      security_services = [],
       events = [],
       addons = []
     } = req.body;
@@ -9390,6 +9400,7 @@ async function saveConfigHandler(req, res) {
     pushProfileField("fleet", JSON.stringify(sanitizedFleet), "::jsonb");
     pushProfileField("peak_windows", JSON.stringify(peak_windows), "::jsonb");
     pushProfileField("hourly_bookings", JSON.stringify(hourly_bookings), "::jsonb");
+    pushProfileField("security_services", JSON.stringify(security_services), "::jsonb");
     pushProfileField("events", JSON.stringify(events), "::jsonb");
     pushProfileField("special_events", JSON.stringify(events), "::jsonb");
     pushProfileField("addons", JSON.stringify(addons), "::jsonb");
@@ -9554,6 +9565,7 @@ async function saveConfigHandler(req, res) {
             fixedRates: fixed_rates,
             peakWindows: peak_windows,
             hourlyBookings: hourly_bookings,
+            securityServices: security_services,
             events,
             addons
           });
@@ -10691,6 +10703,7 @@ function normalizeBookingMode(value) {
     "fixed",
     "event",
     "hourly",
+    "security",
   ]);
 
   return validModes.has(normalized)
@@ -10895,6 +10908,106 @@ function calculateHourlyPricing({
     subtotal: roundMoney(
       hourlyRate * hours
     ),
+  };
+}
+
+function resolveSecurityOption({
+  securityServices = [],
+  selectedSecurityService = "",
+  selectedVehicleSlotId = "",
+}) {
+  const target = String(selectedSecurityService || "").trim().toLowerCase();
+  const targetSlotId = String(selectedVehicleSlotId || "").trim().toLowerCase();
+  const rows = Array.isArray(securityServices) ? securityServices : [];
+
+  if (!rows.length) {
+    return null;
+  }
+
+  const exactMatches = target
+    ? rows.filter((row = {}) => {
+        const identifiers = [
+          row.id,
+          row.security_service_id,
+          row.service_name,
+          row.security_service_name,
+        ]
+          .map((value) => String(value || "").trim().toLowerCase())
+          .filter(Boolean);
+        return identifiers.includes(target);
+      })
+    : [];
+
+  if (exactMatches.length === 1) {
+    return exactMatches[0];
+  }
+
+  if (exactMatches.length > 1 && targetSlotId) {
+    const slotMatch = exactMatches.find((row = {}) => String(row.calendar_id || "").trim().toLowerCase() === targetSlotId);
+    if (slotMatch) {
+      return slotMatch;
+    }
+  }
+
+  if (target) {
+    const fallback = rows.find((row = {}) => {
+      const identifiers = [
+        row.id,
+        row.security_service_id,
+        row.service_name,
+        row.security_service_name,
+      ]
+        .map((value) => String(value || "").trim().toLowerCase())
+        .filter(Boolean);
+      return identifiers.includes(target);
+    });
+    if (fallback) {
+      return fallback;
+    }
+  }
+
+  return rows[0] || null;
+}
+
+function calculateSecurityPricing({
+  securityOption,
+  requestedHours,
+}) {
+  if (!securityOption) {
+    throw new Error("Select a valid security service option.");
+  }
+
+  const defaultHours = Math.max(1, positiveNumber(securityOption.default_hours, 1));
+  const hours = positiveNumber(requestedHours, defaultHours);
+
+  if (hours < 1) {
+    throw new Error("Security service requires at least 1 hour.");
+  }
+
+  const hourlyRate = positiveNumber(securityOption.hourly_rate, 0);
+  const executiveFeePerHour = positiveNumber(
+    securityOption.executive_fee_per_hour ?? securityOption.executive_service_fee_per_hour,
+    10
+  );
+
+  if (hourlyRate <= 0) {
+    throw new Error("The selected security service does not have a valid hourly rate.");
+  }
+
+  const subtotal = roundMoney((hourlyRate + executiveFeePerHour) * hours);
+
+  return {
+    mode: "security",
+    label: `${securityOption.service_name || securityOption.security_service_name || "Security Service"} at $${hourlyRate.toFixed(2)}/hr + $${executiveFeePerHour.toFixed(2)}/hr executive fee for ${hours} hour${hours === 1 ? "" : "s"}`,
+    security_service_id: String(securityOption.id || securityOption.security_service_id || securityOption.service_name || "").trim() || null,
+    security_service_name: securityOption.service_name || securityOption.security_service_name || "Security Service",
+    security_service_hours: roundMoney(hours),
+    security_service_hourly_rate: roundMoney(hourlyRate),
+    security_service_fee_per_hour: roundMoney(executiveFeePerHour),
+    security_service_total: subtotal,
+    calendar_id: String(securityOption.calendar_id || "").trim() || null,
+    bundle_with_vehicle: normalizeBooleanish(securityOption.bundle_with_vehicle, false),
+    subtotal,
   };
 }
 
@@ -11304,12 +11417,27 @@ function calculateRideSection({
   hourlyBookings,
   selectedHourlyBooking,
   hourlyHours,
+  securityServices = [],
+  selectedSecurityService = "",
+  securityHours = 0,
   startTimeLocal,
   pricingWindows,
 }) {
   const mode = normalizeBookingMode(
     bookingMode
   );
+
+  if (mode === "security") {
+    const securityOption = resolveSecurityOption({
+      securityServices,
+      selectedSecurityService,
+    });
+
+    return calculateSecurityPricing({
+      securityOption,
+      requestedHours: securityHours,
+    });
+  }
 
   if (mode === "fixed") {
     const fixedRate = resolveFixedRate(
@@ -11385,6 +11513,9 @@ function calculateCompleteQuote({
   hourlyBookings = [],
   selectedHourlyBooking = "",
   hourlyHours = 0,
+  securityServices = [],
+  selectedSecurityService = "",
+  securityHours = 0,
   pricingWindows = [],
   startTimeLocal,
   configuredAddons = [],
@@ -11406,9 +11537,29 @@ function calculateCompleteQuote({
     hourlyBookings,
     selectedHourlyBooking,
     hourlyHours,
+    securityServices,
+    selectedSecurityService,
+    securityHours,
     startTimeLocal,
     pricingWindows,
   });
+
+  const securityAddon = (normalizeBookingMode(bookingMode) === "hourly" && selectedSecurityService)
+    ? (() => {
+        const securityOption = resolveSecurityOption({
+          securityServices,
+          selectedSecurityService,
+          selectedVehicleSlotId: vehicle?.vehicle_slot_id || "",
+        });
+        if (!securityOption) {
+          throw new Error("Select a valid security service option.");
+        }
+        return calculateSecurityPricing({
+          securityOption,
+          requestedHours: securityHours || hourlyHours || securityOption.default_hours || 1,
+        });
+      })()
+    : null;
 
   const addons = calculateAddons({
     configuredAddons,
@@ -11434,8 +11585,9 @@ function calculateCompleteQuote({
     roundMoney(ride.subtotal) +
     (ride.mode === "fixed" ? timeBasedSurcharge : 0);
 
+  const securitySubtotal = roundMoney(securityAddon?.subtotal || 0);
   const subtotalBeforeFees =
-    rideSubtotal + addons.total;
+    rideSubtotal + addons.total + securitySubtotal;
 
   const serviceFee =
     calculateServiceFee({
@@ -11474,6 +11626,7 @@ function calculateCompleteQuote({
       surcharge: roundMoney(timeBasedSurcharge),
       peak_time_surcharge: roundMoney(timeBasedSurcharge),
     },
+    security: securityAddon,
     addons,
     fixed_surcharge: roundMoney(timeBasedSurcharge),
     peak_time_surcharge: roundMoney(timeBasedSurcharge),
@@ -16332,10 +16485,15 @@ async function createBookingRecord(input, {
   selected_fixed_destination = null,
   selected_hourly_booking = null,
   hourly_hours = null,
+  selected_security_service = null,
+  security_hours = null,
   selected_addons = []
   } = input;
 
-  if (!location_id || !vehicle_slot_id || !first_name || !last_name || !start_time) {
+  const bookingModeNormalized = normalizeBookingMode(booking_mode);
+  const isSecurityBooking = bookingModeNormalized === "security";
+
+  if (!location_id || (!vehicle_slot_id && !isSecurityBooking) || !first_name || !last_name || !start_time) {
     throw new Error("Missing required booking fields.");
   }
 
@@ -16352,11 +16510,13 @@ async function createBookingRecord(input, {
       "addon_tracking_unlocked",
       "addon_extra_vehicle_count",
       "hourly_bookings",
+      "security_services",
       "peak_windows",
       "open_time",
       "close_time",
     ]);
   const resolvedPaymentProvider = normalizePaymentProvider(payment_provider || profile.payment_provider);
+  const securityServices = safeParseJson(profile.security_services, []);
 
   let fleetVehicle = null;
   if (await tableExists("fleet_slots")) {
@@ -16415,36 +16575,61 @@ async function createBookingRecord(input, {
     ) || null;
   }
 
+  const securitySelectionAllowed = bookingModeNormalized === "hourly" || isSecurityBooking;
+  const securityOption = resolveSecurityOption({
+    securityServices,
+    selectedSecurityService: securitySelectionAllowed ? selected_security_service : "",
+    selectedVehicleSlotId: vehicle_slot_id,
+  });
+  const securityHoursValue = isSecurityBooking
+    ? Math.max(1, Number(security_hours || 0) || Number(hourly_hours || 0) || 1)
+    : (Number(security_hours || 0) || Number(hourly_hours || 0) || 0);
+  const securityQuote = securityOption
+    ? calculateSecurityPricing({
+        securityOption,
+        requestedHours: securityHoursValue,
+      })
+    : null;
+
   if (enforceTimingValidation) {
-    const bookingTimingValidation = validateBookingTimingRules({
-      slot: fleetVehicle || {},
-      startTime: start_time,
-      startTimeLocal: start_time_local,
-      profileDefaults: {
-        open_time: profile.open_time,
-        close_time: profile.close_time,
-      },
-    });
-    if (!bookingTimingValidation.ok) {
-      throw new Error(bookingTimingValidation.error);
+    if (isSecurityBooking) {
+      if (!securityOption?.calendar_id) {
+        throw new Error("Choose a security service with a calendar attached.");
+      }
+    } else {
+      const bookingTimingValidation = validateBookingTimingRules({
+        slot: fleetVehicle || {},
+        startTime: start_time,
+        startTimeLocal: start_time_local,
+        profileDefaults: {
+          open_time: profile.open_time,
+          close_time: profile.close_time,
+        },
+      });
+      if (!bookingTimingValidation.ok) {
+        throw new Error(bookingTimingValidation.error);
+      }
     }
   }
 
   const webhookUrl = profile.crm_webhook_url || null;
-  const calendar_id = fleetVehicle?.calendar_id || null;
+  const calendar_id = isSecurityBooking
+    ? (securityOption?.calendar_id || null)
+    : (fleetVehicle?.calendar_id || null);
   const vehicle_type = fleetVehicle?.vehicle_type || fleetVehicle?.name || null;
   const vehicle_category = fleetVehicle?.vehicle_category || null;
-  const bookingModeNormalized = normalizeBookingMode(booking_mode);
   const isHourlyBooking = bookingModeNormalized === "hourly";
   const resolvedHourlyHoursForCalendar = isHourlyBooking
     ? Math.max(4, Number(hourly_hours || 0) || 0)
     : null;
+  const resolvedSecurityHours = securityQuote?.security_service_hours || (isSecurityBooking ? Math.max(1, Number(security_hours || 0) || Number(hourly_hours || 0) || 1) : null);
+  const resolvedSecurityTotal = securityQuote?.security_service_total || null;
 
-  const routeMetrics = isHourlyBooking
+  const routeMetrics = (isHourlyBooking || isSecurityBooking)
     ? {
         distanceMiles: 0,
         durationMinutes: 0,
-        source: "hourly",
+        source: isSecurityBooking ? "security" : "hourly",
       }
     : await getRouteMetrics({
         origin: pickup_address,
@@ -16467,9 +16652,11 @@ async function createBookingRecord(input, {
         vehicleType: fleetVehicle?.vehicle_type || "",
       });
   // Keep the route ETA from Maps, then add only the wizard's peak-time buffer.
-  const bookingDurationMinutes = isHourlyBooking && resolvedHourlyHoursForCalendar
+  const bookingDurationMinutes = isSecurityBooking && resolvedSecurityHours
+    ? (resolvedSecurityHours * 60)
+    : (isHourlyBooking && resolvedHourlyHoursForCalendar
     ? (resolvedHourlyHoursForCalendar * 60)
-    : (routeMetrics.durationMinutes + generalBufferMinutes + additionalTrafficBufferMinutes);
+    : (routeMetrics.durationMinutes + generalBufferMinutes + additionalTrafficBufferMinutes));
   const end_time = new Date(
     new Date(start_time).getTime() + bookingDurationMinutes * 60000
   ).toISOString();
@@ -16525,16 +16712,18 @@ async function createBookingRecord(input, {
         hourly_booking_name: null,
         vehicle_slot_id: vehicle_slot_id || null,
         hourly_rate: null,
-        hourly_hours: Number(hourly_hours || 0) || null,
-        minimum_hours: null,
-        multiplier: 1,
-        surcharge: 0,
-        subtotal: null,
+      hourly_hours: Number(hourly_hours || 0) || null,
+      minimum_hours: null,
+      multiplier: 1,
+      surcharge: 0,
+      subtotal: null,
       };
   const resolvedHourlyBookingName = hourlyQuote.hourly_booking_name || String(selected_hourly_booking || "").trim() || null;
   const resolvedHourlyHours = hourlyQuote.hourly_hours || (Number(hourly_hours || 0) || null);
   const resolvedHourlyRate = hourlyQuote.hourly_rate || null;
   const resolvedHourlyTotal = hourlyQuote.subtotal || null;
+  const resolvedSecurityServiceName = securityQuote?.security_service_name || String(selected_security_service || "").trim() || null;
+  const resolvedSecurityServiceId = securityQuote?.security_service_id || String(selected_security_service || "").trim() || null;
 
   const result = await pool.query(
     `INSERT INTO bookings (
@@ -16559,9 +16748,17 @@ async function createBookingRecord(input, {
       deposit_percent,
       balance_due,
       status,
-      booking_mode
+      booking_mode,
+      security_service_id,
+      security_service_name,
+      security_service_hours,
+      security_service_hourly_rate,
+      security_service_fee_per_hour,
+      security_service_total,
+      security_calendar_id,
+      security_service_bundle_with_vehicle
     ) VALUES (
-      $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22
+      $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28
     )
     RETURNING id, booking_mode`,
     [
@@ -16586,7 +16783,15 @@ async function createBookingRecord(input, {
       numericDepositPercent,
       balance_due,
       bookingStatus,
-      booking_mode
+      booking_mode,
+      resolvedSecurityServiceId,
+      resolvedSecurityServiceName,
+      resolvedSecurityHours,
+      securityQuote?.security_service_hourly_rate || null,
+      securityQuote?.security_service_fee_per_hour || null,
+      resolvedSecurityTotal,
+      securityQuote?.calendar_id || null,
+      Boolean(securityQuote?.bundle_with_vehicle)
     ]
   );
 
@@ -16691,6 +16896,8 @@ async function createBookingRecord(input, {
           selected_fixed_destination,
           selected_hourly_booking: resolvedHourlyBookingName,
           hourly_hours: resolvedHourlyHours,
+          selected_security_service: resolvedSecurityServiceName,
+          security_service_hours: resolvedSecurityHours,
           selected_addons,
         },
         customer: {
@@ -16746,6 +16953,12 @@ async function createBookingRecord(input, {
           hourly_hours: resolvedHourlyHours,
           hourly_rate: resolvedHourlyRate,
           hourly_total: resolvedHourlyTotal,
+          security_service_id: resolvedSecurityServiceId,
+          security_service_name: resolvedSecurityServiceName,
+          security_service_hours: resolvedSecurityHours,
+          security_service_hourly_rate: securityQuote?.security_service_hourly_rate || null,
+          security_service_fee_per_hour: securityQuote?.security_service_fee_per_hour || null,
+          security_service_total: resolvedSecurityTotal,
           fixed_rate_name,
           peak_multiplier,
           fixed_surcharge,
@@ -16863,6 +17076,11 @@ async function createBookingRecord(input, {
         hourly_hours: resolvedHourlyHours,
         hourly_rate: resolvedHourlyRate,
         hourly_total: resolvedHourlyTotal,
+        security_service_name: resolvedSecurityServiceName,
+        security_service_hours: resolvedSecurityHours,
+        security_service_hourly_rate: securityQuote?.security_service_hourly_rate || null,
+        security_service_fee_per_hour: securityQuote?.security_service_fee_per_hour || null,
+        security_service_total: resolvedSecurityTotal,
       }
     },
     financials: {
@@ -16893,6 +17111,8 @@ app.post("/api/create-checkout-session", async (req, res) => {
     let calendarConflict = null;
     const locationId = req.body.location_id;
     const vehicleSlotId = req.body.vehicle_slot_id;
+    const bookingModeNormalized = normalizeBookingMode(req.body.booking_mode);
+    const isSecurityBooking = bookingModeNormalized === "security";
     const practiceMode = req.body.practice_mode === true || String(req.body.practice_mode || "").trim() === "1";
     const livePaymentProfile = await getPaymentProfileForLocation(locationId);
     const testStripeProfile = practiceMode
@@ -16937,10 +17157,19 @@ app.post("/api/create-checkout-session", async (req, res) => {
     const profile = await getBookingProfileRow(locationId, [
       "maps_api_key",
       "fleet",
+      "security_services",
       "peak_windows",
       "open_time",
       "close_time",
     ]);
+
+    const securityServices = safeParseJson(profile.security_services, []);
+    const securitySelectionAllowed = bookingModeNormalized === "hourly" || isSecurityBooking;
+    const securityOption = resolveSecurityOption({
+      securityServices,
+      selectedSecurityService: securitySelectionAllowed ? req.body.selected_security_service : "",
+      selectedVehicleSlotId: vehicleSlotId,
+    });
 
     let fleetVehicle = null;
     if (await tableExists("fleet_slots")) {
@@ -16990,23 +17219,38 @@ app.post("/api/create-checkout-session", async (req, res) => {
       ) || null;
     }
 
+    if (!isSecurityBooking && !vehicleSlotId) {
+      return res.status(400).json({ error: "Select a vehicle first." });
+    }
+
     if (String(req.body.booking_mode || "").trim().toLowerCase() === "hourly") {
       const hourlyHours = Number(req.body.hourly_hours || 0);
       if (!Number.isFinite(hourlyHours) || hourlyHours < 4) {
         return res.status(400).json({ error: "4 hour minimum." });
       }
     }
+    if (isSecurityBooking) {
+      const securityHours = Number(req.body.security_hours || 0);
+      if (!Number.isFinite(securityHours) || securityHours <= 0) {
+        return res.status(400).json({ error: "Choose security hours to continue." });
+      }
+      if (!securityOption?.calendar_id) {
+        return res.status(400).json({ error: "Choose a security service with a calendar attached." });
+      }
+    }
 
-    const bookingModeNormalized = normalizeBookingMode(req.body.booking_mode);
     const hourlyHoursForCalendar = bookingModeNormalized === "hourly"
       ? Math.max(4, Number(req.body.hourly_hours || 0) || 0)
       : null;
+    const securityHoursForCalendar = isSecurityBooking
+      ? Math.max(1, Number(req.body.security_hours || 0) || Number(req.body.hourly_hours || 0) || 1)
+      : null;
 
-    const routeMetrics = bookingModeNormalized === "hourly"
+    const routeMetrics = (bookingModeNormalized === "hourly" || isSecurityBooking)
       ? {
           distanceMiles: 0,
           durationMinutes: 0,
-          source: "hourly",
+          source: isSecurityBooking ? "security" : "hourly",
         }
       : await getRouteMetrics({
           origin: req.body.pickup_address,
@@ -17017,10 +17261,10 @@ app.post("/api/create-checkout-session", async (req, res) => {
           destinationLng: req.body.dropoff_lng,
           mapsApiKey: profile.maps_api_key || null,
         });
-    const generalBufferMinutes = bookingModeNormalized === "hourly"
+    const generalBufferMinutes = (bookingModeNormalized === "hourly" || isSecurityBooking)
       ? 0
       : (parseInt(fleetVehicle?.outbound_buffer_min, 10) || BOOKING_BUFFER_MINUTES);
-    const additionalTrafficBufferMinutes = bookingModeNormalized === "hourly"
+    const additionalTrafficBufferMinutes = (bookingModeNormalized === "hourly" || isSecurityBooking)
       ? 0
       : getAdditionalTrafficBufferMinutes({
           peakWindows: safeParseJson(profile.peak_windows),
@@ -17029,17 +17273,23 @@ app.post("/api/create-checkout-session", async (req, res) => {
           vehicleType: fleetVehicle?.vehicle_type || "",
         });
     // Hourly bookings use only the requested hours; standard bookings use route ETA plus buffers.
-    const bookingDurationMinutes = bookingModeNormalized === "hourly" && hourlyHoursForCalendar
+    const bookingDurationMinutes = isSecurityBooking && securityHoursForCalendar
+      ? (securityHoursForCalendar * 60)
+      : (bookingModeNormalized === "hourly" && hourlyHoursForCalendar
       ? (hourlyHoursForCalendar * 60)
-      : (routeMetrics.durationMinutes + generalBufferMinutes + additionalTrafficBufferMinutes);
+      : (routeMetrics.durationMinutes + generalBufferMinutes + additionalTrafficBufferMinutes));
     const calculatedEndTime = new Date(
       new Date(req.body.start_time).getTime() + bookingDurationMinutes * 60000
     ).toISOString();
 
-    if (fleetVehicle?.calendar_id) {
+    const bookingCalendarId = isSecurityBooking
+      ? (securityOption?.calendar_id || null)
+      : (fleetVehicle?.calendar_id || null);
+
+    if (bookingCalendarId) {
       const calendarEvents = await getCrmCalendarEvents({
         locationId,
-        calendarId: fleetVehicle.calendar_id,
+        calendarId: bookingCalendarId,
         startTime: req.body.start_time,
         endTime: calculatedEndTime,
       });
@@ -17054,7 +17304,7 @@ app.post("/api/create-checkout-session", async (req, res) => {
           title: conflictingEvent.title,
           start_time: conflictingEvent.start,
           end_time: conflictingEvent.end,
-          calendar_id: fleetVehicle.calendar_id,
+          calendar_id: bookingCalendarId,
         };
         const farmOutLink = appendQueryParams(
           buildDispatchManagerUrl(getPublicAppUrl(req), locationId),
@@ -18107,6 +18357,7 @@ const parsedEvents = safeParseJson(profile.events);
 const parsedPeakWindows = safeParseJson(profile.peak_windows);
 const parsedAddons = safeParseJson(profile.addons);
 const parsedHourlyBookings = safeParseJson(profile.hourly_bookings);
+const parsedSecurityServices = safeParseJson(profile.security_services);
 const entitlements = buildPlanEntitlements({
   planName: profile.plan_name || "starter",
   addonBrandingUnlocked: profile.addon_branding_unlocked,
@@ -18224,6 +18475,7 @@ res.json({
   peak_windows: parsedPeakWindows,
   fixed_rates: parsedFixedRates,
   hourly_bookings: parsedHourlyBookings,
+  security_services: parsedSecurityServices,
   addons: parsedAddons,
 
   service_lat: profile.service_lat,
@@ -19137,11 +19389,16 @@ app.post("/api/widget-quote", async (req, res) => {
     const events = safeParseJson(profile.events);
     const peakWindows = safeParseJson(profile.peak_windows);
     const addons = safeParseJson(profile.addons);
-    const vehicle = (Array.isArray(fleet) ? fleet : []).find((row = {}) => String(row.vehicle_slot_id || "") === String(vehicle_slot_id || "")) || {};
-    if (!vehicle_slot_id) {
+    const securityServices = safeParseJson(profile.security_services, []);
+    const bookingModeNormalized = normalizeBookingMode(booking_mode);
+    const isSecurityBooking = bookingModeNormalized === "security";
+    const vehicle = isSecurityBooking
+      ? {}
+      : (Array.isArray(fleet) ? fleet : []).find((row = {}) => String(row.vehicle_slot_id || "") === String(vehicle_slot_id || "")) || {};
+    if (!vehicle_slot_id && !isSecurityBooking) {
       return res.status(400).json({ error: "Select a vehicle first." });
     }
-    if (!vehicle || !vehicle.vehicle_slot_id) {
+    if (!isSecurityBooking && (!vehicle || !vehicle.vehicle_slot_id)) {
       return res.status(404).json({ error: "Selected vehicle not found." });
     }
 
@@ -19150,19 +19407,22 @@ app.post("/api/widget-quote", async (req, res) => {
       return res.status(400).json({ error: "Choose a valid pickup date and time." });
     }
 
-    const bookingModeNormalized = normalizeBookingMode(booking_mode);
     const isHourlyBooking = bookingModeNormalized === "hourly";
     const requestedHourlyHours = toNumber(hourly_hours, 0);
     if (isHourlyBooking && requestedHourlyHours < 4) {
       return res.status(400).json({ error: "4 hour minimum." });
     }
+    const requestedSecurityHours = toNumber(req.body.security_hours, 0);
+    if (isSecurityBooking && requestedSecurityHours <= 0) {
+      return res.status(400).json({ error: "Choose security hours to continue." });
+    }
     const startTimeLocal = start_time_local || start_time;
 
-    const route = isHourlyBooking
+    const route = (isHourlyBooking || isSecurityBooking)
       ? {
           distanceMeters: 0,
           durationMinutes: 0,
-          source: "hourly",
+          source: isSecurityBooking ? "security" : "hourly",
         }
       : await computeRoute({
           origin: pickup_address,
@@ -19179,6 +19439,11 @@ app.post("/api/widget-quote", async (req, res) => {
     const serviceFeeType = normalizeServiceFeeType(profile.service_fee_type);
     const serviceFeeValue = profile.service_fee_value != null ? Number(profile.service_fee_value) : 0;
     const financials = safeParseJson(profile.financials, {});
+    const securityOption = resolveSecurityOption({
+      securityServices,
+      selectedSecurityService: req.body.selected_security_service,
+      selectedVehicleSlotId: vehicle_slot_id,
+    });
     let quote;
 
     try {
@@ -19193,6 +19458,9 @@ app.post("/api/widget-quote", async (req, res) => {
         hourlyBookings: safeParseJson(profile.hourly_bookings, []),
         selectedHourlyBooking: selected_hourly_booking,
         hourlyHours: hourly_hours,
+        securityServices,
+        selectedSecurityService: req.body.selected_security_service,
+        securityHours: requestedSecurityHours,
         pricingWindows: peakWindows,
         startTimeLocal,
         configuredAddons: addons,
@@ -19251,6 +19519,12 @@ app.post("/api/widget-quote", async (req, res) => {
       hourly_booking_name: quote.ride.mode === "hourly" ? quote.ride.hourly_booking_name || null : null,
       hourly_booking_slot_id: quote.ride.mode === "hourly" ? quote.ride.vehicle_slot_id || null : null,
       hourly_hours: quote.ride.mode === "hourly" ? quote.ride.hourly_hours || null : null,
+      security_service_id: quote.security?.security_service_id || null,
+      security_service_name: quote.security?.security_service_name || null,
+      security_service_hours: quote.security?.security_service_hours || null,
+      security_service_hourly_rate: quote.security?.security_service_hourly_rate || null,
+      security_service_fee_per_hour: quote.security?.security_service_fee_per_hour || null,
+      security_service_total: quote.security?.security_service_total || null,
       event_name: quote.ride.mode === "event" ? quote.ride.event_name || null : null,
       event_date: quote.ride.mode === "event" ? quote.ride.event_date || null : null,
       event_multiplier: quote.ride.mode === "event" ? Number(quote.ride.multiplier || 1) : 1,

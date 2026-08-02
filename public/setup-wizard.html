@@ -518,6 +518,26 @@
             </div>
 
             <div class="card">
+                <div class="flex justify-between items-center mb-6">
+                    <div>
+                        <h2 class="section-header !mb-2 !border-0">SECTION: SECURITY SERVICES</h2>
+                        <p class="text-xs text-slate-500">Add security as a bundled option with hourly vehicle bookings, or set it up as a standalone security service with its own calendar. Use the exact names <strong>Unarmed Security (Events/Locations)</strong> and <strong>Armed Security (Events/Location)</strong>.</p>
+                    </div>
+                    <button type="button" onclick="addSecurityServiceRow()" class="wizard-btn-accent text-xs font-bold px-4 py-2 rounded-lg">+ Add Security Service</button>
+                </div>
+                <div class="wizard-table-scroll">
+                <table class="w-full">
+                    <thead>
+                        <tr class="text-[10px] uppercase text-gray-400">
+                            <th>Service Name</th><th>Default Hours</th><th>Price / Hour</th><th>Exec Fee / Hour</th><th>Calendar ID</th><th>Bundle With Hourly Booking</th><th>Formula</th><th></th>
+                        </tr>
+                    </thead>
+                    <tbody id="security-service-body"></tbody>
+                </table>
+                </div>
+            </div>
+
+            <div class="card">
                 <div class="flex flex-col gap-3 mb-6">
                     <h2 class="section-header !mb-0 !border-0">SECTION: SERVICE AREA & GEOFENCING</h2>
                     <p class="text-xs text-slate-500 leading-relaxed">Choose how you want the service boundary enforced. Radius is fastest. City / County / ZIP gives you real territory control. Custom zones can be layered in later for more advanced coverage.</p>
@@ -2068,6 +2088,38 @@ function addHourlyBookingRow(data = {}) {
     refreshFormula();
 }
 
+function addSecurityServiceRow(data = {}) {
+    const tr = document.createElement('tr');
+    tr.className = "security-service-row border-b border-slate-50";
+    const serviceName = data.service_name || data.security_service_name || '';
+    tr.innerHTML = `
+        <td class="py-3"><input type="text" class="s-name input-mini" value="${serviceName}" placeholder="e.g. Unarmed Security (Events/Locations)"></td>
+        <td class="py-3"><input type="number" min="1" step="1" class="s-hours input-mini" value="${data.default_hours || 4}"></td>
+        <td class="py-3"><input type="number" min="0" step="0.01" class="s-rate input-mini" value="${data.hourly_rate || 0}"></td>
+        <td class="py-3"><input type="number" min="0" step="0.01" class="s-fee input-mini" value="${data.executive_fee_per_hour ?? data.executive_service_fee_per_hour ?? 10}"></td>
+        <td class="py-3"><input type="text" class="s-cal input-mini" value="${data.calendar_id || ''}" placeholder="Security calendar ID"></td>
+        <td class="py-3 text-center"><input type="checkbox" class="s-bundle" ${data.bundle_with_vehicle === false ? '' : 'checked'}></td>
+        <td class="py-3"><div class="s-formula text-xs font-semibold text-slate-600">-</div></td>
+        <td><button onclick="this.closest('tr').remove()" class="text-red-400">&times;</button></td>
+    `;
+    document.getElementById('security-service-body').appendChild(tr);
+    const refreshFormula = () => {
+        const hours = parseInt(tr.querySelector('.s-hours')?.value, 10) || 0;
+        const rate = parseFloat(tr.querySelector('.s-rate')?.value) || 0;
+        const fee = parseFloat(tr.querySelector('.s-fee')?.value) || 0;
+        const formulaEl = tr.querySelector('.s-formula');
+        if (!formulaEl) return;
+        formulaEl.textContent = hours > 0 && (rate > 0 || fee > 0)
+            ? `${hours} × $${(rate + fee).toFixed(2)} = $${(hours * (rate + fee)).toFixed(2)}`
+            : '$0.00';
+    };
+    tr.querySelector('.s-hours')?.addEventListener('input', refreshFormula);
+    tr.querySelector('.s-rate')?.addEventListener('input', refreshFormula);
+    tr.querySelector('.s-fee')?.addEventListener('input', refreshFormula);
+    tr.querySelector('.s-name')?.addEventListener('input', refreshFormula);
+    refreshFormula();
+}
+
 function addAddonRow(data = {}) {
     const tr = document.createElement('tr');
     tr.className = "addon-row border-b border-slate-50";
@@ -2100,6 +2152,22 @@ function collectHourlyBookingRows() {
             hourly_rate: parseFloat(row.querySelector('.h-rate').value) || 0
         };
     });
+}
+
+function collectSecurityServiceRows() {
+    return Array.from(document.querySelectorAll('.security-service-row')).map((row, index) => {
+        const serviceName = row.querySelector('.s-name').value.trim();
+        const calendarId = row.querySelector('.s-cal').value.trim();
+        return {
+            id: slugifyVehicleType(serviceName || `security_${index + 1}`),
+            service_name: serviceName,
+            default_hours: parseInt(row.querySelector('.s-hours').value, 10) || 1,
+            hourly_rate: parseFloat(row.querySelector('.s-rate').value) || 0,
+            executive_fee_per_hour: parseFloat(row.querySelector('.s-fee').value) || 10,
+            calendar_id: calendarId,
+            bundle_with_vehicle: !!row.querySelector('.s-bundle')?.checked
+        };
+    }).filter((row) => row.service_name);
 }
 
 function applyLocalPlanFallback(planName = planOverride || currentPlanName || 'starter') {
@@ -2182,6 +2250,9 @@ function applyProfileToWizard(data = {}, { allowSensitive = true } = {}) {
     const hourlyBody = document.getElementById('hourly-booking-body');
     if (hourlyBody) hourlyBody.innerHTML = '';
     (data.hourly_bookings || []).forEach(h => addHourlyBookingRow(h));
+    const securityBody = document.getElementById('security-service-body');
+    if (securityBody) securityBody.innerHTML = '';
+    (data.security_services || []).forEach(s => addSecurityServiceRow(s));
 
     if (data.fixed_rates) data.fixed_rates.forEach(r => addRouteRow(r));
     if (data.peak_windows) {
@@ -2534,6 +2605,7 @@ async function saveToBackend() {
             }))
         ],
         hourly_bookings: collectHourlyBookingRows(),
+        security_services: collectSecurityServiceRows(),
 
         fixed_rates: Array.from(document.querySelectorAll('.route-row')).map(r => ({
             location_name: r.querySelector('.r-name').value,
@@ -2754,6 +2826,7 @@ function collectWizardPayload() {
             }))
         ],
         hourly_bookings: collectHourlyBookingRows(),
+        security_services: collectSecurityServiceRows(),
         fixed_rates: Array.from(document.querySelectorAll('.route-row')).map(r => ({
             location_name: r.querySelector('.r-name').value,
             lat: parseFloat(r.querySelector('.r-lat').value) || 0,
