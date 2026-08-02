@@ -1258,6 +1258,25 @@
       }
     }
 
+    async function loadDriverPageLocation() {
+      const lookupSlug = (subdomainSlug || pathnameSlug || "").trim();
+      if (!lookupSlug) return;
+      try {
+        const response = await fetch(`/api/driver-page-location/${encodeURIComponent(lookupSlug)}`, { cache: "no-store" });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || !data?.success) return;
+        locationId = String(data.location_id || locationId || defaultDemoLocationId).trim();
+        driverName = String(data.driver_display_name || driverName || "Chauffeur Deluxe Driver").trim();
+        const resolvedSlug = String(data.driver_page_slug || "").trim();
+        if (resolvedSlug) {
+          slug = normalizePageUrl(`https://${resolvedSlug}.${rootDomain}/`) || slug;
+        }
+        applyDriverHeader();
+      } catch (err) {
+        console.warn("Driver page location lookup failed.", err);
+      }
+    }
+
     function shuffleSnapshotOrder() {
       snapshotOrder = snapshotCarouselSlides.map((_, index) => index);
       for (let i = snapshotOrder.length - 1; i > 0; i -= 1) {
@@ -1318,6 +1337,7 @@
     }
 
     applyDriverHeader();
+    void loadDriverPageLocation();
     void loadPreviewSession();
 
     if (snapshotCarouselSlides.length) {

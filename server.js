@@ -8631,11 +8631,32 @@ app.get("/api/driver-page-location/:slug", async (req, res) => {
     if (!slug) {
       return res.status(400).json({ error: "slug is required." });
     }
+    const profileLookup = await pool.query(
+      `SELECT location_id, driver_page_slug, driver_display_name, display_name, business_name
+       FROM profiles
+       WHERE LOWER(COALESCE(driver_page_slug, '')) = $1
+          OR LOWER(COALESCE(driver_display_name, '')) = $1
+          OR LOWER(COALESCE(display_name, '')) = $1
+          OR LOWER(COALESCE(business_name, '')) = $1
+          OR LOWER(COALESCE(location_id, '')) = $1
+       LIMIT 1`,
+      [slug]
+    );
+    if (profileLookup.rows.length) {
+      const profile = profileLookup.rows[0];
+      return res.json({
+        success: true,
+        slug,
+        location_id: profile.location_id || DEFAULT_DRIVER_PARTNER_LOCATION_ID,
+        driver_page_slug: normalizeChauffeursSubdomain(profile.driver_page_slug || slug, slug),
+        driver_display_name: String(profile.driver_display_name || profile.display_name || profile.business_name || "Chauffeur Deluxe Driver").trim(),
+      });
+    }
+
     const demoSlugs = new Set(["laquor-otkins", "john-smith", "first-last", "driver-name"]);
     if (!demoSlugs.has(slug)) {
       return res.status(404).json({ error: "Driver page not found." });
     }
-
     return res.json({
       success: true,
       slug,
