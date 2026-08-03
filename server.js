@@ -1141,6 +1141,11 @@ async function ensureTripTrackingTables() {
           recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
       `);
+      await pool.query(`ALTER TABLE trip_tracking_points ADD COLUMN IF NOT EXISTS device_recorded_at TIMESTAMPTZ`);
+      await pool.query(`ALTER TABLE trip_tracking_points ADD COLUMN IF NOT EXISTS app_version TEXT`);
+      await pool.query(`ALTER TABLE trip_tracking_points ADD COLUMN IF NOT EXISTS os_meta JSONB NOT NULL DEFAULT '{}'::jsonb`);
+      await pool.query(`ALTER TABLE trip_tracking_points ADD COLUMN IF NOT EXISTS telematics_flags_json JSONB NOT NULL DEFAULT '{}'::jsonb`);
+      await pool.query(`ALTER TABLE trip_tracking_points ADD COLUMN IF NOT EXISTS recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()`);
       await pool.query(`CREATE INDEX IF NOT EXISTS idx_trip_tracking_points_session_id ON trip_tracking_points(tracking_session_id)`);
       await pool.query(`CREATE INDEX IF NOT EXISTS idx_trip_tracking_points_recorded_at ON trip_tracking_points(recorded_at DESC)`);
       await pool.query(`
