@@ -925,6 +925,7 @@
           <div>
             <div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.14em;color:#334155;">Security Service</div>
             <div style="margin-top:6px;font-size:12px;line-height:1.5;color:#64748b;">Add security to an hourly vehicle booking, or choose Security only for a standalone reservation with its own calendar. The executive fee applies only when security is paired with an hourly vehicle booking. Security stays disabled on standard, fixed, and event bookings.</div>
+            <div style="margin-top:6px;font-size:11px;font-weight:700;color:#64748b;">Loaded security rows: ${securityServices.length}</div>
           </div>
           <div style="padding:4px 8px;border-radius:999px;background:#eef2ff;color:#4338ca;font-size:12px;font-weight:800;white-space:nowrap;">$10/hr executive fee</div>
         </div>
