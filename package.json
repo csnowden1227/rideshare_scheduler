@@ -5,7 +5,8 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "node --watch server.js"
+    "dev": "node --watch server.js",
+    "health:widget": "node scripts/check-widget-health.mjs"
   },
   "dependencies": {
     "@googlemaps/google-maps-services-js": "^3.4.2",

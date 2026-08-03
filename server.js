@@ -12244,6 +12244,7 @@ async function sendInsuranceTelematicsWebhook({
   status = null,
   deviceMeta = {},
 }) {
+  await ensureInsuranceModuleTables();
   const profileLookup = await pool.query(
     `SELECT insurance_telematics_webhook_url, insurance_telematics_webhook_secret, insurance_provider
      FROM profiles
