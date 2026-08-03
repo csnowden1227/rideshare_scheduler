@@ -845,12 +845,23 @@ function setSyncStatus(message, isSuccess = true) {
 }
 
 let syncStatusPollTimer = null;
+let syncStatusCountdownTimer = null;
+let syncStatusCountdownSeconds = 0;
+
+function stopSyncStatusCountdown() {
+    if (syncStatusCountdownTimer) {
+        clearInterval(syncStatusCountdownTimer);
+        syncStatusCountdownTimer = null;
+    }
+    syncStatusCountdownSeconds = 0;
+}
 
 function stopSyncStatusPolling() {
     if (syncStatusPollTimer) {
         clearInterval(syncStatusPollTimer);
         syncStatusPollTimer = null;
     }
+    stopSyncStatusCountdown();
 }
 
 async function fetchWizardSyncStatus(locationId) {
@@ -872,6 +883,15 @@ function startSyncStatusPolling(locationId) {
     stopSyncStatusPolling();
     const normalizedLocationId = String(locationId || '').trim();
     if (!normalizedLocationId) return;
+    const pollIntervalSeconds = 3;
+
+    const renderProcessingStatus = () => {
+        if (syncStatusCountdownSeconds > 0) {
+            setSyncStatus(`Saved locally. CRM sync is processing now. Next check in ${syncStatusCountdownSeconds}s.`, true);
+        } else {
+            setSyncStatus('Saved locally. CRM sync is processing now.', true);
+        }
+    };
 
     const updateFromStatus = (statusPayload) => {
         const status = statusPayload?.status || {};
@@ -888,7 +908,8 @@ function startSyncStatusPolling(locationId) {
             return true;
         }
         if (status.state === 'queued' || status.state === 'processing') {
-            setSyncStatus('Saved locally. CRM sync is processing now.', true);
+            syncStatusCountdownSeconds = pollIntervalSeconds;
+            renderProcessingStatus();
         }
         return false;
     };
@@ -898,14 +919,26 @@ function startSyncStatusPolling(locationId) {
             if (updateFromStatus(payload)) return;
             syncStatusPollTimer = setInterval(async () => {
                 try {
+                    syncStatusCountdownSeconds = pollIntervalSeconds;
+                    stopSyncStatusCountdown();
+                    syncStatusCountdownTimer = setInterval(() => {
+                        syncStatusCountdownSeconds = Math.max(0, syncStatusCountdownSeconds - 1);
+                        renderProcessingStatus();
+                        if (syncStatusCountdownSeconds <= 0) {
+                            stopSyncStatusCountdown();
+                        }
+                    }, 1000);
                     const nextPayload = await fetchWizardSyncStatus(normalizedLocationId);
+                    stopSyncStatusCountdown();
                     if (updateFromStatus(nextPayload)) return;
                 } catch (err) {
+                    stopSyncStatusCountdown();
                     console.warn('Wizard sync status polling error:', err);
                 }
             }, 3000);
         })
         .catch((err) => {
+            stopSyncStatusCountdown();
             console.warn('Initial wizard sync status lookup failed:', err);
         });
 }
