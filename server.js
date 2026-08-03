@@ -1569,6 +1569,37 @@ function normalizeServiceAreaRules(value) {
   };
 }
 
+function getDefaultSecurityServices() {
+  return [
+    {
+      id: "unarmed_security_events_locations",
+      service_name: "Unarmed Security (Events/Locations)",
+      default_hours: 4,
+      hourly_rate: 45,
+      executive_fee_per_hour: 10,
+      calendar_id: "",
+      bundle_with_vehicle: true,
+    },
+    {
+      id: "armed_security_events_location",
+      service_name: "Armed Security",
+      default_hours: 4,
+      hourly_rate: 60,
+      executive_fee_per_hour: 10,
+      calendar_id: "",
+      bundle_with_vehicle: true,
+    },
+  ];
+}
+
+function normalizeSecurityServices(value) {
+  const rows = safeParseJson(value, []);
+  if (!Array.isArray(rows) || !rows.length) {
+    return getDefaultSecurityServices();
+  }
+  return rows;
+}
+
 function normalizeAreaKey(value) {
   return String(value || "")
     .trim()
@@ -18373,7 +18404,7 @@ const parsedEvents = safeParseJson(profile.events);
 const parsedPeakWindows = safeParseJson(profile.peak_windows);
 const parsedAddons = safeParseJson(profile.addons);
 const parsedHourlyBookings = safeParseJson(profile.hourly_bookings);
-const parsedSecurityServices = safeParseJson(profile.security_services);
+  const parsedSecurityServices = normalizeSecurityServices(profile.security_services);
 const entitlements = buildPlanEntitlements({
   planName: profile.plan_name || "starter",
   addonBrandingUnlocked: profile.addon_branding_unlocked,
@@ -19774,7 +19805,7 @@ app.get("/api/get-profile-widget-script/:location_id", async (req, res) => {
         general_buffer_min: sanitizedFleet[0]?.outbound_buffer_min ?? BOOKING_BUFFER_MINUTES,
         fixed_rates: fixedRates,
         hourly_bookings: safeParseJson(p.hourly_bookings),
-        security_services: safeParseJson(p.security_services, []),
+        security_services: normalizeSecurityServices(p.security_services),
         peak_windows: safeParseJson(p.peak_windows),
         events: safeParseJson(p.events),
         addons: safeParseJson(p.addons)
