@@ -899,21 +899,22 @@
   function renderSecurityServiceControls() {
     const bookingMode = selectedBookingMode();
     const allSecurityServices = Array.isArray(state.config?.security_services) ? state.config.security_services : [];
-    const securityServices = bookingMode === "hourly"
-      ? allSecurityServices.filter((row) => normalizeBooleanish(row.bundle_with_vehicle, true))
-      : allSecurityServices;
+    const securityServices = allSecurityServices;
     const isActiveMode = bookingMode === "hourly" || bookingMode === "security";
     const isHourlyMode = bookingMode === "hourly";
     const wrapperStyle = isActiveMode
       ? "display:block;margin-top:12px;padding:14px;border:1px solid #dbe4f0;border-radius:18px;background:#f8fafc;"
       : "display:block;margin-top:12px;padding:14px;border:1px solid #dbe4f0;border-radius:18px;background:#f8fafc;opacity:.5;filter:grayscale(1);pointer-events:none;";
     const options = [
-      `<option value="">${securityServices.length ? "Select Security Service" : bookingMode === "hourly" ? "No hourly bundleable security services configured" : "No security services configured"}</option>`,
+      `<option value="">${securityServices.length ? "Select Security Service" : "No security services configured"}</option>`,
       ...securityServices.map((row) => {
         const name = String(row.service_name || row.security_service_name || "Security Service").trim();
         const hourlyRate = toNumber(row.hourly_rate, 0);
         const execFee = toNumber(row.executive_fee_per_hour ?? row.executive_service_fee_per_hour, 10);
-        const rateText = hourlyRate > 0 ? ` - ${money(hourlyRate)}/hr + ${money(execFee)}/hr fee` : "";
+        const bundleable = normalizeBooleanish(row.bundle_with_vehicle, true);
+        const rateText = hourlyRate > 0
+          ? ` - ${money(hourlyRate)}/hr${bundleable ? ` + ${money(execFee)}/hr fee` : " (standalone only)"}`
+          : "";
         return `<option value="${escapeHtml(securityServiceOptionValue(row))}">${escapeHtml(name + rateText)}</option>`;
       }),
     ];
@@ -938,7 +939,7 @@
             <label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Security Hours</label>
             <input id="cd_security_hours" type="number" min="1" step="1" value="1" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" ${isActiveMode ? "" : "disabled"} />
           </div>
-          <div id="cd_security_hint" style="font-size:12px;font-weight:700;color:#4338ca;">${isHourlyMode ? "Choose hours and the executive fee will calculate automatically." : (bookingMode === "security" ? "Standalone security uses its own calendar and needs date/time plus hours." : "Security is available with Hourly bookings or Security only.")}</div>
+          <div id="cd_security_hint" style="font-size:12px;font-weight:700;color:#4338ca;">${isHourlyMode ? "Choose hours and the executive fee will calculate automatically for bundleable security services." : (bookingMode === "security" ? "Standalone security uses its own calendar and needs date/time plus hours." : "Security is available with Hourly bookings or Security only.")}</div>
         </div>
       </div>
     `;
@@ -999,9 +1000,7 @@
     securitySelect.disabled = false;
     securityHoursInput.disabled = false;
 
-    const visibleSecurityServices = mode === "hourly"
-      ? (Array.isArray(state.config?.security_services) ? state.config.security_services.filter((row) => normalizeBooleanish(row.bundle_with_vehicle, true)) : [])
-      : (Array.isArray(state.config?.security_services) ? state.config.security_services : []);
+    const visibleSecurityServices = Array.isArray(state.config?.security_services) ? state.config.security_services : [];
     const selected = securityServiceByValue(securitySelect.value);
     if (selected && !securityHoursInput.value) {
       securityHoursInput.value = String(toNumber(selected.default_hours, 1) || 1);

@@ -11549,20 +11549,22 @@ function calculateCompleteQuote({
 
   const securityAddon = (normalizeBookingMode(bookingMode) === "hourly" && selectedSecurityService)
     ? (() => {
-        const securityOption = resolveSecurityOption({
-          securityServices,
-          selectedSecurityService,
-          selectedVehicleSlotId: vehicle?.vehicle_slot_id || "",
-        });
-        if (!securityOption) {
-          throw new Error("Select a valid security service option.");
-        }
-        return calculateSecurityPricing({
-          securityOption,
-          requestedHours: securityHours || hourlyHours || securityOption.default_hours || 1,
-          applyBundleFee: true,
-        });
-      })()
+          const securityOption = resolveSecurityOption({
+            securityServices,
+            selectedSecurityService,
+            selectedVehicleSlotId: vehicle?.vehicle_slot_id || "",
+          });
+          if (!securityOption) {
+            throw new Error("Select a valid security service option.");
+          }
+          const applyBundleFee = normalizeBookingMode(bookingMode) === "hourly"
+            && normalizeBooleanish(securityOption.bundle_with_vehicle, true);
+          return calculateSecurityPricing({
+            securityOption,
+            requestedHours: securityHours || hourlyHours || securityOption.default_hours || 1,
+            applyBundleFee,
+          });
+        })()
     : null;
   const securitySummary = securityAddon || (ride.mode === "security" ? ride : null);
 
