@@ -19763,6 +19763,7 @@ app.get("/api/get-profile-widget-script/:location_id", async (req, res) => {
         general_buffer_min: sanitizedFleet[0]?.outbound_buffer_min ?? BOOKING_BUFFER_MINUTES,
         fixed_rates: fixedRates,
         hourly_bookings: safeParseJson(p.hourly_bookings),
+        security_services: safeParseJson(p.security_services, []),
         peak_windows: safeParseJson(p.peak_windows),
         events: safeParseJson(p.events),
         addons: safeParseJson(p.addons)
