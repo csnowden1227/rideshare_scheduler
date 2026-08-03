@@ -8758,6 +8758,9 @@ app.get("/", (req, res, next) => {
   if (host === CHAUFFEURS_DELUXE_DRIVER_PARENT_DOMAIN) {
     return res.sendFile(path.join(__dirname, "public", "driver-partner-program.html"));
   }
+  if (host === CHAUFFEURS_DELUXE_ROOT_DOMAIN || host === `www.${CHAUFFEURS_DELUXE_ROOT_DOMAIN}`) {
+    return res.sendFile(path.join(__dirname, "public", "index.html"));
+  }
   const subdomain = getChauffeursSubdomainFromRequest(req);
   if (!subdomain) {
     return next();
