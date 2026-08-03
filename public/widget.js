@@ -902,13 +902,16 @@
     const securityServices = bookingMode === "hourly"
       ? allSecurityServices.filter((row) => normalizeBooleanish(row.bundle_with_vehicle, true))
       : allSecurityServices;
+    if (!securityServices.length) {
+      return "";
+    }
     const isActiveMode = bookingMode === "hourly" || bookingMode === "security";
     const isHourlyMode = bookingMode === "hourly";
     const wrapperStyle = isActiveMode
       ? "display:block;margin-top:12px;padding:14px;border:1px solid #dbe4f0;border-radius:18px;background:#f8fafc;"
       : "display:block;margin-top:12px;padding:14px;border:1px solid #dbe4f0;border-radius:18px;background:#f8fafc;opacity:.5;filter:grayscale(1);pointer-events:none;";
     const options = [
-      `<option value="">${securityServices.length ? "Select Security Service" : bookingMode === "hourly" ? "No hourly bundleable security services configured" : "No security services configured"}</option>`,
+      `<option value="">Select Security Service</option>`,
       ...securityServices.map((row) => {
         const name = String(row.service_name || row.security_service_name || "Security Service").trim();
         const hourlyRate = toNumber(row.hourly_rate, 0);
@@ -930,7 +933,7 @@
         <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-top:12px;">
           <div>
             <label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Select Security Type</label>
-            <select id="cd_security_service" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" ${securityServices.length && isActiveMode ? "" : "disabled"}>
+            <select id="cd_security_service" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" ${isActiveMode ? "" : "disabled"}>
               ${options.join("")}
             </select>
           </div>

@@ -10972,6 +10972,7 @@ function resolveSecurityOption({
 function calculateSecurityPricing({
   securityOption,
   requestedHours,
+  applyBundleFee = false,
 }) {
   if (!securityOption) {
     throw new Error("Select a valid security service option.");
@@ -10989,21 +10990,22 @@ function calculateSecurityPricing({
     securityOption.executive_fee_per_hour ?? securityOption.executive_service_fee_per_hour,
     10
   );
+  const appliedExecutiveFeePerHour = applyBundleFee ? executiveFeePerHour : 0;
 
   if (hourlyRate <= 0) {
     throw new Error("The selected security service does not have a valid hourly rate.");
   }
 
-  const subtotal = roundMoney((hourlyRate + executiveFeePerHour) * hours);
+  const subtotal = roundMoney((hourlyRate + appliedExecutiveFeePerHour) * hours);
 
   return {
     mode: "security",
-    label: `${securityOption.service_name || securityOption.security_service_name || "Security Service"} at $${hourlyRate.toFixed(2)}/hr + $${executiveFeePerHour.toFixed(2)}/hr executive fee for ${hours} hour${hours === 1 ? "" : "s"}`,
+    label: `${securityOption.service_name || securityOption.security_service_name || "Security Service"} at $${hourlyRate.toFixed(2)}/hr${applyBundleFee ? ` + $${executiveFeePerHour.toFixed(2)}/hr bundle fee` : ""} for ${hours} hour${hours === 1 ? "" : "s"}`,
     security_service_id: String(securityOption.id || securityOption.security_service_id || securityOption.service_name || "").trim() || null,
     security_service_name: securityOption.service_name || securityOption.security_service_name || "Security Service",
     security_service_hours: roundMoney(hours),
     security_service_hourly_rate: roundMoney(hourlyRate),
-    security_service_fee_per_hour: roundMoney(executiveFeePerHour),
+    security_service_fee_per_hour: roundMoney(appliedExecutiveFeePerHour),
     security_service_total: subtotal,
     calendar_id: String(securityOption.calendar_id || "").trim() || null,
     bundle_with_vehicle: normalizeBooleanish(securityOption.bundle_with_vehicle, false),
@@ -11436,6 +11438,7 @@ function calculateRideSection({
     return calculateSecurityPricing({
       securityOption,
       requestedHours: securityHours,
+      applyBundleFee: false,
     });
   }
 
@@ -11557,6 +11560,7 @@ function calculateCompleteQuote({
         return calculateSecurityPricing({
           securityOption,
           requestedHours: securityHours || hourlyHours || securityOption.default_hours || 1,
+          applyBundleFee: true,
         });
       })()
     : null;
