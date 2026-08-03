@@ -11564,6 +11564,7 @@ function calculateCompleteQuote({
         });
       })()
     : null;
+  const securitySummary = securityAddon || (ride.mode === "security" ? ride : null);
 
   const addons = calculateAddons({
     configuredAddons,
@@ -11630,7 +11631,7 @@ function calculateCompleteQuote({
       surcharge: roundMoney(timeBasedSurcharge),
       peak_time_surcharge: roundMoney(timeBasedSurcharge),
     },
-    security: securityAddon,
+    security: securitySummary,
     addons,
     fixed_surcharge: roundMoney(timeBasedSurcharge),
     peak_time_surcharge: roundMoney(timeBasedSurcharge),

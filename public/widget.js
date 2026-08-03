@@ -902,16 +902,13 @@
     const securityServices = bookingMode === "hourly"
       ? allSecurityServices.filter((row) => normalizeBooleanish(row.bundle_with_vehicle, true))
       : allSecurityServices;
-    if (!securityServices.length) {
-      return "";
-    }
     const isActiveMode = bookingMode === "hourly" || bookingMode === "security";
     const isHourlyMode = bookingMode === "hourly";
     const wrapperStyle = isActiveMode
       ? "display:block;margin-top:12px;padding:14px;border:1px solid #dbe4f0;border-radius:18px;background:#f8fafc;"
       : "display:block;margin-top:12px;padding:14px;border:1px solid #dbe4f0;border-radius:18px;background:#f8fafc;opacity:.5;filter:grayscale(1);pointer-events:none;";
     const options = [
-      `<option value="">Select Security Service</option>`,
+      `<option value="">${securityServices.length ? "Select Security Service" : bookingMode === "hourly" ? "No hourly bundleable security services configured" : "No security services configured"}</option>`,
       ...securityServices.map((row) => {
         const name = String(row.service_name || row.security_service_name || "Security Service").trim();
         const hourlyRate = toNumber(row.hourly_rate, 0);
@@ -926,14 +923,14 @@
         <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;">
           <div>
             <div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.14em;color:#334155;">Security Service</div>
-            <div style="margin-top:6px;font-size:12px;line-height:1.5;color:#64748b;">Add security to an hourly vehicle booking, or choose Security only for a standalone reservation with its own calendar. Security stays disabled on standard, fixed, and event bookings.</div>
+            <div style="margin-top:6px;font-size:12px;line-height:1.5;color:#64748b;">Add security to an hourly vehicle booking, or choose Security only for a standalone reservation with its own calendar. The executive fee applies only when security is paired with an hourly vehicle booking. Security stays disabled on standard, fixed, and event bookings.</div>
           </div>
           <div style="padding:4px 8px;border-radius:999px;background:#eef2ff;color:#4338ca;font-size:12px;font-weight:800;white-space:nowrap;">$10/hr executive fee</div>
         </div>
-        <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-top:12px;">
-          <div>
-            <label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Select Security Type</label>
-            <select id="cd_security_service" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" ${isActiveMode ? "" : "disabled"}>
+          <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-top:12px;">
+            <div>
+              <label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Select Security Type</label>
+            <select id="cd_security_service" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" ${securityServices.length && isActiveMode ? "" : "disabled"}>
               ${options.join("")}
             </select>
           </div>
@@ -941,7 +938,7 @@
             <label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Security Hours</label>
             <input id="cd_security_hours" type="number" min="1" step="1" value="1" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" ${isActiveMode ? "" : "disabled"} />
           </div>
-          <div id="cd_security_hint" style="font-size:12px;font-weight:700;color:#4338ca;">${isHourlyMode ? "Choose hours and the executive fee will calculate automatically." : (bookingMode === "security" ? "Standalone security uses its own calendar and only needs date/time." : "Security is available with Hourly bookings or Security only.")}</div>
+          <div id="cd_security_hint" style="font-size:12px;font-weight:700;color:#4338ca;">${isHourlyMode ? "Choose hours and the executive fee will calculate automatically." : (bookingMode === "security" ? "Standalone security uses its own calendar and needs date/time plus hours." : "Security is available with Hourly bookings or Security only.")}</div>
         </div>
       </div>
     `;
@@ -2135,7 +2132,7 @@
       metaParts.push(`Peak Time Surcharge: ${money(peakSurcharge)}.`);
     }
     if (securityTotal > 0) {
-      metaParts.push(`Security Service: ${money(securityTotal)}.`);
+      metaParts.push(`Security Executive Fee: ${money(securityTotal)}.`);
     }
     if (state.quote.balance_due > 0 && state.quote.balance_due_deadline) {
       metaParts.push(`Balance invoice due by ${new Date(state.quote.balance_due_deadline).toLocaleString()}.`);
