@@ -821,36 +821,6 @@
     ).trim();
   }
 
-  function securityServiceByValue(value = "") {
-    const target = String(value || "").trim();
-    if (!target) return null;
-
-    return (state.config?.security_services || []).find((row) => {
-      const identifiers = [
-        row.id,
-        row.security_service_id,
-        row.calendar_id,
-        row.service_name,
-        row.security_service_name,
-      ]
-        .map((item) => String(item || "").trim())
-        .filter(Boolean);
-
-      return identifiers.includes(target);
-    }) || null;
-  }
-
-  function securityServiceOptionValue(row = {}) {
-    return String(
-      row.id ||
-      row.security_service_id ||
-      row.calendar_id ||
-      row.service_name ||
-      row.security_service_name ||
-      ""
-    ).trim();
-  }
-
   function extractPlaceCoordinates(place = null) {
     const location = place?.location || place?.geometry?.location || null;
     if (!location) return null;
@@ -896,55 +866,6 @@
     `;
   }
 
-  function renderSecurityServiceControls() {
-    const bookingMode = selectedBookingMode();
-    const allSecurityServices = Array.isArray(state.config?.security_services) ? state.config.security_services : [];
-    const securityServices = allSecurityServices;
-    const isActiveMode = bookingMode === "hourly" || bookingMode === "security";
-    const isHourlyMode = bookingMode === "hourly";
-    const wrapperStyle = isActiveMode
-      ? "display:block;margin-top:12px;padding:14px;border:1px solid #dbe4f0;border-radius:18px;background:#f8fafc;"
-      : "display:block;margin-top:12px;padding:14px;border:1px solid #dbe4f0;border-radius:18px;background:#f8fafc;opacity:.5;filter:grayscale(1);pointer-events:none;";
-    const options = [
-      `<option value="">${securityServices.length ? "Select Security Service" : "No security services configured"}</option>`,
-      ...securityServices.map((row) => {
-        const name = String(row.service_name || row.security_service_name || "Security Service").trim();
-        const hourlyRate = toNumber(row.hourly_rate, 0);
-        const execFee = toNumber(row.executive_fee_per_hour ?? row.executive_service_fee_per_hour, 10);
-        const bundleable = normalizeBooleanish(row.bundle_with_vehicle, true);
-        const rateText = hourlyRate > 0
-          ? ` - ${money(hourlyRate)}/hr${bundleable ? ` + ${money(execFee)}/hr fee` : " (standalone only)"}`
-          : "";
-        return `<option value="${escapeHtml(securityServiceOptionValue(row))}">${escapeHtml(name + rateText)}</option>`;
-      }),
-    ];
-
-    return `
-      <div id="cd_security_wrap" style="${wrapperStyle}">
-        <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;">
-          <div>
-            <div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.14em;color:#334155;">Security Service</div>
-            <div style="margin-top:6px;font-size:12px;line-height:1.5;color:#64748b;">Add security to an hourly vehicle booking, or choose Security only for a standalone reservation with its own calendar. The executive fee applies only when security is paired with an hourly vehicle booking. Security stays disabled on standard, fixed, and event bookings.</div>
-          </div>
-          <div style="padding:4px 8px;border-radius:999px;background:#eef2ff;color:#4338ca;font-size:12px;font-weight:800;white-space:nowrap;">$10/hr executive fee</div>
-        </div>
-          <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-top:12px;">
-            <div>
-              <label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Select Security Type</label>
-            <select id="cd_security_service" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" ${securityServices.length && isActiveMode ? "" : "disabled"}>
-              ${options.join("")}
-            </select>
-          </div>
-          <div style="max-width:220px;">
-            <label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Security Hours</label>
-            <input id="cd_security_hours" type="number" min="1" step="1" value="1" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" ${isActiveMode ? "" : "disabled"} />
-          </div>
-          <div id="cd_security_hint" style="font-size:12px;font-weight:700;color:#4338ca;">${isHourlyMode ? "Choose hours and the executive fee will calculate automatically for bundleable security services." : (bookingMode === "security" ? "Standalone security uses its own calendar and needs date/time plus hours." : "Security is available with Hourly bookings or Security only.")}</div>
-        </div>
-      </div>
-    `;
-  }
-
   function syncHourlyBookingSelection() {
     const bookingMode = selectedBookingMode();
     const hourlySelect = document.getElementById("cd_hourly_booking");
@@ -974,58 +895,6 @@
     }
 
     hourlySelect.value = "";
-  }
-
-  function syncSecurityServiceSelection() {
-    const mode = selectedBookingMode();
-    const securityWrap = document.getElementById("cd_security_wrap");
-    const securitySelect = document.getElementById("cd_security_service");
-    const securityHoursInput = document.getElementById("cd_security_hours");
-    if (!securitySelect || !securityHoursInput) return;
-
-    if (securityWrap) {
-      const active = mode === "hourly" || mode === "security";
-      securityWrap.style.opacity = active ? "1" : ".5";
-      securityWrap.style.filter = active ? "none" : "grayscale(1)";
-      securityWrap.style.pointerEvents = active ? "auto" : "none";
-    }
-
-    if (mode !== "hourly" && mode !== "security") {
-      securitySelect.value = "";
-      securitySelect.disabled = true;
-      securityHoursInput.disabled = true;
-      return;
-    }
-
-    securitySelect.disabled = false;
-    securityHoursInput.disabled = false;
-
-    const visibleSecurityServices = Array.isArray(state.config?.security_services) ? state.config.security_services : [];
-    const selected = securityServiceByValue(securitySelect.value);
-    if (selected && !securityHoursInput.value) {
-      securityHoursInput.value = String(toNumber(selected.default_hours, 1) || 1);
-    }
-    if (mode === "security" && !securitySelect.value) {
-      const defaultSecurity = visibleSecurityServices[0] || null;
-      if (defaultSecurity) {
-        securitySelect.value = securityServiceOptionValue(defaultSecurity);
-        securityHoursInput.value = String(toNumber(defaultSecurity.default_hours, 1) || 1);
-      }
-      return;
-    }
-
-    if (mode === "hourly") {
-      const currentIsVisible = !!visibleSecurityServices.find((row) => securityServiceOptionValue(row) === securitySelect.value);
-      if (!currentIsVisible) {
-        const defaultSecurity = visibleSecurityServices[0] || null;
-        if (defaultSecurity) {
-          securitySelect.value = securityServiceOptionValue(defaultSecurity);
-          securityHoursInput.value = String(toNumber(defaultSecurity.default_hours, 1) || 1);
-        } else {
-          securitySelect.value = "";
-        }
-      }
-    }
   }
 
   function matchesPeakWindow(windowConfig, startDate) {
@@ -1412,11 +1281,6 @@
     const fixedWrap = document.getElementById("cd_fixed_destination_wrap");
     const hourlyWrap = document.getElementById("cd_hourly_wrap");
     const hourlyHoursWrap = document.getElementById("cd_hourly_hours_wrap");
-    const securityWrap = document.getElementById("cd_security_wrap");
-    const vehicleGrid = document.getElementById("cd_vehicle_grid");
-    const pickupWrap = document.getElementById("pickup-address-container");
-    const dropoffWrap = document.getElementById("dropoff-address-container");
-    const luggageGrid = document.getElementById("cd_luggage_grid")?.parentElement;
     const eventSelect = document.getElementById("cd_special_event");
     const fixedSelect = document.getElementById("cd_fixed_destination");
     const hourlySelect = document.getElementById("cd_hourly_booking");
@@ -1425,11 +1289,6 @@
     if (fixedWrap) fixedWrap.style.display = mode === "fixed" ? "block" : "none";
     if (hourlyWrap) hourlyWrap.style.display = mode === "hourly" ? "block" : "none";
     if (hourlyHoursWrap) hourlyHoursWrap.style.display = mode === "hourly" ? "block" : "none";
-    if (securityWrap) securityWrap.style.display = "block";
-    if (vehicleGrid) vehicleGrid.style.display = mode === "security" ? "none" : "grid";
-    if (pickupWrap) pickupWrap.style.display = mode === "security" ? "none" : "block";
-    if (dropoffWrap) dropoffWrap.style.display = mode === "security" ? "none" : "block";
-    if (luggageGrid) luggageGrid.style.display = mode === "security" ? "none" : "block";
 
     if (mode !== "event" && eventSelect) eventSelect.value = "";
     if (mode !== "fixed" && fixedSelect) fixedSelect.value = "";
@@ -1547,12 +1406,11 @@
                   <div style="max-width:220px;"><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:8px;"># of Passengers</label><input id="cd_passenger_count" type="number" min="1" value="1" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" /></div>
                 </div>
                 ${showServiceModeControls ? `<div style="display:grid;grid-template-columns:1fr;gap:12px;margin-top:12px;">
-                  <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Route/Service Option</label><select id="cd_booking_mode" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;"><option value="standard">Standard Booking</option><option value="fixed">Fixed Destinations</option><option value="event">Events</option><option value="hourly">Executive Luxury Chauffeur</option><option value="security">Security Services</option></select></div>
+                  <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Route/Service Option</label><select id="cd_booking_mode" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;"><option value="standard">Standard Booking</option><option value="fixed">Fixed Destinations</option><option value="event">Events</option><option value="hourly">Executive Luxury Chauffeur</option></select></div>
                 </div>` : `<input id="cd_booking_mode" type="hidden" value="hourly" />`}
                 <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-top:12px;">
                   ${showServiceModeControls ? `<div id="cd_event_wrap" style="display:none;">${eventSelect || ""}</div>` : ""}
                   ${hourlyBookingSelect || ""}
-                  ${renderSecurityServiceControls()}
                   ${showServiceModeControls ? `${fixedDestinationSelect}` : ""}
                 </div>
                 <div id="cd_datetime_grid" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px;">
@@ -1617,7 +1475,6 @@
               <div id="cd_summary" style="display:none;margin-top:14px;padding:18px;border-radius:20px;background:#f8fafc;border:1px solid #dbe4f0;">
                 <div style="display:flex;justify-content:space-between;margin-bottom:10px;"><span>Service Cost</span><strong id="res_quoted_price">$0.00</strong></div>
                 <div id="res_peak_surcharge_row" style="display:none;justify-content:space-between;margin-bottom:10px;"><span id="res_peak_surcharge_label">Peak Time Surcharge</span><strong id="res_peak_surcharge_amount">$0.00</strong></div>
-                <div id="res_security_row" style="display:none;justify-content:space-between;margin-bottom:10px;"><span id="res_security_label">Security Service</span><strong id="res_security_amount">$0.00</strong></div>
                 <div style="display:flex;justify-content:space-between;margin-bottom:10px;"><span>Add-Ons</span><strong id="res_addons">$0.00</strong></div>
                 <div style="display:flex;justify-content:space-between;margin-bottom:10px;"><span>Tax</span><strong id="res_tax">$0.00</strong></div>
                 <div style="display:flex;justify-content:space-between;margin-bottom:10px;"><span>Minimum Deposit</span><strong id="res_deposit_amount">$0.00</strong></div>
@@ -1643,25 +1500,17 @@
     document.getElementById("cd_booking_mode")?.addEventListener("change", () => {
       updateBookingModeUI();
       syncHourlyBookingSelection();
-      syncSecurityServiceSelection();
       if (state.quote) getQuote();
     });
 
-    document.querySelectorAll('input[name="cd_addons"], #cd_passenger_count, #cd_special_event, #cd_fixed_destination, #cd_hourly_booking, #cd_hourly_hours, #cd_security_service, #cd_security_hours').forEach((input) => {
+    document.querySelectorAll('input[name="cd_addons"], #cd_passenger_count, #cd_special_event, #cd_fixed_destination, #cd_hourly_booking, #cd_hourly_hours').forEach((input) => {
       input?.addEventListener("change", () => {
         if (input.id === "cd_hourly_booking" || input.id === "cd_hourly_hours") syncHourlyBookingSelection();
-        if (input.id === "cd_security_service" || input.id === "cd_security_hours") syncSecurityServiceSelection();
         if (state.quote) getQuote();
       });
       if (input.id === "cd_hourly_booking" || input.id === "cd_hourly_hours") {
         input?.addEventListener("input", () => {
           syncHourlyBookingSelection();
-          if (state.quote) getQuote();
-        });
-      }
-      if (input.id === "cd_security_service" || input.id === "cd_security_hours") {
-        input?.addEventListener("input", () => {
-          syncSecurityServiceSelection();
           if (state.quote) getQuote();
         });
       }
@@ -1682,7 +1531,6 @@
 
     bindVehiclePicker();
     updateBookingModeUI();
-    syncSecurityServiceSelection();
     applyPrefillFromPageQuery();
     await initAutocomplete();
   }
@@ -1718,7 +1566,6 @@
       : "";
     const pickupCoords = extractPlaceCoordinates(state.places.pickup);
     const dropoffCoords = extractPlaceCoordinates(state.places.dropoff);
-    const bookingMode = selectedBookingMode();
 
     return {
       location_id: locationId,
@@ -1735,15 +1582,13 @@
       dropoff_lng: dropoffCoords?.lng ?? "",
       start_time: normalizedStartTime,
       start_time_local: rawStartTime || "",
-      booking_mode: bookingMode,
+      booking_mode: selectedBookingMode(),
       payment_choice: selectedPaymentChoice(),
       passenger_count: toNumber(document.getElementById("cd_passenger_count")?.value, 1),
       selected_event_name: document.getElementById("cd_special_event")?.value || null,
       selected_fixed_destination: document.getElementById("cd_fixed_destination")?.value || null,
-      selected_hourly_booking: bookingMode === "hourly" ? (document.getElementById("cd_hourly_booking")?.value || null) : null,
-      hourly_hours: bookingMode === "hourly" ? toNumber(document.getElementById("cd_hourly_hours")?.value, 4) : null,
-      selected_security_service: (bookingMode === "hourly" || bookingMode === "security") ? (document.getElementById("cd_security_service")?.value || null) : null,
-      security_hours: (bookingMode === "hourly" || bookingMode === "security") ? toNumber(document.getElementById("cd_security_hours")?.value, 1) : null,
+      selected_hourly_booking: document.getElementById("cd_hourly_booking")?.value || null,
+      hourly_hours: toNumber(document.getElementById("cd_hourly_hours")?.value, 4),
       selected_addons: selectedAddons(),
       accepted_terms: !!document.getElementById("cd_accept_terms")?.checked,
       carry_on_count: toNumber(document.getElementById("cd_carry_on_count")?.value, 0),
@@ -1904,19 +1749,10 @@
 
   async function buildQuote() {
     const payload = formPayload();
-    const bookingMode = String(payload.booking_mode || "standard").trim().toLowerCase();
     const vehicle = selectedVehicle();
-    const isSecurityBooking = bookingMode === "security";
-    if (!isSecurityBooking && !vehicle) throw new Error("Select a vehicle first.");
-    if (!payload.start_time) {
-      throw new Error("Enter a pickup date/time first.");
-    }
-    if (isSecurityBooking) {
-      if (!payload.selected_security_service) {
-        throw new Error("Select a security service to continue.");
-      }
-    } else if (!payload.pickup_address || !payload.dropoff_address) {
-      throw new Error("Enter pickup and dropoff details first.");
+    if (!vehicle) throw new Error("Select a vehicle first.");
+    if (!payload.pickup_address || !payload.dropoff_address || !payload.start_time) {
+      throw new Error("Enter pickup, dropoff, and pickup date/time first.");
     }
 
     const pickupCoords = extractPlaceCoordinates(state.places.pickup);
@@ -1942,8 +1778,6 @@
         selected_fixed_destination: payload.selected_fixed_destination,
         selected_hourly_booking: payload.selected_hourly_booking,
         hourly_hours: payload.hourly_hours,
-        selected_security_service: payload.selected_security_service,
-        security_hours: payload.security_hours,
         selected_addons: payload.selected_addons,
       }),
     });
@@ -2078,7 +1912,6 @@
     if (!state.quote) return;
 
     const peakSurcharge = Number((state.quote.peak_time_surcharge ?? state.quote.fixed_surcharge) || 0);
-    const securityTotal = Number(state.quote.security_service_total || 0);
     const baseServiceCost = peakSurcharge > 0
       ? Math.max(0, Number(state.quote.quoted_price || 0) - peakSurcharge)
       : Number(state.quote.quoted_price || 0);
@@ -2103,18 +1936,6 @@
         peakSurchargeRow.style.display = "none";
       }
     }
-    const securityRow = document.getElementById("res_security_row");
-    const securityLabel = document.getElementById("res_security_label");
-    const securityAmount = document.getElementById("res_security_amount");
-    if (securityRow && securityLabel && securityAmount) {
-      if (securityTotal > 0) {
-        securityLabel.textContent = state.quote.security_service_name ? `${state.quote.security_service_name}` : "Security Service";
-        securityAmount.textContent = money(securityTotal);
-        securityRow.style.display = "flex";
-      } else {
-        securityRow.style.display = "none";
-      }
-    }
     const bookWrap = document.getElementById("cd_book_wrap");
     if (bookWrap) bookWrap.style.display = "grid";
     const metaParts = [`${state.quote.miles.toFixed(2)} miles estimated.`];
@@ -2129,9 +1950,6 @@
     }
     if (peakSurcharge > 0) {
       metaParts.push(`Peak Time Surcharge: ${money(peakSurcharge)}.`);
-    }
-    if (securityTotal > 0) {
-      metaParts.push(`Security Executive Fee: ${money(securityTotal)}.`);
     }
     if (state.quote.balance_due > 0 && state.quote.balance_due_deadline) {
       metaParts.push(`Balance invoice due by ${new Date(state.quote.balance_due_deadline).toLocaleString()}.`);

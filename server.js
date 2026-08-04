@@ -22,38 +22,6 @@ import { registerDriverWizardRoutes } from './driver-wizard-routes.js';
 const { Pool, Client } = pkg;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
-const driverPreviewSessions = new Map();
-const DRIVER_PREVIEW_SESSION_TTL_MS = 15 * 60 * 1000;
-
-function cleanupDriverPreviewSessions(now = Date.now()) {
-  for (const [token, session] of driverPreviewSessions.entries()) {
-    if (!session || !session.expires_at || session.expires_at <= now) {
-      driverPreviewSessions.delete(token);
-    }
-  }
-}
-
-function createDriverPreviewSession(payload) {
-  cleanupDriverPreviewSessions();
-  const token = randomBytes(16).toString("hex");
-  driverPreviewSessions.set(token, {
-    payload: payload || {},
-    expires_at: Date.now() + DRIVER_PREVIEW_SESSION_TTL_MS
-  });
-  return token;
-}
-
-function getDriverPreviewSession(token) {
-  if (!token) return null;
-  cleanupDriverPreviewSessions();
-  const session = driverPreviewSessions.get(String(token).trim());
-  if (!session) return null;
-  if (session.expires_at && session.expires_at <= Date.now()) {
-    driverPreviewSessions.delete(String(token).trim());
-    return null;
-  }
-  return session.payload || null;
-}
 
 function sendPublicHtmlPage(res, fileName) {
   res.type("html");
@@ -238,12 +206,7 @@ let driverPartnerSetupAccessTokensReady = null;
 const CUSTOMER_ACCOUNT_SESSION_COOKIE = "crm_customer_session";
 const CUSTOMER_ACCOUNT_SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 30;
 const CUSTOMER_PASSWORD_RESET_TTL_MS = 1000 * 60 * 60;
-const DEFAULT_DRIVER_PARTNER_LOCATION_ID = "ouXMpSTMKm4kREXw3kzP";
-const DRIVER_PARTNER_PROGRAM_DEMO_LOCATION_IDS = new Set([DEFAULT_DRIVER_PARTNER_LOCATION_ID]);
-
-function buildDriverPartnerProgramLocationId() {
-  return `dp_${randomUUID().replace(/-/g, "").slice(0, 20)}`;
-}
+const DEFAULT_DRIVER_PARTNER_LOCATION_ID = "mamDGnLGy7zhvZmCPDku";
 
 const DEFAULT_BRAND_COLORS = {
   primary: "#082f49",
@@ -382,74 +345,6 @@ function safeParseJson(data, fallback = []) {
   }
 }
 
-function safeParseJsonObject(data, fallback = {}) {
-  const parsed = safeParseJson(data, fallback);
-  return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : fallback;
-}
-
-function safeParseJsonArray(data, fallback = []) {
-  const parsed = safeParseJson(data, fallback);
-  return Array.isArray(parsed) ? parsed : fallback;
-}
-
-function normalizeTimestampIso(value) {
-  if (!value) return null;
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
-}
-
-function getTrackingDeviceMeta(req = {}, body = {}) {
-  const headers = req?.headers || {};
-  const osMeta = {
-    user_agent: String(headers["user-agent"] || body.user_agent || "").trim() || null,
-    app_name: String(body.app_name || headers["x-app-name"] || "").trim() || null,
-    app_version: String(body.app_version || headers["x-app-version"] || "").trim() || null,
-    os_name: String(body.os_name || headers["x-os-name"] || "").trim() || null,
-    os_version: String(body.os_version || headers["x-os-version"] || "").trim() || null,
-    platform: String(body.platform || headers["x-device-platform"] || "").trim() || null,
-  };
-  Object.keys(osMeta).forEach((key) => {
-    if (osMeta[key] == null) {
-      delete osMeta[key];
-    }
-  });
-
-  return {
-    appVersion: String(body.app_version || headers["x-app-version"] || "").trim() || null,
-    deviceTimestamp:
-      normalizeTimestampIso(
-        body.device_timestamp ||
-        body.device_recorded_at ||
-        body.client_timestamp ||
-        body.recorded_at ||
-        body.timestamp ||
-        null
-      ),
-    osMeta,
-    telematicsFlags: safeParseJsonObject(body.telematics_flags ?? body.telematics_flags_json, {}),
-  };
-}
-
-function buildTrackingStatusHistoryEntry({
-  status,
-  deviceTimestamp = null,
-  serverTimestamp = new Date().toISOString(),
-  source = "driver",
-  appVersion = null,
-  osMeta = {},
-  telematicsFlags = {},
-}) {
-  return {
-    status,
-    device_timestamp: deviceTimestamp,
-    server_timestamp: serverTimestamp,
-    source,
-    app_version: appVersion || null,
-    os_meta: osMeta && Object.keys(osMeta).length ? osMeta : {},
-    telematics_flags: telematicsFlags && Object.keys(telematicsFlags).length ? telematicsFlags : {},
-  };
-}
-
 function normalizeCustomerEmail(value) {
   return String(value || "").trim().toLowerCase().slice(0, 160);
 }
@@ -520,14 +415,6 @@ async function ensureBookingSyncColumns() {
       await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS vehicle_slot_id TEXT`);
       await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS vehicle_type TEXT`);
       await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS calendar_id TEXT`);
-      await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS security_service_id TEXT`);
-      await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS security_service_name TEXT`);
-      await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS security_service_hours NUMERIC`);
-      await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS security_service_hourly_rate NUMERIC`);
-      await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS security_service_fee_per_hour NUMERIC`);
-      await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS security_service_total NUMERIC`);
-      await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS security_calendar_id TEXT`);
-      await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS security_service_bundle_with_vehicle BOOLEAN DEFAULT false`);
       await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS driver_assignment_sms_sent_at TIMESTAMPTZ`);
       await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS driver_paid_in_full_sms_sent_at TIMESTAMPTZ`);
       await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS driver_sms_last_attempt_at TIMESTAMPTZ`);
@@ -778,8 +665,6 @@ async function ensureInsuranceModuleTables() {
       await pool.query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS insurance_notes TEXT`);
       await pool.query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS insurance_coverage_option TEXT`);
       await pool.query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS insurance_activation_rule TEXT`);
-      await pool.query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS insurance_telematics_webhook_url TEXT`);
-      await pool.query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS insurance_telematics_webhook_secret TEXT`);
 
       await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS insurance_provider TEXT`);
       await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS insurance_quote_id TEXT`);
@@ -1069,7 +954,6 @@ async function ensureTripTrackingTables() {
           id TEXT PRIMARY KEY,
           booking_id BIGINT NOT NULL UNIQUE REFERENCES bookings(id) ON DELETE CASCADE,
           location_id TEXT NOT NULL,
-          vehicle_id TEXT,
           driver_token TEXT NOT NULL UNIQUE,
           customer_token TEXT NOT NULL UNIQUE,
           status TEXT NOT NULL DEFAULT 'driver_assigned',
@@ -1081,20 +965,6 @@ async function ensureTripTrackingTables() {
           last_location_at TIMESTAMPTZ,
           started_at TIMESTAMPTZ,
           ended_at TIMESTAMPTZ,
-          device_started_at TIMESTAMPTZ,
-          device_ended_at TIMESTAMPTZ,
-          pickup_lat DOUBLE PRECISION,
-          pickup_lng DOUBLE PRECISION,
-          dropoff_lat DOUBLE PRECISION,
-          dropoff_lng DOUBLE PRECISION,
-          route_distance_miles NUMERIC,
-          route_duration_minutes INTEGER,
-          booking_duration_minutes INTEGER,
-          status_history_json JSONB NOT NULL DEFAULT '[]'::jsonb,
-          telematics_flags_json JSONB NOT NULL DEFAULT '{}'::jsonb,
-          app_version TEXT,
-          os_meta JSONB NOT NULL DEFAULT '{}'::jsonb,
-          insurance_policy_token TEXT,
           created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
           updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
@@ -1109,21 +979,6 @@ async function ensureTripTrackingTables() {
       await pool.query(`ALTER TABLE trip_tracking_sessions ADD COLUMN IF NOT EXISTS driver_phone TEXT`);
       await pool.query(`ALTER TABLE trip_tracking_sessions ADD COLUMN IF NOT EXISTS driver_email TEXT`);
       await pool.query(`ALTER TABLE trip_tracking_sessions ADD COLUMN IF NOT EXISTS driver_photo_data TEXT`);
-      await pool.query(`ALTER TABLE trip_tracking_sessions ADD COLUMN IF NOT EXISTS vehicle_id TEXT`);
-      await pool.query(`ALTER TABLE trip_tracking_sessions ADD COLUMN IF NOT EXISTS device_started_at TIMESTAMPTZ`);
-      await pool.query(`ALTER TABLE trip_tracking_sessions ADD COLUMN IF NOT EXISTS device_ended_at TIMESTAMPTZ`);
-      await pool.query(`ALTER TABLE trip_tracking_sessions ADD COLUMN IF NOT EXISTS pickup_lat DOUBLE PRECISION`);
-      await pool.query(`ALTER TABLE trip_tracking_sessions ADD COLUMN IF NOT EXISTS pickup_lng DOUBLE PRECISION`);
-      await pool.query(`ALTER TABLE trip_tracking_sessions ADD COLUMN IF NOT EXISTS dropoff_lat DOUBLE PRECISION`);
-      await pool.query(`ALTER TABLE trip_tracking_sessions ADD COLUMN IF NOT EXISTS dropoff_lng DOUBLE PRECISION`);
-      await pool.query(`ALTER TABLE trip_tracking_sessions ADD COLUMN IF NOT EXISTS route_distance_miles NUMERIC`);
-      await pool.query(`ALTER TABLE trip_tracking_sessions ADD COLUMN IF NOT EXISTS route_duration_minutes INTEGER`);
-      await pool.query(`ALTER TABLE trip_tracking_sessions ADD COLUMN IF NOT EXISTS booking_duration_minutes INTEGER`);
-      await pool.query(`ALTER TABLE trip_tracking_sessions ADD COLUMN IF NOT EXISTS status_history_json JSONB NOT NULL DEFAULT '[]'::jsonb`);
-      await pool.query(`ALTER TABLE trip_tracking_sessions ADD COLUMN IF NOT EXISTS telematics_flags_json JSONB NOT NULL DEFAULT '{}'::jsonb`);
-      await pool.query(`ALTER TABLE trip_tracking_sessions ADD COLUMN IF NOT EXISTS app_version TEXT`);
-      await pool.query(`ALTER TABLE trip_tracking_sessions ADD COLUMN IF NOT EXISTS os_meta JSONB NOT NULL DEFAULT '{}'::jsonb`);
-      await pool.query(`ALTER TABLE trip_tracking_sessions ADD COLUMN IF NOT EXISTS insurance_policy_token TEXT`);
 
       await pool.query(`
         CREATE TABLE IF NOT EXISTS trip_tracking_points (
@@ -1134,18 +989,9 @@ async function ensureTripTrackingTables() {
           heading DOUBLE PRECISION,
           speed DOUBLE PRECISION,
           accuracy DOUBLE PRECISION,
-          device_recorded_at TIMESTAMPTZ,
-          app_version TEXT,
-          os_meta JSONB NOT NULL DEFAULT '{}'::jsonb,
-          telematics_flags_json JSONB NOT NULL DEFAULT '{}'::jsonb,
           recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
       `);
-      await pool.query(`ALTER TABLE trip_tracking_points ADD COLUMN IF NOT EXISTS device_recorded_at TIMESTAMPTZ`);
-      await pool.query(`ALTER TABLE trip_tracking_points ADD COLUMN IF NOT EXISTS app_version TEXT`);
-      await pool.query(`ALTER TABLE trip_tracking_points ADD COLUMN IF NOT EXISTS os_meta JSONB NOT NULL DEFAULT '{}'::jsonb`);
-      await pool.query(`ALTER TABLE trip_tracking_points ADD COLUMN IF NOT EXISTS telematics_flags_json JSONB NOT NULL DEFAULT '{}'::jsonb`);
-      await pool.query(`ALTER TABLE trip_tracking_points ADD COLUMN IF NOT EXISTS recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()`);
       await pool.query(`CREATE INDEX IF NOT EXISTS idx_trip_tracking_points_session_id ON trip_tracking_points(tracking_session_id)`);
       await pool.query(`CREATE INDEX IF NOT EXISTS idx_trip_tracking_points_recorded_at ON trip_tracking_points(recorded_at DESC)`);
       await pool.query(`
@@ -1179,7 +1025,6 @@ async function ensureTripTrackingTables() {
       await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_driver_profiles_location_vehicle_name ON driver_profiles(location_id, vehicle_slot_id, LOWER(driver_name))`);
       await pool.query(`ALTER TABLE driver_profiles ADD COLUMN IF NOT EXISTS driver_phone TEXT`);
       await pool.query(`ALTER TABLE driver_profiles ADD COLUMN IF NOT EXISTS driver_email TEXT`);
-      await pool.query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS insurance_policy_token TEXT`);
       await pool.query(`
         WITH ranked AS (
           SELECT
@@ -1611,7 +1456,6 @@ async function ensureProfilePricingColumns() {
       await pool.query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS service_fee_type TEXT`);
       await pool.query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS service_fee_value NUMERIC`);
       await pool.query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS hourly_bookings JSONB`);
-      await pool.query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS security_services JSONB`);
     })().catch((err) => {
       profilePricingColumnsReady = null;
       throw err;
@@ -1744,11 +1588,6 @@ function normalizeDriverPageSlug(value, fallbackValue = "first-last") {
 }
 
 const CHAUFFEURS_DELUXE_ROOT_DOMAIN = "chauffeursdeluxe.com";
-const CHAUFFEURS_DELUXE_DRIVER_PARENT_DOMAIN = "drivers.chauffeursdeluxe.com";
-const CHAUFFEURS_DELUXE_DRIVER_PARENT_DOMAINS = [
-  CHAUFFEURS_DELUXE_DRIVER_PARENT_DOMAIN,
-  CHAUFFEURS_DELUXE_ROOT_DOMAIN,
-];
 const CHAUFFEURS_DELUXE_RESERVED_SUBDOMAINS = new Set([
   "www",
   "api",
@@ -1760,6 +1599,11 @@ const CHAUFFEURS_DELUXE_RESERVED_SUBDOMAINS = new Set([
   "mail",
   "support",
   "static",
+  "driver-partner-program",
+  "driver-partner-subscription",
+  "driver-partner-setup",
+  "driver-partner-access",
+  "partner-onboarding",
 ]);
 
 function normalizeChauffeursSubdomain(value, fallbackValue = "first-last") {
@@ -1770,12 +1614,10 @@ function normalizeChauffeursSubdomain(value, fallbackValue = "first-last") {
   }
   const withoutProtocol = raw.replace(/^https?:\/\/[^/]+/i, "").replace(/^\/+/, "");
   const hostLike = withoutProtocol.split(/[/?#]/)[0].toLowerCase();
-  for (const driverRootDomain of CHAUFFEURS_DELUXE_DRIVER_PARENT_DOMAINS) {
-    const rootSuffix = `.${driverRootDomain}`;
-    if (hostLike.endsWith(rootSuffix)) {
-      const subdomain = hostLike.slice(0, -rootSuffix.length);
-      return buildDriverPageSlugFromName(subdomain || fallbackSlug, fallbackSlug) || fallbackSlug;
-    }
+  const rootSuffix = `.${CHAUFFEURS_DELUXE_ROOT_DOMAIN}`;
+  if (hostLike.endsWith(rootSuffix)) {
+    const subdomain = hostLike.slice(0, -rootSuffix.length);
+    return buildDriverPageSlugFromName(subdomain || fallbackSlug, fallbackSlug) || fallbackSlug;
   }
   return buildDriverPageSlugFromName(hostLike || fallbackSlug, fallbackSlug) || fallbackSlug;
 }
@@ -1783,7 +1625,7 @@ function normalizeChauffeursSubdomain(value, fallbackValue = "first-last") {
 function buildDriverPageSubdomainUrl(subdomain, pathSuffix = "/") {
   const normalizedSubdomain = normalizeChauffeursSubdomain(subdomain, "first-last") || "first-last";
   const normalizedPath = String(pathSuffix || "/").startsWith("/") ? String(pathSuffix || "/") : `/${String(pathSuffix || "/")}`;
-  return `https://${normalizedSubdomain}.${CHAUFFEURS_DELUXE_DRIVER_PARENT_DOMAIN}${normalizedPath}`;
+  return `https://${normalizedSubdomain}.${CHAUFFEURS_DELUXE_ROOT_DOMAIN}${normalizedPath}`;
 }
 
 function getChauffeursSubdomainFromRequest(req = null) {
@@ -1791,18 +1633,15 @@ function getChauffeursSubdomainFromRequest(req = null) {
   if (!host) {
     return "";
   }
-  for (const driverRootDomain of CHAUFFEURS_DELUXE_DRIVER_PARENT_DOMAINS) {
-    const rootSuffix = `.${driverRootDomain}`;
-    if (!host.endsWith(rootSuffix)) {
-      continue;
-    }
-    const subdomain = host.slice(0, -rootSuffix.length);
-    if (!subdomain || CHAUFFEURS_DELUXE_RESERVED_SUBDOMAINS.has(subdomain)) {
-      return "";
-    }
-    return subdomain;
+  const rootSuffix = `.${CHAUFFEURS_DELUXE_ROOT_DOMAIN}`;
+  if (!host.endsWith(rootSuffix)) {
+    return "";
   }
-  return "";
+  const subdomain = host.slice(0, -rootSuffix.length);
+  if (!subdomain || CHAUFFEURS_DELUXE_RESERVED_SUBDOMAINS.has(subdomain)) {
+    return "";
+  }
+  return subdomain;
 }
 
 function normalizeDriverPageVehicleCards(value) {
@@ -2189,8 +2028,7 @@ async function ensureTrackingSessionForBookingInternal({ bookingId, locationId, 
   await ensureTripTrackingTables();
 
   const bookingLookup = await pool.query(
-    `SELECT id, location_id, vehicle_slot_id, pickup_lat, pickup_lng, dropoff_lat, dropoff_lng,
-            route_distance_miles, route_duration_minutes, booking_duration_minutes, start_time, end_time
+    `SELECT id, location_id, vehicle_slot_id
      FROM bookings
      WHERE id = $1
      LIMIT 1`,
@@ -2209,7 +2047,7 @@ async function ensureTrackingSessionForBookingInternal({ bookingId, locationId, 
 
   const profileIdColumn = await getProfileIdColumn();
   const profileLookup = await pool.query(
-    `SELECT plan_name, addon_branding_unlocked, addon_funnel_unlocked, addon_tracking_unlocked, addon_extra_vehicle_count, fleet, public_app_url, insurance_policy_token
+    `SELECT plan_name, addon_branding_unlocked, addon_funnel_unlocked, addon_tracking_unlocked, addon_extra_vehicle_count, fleet, public_app_url
      FROM profiles
      WHERE ${profileIdColumn} = $1
      LIMIT 1`,
@@ -2249,106 +2087,13 @@ async function ensureTrackingSessionForBookingInternal({ bookingId, locationId, 
   const defaultDriverName = String(defaultVehicleDriver?.driver_name || "").trim() || null;
   const defaultDriverPhone = normalizeDriverPhone(defaultVehicleDriver?.driver_phone || "") || null;
   const defaultDriverEmail = normalizeDriverEmail(defaultVehicleDriver?.driver_email || "") || null;
-  const deviceMeta = getTrackingDeviceMeta(req, req?.body || {});
-  const initialStatusHistory = [
-    buildTrackingStatusHistoryEntry({
-      status: "driver_assigned",
-      deviceTimestamp: deviceMeta.deviceTimestamp,
-      source: "system",
-      appVersion: deviceMeta.appVersion,
-      osMeta: deviceMeta.osMeta,
-      telematicsFlags: deviceMeta.telematicsFlags,
-    }),
-  ];
-  const vehicleId = String(booking.vehicle_slot_id || "").trim() || null;
-  const insurancePolicyToken = String(profileLookup.rows[0]?.insurance_policy_token || "").trim() || null;
-  const pickupLat = Number.isFinite(Number(booking.pickup_lat)) ? Number(booking.pickup_lat) : null;
-  const pickupLng = Number.isFinite(Number(booking.pickup_lng)) ? Number(booking.pickup_lng) : null;
-  const dropoffLat = Number.isFinite(Number(booking.dropoff_lat)) ? Number(booking.dropoff_lat) : null;
-  const dropoffLng = Number.isFinite(Number(booking.dropoff_lng)) ? Number(booking.dropoff_lng) : null;
-  const routeDistanceMiles = Number.isFinite(Number(booking.route_distance_miles)) ? Number(booking.route_distance_miles) : null;
-  const routeDurationMinutes = Number.isFinite(Number(booking.route_duration_minutes)) ? Number(booking.route_duration_minutes) : null;
-  const bookingDurationMinutes = Number.isFinite(Number(booking.booking_duration_minutes)) ? Number(booking.booking_duration_minutes) : null;
 
   await pool.query(
     `INSERT INTO trip_tracking_sessions (
-      id, booking_id, location_id, vehicle_id, driver_token, customer_token, status,
-      driver_display_name, driver_phone, driver_email,
-      pickup_lat, pickup_lng, dropoff_lat, dropoff_lng,
-      route_distance_miles, route_duration_minutes, booking_duration_minutes,
-      device_started_at, status_history_json, telematics_flags_json, app_version, os_meta,
-      insurance_policy_token,
-      created_at, updated_at
-    ) VALUES (
-      $1,$2,$3,$4,$5,$6,'driver_assigned',
-      $7,$8,$9,
-      $10,$11,$12,$13,
-      $14,$15,$16,
-      $17,$18::jsonb,$19::jsonb,$20,$21::jsonb,
-      $22,
-      NOW(),NOW()
-    )`,
-    [
-      id,
-      bookingId,
-      resolvedLocationId,
-      vehicleId,
-      driverToken,
-      customerToken,
-      defaultDriverName,
-      defaultDriverPhone,
-      defaultDriverEmail,
-      pickupLat,
-      pickupLng,
-      dropoffLat,
-      dropoffLng,
-      routeDistanceMiles,
-      routeDurationMinutes,
-      bookingDurationMinutes,
-      deviceMeta.deviceTimestamp,
-      JSON.stringify(initialStatusHistory),
-      JSON.stringify(deviceMeta.telematicsFlags || {}),
-      deviceMeta.appVersion,
-      JSON.stringify(deviceMeta.osMeta || {}),
-      insurancePolicyToken,
-    ]
+      id, booking_id, location_id, driver_token, customer_token, status, driver_display_name, driver_phone, driver_email, created_at, updated_at
+    ) VALUES ($1,$2,$3,$4,$5,'driver_assigned',$6,$7,$8,NOW(),NOW())`,
+    [id, bookingId, resolvedLocationId, driverToken, customerToken, defaultDriverName, defaultDriverPhone, defaultDriverEmail]
   );
-
-  void sendInsuranceTelematicsWebhook({
-    req,
-    session: {
-      id,
-      booking_id: bookingId,
-      location_id: resolvedLocationId,
-      vehicle_id: vehicleId,
-      driver_display_name: defaultDriverName,
-      driver_phone: defaultDriverPhone,
-      driver_email: defaultDriverEmail,
-      pickup_lat: pickupLat,
-      pickup_lng: pickupLng,
-      dropoff_lat: dropoffLat,
-      dropoff_lng: dropoffLng,
-      route_distance_miles: routeDistanceMiles,
-      route_duration_minutes: routeDurationMinutes,
-      booking_duration_minutes: bookingDurationMinutes,
-      status_history_json: initialStatusHistory,
-      telematics_flags_json: deviceMeta.telematicsFlags || {},
-      app_version: deviceMeta.appVersion,
-      os_meta: deviceMeta.osMeta || {},
-      insurance_policy_token: insurancePolicyToken,
-      status: "driver_assigned",
-      start_time: booking.start_time || null,
-      end_time: booking.end_time || null,
-    },
-    booking,
-    eventType: "session_created",
-    eventSource: "system",
-    deviceTimestamp: deviceMeta.deviceTimestamp,
-    status: "driver_assigned",
-    deviceMeta,
-  }).catch((err) => {
-    console.error("Insurance telematics session_created delivery error:", err);
-  });
 
   return {
     session: {
@@ -2361,20 +2106,6 @@ async function ensureTrackingSessionForBookingInternal({ bookingId, locationId, 
       driver_display_name: defaultDriverName,
       driver_phone: defaultDriverPhone,
       driver_email: defaultDriverEmail,
-      vehicle_id: vehicleId,
-      pickup_lat: pickupLat,
-      pickup_lng: pickupLng,
-      dropoff_lat: dropoffLat,
-      dropoff_lng: dropoffLng,
-      route_distance_miles: routeDistanceMiles,
-      route_duration_minutes: routeDurationMinutes,
-      booking_duration_minutes: bookingDurationMinutes,
-      device_started_at: deviceMeta.deviceTimestamp,
-      status_history_json: initialStatusHistory,
-      telematics_flags_json: deviceMeta.telematicsFlags || {},
-      app_version: deviceMeta.appVersion,
-      os_meta: deviceMeta.osMeta || {},
-      insurance_policy_token: insurancePolicyToken,
       public_app_url: profileLookup.rows[0]?.public_app_url || null,
     },
     tracking_session_id: id,
@@ -2424,7 +2155,6 @@ async function getTrackingSessionByToken({ token, role = "customer" }) {
       p.widget_tagline,
       p.payment_provider,
       p.driver_calendar_url,
-      p.insurance_policy_token AS profile_insurance_policy_token,
       p.fleet
      FROM trip_tracking_sessions s
      INNER JOIN bookings b ON b.id = s.booking_id
@@ -2475,7 +2205,6 @@ async function getTrackingSessionById(sessionId) {
       p.brand_color_accent,
       p.widget_tagline,
       p.payment_provider,
-      p.insurance_policy_token AS profile_insurance_policy_token,
       p.fleet
      FROM trip_tracking_sessions s
      INNER JOIN bookings b ON b.id = s.booking_id
@@ -2574,7 +2303,6 @@ function buildTrackingSessionClientShape(session) {
     tracking_session_id: session.id,
     booking_id: session.booking_id,
     location_id: session.location_id,
-    vehicle_id: session.vehicle_id || session.vehicle_slot_id || "",
     status: session.status,
     current_lat: session.current_lat,
     current_lng: session.current_lng,
@@ -2584,8 +2312,6 @@ function buildTrackingSessionClientShape(session) {
     last_location_at: session.last_location_at,
     started_at: session.started_at,
     ended_at: session.ended_at,
-    device_started_at: session.device_started_at || null,
-    device_ended_at: session.device_ended_at || null,
     customer_name: customerName,
     customer_email: session.customer_email || "",
       customer_phone: normalizePhoneNumber(session.customer_phone || ""),
@@ -2597,9 +2323,6 @@ function buildTrackingSessionClientShape(session) {
     dropoff_lng: session.dropoff_lng,
     start_time: session.start_time,
     end_time: session.end_time,
-    route_distance_miles: session.route_distance_miles ?? null,
-    route_duration_minutes: session.route_duration_minutes ?? null,
-    booking_duration_minutes: session.booking_duration_minutes ?? null,
     total_price: session.total_price,
     vehicle_slot_id: session.vehicle_slot_id || "",
     vehicle_type: vehicleRecord?.vehicle_type || "",
@@ -2617,11 +2340,6 @@ function buildTrackingSessionClientShape(session) {
       driver_phone: normalizeDriverPhone(session.driver_phone || ""),
     driver_email: session.driver_email || "",
     driver_photo_data: session.driver_photo_data || "",
-    app_version: session.app_version || "",
-    os_meta: safeParseJsonObject(session.os_meta, {}),
-    status_history: safeParseJsonArray(session.status_history_json, []),
-    telematics_flags: safeParseJsonObject(session.telematics_flags_json, {}),
-    insurance_policy_token: session.insurance_policy_token || session.profile_insurance_policy_token || "",
     business_name: session.business_name || "Chauffeur Deluxe",
     maps_api_key: session.maps_api_key || "",
     driver_calendar_url: String(session.driver_calendar_url || "").trim(),
@@ -7992,45 +7710,6 @@ async function getPaymentProfileForLocation(locationId, options = {}) {
   }
 }
 
-function isDriverPartnerProgramLocationId(locationId) {
-  const normalized = String(locationId || "").trim();
-  if (!normalized) return false;
-  if (DRIVER_PARTNER_PROGRAM_DEMO_LOCATION_IDS.has(normalized)) return true;
-  return normalized.startsWith("dp_");
-}
-
-async function getDriverPartnerProgramStripeRoutingForLocation(locationId, amount) {
-  if (!isDriverPartnerProgramLocationId(locationId)) {
-    return null;
-  }
-
-  await ensureProfilePaymentProviderColumns();
-  const profileIdColumn = await getProfileIdColumn();
-  const result = await pool.query(
-    `SELECT stripe_account_id
-     FROM profiles
-     WHERE ${profileIdColumn} = $1
-     LIMIT 1`,
-    [String(locationId)]
-  );
-  const destinationAccountId = String(result.rows[0]?.stripe_account_id || "").trim();
-  if (!destinationAccountId) {
-    return null;
-  }
-
-  const amountCents = Math.max(0, Math.round(Number(amount || 0) * 100));
-  const transferAmountCents = Math.floor(amountCents / 2);
-  if (!transferAmountCents) {
-    return null;
-  }
-
-  return {
-    destinationAccountId,
-    transferAmountCents,
-    splitPercent: 50,
-  };
-}
-
 function getPayPalApiBase(environment = "live") {
   return normalizePayPalEnvironment(environment) === "sandbox"
     ? "https://api-m.sandbox.paypal.com"
@@ -8639,89 +8318,6 @@ app.get("/driver-partner-program", (req, res) => {
 app.get("/driver-partner-page.html", (req, res) => {
   return res.redirect(301, buildDriverPageSubdomainUrl("first-last"));
 });
-app.get("/api/driver-page-location/:slug", async (req, res) => {
-  try {
-    const slug = normalizeChauffeursSubdomain(req.params.slug || "", "first-last");
-    if (!slug) {
-      return res.status(400).json({ error: "slug is required." });
-    }
-    const profileLookup = await pool.query(
-      `SELECT location_id, driver_page_slug, driver_display_name, display_name, business_name
-       FROM profiles
-       WHERE LOWER(COALESCE(driver_page_slug, '')) = $1
-          OR LOWER(COALESCE(driver_display_name, '')) = $1
-          OR LOWER(COALESCE(display_name, '')) = $1
-          OR LOWER(COALESCE(business_name, '')) = $1
-          OR LOWER(COALESCE(location_id, '')) = $1
-       LIMIT 1`,
-      [slug]
-    );
-    if (profileLookup.rows.length) {
-      const profile = profileLookup.rows[0];
-      return res.json({
-        success: true,
-        slug,
-        location_id: profile.location_id || DEFAULT_DRIVER_PARTNER_LOCATION_ID,
-        driver_page_slug: normalizeChauffeursSubdomain(profile.driver_page_slug || slug, slug),
-        driver_display_name: String(profile.driver_display_name || profile.display_name || profile.business_name || "Chauffeur Deluxe Driver").trim(),
-      });
-    }
-
-    const demoSlugs = new Set(["laquor-otkins", "john-smith", "first-last", "driver-name"]);
-    if (!demoSlugs.has(slug)) {
-      return res.status(404).json({ error: "Driver page not found." });
-    }
-    return res.json({
-      success: true,
-      slug,
-      location_id: DEFAULT_DRIVER_PARTNER_LOCATION_ID,
-      driver_page_slug: slug,
-      driver_display_name:
-        slug === "laquor-otkins" ? "Laquor Otkins" :
-        slug === "john-smith" ? "John Smith" : "Chauffeur Deluxe Driver",
-    });
-  } catch (err) {
-    console.error("Driver page location lookup error:", err);
-    return res.status(500).json({ error: err.message || "Failed to resolve driver page location." });
-  }
-});
-app.post("/api/driver-preview-sessions", (req, res) => {
-  try {
-    const driverName = normalizeDriverName(req.body?.driver_name || "Your Name");
-    const driverTitle = String(req.body?.driver_title || "Luxury Chauffeur").trim() || "Luxury Chauffeur";
-    const locationId = String(req.body?.location_id || "").trim() || DEFAULT_DRIVER_PARTNER_LOCATION_ID;
-    const driverPhotoData = normalizeImageDataUrl(req.body?.driver_photo_data || req.body?.driver_photo || "");
-    const driverPageSlug = normalizeChauffeursSubdomain(req.body?.driver_page_slug || req.body?.slug || driverName || "first-last", "first-last") || "first-last";
-    const token = createDriverPreviewSession({
-      driver_name: driverName,
-      driver_title: driverTitle,
-      location_id: locationId,
-      driver_photo_data: driverPhotoData || null,
-      driver_page_slug: driverPageSlug
-    });
-    return res.json({
-      success: true,
-      token,
-      preview_token: token,
-      preview_url: buildDriverPageSubdomainUrl(driverPageSlug, `?preview_token=${encodeURIComponent(token)}`)
-    });
-  } catch (err) {
-    console.error("Driver preview session error:", err);
-    return res.status(500).json({ error: err.message || "Failed to create preview session." });
-  }
-});
-app.get("/api/driver-preview-sessions/:token", (req, res) => {
-  try {
-    const payload = getDriverPreviewSession(req.params.token || "");
-    if (!payload) {
-      return res.status(404).json({ error: "Preview session not found or expired." });
-    }
-    return res.json({ success: true, ...payload });
-  } catch (err) {
-    console.error("Driver preview lookup error:", err);
-    return res.status(500).json({ error: err.message || "Failed to load preview session." });
-  }
-});
 app.get("/partner/:slug", (req, res) => {
   const slug = normalizeChauffeursSubdomain(req.params.slug || "first-last", "first-last");
   return res.redirect(301, buildDriverPageSubdomainUrl(slug));
@@ -8754,13 +8350,6 @@ app.get("/driver-widget.js", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "driver-wizard.js"));
 });
 app.get("/", (req, res, next) => {
-  const host = String(req.hostname || req.get?.("host") || "").trim().toLowerCase().split(":")[0];
-  if (host === CHAUFFEURS_DELUXE_DRIVER_PARENT_DOMAIN) {
-    return res.sendFile(path.join(__dirname, "public", "driver-partner-program.html"));
-  }
-  if (host === CHAUFFEURS_DELUXE_ROOT_DOMAIN || host === `www.${CHAUFFEURS_DELUXE_ROOT_DOMAIN}`) {
-    return res.sendFile(path.join(__dirname, "public", "index.html"));
-  }
   const subdomain = getChauffeursSubdomainFromRequest(req);
   if (!subdomain) {
     return next();
@@ -9005,10 +8594,6 @@ app.get("/pay/balance/:bookingId", async (req, res) => {
 
     if (provider === "stripe") {
       const connectRouting = await getStripeConnectChargeRoutingForBooking(bookingId, balanceDue);
-      const driverProgramRouting = connectRouting
-        ? null
-        : await getDriverPartnerProgramStripeRoutingForLocation(bookingRow.location_id, balanceDue);
-      const checkoutRouting = connectRouting || driverProgramRouting;
       const successUrl = appendQueryParams(`${baseUrl}/payment-complete.html`, {
         checkout: "success",
         session_id: "{CHECKOUT_SESSION_ID}",
@@ -9035,22 +8620,14 @@ app.get("/pay/balance/:bookingId", async (req, res) => {
         description: `${bookingRow.vehicle_slot_id || "Private ride"} balance payment`,
         successUrl,
         cancelUrl,
-        connectDestinationAccountId: checkoutRouting?.destinationAccountId || null,
-        connectTransferAmountCents: checkoutRouting?.transferAmountCents || null,
-        extraMetadata: checkoutRouting ? (
-          connectRouting
-            ? {
-                dispatch_assignment_id: connectRouting.dispatchAssignmentId,
-                assigned_partner_id: connectRouting.partnerId,
-                connect_transfer_amount_cents: checkoutRouting.transferAmountCents,
-                payout_id: connectRouting.payoutId,
-              }
-            : {
-                driver_program_split_percent: "50",
-                driver_program_location_id: String(bookingRow.location_id || ""),
-                connect_transfer_amount_cents: checkoutRouting.transferAmountCents,
-              }
-        ) : {},
+        connectDestinationAccountId: connectRouting?.destinationAccountId || null,
+        connectTransferAmountCents: connectRouting?.transferAmountCents || null,
+        extraMetadata: connectRouting ? {
+          dispatch_assignment_id: connectRouting.dispatchAssignmentId,
+          assigned_partner_id: connectRouting.partnerId,
+          connect_transfer_amount_cents: connectRouting.transferAmountCents,
+          payout_id: connectRouting.payoutId,
+        } : {},
       });
       return res.redirect(session?.url || cancelUrl);
     }
@@ -9170,7 +8747,6 @@ app.get("/pay/test-run/:bookingId", async (req, res) => {
       const successUrl = appendQueryParams(successUrlBase, {
         session_id: "{CHECKOUT_SESSION_ID}",
       }, { rawKeys: ["session_id"] });
-      const driverProgramRouting = await getDriverPartnerProgramStripeRoutingForLocation(bookingRow.location_id, totalPrice);
       const session = await createStripeCheckoutSessionForAmount({
         apiKey: paymentProfile.stripeSecretKey,
         amount: totalPrice,
@@ -9187,12 +8763,6 @@ app.get("/pay/test-run/:bookingId", async (req, res) => {
         description: `${bookingRow.vehicle_slot_id || "Vehicle"} test run payment`,
         successUrl,
         cancelUrl,
-        connectDestinationAccountId: driverProgramRouting?.destinationAccountId || null,
-        connectTransferAmountCents: driverProgramRouting?.transferAmountCents || null,
-        extraMetadata: driverProgramRouting ? {
-          driver_program_split_percent: String(driverProgramRouting.splitPercent),
-          driver_program_location_id: String(bookingRow.location_id || ""),
-        } : {},
       });
       return res.redirect(session?.url || cancelUrl);
     }
@@ -9274,7 +8844,6 @@ async function saveConfigHandler(req, res) {
   try {
     const {
       location_id,
-      display_name,
       business_name,
       business_logo,
       brand_color_primary,
@@ -9312,7 +8881,6 @@ async function saveConfigHandler(req, res) {
       fixed_rates = [],
       peak_windows = [],
       hourly_bookings = [],
-      security_services = [],
       events = [],
       addons = []
     } = req.body;
@@ -9337,8 +8905,6 @@ async function saveConfigHandler(req, res) {
     const existingProfile = existingProfileRes.rows[0] || {};
     const hasBusinessLogoField = Object.prototype.hasOwnProperty.call(req.body || {}, "business_logo");
     const incomingBusinessLogo = hasBusinessLogoField ? business_logo : existingProfile.business_logo;
-    const driverDisplayName = String(display_name || existingProfile.driver_display_name || business_name || existingProfile.business_name || "").trim();
-    const driverPageSlug = buildDriverPageSlugFromName(driverDisplayName || business_name || "first-last");
     const previousFleet = safeParseJson(existingProfile.fleet, []);
     const normalizedPlanName = normalizePlanName(plan_name || existingProfile.plan_name || "starter");
     const entitlements = buildPlanEntitlements({
@@ -9368,8 +8934,6 @@ async function saveConfigHandler(req, res) {
     };
 
     pushProfileField(profileIdColumn, location_id);
-    pushProfileField("driver_display_name", driverDisplayName || null);
-    pushProfileField("driver_page_slug", driverPageSlug || null);
     pushProfileField("business_name", business_name);
     pushProfileField("business_logo", sanitizedBranding.business_logo || null);
     pushProfileField("brand_color_primary", sanitizedBranding.brand_color_primary || DEFAULT_BRAND_COLORS.primary);
@@ -9408,7 +8972,6 @@ async function saveConfigHandler(req, res) {
     pushProfileField("fleet", JSON.stringify(sanitizedFleet), "::jsonb");
     pushProfileField("peak_windows", JSON.stringify(peak_windows), "::jsonb");
     pushProfileField("hourly_bookings", JSON.stringify(hourly_bookings), "::jsonb");
-    pushProfileField("security_services", JSON.stringify(security_services), "::jsonb");
     pushProfileField("events", JSON.stringify(events), "::jsonb");
     pushProfileField("special_events", JSON.stringify(events), "::jsonb");
     pushProfileField("addons", JSON.stringify(addons), "::jsonb");
@@ -9573,7 +9136,6 @@ async function saveConfigHandler(req, res) {
             fixedRates: fixed_rates,
             peakWindows: peak_windows,
             hourlyBookings: hourly_bookings,
-            securityServices: security_services,
             events,
             addons
           });
@@ -10711,7 +10273,6 @@ function normalizeBookingMode(value) {
     "fixed",
     "event",
     "hourly",
-    "security",
   ]);
 
   return validModes.has(normalized)
@@ -10916,108 +10477,6 @@ function calculateHourlyPricing({
     subtotal: roundMoney(
       hourlyRate * hours
     ),
-  };
-}
-
-function resolveSecurityOption({
-  securityServices = [],
-  selectedSecurityService = "",
-  selectedVehicleSlotId = "",
-}) {
-  const target = String(selectedSecurityService || "").trim().toLowerCase();
-  const targetSlotId = String(selectedVehicleSlotId || "").trim().toLowerCase();
-  const rows = Array.isArray(securityServices) ? securityServices : [];
-
-  if (!rows.length) {
-    return null;
-  }
-
-  const exactMatches = target
-    ? rows.filter((row = {}) => {
-        const identifiers = [
-          row.id,
-          row.security_service_id,
-          row.service_name,
-          row.security_service_name,
-        ]
-          .map((value) => String(value || "").trim().toLowerCase())
-          .filter(Boolean);
-        return identifiers.includes(target);
-      })
-    : [];
-
-  if (exactMatches.length === 1) {
-    return exactMatches[0];
-  }
-
-  if (exactMatches.length > 1 && targetSlotId) {
-    const slotMatch = exactMatches.find((row = {}) => String(row.calendar_id || "").trim().toLowerCase() === targetSlotId);
-    if (slotMatch) {
-      return slotMatch;
-    }
-  }
-
-  if (target) {
-    const fallback = rows.find((row = {}) => {
-      const identifiers = [
-        row.id,
-        row.security_service_id,
-        row.service_name,
-        row.security_service_name,
-      ]
-        .map((value) => String(value || "").trim().toLowerCase())
-        .filter(Boolean);
-      return identifiers.includes(target);
-    });
-    if (fallback) {
-      return fallback;
-    }
-  }
-
-  return rows[0] || null;
-}
-
-function calculateSecurityPricing({
-  securityOption,
-  requestedHours,
-  applyBundleFee = false,
-}) {
-  if (!securityOption) {
-    throw new Error("Select a valid security service option.");
-  }
-
-  const defaultHours = Math.max(1, positiveNumber(securityOption.default_hours, 1));
-  const hours = positiveNumber(requestedHours, defaultHours);
-
-  if (hours < 1) {
-    throw new Error("Security service requires at least 1 hour.");
-  }
-
-  const hourlyRate = positiveNumber(securityOption.hourly_rate, 0);
-  const executiveFeePerHour = positiveNumber(
-    securityOption.executive_fee_per_hour ?? securityOption.executive_service_fee_per_hour,
-    10
-  );
-  const appliedExecutiveFeePerHour = applyBundleFee ? executiveFeePerHour : 0;
-
-  if (hourlyRate <= 0) {
-    throw new Error("The selected security service does not have a valid hourly rate.");
-  }
-
-  const subtotal = roundMoney((hourlyRate + appliedExecutiveFeePerHour) * hours);
-
-  return {
-    mode: "security",
-    label: `${securityOption.service_name || securityOption.security_service_name || "Security Service"} at $${hourlyRate.toFixed(2)}/hr${applyBundleFee ? ` + $${executiveFeePerHour.toFixed(2)}/hr bundle fee` : ""} for ${hours} hour${hours === 1 ? "" : "s"}`,
-    security_service_id: String(securityOption.id || securityOption.security_service_id || securityOption.service_name || "").trim() || null,
-    security_service_name: securityOption.service_name || securityOption.security_service_name || "Security Service",
-    security_service_hours: roundMoney(hours),
-    security_service_hourly_rate: roundMoney(hourlyRate),
-    security_service_fee_per_hour: roundMoney(appliedExecutiveFeePerHour),
-    security_service_total: subtotal,
-    calendar_id: String(securityOption.calendar_id || "").trim() || null,
-    bundle_with_vehicle: normalizeBooleanish(securityOption.bundle_with_vehicle, false),
-    subtotal,
   };
 }
 
@@ -11427,28 +10886,12 @@ function calculateRideSection({
   hourlyBookings,
   selectedHourlyBooking,
   hourlyHours,
-  securityServices = [],
-  selectedSecurityService = "",
-  securityHours = 0,
   startTimeLocal,
   pricingWindows,
 }) {
   const mode = normalizeBookingMode(
     bookingMode
   );
-
-  if (mode === "security") {
-    const securityOption = resolveSecurityOption({
-      securityServices,
-      selectedSecurityService,
-    });
-
-    return calculateSecurityPricing({
-      securityOption,
-      requestedHours: securityHours,
-      applyBundleFee: false,
-    });
-  }
 
   if (mode === "fixed") {
     const fixedRate = resolveFixedRate(
@@ -11524,9 +10967,6 @@ function calculateCompleteQuote({
   hourlyBookings = [],
   selectedHourlyBooking = "",
   hourlyHours = 0,
-  securityServices = [],
-  selectedSecurityService = "",
-  securityHours = 0,
   pricingWindows = [],
   startTimeLocal,
   configuredAddons = [],
@@ -11548,33 +10988,9 @@ function calculateCompleteQuote({
     hourlyBookings,
     selectedHourlyBooking,
     hourlyHours,
-    securityServices,
-    selectedSecurityService,
-    securityHours,
     startTimeLocal,
     pricingWindows,
   });
-
-  const securityAddon = (normalizeBookingMode(bookingMode) === "hourly" && selectedSecurityService)
-    ? (() => {
-          const securityOption = resolveSecurityOption({
-            securityServices,
-            selectedSecurityService,
-            selectedVehicleSlotId: vehicle?.vehicle_slot_id || "",
-          });
-          if (!securityOption) {
-            throw new Error("Select a valid security service option.");
-          }
-          const applyBundleFee = normalizeBookingMode(bookingMode) === "hourly"
-            && normalizeBooleanish(securityOption.bundle_with_vehicle, true);
-          return calculateSecurityPricing({
-            securityOption,
-            requestedHours: securityHours || hourlyHours || securityOption.default_hours || 1,
-            applyBundleFee,
-          });
-        })()
-    : null;
-  const securitySummary = securityAddon || (ride.mode === "security" ? ride : null);
 
   const addons = calculateAddons({
     configuredAddons,
@@ -11600,9 +11016,8 @@ function calculateCompleteQuote({
     roundMoney(ride.subtotal) +
     (ride.mode === "fixed" ? timeBasedSurcharge : 0);
 
-  const securitySubtotal = roundMoney(securityAddon?.subtotal || 0);
   const subtotalBeforeFees =
-    rideSubtotal + addons.total + securitySubtotal;
+    rideSubtotal + addons.total;
 
   const serviceFee =
     calculateServiceFee({
@@ -11641,7 +11056,6 @@ function calculateCompleteQuote({
       surcharge: roundMoney(timeBasedSurcharge),
       peak_time_surcharge: roundMoney(timeBasedSurcharge),
     },
-    security: securitySummary,
     addons,
     fixed_surcharge: roundMoney(timeBasedSurcharge),
     peak_time_surcharge: roundMoney(timeBasedSurcharge),
@@ -12093,9 +11507,6 @@ function buildInsuranceSettingsShape(profile = {}) {
     embed_url: String(profile.insurance_embed_url || "").trim() || null,
     webhook_secret: String(profile.insurance_webhook_secret || "").trim() || null,
     notes: String(profile.insurance_notes || "").trim() || null,
-    policy_token: String(profile.insurance_policy_token || "").trim() || null,
-    telematics_webhook_url: String(profile.insurance_telematics_webhook_url || "").trim() || null,
-    telematics_webhook_secret: String(profile.insurance_telematics_webhook_secret || "").trim() || null,
     state_rules: safeParseJson(profile.insurance_state_rules, []),
     coverage_option: coverageMeta.code,
     coverage_option_label: coverageMeta.label,
@@ -12167,176 +11578,6 @@ async function logInsuranceEvent({
       JSON.stringify(payload || {}),
     ]
   );
-}
-
-function buildInsuranceTelematicsPayload({
-  session = {},
-  booking = {},
-  eventType = "",
-  eventSource = "driver",
-  lat = null,
-  lng = null,
-  heading = null,
-  speed = null,
-  accuracy = null,
-  deviceTimestamp = null,
-  serverTimestamp = new Date().toISOString(),
-  status = null,
-  deviceMeta = {},
-}) {
-  return {
-    event_type: String(eventType || "").trim() || "trip.telematics_update",
-    event_source: eventSource,
-    event_timestamp: serverTimestamp,
-    device_timestamp: deviceTimestamp || null,
-    location_id: String(session.location_id || booking.location_id || "").trim() || null,
-    booking_id: Number(session.booking_id || booking.booking_id || booking.id || 0) || null,
-    tracking_session_id: session.id || null,
-    policy_token: String(session.insurance_policy_token || booking.insurance_policy_token || "").trim() || null,
-    booking: {
-      vehicle_id: String(session.vehicle_id || booking.vehicle_id || session.vehicle_slot_id || booking.vehicle_slot_id || "").trim() || null,
-      vehicle_slot_id: String(session.vehicle_slot_id || booking.vehicle_slot_id || "").trim() || null,
-      driver_profile_id: String(session.driver_profile_id || "").trim() || null,
-      driver_name: String(session.driver_display_name || "").trim() || null,
-      driver_phone: String(session.driver_phone || "").trim() || null,
-      driver_email: String(session.driver_email || "").trim() || null,
-      pickup_lat: Number.isFinite(Number(session.pickup_lat ?? booking.pickup_lat)) ? Number(session.pickup_lat ?? booking.pickup_lat) : null,
-      pickup_lng: Number.isFinite(Number(session.pickup_lng ?? booking.pickup_lng)) ? Number(session.pickup_lng ?? booking.pickup_lng) : null,
-      dropoff_lat: Number.isFinite(Number(session.dropoff_lat ?? booking.dropoff_lat)) ? Number(session.dropoff_lat ?? booking.dropoff_lat) : null,
-      dropoff_lng: Number.isFinite(Number(session.dropoff_lng ?? booking.dropoff_lng)) ? Number(session.dropoff_lng ?? booking.dropoff_lng) : null,
-      miles: Number.isFinite(Number(session.route_distance_miles ?? booking.route_distance_miles)) ? Number(session.route_distance_miles ?? booking.route_distance_miles) : null,
-      duration_minutes: Number.isFinite(Number(session.route_duration_minutes ?? booking.route_duration_minutes))
-        ? Number(session.route_duration_minutes ?? booking.route_duration_minutes)
-        : null,
-      booking_duration_minutes: Number.isFinite(Number(session.booking_duration_minutes ?? booking.booking_duration_minutes))
-        ? Number(session.booking_duration_minutes ?? booking.booking_duration_minutes)
-        : null,
-      start_time: session.start_time || booking.start_time || null,
-      end_time: session.end_time || booking.end_time || null,
-      status: status || session.status || null,
-    },
-    point: {
-      lat: lat,
-      lng: lng,
-      heading: heading,
-      speed: speed,
-      accuracy: accuracy,
-    },
-    telemetry: {
-      status_history: safeParseJsonArray(session.status_history_json, []),
-      telematics_flags: safeParseJsonObject(session.telematics_flags_json, {}),
-      app_version: session.app_version || deviceMeta.appVersion || null,
-      os_meta: safeParseJsonObject(session.os_meta, deviceMeta.osMeta || {}),
-    },
-  };
-}
-
-async function sendInsuranceTelematicsWebhook({
-  req = null,
-  session = {},
-  booking = {},
-  eventType = "",
-  eventSource = "driver",
-  lat = null,
-  lng = null,
-  heading = null,
-  speed = null,
-  accuracy = null,
-  deviceTimestamp = null,
-  serverTimestamp = new Date().toISOString(),
-  status = null,
-  deviceMeta = {},
-}) {
-  await ensureInsuranceModuleTables();
-  const profileLookup = await pool.query(
-    `SELECT insurance_telematics_webhook_url, insurance_telematics_webhook_secret, insurance_provider
-     FROM profiles
-     WHERE location_id = $1
-     LIMIT 1`,
-    [String(session.location_id || booking.location_id || "").trim()]
-  );
-  const profile = profileLookup.rows[0] || {};
-  const webhookUrl = String(profile.insurance_telematics_webhook_url || "").trim();
-  const webhookSecret = String(profile.insurance_telematics_webhook_secret || "").trim();
-  if (!webhookUrl) {
-    return {
-      attempted: false,
-      success: false,
-      skipped: true,
-      reason: "No insurance telematics webhook URL configured.",
-    };
-  }
-
-  const payload = buildInsuranceTelematicsPayload({
-    session,
-    booking,
-    eventType,
-    eventSource,
-    lat,
-    lng,
-    heading,
-    speed,
-    accuracy,
-    deviceTimestamp,
-    serverTimestamp,
-    status,
-    deviceMeta,
-  });
-
-  const result = {
-    attempted: true,
-    success: false,
-    skipped: false,
-    status: null,
-    error: null,
-    payload,
-  };
-
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 15000);
-    try {
-      const response = await fetch(webhookUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(webhookSecret ? { "x-insurance-webhook-secret": webhookSecret } : {}),
-          "x-insurance-provider": String(profile.insurance_provider || "inshur").trim() || "inshur",
-        },
-        body: JSON.stringify(payload),
-        signal: controller.signal,
-      });
-
-      result.status = response.status;
-      result.success = response.ok;
-      if (!response.ok) {
-        result.error = (await response.text()).slice(0, 500);
-      }
-    } finally {
-      clearTimeout(timeout);
-    }
-  } catch (err) {
-    result.error = err?.message || "Failed to deliver insurance telematics webhook.";
-  }
-
-  await logInsuranceEvent({
-    locationId: session.location_id || booking.location_id || null,
-    bookingId: session.booking_id || booking.id || null,
-    provider: profile.insurance_provider || null,
-    eventType: `telematics.${eventType || "update"}`,
-    payload: {
-      ...payload,
-      delivery: {
-        webhook_url_present: true,
-        success: result.success,
-        status: result.status,
-        skipped: result.skipped,
-        error: result.error,
-      },
-    },
-  });
-
-  return result;
 }
 
 function computeInsuranceShellPremium(booking = {}) {
@@ -13494,8 +12735,7 @@ app.post("/api/driver-partner/subscription-checkout-session", async (req, res) =
     const displayName = String(req.body.display_name || "").trim();
     const businessName = String(req.body.business_name || "").trim() || "Chauffeurs Deluxe Driver";
     const customerEmail = String(req.body.driver_email || req.body.email || "").trim();
-    const incomingLocationId = String(req.body.location_id || "").trim();
-    const locationId = incomingLocationId || buildDriverPartnerProgramLocationId();
+    const locationId = String(req.body.location_id || DEFAULT_DRIVER_PARTNER_LOCATION_ID).trim() || DEFAULT_DRIVER_PARTNER_LOCATION_ID;
     const issuedLink = await issueDriverPartnerSetupAccessLink({
       email: customerEmail,
       locationId,
@@ -13531,8 +12771,6 @@ app.post("/api/driver-partner/subscription-checkout-session", async (req, res) =
     return res.json({
       success: true,
       checkout_url: session.url,
-      location_id: locationId,
-      driver_page_slug: buildDriverPageSlugFromName(displayName || "first-last"),
     });
   } catch (err) {
     console.error("Driver partner subscription checkout error:", err);
@@ -13543,8 +12781,7 @@ app.post("/api/driver-partner/subscription-checkout-session", async (req, res) =
 app.post("/api/driver-partner/resend-setup-link", async (req, res) => {
   try {
     const email = normalizeDriverEmail(req.body.email || req.body.driver_email || "");
-    const incomingLocationId = String(req.body.location_id || "").trim();
-    const locationId = incomingLocationId || buildDriverPartnerProgramLocationId();
+    const locationId = String(req.body.location_id || DEFAULT_DRIVER_PARTNER_LOCATION_ID).trim() || DEFAULT_DRIVER_PARTNER_LOCATION_ID;
     if (!email) {
       return res.status(400).json({ error: "Email is required." });
     }
@@ -14382,7 +13619,6 @@ app.post("/api/tracking/location", async (req, res) => {
     const heading = parseOptionalNumber(req.body.heading);
     const speed = parseOptionalNumber(req.body.speed);
     const accuracy = parseOptionalNumber(req.body.accuracy);
-    const deviceMeta = getTrackingDeviceMeta(req, req.body || {});
 
     if (!token || lat === null || lng === null) {
       return res.status(400).json({ error: "token, lat, and lng are required." });
@@ -14414,75 +13650,19 @@ app.post("/api/tracking/location", async (req, res) => {
            heading = $4,
            speed = $5,
            accuracy = $6,
-           device_started_at = COALESCE(device_started_at, $7),
-           app_version = COALESCE(app_version, $8),
-           os_meta = CASE
-             WHEN os_meta = '{}'::jsonb AND $9::jsonb <> '{}'::jsonb THEN $9::jsonb
-             ELSE os_meta
-           END,
-           telematics_flags_json = CASE
-             WHEN $10::jsonb <> '{}'::jsonb THEN $10::jsonb
-             ELSE telematics_flags_json
-           END,
            last_location_at = NOW(),
            started_at = COALESCE(started_at, NOW()),
            updated_at = NOW()
        WHERE id = $1`,
-      [
-        session.id,
-        lat,
-        lng,
-        heading,
-        speed,
-        accuracy,
-        deviceMeta.deviceTimestamp,
-        deviceMeta.appVersion,
-        JSON.stringify(deviceMeta.osMeta || {}),
-        JSON.stringify(deviceMeta.telematicsFlags || {}),
-      ]
+      [session.id, lat, lng, heading, speed, accuracy]
     );
 
     await pool.query(
       `INSERT INTO trip_tracking_points (
-        id, tracking_session_id, lat, lng, heading, speed, accuracy, device_recorded_at, app_version, os_meta, telematics_flags_json, recorded_at
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11::jsonb,NOW())`,
-      [
-        randomUUID(),
-        session.id,
-        lat,
-        lng,
-        heading,
-        speed,
-        accuracy,
-        deviceMeta.deviceTimestamp,
-        deviceMeta.appVersion,
-        JSON.stringify(deviceMeta.osMeta || {}),
-        JSON.stringify(deviceMeta.telematicsFlags || {}),
-      ]
+        id, tracking_session_id, lat, lng, heading, speed, accuracy, recorded_at
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,NOW())`,
+      [randomUUID(), session.id, lat, lng, heading, speed, accuracy]
     );
-
-    void sendInsuranceTelematicsWebhook({
-      req,
-      session: {
-        ...fullSession,
-        status: session.status,
-        device_started_at: fullSession?.device_started_at || deviceMeta.deviceTimestamp,
-        telemetry_event_source: "driver",
-      },
-      booking: fullSession || {},
-      eventType: "location_update",
-      eventSource: "driver",
-      lat,
-      lng,
-      heading,
-      speed,
-      accuracy,
-      deviceTimestamp: deviceMeta.deviceTimestamp,
-      status: session.status,
-      deviceMeta,
-    }).catch((err) => {
-      console.error("Insurance telematics location delivery error:", err);
-    });
 
     return res.json({
       success: true,
@@ -14502,7 +13682,6 @@ app.post("/api/tracking/status", async (req, res) => {
 
     const token = String(req.body.token || "").trim();
     const status = normalizeTrackingStatus(req.body.status);
-    const deviceMeta = getTrackingDeviceMeta(req, req.body || {});
 
     if (!token) {
       return res.status(400).json({ error: "token is required." });
@@ -14540,45 +13719,10 @@ app.post("/api/tracking/status", async (req, res) => {
              WHEN $2 = 'completed' THEN NOW()
              ELSE ended_at
            END,
-           device_started_at = CASE
-             WHEN $2 <> 'driver_assigned' THEN COALESCE(device_started_at, $3)
-             ELSE device_started_at
-           END,
-           device_ended_at = CASE
-             WHEN $2 = 'completed' THEN COALESCE($3, NOW())
-             ELSE device_ended_at
-           END,
-           app_version = COALESCE(app_version, $5),
-           os_meta = CASE
-             WHEN os_meta = '{}'::jsonb AND $6::jsonb <> '{}'::jsonb THEN $6::jsonb
-             ELSE os_meta
-           END,
-           telematics_flags_json = CASE
-             WHEN $7::jsonb <> '{}'::jsonb THEN $7::jsonb
-             ELSE telematics_flags_json
-           END,
-           status_history_json = COALESCE(status_history_json, '[]'::jsonb) || $4::jsonb,
            updated_at = NOW()
        WHERE id = $1
        RETURNING id, status`,
-      [
-        existingSession.id,
-        status,
-        deviceMeta.deviceTimestamp,
-        JSON.stringify([
-          buildTrackingStatusHistoryEntry({
-            status,
-            deviceTimestamp: deviceMeta.deviceTimestamp,
-            source: "driver",
-            appVersion: deviceMeta.appVersion,
-            osMeta: deviceMeta.osMeta,
-            telematicsFlags: deviceMeta.telematicsFlags,
-          }),
-        ]),
-        deviceMeta.appVersion,
-        JSON.stringify(deviceMeta.osMeta || {}),
-        JSON.stringify(deviceMeta.telematicsFlags || {}),
-      ]
+      [existingSession.id, status]
     );
 
     const shouldTriggerCustomerTracking = false;
@@ -14611,22 +13755,6 @@ app.post("/api/tracking/status", async (req, res) => {
     }
 
     await client.query("COMMIT");
-
-    void sendInsuranceTelematicsWebhook({
-      req,
-      session: {
-        ...(fullSession || {}),
-        status,
-      },
-      booking: fullSession || {},
-      eventType: "status_update",
-      eventSource: "driver",
-      deviceTimestamp: deviceMeta.deviceTimestamp,
-      status,
-      deviceMeta,
-    }).catch((err) => {
-      console.error("Insurance telematics status delivery error:", err);
-    });
 
     let statusWebhook = {
       triggered: false,
@@ -16501,15 +15629,10 @@ async function createBookingRecord(input, {
   selected_fixed_destination = null,
   selected_hourly_booking = null,
   hourly_hours = null,
-  selected_security_service = null,
-  security_hours = null,
   selected_addons = []
   } = input;
 
-  const bookingModeNormalized = normalizeBookingMode(booking_mode);
-  const isSecurityBooking = bookingModeNormalized === "security";
-
-  if (!location_id || (!vehicle_slot_id && !isSecurityBooking) || !first_name || !last_name || !start_time) {
+  if (!location_id || !vehicle_slot_id || !first_name || !last_name || !start_time) {
     throw new Error("Missing required booking fields.");
   }
 
@@ -16526,13 +15649,11 @@ async function createBookingRecord(input, {
       "addon_tracking_unlocked",
       "addon_extra_vehicle_count",
       "hourly_bookings",
-      "security_services",
       "peak_windows",
       "open_time",
       "close_time",
     ]);
   const resolvedPaymentProvider = normalizePaymentProvider(payment_provider || profile.payment_provider);
-  const securityServices = safeParseJson(profile.security_services, []);
 
   let fleetVehicle = null;
   if (await tableExists("fleet_slots")) {
@@ -16591,61 +15712,36 @@ async function createBookingRecord(input, {
     ) || null;
   }
 
-  const securitySelectionAllowed = bookingModeNormalized === "hourly" || isSecurityBooking;
-  const securityOption = resolveSecurityOption({
-    securityServices,
-    selectedSecurityService: securitySelectionAllowed ? selected_security_service : "",
-    selectedVehicleSlotId: vehicle_slot_id,
-  });
-  const securityHoursValue = isSecurityBooking
-    ? Math.max(1, Number(security_hours || 0) || Number(hourly_hours || 0) || 1)
-    : (Number(security_hours || 0) || Number(hourly_hours || 0) || 0);
-  const securityQuote = securityOption
-    ? calculateSecurityPricing({
-        securityOption,
-        requestedHours: securityHoursValue,
-      })
-    : null;
-
   if (enforceTimingValidation) {
-    if (isSecurityBooking) {
-      if (!securityOption?.calendar_id) {
-        throw new Error("Choose a security service with a calendar attached.");
-      }
-    } else {
-      const bookingTimingValidation = validateBookingTimingRules({
-        slot: fleetVehicle || {},
-        startTime: start_time,
-        startTimeLocal: start_time_local,
-        profileDefaults: {
-          open_time: profile.open_time,
-          close_time: profile.close_time,
-        },
-      });
-      if (!bookingTimingValidation.ok) {
-        throw new Error(bookingTimingValidation.error);
-      }
+    const bookingTimingValidation = validateBookingTimingRules({
+      slot: fleetVehicle || {},
+      startTime: start_time,
+      startTimeLocal: start_time_local,
+      profileDefaults: {
+        open_time: profile.open_time,
+        close_time: profile.close_time,
+      },
+    });
+    if (!bookingTimingValidation.ok) {
+      throw new Error(bookingTimingValidation.error);
     }
   }
 
   const webhookUrl = profile.crm_webhook_url || null;
-  const calendar_id = isSecurityBooking
-    ? (securityOption?.calendar_id || null)
-    : (fleetVehicle?.calendar_id || null);
+  const calendar_id = fleetVehicle?.calendar_id || null;
   const vehicle_type = fleetVehicle?.vehicle_type || fleetVehicle?.name || null;
   const vehicle_category = fleetVehicle?.vehicle_category || null;
+  const bookingModeNormalized = normalizeBookingMode(booking_mode);
   const isHourlyBooking = bookingModeNormalized === "hourly";
   const resolvedHourlyHoursForCalendar = isHourlyBooking
     ? Math.max(4, Number(hourly_hours || 0) || 0)
     : null;
-  const resolvedSecurityHours = securityQuote?.security_service_hours || (isSecurityBooking ? Math.max(1, Number(security_hours || 0) || Number(hourly_hours || 0) || 1) : null);
-  const resolvedSecurityTotal = securityQuote?.security_service_total || null;
 
-  const routeMetrics = (isHourlyBooking || isSecurityBooking)
+  const routeMetrics = isHourlyBooking
     ? {
         distanceMiles: 0,
         durationMinutes: 0,
-        source: isSecurityBooking ? "security" : "hourly",
+        source: "hourly",
       }
     : await getRouteMetrics({
         origin: pickup_address,
@@ -16668,11 +15764,9 @@ async function createBookingRecord(input, {
         vehicleType: fleetVehicle?.vehicle_type || "",
       });
   // Keep the route ETA from Maps, then add only the wizard's peak-time buffer.
-  const bookingDurationMinutes = isSecurityBooking && resolvedSecurityHours
-    ? (resolvedSecurityHours * 60)
-    : (isHourlyBooking && resolvedHourlyHoursForCalendar
+  const bookingDurationMinutes = isHourlyBooking && resolvedHourlyHoursForCalendar
     ? (resolvedHourlyHoursForCalendar * 60)
-    : (routeMetrics.durationMinutes + generalBufferMinutes + additionalTrafficBufferMinutes));
+    : (routeMetrics.durationMinutes + generalBufferMinutes + additionalTrafficBufferMinutes);
   const end_time = new Date(
     new Date(start_time).getTime() + bookingDurationMinutes * 60000
   ).toISOString();
@@ -16728,18 +15822,16 @@ async function createBookingRecord(input, {
         hourly_booking_name: null,
         vehicle_slot_id: vehicle_slot_id || null,
         hourly_rate: null,
-      hourly_hours: Number(hourly_hours || 0) || null,
-      minimum_hours: null,
-      multiplier: 1,
-      surcharge: 0,
-      subtotal: null,
+        hourly_hours: Number(hourly_hours || 0) || null,
+        minimum_hours: null,
+        multiplier: 1,
+        surcharge: 0,
+        subtotal: null,
       };
   const resolvedHourlyBookingName = hourlyQuote.hourly_booking_name || String(selected_hourly_booking || "").trim() || null;
   const resolvedHourlyHours = hourlyQuote.hourly_hours || (Number(hourly_hours || 0) || null);
   const resolvedHourlyRate = hourlyQuote.hourly_rate || null;
   const resolvedHourlyTotal = hourlyQuote.subtotal || null;
-  const resolvedSecurityServiceName = securityQuote?.security_service_name || String(selected_security_service || "").trim() || null;
-  const resolvedSecurityServiceId = securityQuote?.security_service_id || String(selected_security_service || "").trim() || null;
 
   const result = await pool.query(
     `INSERT INTO bookings (
@@ -16764,17 +15856,9 @@ async function createBookingRecord(input, {
       deposit_percent,
       balance_due,
       status,
-      booking_mode,
-      security_service_id,
-      security_service_name,
-      security_service_hours,
-      security_service_hourly_rate,
-      security_service_fee_per_hour,
-      security_service_total,
-      security_calendar_id,
-      security_service_bundle_with_vehicle
+      booking_mode
     ) VALUES (
-      $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28
+      $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22
     )
     RETURNING id, booking_mode`,
     [
@@ -16799,15 +15883,7 @@ async function createBookingRecord(input, {
       numericDepositPercent,
       balance_due,
       bookingStatus,
-      booking_mode,
-      resolvedSecurityServiceId,
-      resolvedSecurityServiceName,
-      resolvedSecurityHours,
-      securityQuote?.security_service_hourly_rate || null,
-      securityQuote?.security_service_fee_per_hour || null,
-      resolvedSecurityTotal,
-      securityQuote?.calendar_id || null,
-      Boolean(securityQuote?.bundle_with_vehicle)
+      booking_mode
     ]
   );
 
@@ -16912,8 +15988,6 @@ async function createBookingRecord(input, {
           selected_fixed_destination,
           selected_hourly_booking: resolvedHourlyBookingName,
           hourly_hours: resolvedHourlyHours,
-          selected_security_service: resolvedSecurityServiceName,
-          security_service_hours: resolvedSecurityHours,
           selected_addons,
         },
         customer: {
@@ -16969,12 +16043,6 @@ async function createBookingRecord(input, {
           hourly_hours: resolvedHourlyHours,
           hourly_rate: resolvedHourlyRate,
           hourly_total: resolvedHourlyTotal,
-          security_service_id: resolvedSecurityServiceId,
-          security_service_name: resolvedSecurityServiceName,
-          security_service_hours: resolvedSecurityHours,
-          security_service_hourly_rate: securityQuote?.security_service_hourly_rate || null,
-          security_service_fee_per_hour: securityQuote?.security_service_fee_per_hour || null,
-          security_service_total: resolvedSecurityTotal,
           fixed_rate_name,
           peak_multiplier,
           fixed_surcharge,
@@ -17092,11 +16160,6 @@ async function createBookingRecord(input, {
         hourly_hours: resolvedHourlyHours,
         hourly_rate: resolvedHourlyRate,
         hourly_total: resolvedHourlyTotal,
-        security_service_name: resolvedSecurityServiceName,
-        security_service_hours: resolvedSecurityHours,
-        security_service_hourly_rate: securityQuote?.security_service_hourly_rate || null,
-        security_service_fee_per_hour: securityQuote?.security_service_fee_per_hour || null,
-        security_service_total: resolvedSecurityTotal,
       }
     },
     financials: {
@@ -17127,8 +16190,6 @@ app.post("/api/create-checkout-session", async (req, res) => {
     let calendarConflict = null;
     const locationId = req.body.location_id;
     const vehicleSlotId = req.body.vehicle_slot_id;
-    const bookingModeNormalized = normalizeBookingMode(req.body.booking_mode);
-    const isSecurityBooking = bookingModeNormalized === "security";
     const practiceMode = req.body.practice_mode === true || String(req.body.practice_mode || "").trim() === "1";
     const livePaymentProfile = await getPaymentProfileForLocation(locationId);
     const testStripeProfile = practiceMode
@@ -17173,19 +16234,10 @@ app.post("/api/create-checkout-session", async (req, res) => {
     const profile = await getBookingProfileRow(locationId, [
       "maps_api_key",
       "fleet",
-      "security_services",
       "peak_windows",
       "open_time",
       "close_time",
     ]);
-
-    const securityServices = safeParseJson(profile.security_services, []);
-    const securitySelectionAllowed = bookingModeNormalized === "hourly" || isSecurityBooking;
-    const securityOption = resolveSecurityOption({
-      securityServices,
-      selectedSecurityService: securitySelectionAllowed ? req.body.selected_security_service : "",
-      selectedVehicleSlotId: vehicleSlotId,
-    });
 
     let fleetVehicle = null;
     if (await tableExists("fleet_slots")) {
@@ -17235,38 +16287,23 @@ app.post("/api/create-checkout-session", async (req, res) => {
       ) || null;
     }
 
-    if (!isSecurityBooking && !vehicleSlotId) {
-      return res.status(400).json({ error: "Select a vehicle first." });
-    }
-
     if (String(req.body.booking_mode || "").trim().toLowerCase() === "hourly") {
       const hourlyHours = Number(req.body.hourly_hours || 0);
       if (!Number.isFinite(hourlyHours) || hourlyHours < 4) {
         return res.status(400).json({ error: "4 hour minimum." });
       }
     }
-    if (isSecurityBooking) {
-      const securityHours = Number(req.body.security_hours || 0);
-      if (!Number.isFinite(securityHours) || securityHours <= 0) {
-        return res.status(400).json({ error: "Choose security hours to continue." });
-      }
-      if (!securityOption?.calendar_id) {
-        return res.status(400).json({ error: "Choose a security service with a calendar attached." });
-      }
-    }
 
+    const bookingModeNormalized = normalizeBookingMode(req.body.booking_mode);
     const hourlyHoursForCalendar = bookingModeNormalized === "hourly"
       ? Math.max(4, Number(req.body.hourly_hours || 0) || 0)
       : null;
-    const securityHoursForCalendar = isSecurityBooking
-      ? Math.max(1, Number(req.body.security_hours || 0) || Number(req.body.hourly_hours || 0) || 1)
-      : null;
 
-    const routeMetrics = (bookingModeNormalized === "hourly" || isSecurityBooking)
+    const routeMetrics = bookingModeNormalized === "hourly"
       ? {
           distanceMiles: 0,
           durationMinutes: 0,
-          source: isSecurityBooking ? "security" : "hourly",
+          source: "hourly",
         }
       : await getRouteMetrics({
           origin: req.body.pickup_address,
@@ -17277,10 +16314,10 @@ app.post("/api/create-checkout-session", async (req, res) => {
           destinationLng: req.body.dropoff_lng,
           mapsApiKey: profile.maps_api_key || null,
         });
-    const generalBufferMinutes = (bookingModeNormalized === "hourly" || isSecurityBooking)
+    const generalBufferMinutes = bookingModeNormalized === "hourly"
       ? 0
       : (parseInt(fleetVehicle?.outbound_buffer_min, 10) || BOOKING_BUFFER_MINUTES);
-    const additionalTrafficBufferMinutes = (bookingModeNormalized === "hourly" || isSecurityBooking)
+    const additionalTrafficBufferMinutes = bookingModeNormalized === "hourly"
       ? 0
       : getAdditionalTrafficBufferMinutes({
           peakWindows: safeParseJson(profile.peak_windows),
@@ -17289,23 +16326,17 @@ app.post("/api/create-checkout-session", async (req, res) => {
           vehicleType: fleetVehicle?.vehicle_type || "",
         });
     // Hourly bookings use only the requested hours; standard bookings use route ETA plus buffers.
-    const bookingDurationMinutes = isSecurityBooking && securityHoursForCalendar
-      ? (securityHoursForCalendar * 60)
-      : (bookingModeNormalized === "hourly" && hourlyHoursForCalendar
+    const bookingDurationMinutes = bookingModeNormalized === "hourly" && hourlyHoursForCalendar
       ? (hourlyHoursForCalendar * 60)
-      : (routeMetrics.durationMinutes + generalBufferMinutes + additionalTrafficBufferMinutes));
+      : (routeMetrics.durationMinutes + generalBufferMinutes + additionalTrafficBufferMinutes);
     const calculatedEndTime = new Date(
       new Date(req.body.start_time).getTime() + bookingDurationMinutes * 60000
     ).toISOString();
 
-    const bookingCalendarId = isSecurityBooking
-      ? (securityOption?.calendar_id || null)
-      : (fleetVehicle?.calendar_id || null);
-
-    if (bookingCalendarId) {
+    if (fleetVehicle?.calendar_id) {
       const calendarEvents = await getCrmCalendarEvents({
         locationId,
-        calendarId: bookingCalendarId,
+        calendarId: fleetVehicle.calendar_id,
         startTime: req.body.start_time,
         endTime: calculatedEndTime,
       });
@@ -17320,7 +16351,7 @@ app.post("/api/create-checkout-session", async (req, res) => {
           title: conflictingEvent.title,
           start_time: conflictingEvent.start,
           end_time: conflictingEvent.end,
-          calendar_id: bookingCalendarId,
+          calendar_id: fleetVehicle.calendar_id,
         };
         const farmOutLink = appendQueryParams(
           buildDispatchManagerUrl(getPublicAppUrl(req), locationId),
@@ -17449,7 +16480,6 @@ app.post("/api/create-checkout-session", async (req, res) => {
       ? `Rideshare Chauffeur Reservation ${companyName} Payment`
       : `Rideshare Chauffeur Reservation ${companyName} Deposit`;
     const checkoutActionLabel = payInFull ? "Payment" : "Deposit";
-    const driverProgramRouting = await getDriverPartnerProgramStripeRoutingForLocation(req.body.location_id || null, amountToCharge);
 
     const session = await createStripeCheckoutSessionForAmount({
       apiKey: paymentProfile.stripeSecretKey,
@@ -17467,12 +16497,6 @@ app.post("/api/create-checkout-session", async (req, res) => {
       description: `${vehicleType} ${checkoutActionLabel.toLowerCase()} for ${businessName}`,
       successUrl,
       cancelUrl,
-      connectDestinationAccountId: driverProgramRouting?.destinationAccountId || null,
-      connectTransferAmountCents: driverProgramRouting?.transferAmountCents || null,
-      extraMetadata: driverProgramRouting ? {
-        driver_program_split_percent: String(driverProgramRouting.splitPercent),
-        driver_program_location_id: String(req.body.location_id || ""),
-      } : {},
     });
 
     return res.json({
@@ -18373,7 +17397,6 @@ const parsedEvents = safeParseJson(profile.events);
 const parsedPeakWindows = safeParseJson(profile.peak_windows);
 const parsedAddons = safeParseJson(profile.addons);
 const parsedHourlyBookings = safeParseJson(profile.hourly_bookings);
-const parsedSecurityServices = safeParseJson(profile.security_services);
 const entitlements = buildPlanEntitlements({
   planName: profile.plan_name || "starter",
   addonBrandingUnlocked: profile.addon_branding_unlocked,
@@ -18399,8 +17422,6 @@ res.json({
   entitlements,
 
   business_name: profile.business_name,
-  driver_display_name: String(profile.driver_display_name || profile.display_name || profile.business_name || "").trim(),
-  driver_page_slug: String(profile.driver_page_slug || "").trim(),
   public_app_url: profile.public_app_url || "",
   business_logo: shrinkWidgetLogoPayload(sanitizedBranding.business_logo || ""),
   brand_color_primary: sanitizedBranding.brand_color_primary || DEFAULT_BRAND_COLORS.primary,
@@ -18491,7 +17512,6 @@ res.json({
   peak_windows: parsedPeakWindows,
   fixed_rates: parsedFixedRates,
   hourly_bookings: parsedHourlyBookings,
-  security_services: parsedSecurityServices,
   addons: parsedAddons,
 
   service_lat: profile.service_lat,
@@ -18593,7 +17613,7 @@ app.get("/api/driver-dashboard/:location_id", async (req, res) => {
         display_name: String(profile.driver_display_name || profile.business_name || "Your Driver Page").trim(),
         email: normalizeDriverEmail(profile.driver_email || ""),
         photo_data: profile.driver_photo_data || "",
-        page_slug: buildDriverPageSubdomainUrl(buildDriverPageSlugFromName(profile.driver_page_slug || profile.driver_display_name || profile.business_name || "first-last")),
+        page_slug: buildDriverPageSubdomainUrl(buildDriverPageSlugFromName(profile.driver_display_name || profile.business_name || "first-last")),
       },
       page: {
         calendar_url: String(profile.driver_calendar_url || "").trim(),
@@ -18634,8 +17654,7 @@ app.get("/api/insurance/settings/:location_id", requireWizardToken, async (req, 
     const profileLookup = await pool.query(
       `SELECT location_id, business_name, insurance_enabled, insurance_provider, insurance_program_id,
               insurance_api_key_ref, insurance_embed_mode, insurance_brand_name, insurance_state_rules,
-              insurance_embed_url, insurance_webhook_secret, insurance_notes, insurance_policy_token,
-              insurance_telematics_webhook_url, insurance_telematics_webhook_secret,
+              insurance_embed_url, insurance_webhook_secret, insurance_notes,
               insurance_coverage_option, insurance_activation_rule
        FROM profiles
        WHERE location_id = $1
@@ -18681,9 +17700,6 @@ app.post("/api/insurance/settings/:location_id", requireWizardToken, async (req,
       String(req.body.embed_url || "").trim() || null,
       String(req.body.webhook_secret || "").trim() || null,
       String(req.body.notes || "").trim() || null,
-      String(req.body.policy_token || "").trim() || null,
-      String(req.body.telematics_webhook_url || "").trim() || null,
-      String(req.body.telematics_webhook_secret || "").trim() || null,
       normalizeInsuranceCoverageOption(req.body.coverage_option),
       normalizeInsuranceActivationRule(req.body.activation_rule),
       locationId,
@@ -18700,16 +17716,12 @@ app.post("/api/insurance/settings/:location_id", requireWizardToken, async (req,
            insurance_embed_url = $8,
            insurance_webhook_secret = $9,
            insurance_notes = $10,
-           insurance_policy_token = $11,
-           insurance_telematics_webhook_url = $12,
-           insurance_telematics_webhook_secret = $13,
-           insurance_coverage_option = $14,
-           insurance_activation_rule = $15
-       WHERE location_id = $16
+           insurance_coverage_option = $11,
+           insurance_activation_rule = $12
+       WHERE location_id = $13
        RETURNING location_id, business_name, insurance_enabled, insurance_provider, insurance_program_id,
                  insurance_api_key_ref, insurance_embed_mode, insurance_brand_name, insurance_state_rules,
-                 insurance_embed_url, insurance_webhook_secret, insurance_notes, insurance_policy_token,
-                 insurance_telematics_webhook_url, insurance_telematics_webhook_secret,
+                 insurance_embed_url, insurance_webhook_secret, insurance_notes,
                  insurance_coverage_option, insurance_activation_rule`,
       values
     );
@@ -18752,10 +17764,7 @@ app.get("/api/insurance/booking/:bookingId", requireWizardToken, async (req, res
               p.insurance_state_rules,
               p.insurance_embed_url,
               p.insurance_webhook_secret,
-              p.insurance_notes,
-              p.insurance_policy_token,
-              p.insurance_telematics_webhook_url,
-              p.insurance_telematics_webhook_secret
+              p.insurance_notes
        FROM bookings b
        LEFT JOIN profiles p ON p.location_id = b.location_id
        WHERE b.id = $1
@@ -18797,10 +17806,7 @@ app.get("/api/insurance/provider-preview/:bookingId", requireWizardToken, async 
               p.insurance_state_rules,
               p.insurance_embed_url,
               p.insurance_webhook_secret,
-              p.insurance_notes,
-              p.insurance_policy_token,
-              p.insurance_telematics_webhook_url,
-              p.insurance_telematics_webhook_secret
+              p.insurance_notes
        FROM bookings b
        LEFT JOIN profiles p ON p.location_id = b.location_id
        WHERE b.id = $1
@@ -18835,8 +17841,7 @@ app.post("/api/insurance/quote", requireWizardToken, async (req, res) => {
     const bookingLookup = await pool.query(
       `SELECT b.*, p.business_name, p.insurance_enabled, p.insurance_provider, p.insurance_program_id,
               p.insurance_api_key_ref, p.insurance_embed_mode, p.insurance_brand_name, p.insurance_state_rules,
-              p.insurance_embed_url, p.insurance_webhook_secret, p.insurance_notes,
-              p.insurance_policy_token, p.insurance_telematics_webhook_url, p.insurance_telematics_webhook_secret
+              p.insurance_embed_url, p.insurance_webhook_secret, p.insurance_notes
        FROM bookings b
        LEFT JOIN profiles p ON p.location_id = b.location_id
        WHERE b.id = $1
@@ -19198,7 +18203,6 @@ app.post("/api/insurance/webhook/:location_id", async (req, res) => {
     const payload = req.body || {};
     const quoteId = String(payload.quote_id || payload.quoteId || "").trim();
     const policyId = String(payload.policy_id || payload.policyId || "").trim();
-    const policyToken = String(payload.policy_token || payload.policyToken || payload.insurance_policy_token || "").trim();
     const eventType = String(payload.event_type || payload.eventType || "carrier.update").trim();
     const nextStatus = payload.status ? normalizeInsuranceStatus(payload.status) : null;
 
@@ -19213,15 +18217,6 @@ app.post("/api/insurance/webhook/:location_id", async (req, res) => {
         [locationId, policyId || null, quoteId || null]
       );
       matchedBooking = bookingLookup.rows[0] || null;
-    }
-
-    if (policyToken) {
-      await pool.query(
-        `UPDATE profiles
-         SET insurance_policy_token = COALESCE($2, insurance_policy_token)
-         WHERE location_id = $1`,
-        [locationId, policyToken]
-      );
     }
 
     if (matchedBooking && nextStatus) {
@@ -19405,16 +18400,11 @@ app.post("/api/widget-quote", async (req, res) => {
     const events = safeParseJson(profile.events);
     const peakWindows = safeParseJson(profile.peak_windows);
     const addons = safeParseJson(profile.addons);
-    const securityServices = safeParseJson(profile.security_services, []);
-    const bookingModeNormalized = normalizeBookingMode(booking_mode);
-    const isSecurityBooking = bookingModeNormalized === "security";
-    const vehicle = isSecurityBooking
-      ? {}
-      : (Array.isArray(fleet) ? fleet : []).find((row = {}) => String(row.vehicle_slot_id || "") === String(vehicle_slot_id || "")) || {};
-    if (!vehicle_slot_id && !isSecurityBooking) {
+    const vehicle = (Array.isArray(fleet) ? fleet : []).find((row = {}) => String(row.vehicle_slot_id || "") === String(vehicle_slot_id || "")) || {};
+    if (!vehicle_slot_id) {
       return res.status(400).json({ error: "Select a vehicle first." });
     }
-    if (!isSecurityBooking && (!vehicle || !vehicle.vehicle_slot_id)) {
+    if (!vehicle || !vehicle.vehicle_slot_id) {
       return res.status(404).json({ error: "Selected vehicle not found." });
     }
 
@@ -19423,22 +18413,19 @@ app.post("/api/widget-quote", async (req, res) => {
       return res.status(400).json({ error: "Choose a valid pickup date and time." });
     }
 
+    const bookingModeNormalized = normalizeBookingMode(booking_mode);
     const isHourlyBooking = bookingModeNormalized === "hourly";
     const requestedHourlyHours = toNumber(hourly_hours, 0);
     if (isHourlyBooking && requestedHourlyHours < 4) {
       return res.status(400).json({ error: "4 hour minimum." });
     }
-    const requestedSecurityHours = toNumber(req.body.security_hours, 0);
-    if (isSecurityBooking && requestedSecurityHours <= 0) {
-      return res.status(400).json({ error: "Choose security hours to continue." });
-    }
     const startTimeLocal = start_time_local || start_time;
 
-    const route = (isHourlyBooking || isSecurityBooking)
+    const route = isHourlyBooking
       ? {
           distanceMeters: 0,
           durationMinutes: 0,
-          source: isSecurityBooking ? "security" : "hourly",
+          source: "hourly",
         }
       : await computeRoute({
           origin: pickup_address,
@@ -19455,11 +18442,6 @@ app.post("/api/widget-quote", async (req, res) => {
     const serviceFeeType = normalizeServiceFeeType(profile.service_fee_type);
     const serviceFeeValue = profile.service_fee_value != null ? Number(profile.service_fee_value) : 0;
     const financials = safeParseJson(profile.financials, {});
-    const securityOption = resolveSecurityOption({
-      securityServices,
-      selectedSecurityService: req.body.selected_security_service,
-      selectedVehicleSlotId: vehicle_slot_id,
-    });
     let quote;
 
     try {
@@ -19474,9 +18456,6 @@ app.post("/api/widget-quote", async (req, res) => {
         hourlyBookings: safeParseJson(profile.hourly_bookings, []),
         selectedHourlyBooking: selected_hourly_booking,
         hourlyHours: hourly_hours,
-        securityServices,
-        selectedSecurityService: req.body.selected_security_service,
-        securityHours: requestedSecurityHours,
         pricingWindows: peakWindows,
         startTimeLocal,
         configuredAddons: addons,
@@ -19535,12 +18514,6 @@ app.post("/api/widget-quote", async (req, res) => {
       hourly_booking_name: quote.ride.mode === "hourly" ? quote.ride.hourly_booking_name || null : null,
       hourly_booking_slot_id: quote.ride.mode === "hourly" ? quote.ride.vehicle_slot_id || null : null,
       hourly_hours: quote.ride.mode === "hourly" ? quote.ride.hourly_hours || null : null,
-      security_service_id: quote.security?.security_service_id || null,
-      security_service_name: quote.security?.security_service_name || null,
-      security_service_hours: quote.security?.security_service_hours || null,
-      security_service_hourly_rate: quote.security?.security_service_hourly_rate || null,
-      security_service_fee_per_hour: quote.security?.security_service_fee_per_hour || null,
-      security_service_total: quote.security?.security_service_total || null,
       event_name: quote.ride.mode === "event" ? quote.ride.event_name || null : null,
       event_date: quote.ride.mode === "event" ? quote.ride.event_date || null : null,
       event_multiplier: quote.ride.mode === "event" ? Number(quote.ride.multiplier || 1) : 1,
@@ -19774,7 +18747,6 @@ app.get("/api/get-profile-widget-script/:location_id", async (req, res) => {
         general_buffer_min: sanitizedFleet[0]?.outbound_buffer_min ?? BOOKING_BUFFER_MINUTES,
         fixed_rates: fixedRates,
         hourly_bookings: safeParseJson(p.hourly_bookings),
-        security_services: safeParseJson(p.security_services, []),
         peak_windows: safeParseJson(p.peak_windows),
         events: safeParseJson(p.events),
         addons: safeParseJson(p.addons)
