@@ -824,6 +824,66 @@ function setSyncStatus(message, isSuccess = true) {
     statusEl.className = `text-xs font-semibold text-center leading-relaxed ${isSuccess ? 'text-emerald-600' : 'text-rose-600'}`;
 }
 
+const CRM_SYNC_COUNTDOWN_SECONDS = 30;
+
+function setSyncButtonState({ disabled = false, label = 'Sync to Cloud' } = {}) {
+    const syncBtn = document.getElementById('save-btn');
+    if (!syncBtn) return;
+    syncBtn.disabled = disabled;
+    syncBtn.textContent = label;
+    syncBtn.classList.toggle('disabled-btn', disabled);
+}
+
+async function waitForCrmSyncCompletion(fetchWithTimeout) {
+    const deadline = Date.now() + (CRM_SYNC_COUNTDOWN_SECONDS * 1000);
+
+    while (Date.now() < deadline) {
+        const secondsRemaining = Math.max(1, Math.ceil((deadline - Date.now()) / 1000));
+        setSyncButtonState({ disabled: true, label: `CRM Sync ${secondsRemaining}s` });
+        setSyncStatus(`Cloud saved. CRM sync is processing... ${secondsRemaining}s remaining.`, true);
+
+        try {
+            const statusResponse = await fetchWithTimeout(
+                `${BACKEND_URL}/api/wizard-sync-status/${encodeURIComponent(location_id)}`,
+                {
+                    headers: wizardToken ? { 'X-Setup-Wizard-Token': wizardToken } : {}
+                },
+                5000
+            );
+
+            if (statusResponse.ok) {
+                const statusBody = await statusResponse.json();
+                const syncState = statusBody?.status?.state;
+
+                if (syncState === 'completed' && statusBody?.status?.success) {
+                    setSyncStatus('Cloud save complete. CRM is synced successfully.', true);
+                    setSyncButtonState({ disabled: false, label: 'Cloud & CRM Synced' });
+                    showNotification('Cloud save complete. CRM is synced successfully!');
+                    window.setTimeout(() => setSyncButtonState({ disabled: false }), 4000);
+                    return true;
+                }
+
+                if (syncState === 'failed') {
+                    const syncError = statusBody?.status?.error || 'CRM rejected or could not process the sync.';
+                    setSyncStatus(`Cloud saved, but CRM sync failed: ${syncError}`, false);
+                    setSyncButtonState({ disabled: false, label: 'Retry Sync to Cloud' });
+                    showNotification(`CRM sync failed: ${syncError}`, false);
+                    return false;
+                }
+            }
+        } catch (statusErr) {
+            console.warn('CRM sync status check failed:', statusErr);
+        }
+
+        await new Promise((resolve) => window.setTimeout(resolve, 1000));
+    }
+
+    setSyncStatus('Cloud save complete. CRM is still processing; click Sync to Cloud to check again.', true);
+    setSyncButtonState({ disabled: false, label: 'Check CRM Sync' });
+    showNotification('Cloud saved. CRM is taking longer than 30 seconds to confirm.');
+    return false;
+}
+
 function setMapsKeyStatus(message, isError = false) {
     const status = document.getElementById('maps-key-status');
     if (!status) return;
@@ -2455,6 +2515,9 @@ async function saveToBackend() {
         }
     };
 
+    setSyncButtonState({ disabled: true, label: 'Saving to Cloud...' });
+    setSyncStatus('Saving your wizard settings to the cloud...', true);
+
     const payload = {
         id: location_id,
         location_id,
@@ -2603,21 +2666,20 @@ async function saveToBackend() {
             const responseBody = await res.json();
             console.log("Wizard save payload hourly bookings:", payload.hourly_bookings);
             console.log("Wizard save response:", responseBody);
-            showNotification("Profile saved. CRM sync is running in the background...");
-            setSyncStatus("Saved locally. CRM sync is running in the background.", true);
             if (responseBody?.webhook_sync?.attempted) {
-                setSyncStatus(responseBody?.webhook_sync?.retry_attempted
-                    ? "Saved locally. CRM sync will retry once if needed."
-                    : "Saved locally. CRM sync is processing now.",
-                    true);
+                showNotification("Cloud save complete. CRM sync countdown started...");
+                await waitForCrmSyncCompletion(fetchWithTimeout);
             } else {
-                setSyncStatus("Saved locally.", true);
+                setSyncStatus("Cloud save complete. No CRM webhook sync was requested.", true);
+                setSyncButtonState({ disabled: false, label: 'Cloud Saved' });
+                showNotification("Cloud save complete!");
+                window.setTimeout(() => setSyncButtonState({ disabled: false }), 4000);
             }
-            showNotification("Profile Locked & Synced!");
         } else {
             console.error("Save sync failed:", lastError);
             showNotification(`Save failed: ${lastError || 'Verify backend alignment.'}`, false);
             setSyncStatus(`Sync failed: ${lastError || 'Verify backend alignment.'}`, false);
+            setSyncButtonState({ disabled: false, label: 'Retry Sync to Cloud' });
         }
     } catch (err) {
         console.error("Save sync connection error:", err);
@@ -2626,6 +2688,7 @@ async function saveToBackend() {
             : (err?.message || 'Ensure Render is active.');
         showNotification(`Connection Error: ${message}`, false);
         setSyncStatus(`Connection error while syncing: ${message}`, false);
+        setSyncButtonState({ disabled: false, label: 'Retry Sync to Cloud' });
     }
 }
 
