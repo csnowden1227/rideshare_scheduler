@@ -210,7 +210,10 @@ const CRM_WEBHOOK_URL =
 *****************************************************/
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false }
+  ssl: { rejectUnauthorized: false },
+  max: Number(process.env.PG_POOL_MAX || 3),
+  idleTimeoutMillis: 30_000,
+  connectionTimeoutMillis: 10_000,
 });
 
 let bookingSyncColumnsReady = null;
@@ -20211,31 +20214,39 @@ const PORT = process.env.PORT || 8080;
 
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
-  startListener();
-  ensureInstantBookingNotificationTables()
-    .then(() => processDailyInstantBookingNotifications())
-    .catch((err) => {
-      console.error("[instant-booking] Failed to initialize notification tables:", err);
+  setTimeout(() => startListener().catch((err) => {
+    console.error("❌ Listener bootstrap failed:", err);
+  }), 5_000);
+  setTimeout(() => {
+    ensureInstantBookingNotificationTables()
+      .then(() => processDailyInstantBookingNotifications())
+      .catch((err) => {
+        console.error("[instant-booking] Failed to initialize notification tables:", err);
+      });
+  }, 10_000);
+  setTimeout(() => {
+    processDriverPrePickupEmailReminders().catch((err) => {
+      console.error("[driver-notify] Failed to initialize pickup reminder sweep:", err);
     });
-  processDriverPrePickupEmailReminders().catch((err) => {
-    console.error("[driver-notify] Failed to initialize pickup reminder sweep:", err);
-  });
-  processConfirmedBookingCalendarBackfill().catch((err) => {
-    console.error("[calendar-sync] Failed to initialize confirmed booking backfill:", err);
-  });
+  }, 15_000);
+  setTimeout(() => {
+    processConfirmedBookingCalendarBackfill().catch((err) => {
+      console.error("[calendar-sync] Failed to initialize confirmed booking backfill:", err);
+    });
+  }, 20_000);
   setInterval(() => {
     processDailyInstantBookingNotifications().catch((err) => {
       console.error("[instant-booking] Daily notification loop error:", err);
     });
-  }, 15 * 60 * 1000);
+  }, 20 * 60 * 1000);
   setInterval(() => {
     processDriverPrePickupEmailReminders().catch((err) => {
       console.error("[driver-notify] Pickup reminder loop error:", err);
     });
-  }, 15 * 60 * 1000);
+  }, 20 * 60 * 1000);
   setInterval(() => {
     processConfirmedBookingCalendarBackfill().catch((err) => {
       console.error("[calendar-sync] Confirmed booking backfill loop error:", err);
     });
-  }, 15 * 60 * 1000);
+  }, 20 * 60 * 1000);
 });
