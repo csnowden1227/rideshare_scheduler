@@ -2269,25 +2269,6 @@ function collectSecurityServiceRows() {
     }).filter((row) => row.service_name);
 }
 
-function addDefaultSecurityServiceRows() {
-    addSecurityServiceRow({
-        service_name: 'Unarmed Security (Events/Locations)',
-        default_hours: 4,
-        hourly_rate: 45,
-        executive_fee_per_hour: 10,
-        calendar_id: '',
-        bundle_with_vehicle: true
-    });
-    addSecurityServiceRow({
-        service_name: 'Armed Security',
-        default_hours: 4,
-        hourly_rate: 60,
-        executive_fee_per_hour: 10,
-        calendar_id: '',
-        bundle_with_vehicle: true
-    });
-}
-
 function applyLocalPlanFallback(planName = planOverride || currentPlanName || 'starter') {
     const normalizedPlan = String(planName || 'starter').trim().toLowerCase();
     const fallbackPlan = ['starter', 'premium', 'pro'].includes(normalizedPlan) ? normalizedPlan : 'starter';
@@ -2370,12 +2351,7 @@ function applyProfileToWizard(data = {}, { allowSensitive = true } = {}) {
     (data.hourly_bookings || []).forEach(h => addHourlyBookingRow(h));
     const securityBody = document.getElementById('security-service-body');
     if (securityBody) securityBody.innerHTML = '';
-    const securityServices = Array.isArray(data.security_services) ? data.security_services : [];
-    if (securityServices.length) {
-        securityServices.forEach(s => addSecurityServiceRow(s));
-    } else {
-        addDefaultSecurityServiceRows();
-    }
+    (data.security_services || []).forEach(s => addSecurityServiceRow(s));
 
     if (data.fixed_rates) data.fixed_rates.forEach(r => addRouteRow(r));
     if (data.peak_windows) {
