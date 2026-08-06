@@ -240,6 +240,8 @@ let driverPartnerSetupAccessTokensReady = null;
 
 const CUSTOMER_ACCOUNT_SESSION_COOKIE = "crm_customer_session";
 const CUSTOMER_ACCOUNT_SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 30;
+const CUSTOMER_CARD_AUTHORIZATION_VERSION = "portal-extension-v1";
+const CUSTOMER_CARD_AUTHORIZATION_TEXT = "I authorize this business to save my payment method and charge it for approved additional service time, extensions, tolls, parking, or other agreed trip adjustments.";
 const CUSTOMER_PASSWORD_RESET_TTL_MS = 1000 * 60 * 60;
 const DEFAULT_DRIVER_PARTNER_LOCATION_ID = "ouXMpSTMKm4kREXw3kzP";
 const DRIVER_PARTNER_PROGRAM_DEMO_LOCATION_IDS = new Set([DEFAULT_DRIVER_PARTNER_LOCATION_ID]);
@@ -720,6 +722,22 @@ async function ensureCustomerAccountTables() {
       `);
       await pool.query(`CREATE INDEX IF NOT EXISTS idx_customer_password_reset_account ON customer_password_reset_tokens (customer_account_id)`);
       await pool.query(`CREATE INDEX IF NOT EXISTS idx_customer_password_reset_expires ON customer_password_reset_tokens (expires_at)`);
+
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS customer_booking_payment_authorizations (
+          booking_id TEXT PRIMARY KEY,
+          customer_account_id TEXT NOT NULL REFERENCES customer_accounts(id) ON DELETE CASCADE,
+          location_id TEXT NOT NULL,
+          stripe_customer_id TEXT NOT NULL,
+          consent_version TEXT NOT NULL,
+          consent_text TEXT NOT NULL,
+          consented_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          ip_address TEXT,
+          user_agent TEXT
+        )
+      `);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_customer_booking_payment_authorizations_account ON customer_booking_payment_authorizations (customer_account_id)`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_customer_booking_payment_authorizations_location ON customer_booking_payment_authorizations (location_id)`);
     })().catch((err) => {
       customerAccountTablesReady = null;
       throw err;
@@ -12467,6 +12485,8 @@ async function createStripeCheckoutSessionForAmount({
   apiKey = envStripeSecretKey,
   amount,
   customerEmail = null,
+  customerId = null,
+  savePaymentMethod = false,
   bookingId,
   locationId = null,
   totalPrice,
@@ -12487,7 +12507,8 @@ async function createStripeCheckoutSessionForAmount({
     mode: "payment",
     success_url: successUrl,
     cancel_url: cancelUrl,
-    customer_email: customerEmail || undefined,
+    customer: customerId || undefined,
+    customer_email: customerId ? undefined : (customerEmail || undefined),
     "metadata[booking_id]": String(bookingId),
     "metadata[location_id]": String(locationId || ""),
     "metadata[total_price]": String(Number(totalPrice || 0).toFixed(2)),
@@ -12502,6 +12523,13 @@ async function createStripeCheckoutSessionForAmount({
     "line_items[0][price_data][product_data][name]": title,
     "line_items[0][price_data][product_data][description]": description,
   };
+
+  if (customerId && savePaymentMethod) {
+    params["payment_method_types[0]"] = "card";
+    params["payment_intent_data[setup_future_usage]"] = "off_session";
+    params["payment_intent_data[metadata][customer_account_id]"] = String(extraMetadata?.customer_account_id || "");
+    params["payment_intent_data[metadata][card_authorization_version]"] = CUSTOMER_CARD_AUTHORIZATION_VERSION;
+  }
 
   for (const [key, value] of Object.entries(extraMetadata || {})) {
     if (value == null || value === "") continue;
@@ -16955,6 +16983,25 @@ app.post("/api/create-checkout-session", async (req, res) => {
         }
       : livePaymentProfile;
     const paymentProvider = paymentProfile.provider;
+    const customerAccountSession = await getCustomerAccountSessionFromRequest(req);
+    const isPortalBooking = Boolean(customerAccountSession);
+    const requiresSavedPaymentMethod = isPortalBooking && !practiceMode;
+    if (isPortalBooking && String(customerAccountSession.location_id || "") !== String(locationId || "")) {
+      return res.status(403).json({ error: "This portal session does not belong to the selected business." });
+    }
+    if (isPortalBooking) {
+      req.body.first_name = customerAccountSession.first_name || req.body.first_name;
+      req.body.last_name = customerAccountSession.last_name || req.body.last_name;
+      req.body.email = customerAccountSession.email || req.body.email;
+      req.body.phone = customerAccountSession.phone || req.body.phone;
+    }
+    if (requiresSavedPaymentMethod && req.body.card_on_file_consent !== true) {
+      return res.status(400).json({ error: "Please authorize the saved payment method for approved service extensions and trip adjustments." });
+    }
+    if (requiresSavedPaymentMethod && normalizePaymentProvider(paymentProvider) !== "stripe") {
+      return res.status(400).json({ error: "Portal bookings require Stripe so a payment method can be saved securely for approved service extensions." });
+    }
+    let portalStripeCustomer = null;
 
     const returnUrl = sanitizeReturnUrl(req.body.return_url, req);
     const totalPrice = Number(req.body.total_price || 0);
@@ -17186,6 +17233,10 @@ app.post("/api/create-checkout-session", async (req, res) => {
       return res.status(500).json({ error: "Stripe is not configured on the backend." });
     }
 
+    if (requiresSavedPaymentMethod) {
+      portalStripeCustomer = await ensureStripeCustomerForCustomerAccount(customerAccountSession);
+    }
+
     const bookingResult = await createBookingRecord(
       {
         ...req.body,
@@ -17238,6 +17289,8 @@ app.post("/api/create-checkout-session", async (req, res) => {
       apiKey: paymentProfile.stripeSecretKey,
       amount: amountToCharge,
       customerEmail: req.body.email || null,
+      customerId: portalStripeCustomer?.stripeCustomerId || null,
+      savePaymentMethod: requiresSavedPaymentMethod,
       bookingId,
       locationId: req.body.location_id || null,
       totalPrice,
@@ -17252,11 +17305,45 @@ app.post("/api/create-checkout-session", async (req, res) => {
       cancelUrl,
       connectDestinationAccountId: driverProgramRouting?.destinationAccountId || null,
       connectTransferAmountCents: driverProgramRouting?.transferAmountCents || null,
-      extraMetadata: driverProgramRouting ? {
-        driver_program_split_percent: String(driverProgramRouting.splitPercent),
-        driver_program_location_id: String(req.body.location_id || ""),
-      } : {},
+      extraMetadata: {
+        ...(driverProgramRouting ? {
+          driver_program_split_percent: String(driverProgramRouting.splitPercent),
+          driver_program_location_id: String(req.body.location_id || ""),
+        } : {}),
+        ...(requiresSavedPaymentMethod ? {
+          customer_account_id: String(customerAccountSession.id),
+          card_authorization_version: CUSTOMER_CARD_AUTHORIZATION_VERSION,
+        } : {}),
+      },
     });
+
+    if (requiresSavedPaymentMethod) {
+      await ensureCustomerAccountTables();
+      await pool.query(
+        `INSERT INTO customer_booking_payment_authorizations (
+           booking_id, customer_account_id, location_id, stripe_customer_id,
+           consent_version, consent_text, ip_address, user_agent
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+         ON CONFLICT (booking_id) DO UPDATE SET
+           customer_account_id = EXCLUDED.customer_account_id,
+           stripe_customer_id = EXCLUDED.stripe_customer_id,
+           consent_version = EXCLUDED.consent_version,
+           consent_text = EXCLUDED.consent_text,
+           consented_at = NOW(),
+           ip_address = EXCLUDED.ip_address,
+           user_agent = EXCLUDED.user_agent`,
+        [
+          String(bookingId),
+          customerAccountSession.id,
+          locationId,
+          portalStripeCustomer.stripeCustomerId,
+          CUSTOMER_CARD_AUTHORIZATION_VERSION,
+          CUSTOMER_CARD_AUTHORIZATION_TEXT,
+          String(req.headers["x-forwarded-for"] || req.ip || "").split(",")[0].trim() || null,
+          String(req.get("user-agent") || "").slice(0, 1000) || null,
+        ]
+      );
+    }
 
     return res.json({
       success: true,
@@ -17276,6 +17363,7 @@ app.post("/api/create-checkout-session", async (req, res) => {
   } catch (err) {
     if (bookingId) {
       try {
+        await pool.query(`DELETE FROM customer_booking_payment_authorizations WHERE booking_id = $1`, [String(bookingId)]).catch(() => {});
         await pool.query(
           `DELETE FROM bookings WHERE id = $1 AND status = $2`,
           [bookingId, "pending"]
@@ -17614,8 +17702,9 @@ app.get("/api/checkout-session-status", async (req, res) => {
       };
       try {
         let stripeTransferId = null;
-        if (session.payment_intent && connectTransferAmountCents > 0) {
-          const paymentIntent = await stripeFormRequest(
+        let paymentIntent = null;
+        if (session.payment_intent && (connectTransferAmountCents > 0 || session.metadata?.customer_account_id)) {
+          paymentIntent = await stripeFormRequest(
             `/v1/payment_intents/${encodeURIComponent(String(session.payment_intent))}?expand[]=latest_charge.transfer`,
             {},
             "GET",
@@ -17624,6 +17713,14 @@ app.get("/api/checkout-session-status", async (req, res) => {
           stripeTransferId = paymentIntent?.latest_charge?.transfer?.id
             || paymentIntent?.charges?.data?.[0]?.transfer
             || null;
+        }
+        if (session.metadata?.customer_account_id && session.customer && paymentIntent?.payment_method) {
+          await stripeFormRequest(
+            `/v1/customers/${encodeURIComponent(String(session.customer))}`,
+            { "invoice_settings[default_payment_method]": String(paymentIntent.payment_method) },
+            "POST",
+            stripeSecretKey
+          );
         }
         payoutSync = await syncPartnerPayoutForBooking(bookingId, {
           transferAlreadyExecuted: connectTransferAmountCents > 0,

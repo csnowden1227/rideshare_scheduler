@@ -10,6 +10,7 @@
 
   const state = {
     config: null,
+    customerAccount: null,
     quote: null,
     route: null,
     places: {
@@ -1053,6 +1054,21 @@
     }
   }
 
+  async function loadCustomerPortalAccount() {
+    try {
+      if (new URL(BACKEND_URL).origin !== window.location.origin) return;
+      const response = await fetch(`${BACKEND_URL}/api/customer-account/session`, {
+        credentials: "include",
+      });
+      if (!response.ok) return;
+      const data = await response.json();
+      if (String(data?.account?.location_id || "") !== String(locationId || "")) return;
+      state.customerAccount = data.account || null;
+    } catch {
+      state.customerAccount = null;
+    }
+  }
+
   function getAddressInput(kind) {
     return document.getElementById(kind === "pickup" ? "cd_pickup" : "cd_dropoff");
   }
@@ -1310,6 +1326,18 @@
     const showServiceModeControls = !(hourlyOnly === "1" || hourlyOnly === "true" || hourlyOnly === "yes");
     const serviceRadius = toNumber(state.config?.service_radius, 0);
     const addonTitle = "Addons (car seat, wheelchair, food & beverage, etc)";
+    const portalCardAuthorization = state.customerAccount && !isPracticeMode() ? `
+      <div style="margin-top:14px;padding:16px;border-radius:18px;background:#effaf6;border:1px solid #99d8c2;">
+        <div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.14em;color:#065f46;">Required Card On File</div>
+        <div style="margin-top:9px;font-size:13px;line-height:1.6;color:#065f46;">
+          Stripe securely saves the payment method used at checkout. Card details are never stored by ${escapeHtml(state.config?.business_name || "this business")}.
+        </div>
+        <label style="display:flex;gap:10px;align-items:flex-start;margin-top:12px;font-size:13px;color:#064e3b;font-weight:600;cursor:pointer;">
+          <input id="cd_card_on_file_consent" type="checkbox" style="margin-top:3px;width:16px;height:16px;" />
+          <span>I authorize ${escapeHtml(state.config?.business_name || "this business")} to save my payment method and charge it for approved additional service time, extensions, tolls, parking, or other agreed trip adjustments.</span>
+        </label>
+      </div>
+    ` : "";
 
     root.innerHTML = `
       <div style="max-width:1080px;margin:0 auto;font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;color:#0f172a;">
@@ -1454,6 +1482,7 @@
                   <span>I agree to the cancellation and payment terms above.</span>
                 </label>
               </div>
+              ${portalCardAuthorization}
               <div style="display:grid;gap:12px;margin-top:14px;">
                 <button id="cd_btn_quote" style="padding:15px 18px;border:none;border-radius:16px;background:${escapeHtml(colors.primary)};color:#fff;font-size:15px;font-weight:800;cursor:pointer;">Calculate Smart Quote</button>
               </div>
@@ -1496,6 +1525,21 @@
 
     document.getElementById("cd_btn_quote").onclick = getQuote;
     document.getElementById("cd_btn_book").onclick = submitBooking;
+
+    if (state.customerAccount) {
+      [
+        ["cd_first_name", state.customerAccount.first_name],
+        ["cd_last_name", state.customerAccount.last_name],
+        ["cd_email", state.customerAccount.email],
+        ["cd_phone", state.customerAccount.phone],
+      ].forEach(([id, value]) => {
+        const input = document.getElementById(id);
+        if (!input) return;
+        input.value = value || "";
+        input.readOnly = true;
+        input.style.background = "#f8fafc";
+      });
+    }
 
     document.getElementById("cd_booking_mode")?.addEventListener("change", () => {
       updateBookingModeUI();
@@ -1591,6 +1635,7 @@
       hourly_hours: toNumber(document.getElementById("cd_hourly_hours")?.value, 4),
       selected_addons: selectedAddons(),
       accepted_terms: !!document.getElementById("cd_accept_terms")?.checked,
+      card_on_file_consent: !!document.getElementById("cd_card_on_file_consent")?.checked,
       carry_on_count: toNumber(document.getElementById("cd_carry_on_count")?.value, 0),
       checked_bag_count: toNumber(document.getElementById("cd_checked_bag_count")?.value, 0),
       additional_items_aboard: JSON.stringify({
@@ -2160,6 +2205,10 @@
       return showError("Please accept the cancellation and payment terms before continuing.");
     }
 
+    if (state.customerAccount && !isPracticeMode() && !payload.card_on_file_consent) {
+      return showError("Please authorize the saved payment method for approved service extensions and trip adjustments.");
+    }
+
     if (!state.quote) {
       try {
         await buildQuote();
@@ -2298,6 +2347,7 @@
       if (!locationId) throw new Error("Missing location id.");
       showError("Loading booking widget...");
       await loadConfig();
+      await loadCustomerPortalAccount();
       showError("Loading booking options...");
       waitForGoogleMaps().catch((error) => {
         console.warn("Google Maps failed to load in time:", error);
