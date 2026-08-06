@@ -19543,6 +19543,23 @@ app.get("/api/get-profile-widget-script/:location_id", async (req, res) => {
   }
 });
 
+app.get("/api/customer-portal/branding/:location_id", async (req, res) => {
+  try {
+    const locationId = String(req.params.location_id || "").trim();
+    if (!locationId) {
+      return res.status(400).json({ error: "Portal link is incomplete." });
+    }
+
+    await assertProCustomerAccountAccess(locationId);
+    const branding = await getCustomerPortalBranding(locationId);
+    return res.json({ success: true, branding });
+  } catch (err) {
+    return res.status(err.statusCode || 500).json({
+      error: err.message || "Unable to load portal branding.",
+    });
+  }
+});
+
 app.post("/api/customer-account/signup", async (req, res) => {
   try {
     await ensureCustomerAccountTables();
