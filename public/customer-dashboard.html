@@ -188,7 +188,7 @@
 
     <section class="info-card">
       <h2>Portal Flow</h2>
-      <p>Your main portal page is now built around booking again, checking live ride details, opening your inbox, and jumping into upcoming trips quickly. When a balance is still open, it appears at the top so nothing gets missed before your next reservation.</p>
+      <p>Your main portal page is built around booking a ride, checking live ride details, opening your inbox, and jumping into upcoming trips quickly. When a balance is still open, it appears at the top so nothing gets missed before your next reservation.</p>
       <div class="subtle-row">
         <span id="portal-stats">Loading account totals...</span>
         <button id="logout-button" class="logout-link" type="button">Log Out</button>
@@ -198,7 +198,7 @@
     <div id="portal-error" class="error"></div>
 
     <div class="footer-actions">
-      <a id="book-again-button" class="button dark" href="/ride-hub-portal">Book Again</a>
+      <a id="book-again-button" class="button dark" href="/ride-hub-portal">Book Your First Ride</a>
     </div>
   </div>
 
@@ -333,7 +333,9 @@
           setLiveActionLink("current-ride-button", trackingRide?.customer_tracking_url || "", { disabledText: "Track Current Ride" });
           setLiveActionLink("inbox-button", inboxRide?.ride_inbox_url || "", { disabledText: "Ride Inbox Notifications" });
 
-          document.getElementById("book-again-button").href = focusRide ? buildRebookUrl(focusRide) : appendLocation("/ride-hub-portal");
+          const bookingButton = document.getElementById("book-again-button");
+          bookingButton.href = focusRide ? buildRebookUrl(focusRide) : appendLocation("/ride-hub-portal");
+          bookingButton.textContent = focusRide ? "Book Again" : "Book Your First Ride";
         } catch (error) {
           if (error.message === "redirect") return;
           const errorBox = document.getElementById("portal-error");

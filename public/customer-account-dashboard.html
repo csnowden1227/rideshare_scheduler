@@ -290,7 +290,7 @@
         <strong id="summary-next-ride">Next Ride</strong>
         <span id="summary-next-ride-copy">Your next upcoming reservation will appear here automatically.</span>
         <div class="next-ride-actions">
-          <a id="book-again-button" class="button dark" href="/ride-hub-portal">Book Again</a>
+          <a id="book-again-button" class="button dark" href="/ride-hub-portal">Book Your First Ride</a>
         </div>
       </div>
       <div id="dashboard-error" class="error"></div>
@@ -477,10 +477,12 @@
           document.getElementById("hero-title").textContent = `${account.first_name || "Customer"} Dashboard`;
           document.getElementById("summary-next-ride-copy").textContent = focusRide
             ? `${formatDateTime(focusRide.start_time)} | ${focusRide.pickup_address || ""}`
-            : "No reservation is active right now. Use Book Again when you are ready to schedule another ride.";
-          document.getElementById("book-again-button").href = focusRide
+            : "No reservation is active right now. Book your first ride whenever you are ready.";
+          const bookingButton = document.getElementById("book-again-button");
+          bookingButton.href = focusRide
             ? buildRebookUrl(focusRide)
             : buildPortalUrl("/ride-hub-portal", "ride-hub-portal.html");
+          bookingButton.textContent = focusRide ? "Book Again" : "Book Your First Ride";
 
           if (inboxRide?.ride_inbox_url) {
             document.getElementById("inbox-link").href = inboxRide.ride_inbox_url;
