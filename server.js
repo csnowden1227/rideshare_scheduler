@@ -8407,8 +8407,54 @@ const corsOptions = {
   optionsSuccessStatus: 204,
 };
 
-app.use(cors(corsOptions));
-app.options('*', cors(corsOptions));
+const publicWidgetCorsPaths = new Set([
+  '/api/widget-quote',
+  '/api/create-checkout-session',
+  '/api/checkout-session-status',
+  '/api/tracking/session/create',
+]);
+
+function isPublicWidgetCorsPath(pathname = '') {
+  return (
+    publicWidgetCorsPaths.has(pathname) ||
+    pathname.startsWith('/api/get-profile-widget/') ||
+    pathname.startsWith('/api/get-profile-widget-script/')
+  );
+}
+
+function isAllowedPublicWidgetOrigin(origin) {
+  if (!origin) return true;
+
+  try {
+    const { hostname, protocol } = new URL(origin);
+    return protocol === 'https:' || (
+      protocol === 'http:' &&
+      (hostname === 'localhost' || hostname === '127.0.0.1')
+    );
+  } catch {
+    return false;
+  }
+}
+
+function corsOptionsForRequest(req) {
+  if (!isPublicWidgetCorsPath(req.path)) return corsOptions;
+
+  return {
+    ...corsOptions,
+    origin(origin, callback) {
+      if (isAllowedPublicWidgetOrigin(origin)) return callback(null, true);
+      return callback(
+        new Error('Public widget requests require a secure HTTPS origin.'),
+        false
+      );
+    },
+  };
+}
+
+const dynamicCors = (req, res, next) => cors(corsOptionsForRequest(req))(req, res, next);
+
+app.use(dynamicCors);
+app.options('*', dynamicCors);
 
 function getWizardToken(req) {
   return (
