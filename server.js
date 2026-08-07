@@ -8655,6 +8655,20 @@ async function requireWizardToken(req, res, next) {
     return next();
   }
 
+  const isRentalSetupRequest =
+    req.path === "/rental-setup-wizard" ||
+    req.path === "/rental-setup-wizard.html" ||
+    req.path.startsWith("/api/rental-settings/");
+  if (isRentalSetupRequest && providedToken) {
+    const locationId = String(req.query?.location_id || req.params?.locationId || "").trim();
+    if (locationId) {
+      const settings = await getRentalSettings(pool, locationId, { includeInactive: true });
+      if (settings?.operator_access_token === String(providedToken).trim()) {
+        return next();
+      }
+    }
+  }
+
   return res.status(403).send("Forbidden");
 }
 
