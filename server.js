@@ -18,6 +18,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import * as turf from '@turf/turf';
 import { registerDriverWizardRoutes } from './driver-wizard-routes.js';
+import { getRentalSettings, getRentalVehicle, registerRentalRoutes, setRentalLicense } from './rental-routes.js';
 
 const { Pool, Client } = pkg;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -329,6 +330,18 @@ const SAAS_ADDON_RULES = {
     label: "Customer and Driver Live Tracking",
     mode: "subscription",
     amount_cents: 0,
+  },
+  rental_management_subscription: {
+    code: "rental_management_subscription",
+    label: "Rental Management Wizard and Widget",
+    mode: "subscription",
+    amount_cents: Math.max(100, Number(process.env.RENTAL_ADDON_AMOUNT_CENTS || 19900)),
+  },
+  rental_standalone_subscription: {
+    code: "rental_standalone_subscription",
+    label: "Rental SaaS Subscription",
+    mode: "subscription",
+    amount_cents: Math.max(100, Number(process.env.RENTAL_STANDALONE_AMOUNT_CENTS || 29900)),
   },
 };
 
@@ -802,6 +815,23 @@ async function ensureRentalManagementTables() {
       `);
       await pool.query(`ALTER TABLE rental_overage_charges ADD COLUMN IF NOT EXISTS stripe_receipt_url TEXT`);
       await pool.query(`CREATE INDEX IF NOT EXISTS idx_rental_overage_charges_booking ON rental_overage_charges(booking_id, created_at DESC)`);
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS rental_notification_log (
+          id BIGSERIAL PRIMARY KEY,
+          booking_id BIGINT NOT NULL REFERENCES bookings(id) ON DELETE CASCADE,
+          location_id TEXT NOT NULL,
+          notification_key TEXT NOT NULL,
+          sms_status TEXT,
+          email_status TEXT,
+          attempts INTEGER NOT NULL DEFAULT 0,
+          last_error TEXT,
+          sent_at TIMESTAMPTZ,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          UNIQUE (booking_id, notification_key)
+        )
+      `);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_rental_notification_log_location ON rental_notification_log(location_id, created_at DESC)`);
     })().catch((err) => {
       rentalManagementTablesReady = null;
       throw err;
@@ -936,6 +966,7 @@ async function ensureProfileEntitlementColumns() {
       await pool.query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS addon_branding_unlocked BOOLEAN NOT NULL DEFAULT FALSE`);
       await pool.query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS addon_funnel_unlocked BOOLEAN NOT NULL DEFAULT FALSE`);
       await pool.query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS addon_tracking_unlocked BOOLEAN NOT NULL DEFAULT FALSE`);
+      await pool.query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS addon_rental_unlocked BOOLEAN NOT NULL DEFAULT FALSE`);
       await pool.query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS addon_extra_vehicle_count INTEGER NOT NULL DEFAULT 0`);
     })().catch((err) => {
       profileEntitlementColumnsReady = null;
@@ -3301,13 +3332,20 @@ async function getLocationPlanRuleSet(locationId, planName = "starter") {
 }
 
 async function assertProCustomerAccountAccess(locationId) {
-  const planName = await getLocationPlanName(locationId);
-  if (planName !== "pro") {
-    const err = new Error("Customer accounts are available for Pro accounts only.");
+  await ensureProfileEntitlementColumns();
+  const profileIdColumn = await getProfileIdColumn();
+  const result = await pool.query(
+    `SELECT plan_name, addon_rental_unlocked FROM profiles WHERE ${profileIdColumn} = $1 LIMIT 1`,
+    [locationId]
+  );
+  const planName = normalizePlanName(result.rows[0]?.plan_name || "starter");
+  const rentalEnabled = result.rows[0]?.addon_rental_unlocked === true;
+  if (planName !== "pro" && !rentalEnabled) {
+    const err = new Error("Customer accounts require Pro access or an active Rental SaaS license.");
     err.statusCode = 403;
     throw err;
   }
-  return planName;
+  return rentalEnabled && planName !== "pro" ? "rental" : planName;
 }
 
 function buildCustomerAccountShape(account) {
@@ -3341,6 +3379,7 @@ async function getCustomerPortalBranding(locationId) {
        addon_branding_unlocked,
        addon_funnel_unlocked,
        addon_tracking_unlocked,
+       addon_rental_unlocked,
        addon_extra_vehicle_count
      FROM profiles
      WHERE ${profileIdColumn} = $1
@@ -3361,7 +3400,7 @@ async function getCustomerPortalBranding(locationId) {
 
   const entitlements = buildPlanEntitlements({
     planName: profile.plan_name || "starter",
-    addonBrandingUnlocked: profile.addon_branding_unlocked,
+    addonBrandingUnlocked: profile.addon_branding_unlocked || profile.addon_rental_unlocked,
     addonFunnelUnlocked: profile.addon_funnel_unlocked,
     addonTrackingUnlocked: profile.addon_tracking_unlocked,
     addonExtraVehicleCount: profile.addon_extra_vehicle_count,
@@ -3692,6 +3731,7 @@ function buildPlanEntitlements({
   addonBrandingUnlocked = false,
   addonFunnelUnlocked = false,
   addonTrackingUnlocked = false,
+  addonRentalUnlocked = false,
   addonExtraVehicleCount = 0,
 } = {}) {
   const normalizedPlan = normalizePlanName(planName);
@@ -3711,10 +3751,12 @@ function buildPlanEntitlements({
     branding_enabled: Boolean(rules.brandingIncluded || addonBrandingUnlocked),
     funnel_enabled: Boolean(rules.funnelIncluded || addonFunnelUnlocked),
     tracking_enabled: Boolean(rules.trackingIncluded || addonTrackingUnlocked),
+    rental_management_enabled: Boolean(addonRentalUnlocked),
     logo_enabled: Boolean(rules.logoIncluded || addonBrandingUnlocked),
     can_purchase_branding: !rules.brandingIncluded && !addonBrandingUnlocked,
     can_purchase_funnel: !rules.funnelIncluded && !addonFunnelUnlocked,
     can_purchase_tracking: !rules.trackingIncluded && !addonTrackingUnlocked,
+    can_purchase_rental_management: !addonRentalUnlocked,
     can_purchase_extra_vehicle: rules.maxFleet > rules.includedFleet && allowedFleetCount < rules.maxFleet,
   };
 }
@@ -3725,6 +3767,7 @@ function buildEntitlementsFromProfile(profile = {}) {
     addonBrandingUnlocked: profile.addon_branding_unlocked,
     addonFunnelUnlocked: profile.addon_funnel_unlocked,
     addonTrackingUnlocked: profile.addon_tracking_unlocked,
+    addonRentalUnlocked: profile.addon_rental_unlocked,
     addonExtraVehicleCount: profile.addon_extra_vehicle_count,
   });
 }
@@ -9385,6 +9428,14 @@ app.get("/widget.js", (req, res) => {
   return res.sendFile(path.join(__dirname, "public", "widget.js"));
 });
 
+registerRentalRoutes(app, {
+  pool,
+  requireWizardToken,
+  getProfileIdColumn,
+  ensureProfileEntitlementColumns,
+  publicDir: path.join(__dirname, "public"),
+});
+
 app.use(express.static(path.join(__dirname, "public")));
 
 // --- IFRAME & SECURITY POLICY ---
@@ -12958,6 +13009,15 @@ async function applyAddonEntitlement({
     return;
   }
 
+  if (["rental_management_subscription", "rental_standalone_subscription"].includes(normalizedAddonCode)) {
+    await client.query(
+      `UPDATE profiles SET addon_rental_unlocked = TRUE WHERE location_id = $1`,
+      [normalizedLocationId]
+    );
+    await setRentalLicense(client, normalizedLocationId, normalizedAddonCode === "rental_standalone_subscription" ? "standalone" : "addon");
+    return;
+  }
+
   if (normalizedAddonCode === "extra_vehicle_subscription") {
     await client.query(
       `UPDATE profiles
@@ -13078,7 +13138,7 @@ app.post("/api/create-addon-checkout-session", async (req, res) => {
     }
 
     const profileRes = await pool.query(
-      `SELECT plan_name, addon_branding_unlocked, addon_funnel_unlocked, addon_tracking_unlocked, addon_extra_vehicle_count
+      `SELECT plan_name, addon_branding_unlocked, addon_funnel_unlocked, addon_tracking_unlocked, addon_rental_unlocked, addon_extra_vehicle_count
        FROM profiles
        WHERE location_id = $1
        LIMIT 1`,
@@ -13095,6 +13155,7 @@ app.post("/api/create-addon-checkout-session", async (req, res) => {
       addonBrandingUnlocked: profile.addon_branding_unlocked,
       addonFunnelUnlocked: profile.addon_funnel_unlocked,
       addonTrackingUnlocked: profile.addon_tracking_unlocked,
+      addonRentalUnlocked: profile.addon_rental_unlocked,
       addonExtraVehicleCount: profile.addon_extra_vehicle_count,
     });
 
@@ -13104,6 +13165,10 @@ app.post("/api/create-addon-checkout-session", async (req, res) => {
 
     if (addonCode === "funnel_unlock" && !entitlements.can_purchase_funnel) {
       return res.status(400).json({ error: "Funnel access is already included on this plan." });
+    }
+
+    if (["rental_management_subscription", "rental_standalone_subscription"].includes(addonCode) && !entitlements.can_purchase_rental_management) {
+      return res.status(400).json({ error: "Rental Management is already active on this SaaS account." });
     }
 
     if (addonCode === "extra_vehicle_subscription") {
@@ -13219,7 +13284,7 @@ app.post("/api/saas/apply-addon-entitlement", async (req, res) => {
     }
 
     const profileRes = await pool.query(
-      `SELECT location_id, crm_api_key, plan_name, addon_branding_unlocked, addon_funnel_unlocked, addon_tracking_unlocked, addon_extra_vehicle_count
+      `SELECT location_id, crm_api_key, plan_name, addon_branding_unlocked, addon_funnel_unlocked, addon_tracking_unlocked, addon_rental_unlocked, addon_extra_vehicle_count
        FROM profiles
        WHERE location_id = $1
        LIMIT 1`,
@@ -13248,6 +13313,9 @@ app.post("/api/saas/apply-addon-entitlement", async (req, res) => {
     if (addonCode === "tracking_unlock" && !entitlements.can_purchase_tracking) {
       return res.status(400).json({ error: "Customer and driver live tracking is already active on this SaaS account." });
     }
+    if (["rental_management_subscription", "rental_standalone_subscription"].includes(addonCode) && !entitlements.can_purchase_rental_management) {
+      return res.status(400).json({ error: "Rental Management is already active on this SaaS account." });
+    }
     if (addonCode === "extra_vehicle_subscription") {
       if (!entitlements.can_purchase_extra_vehicle) {
         return res.status(400).json({ error: "This SaaS plan cannot add more fleet vehicles." });
@@ -13265,7 +13333,7 @@ app.post("/api/saas/apply-addon-entitlement", async (req, res) => {
     });
 
     const updatedProfileRes = await pool.query(
-      `SELECT location_id, plan_name, addon_branding_unlocked, addon_funnel_unlocked, addon_tracking_unlocked, addon_extra_vehicle_count
+      `SELECT location_id, plan_name, addon_branding_unlocked, addon_funnel_unlocked, addon_tracking_unlocked, addon_rental_unlocked, addon_extra_vehicle_count
        FROM profiles
        WHERE location_id = $1
        LIMIT 1`,
@@ -13284,6 +13352,61 @@ app.post("/api/saas/apply-addon-entitlement", async (req, res) => {
   } catch (err) {
     console.error("Apply SaaS add-on entitlement error:", err);
     return res.status(err.statusCode || 500).json({ error: err.message || "Failed to apply the SaaS add-on entitlement." });
+  }
+});
+
+app.post("/api/saas/rental-license", async (req, res) => {
+  try {
+    const expectedSecret = String(process.env.SAAS_ENTITLEMENT_WEBHOOK_SECRET || process.env.SETUP_WIZARD_TOKEN || "").trim();
+    const providedSecret = String(
+      req.get("x-saas-entitlement-secret") || req.get("x-setup-wizard-token") || req.body?.secret || ""
+    ).trim();
+    if (!expectedSecret || providedSecret !== expectedSecret) {
+      return res.status(403).json({ error: "Invalid GoHighLevel entitlement secret." });
+    }
+
+    const locationId = String(req.body?.location_id || "").trim();
+    const licenseType = String(req.body?.license_type || "addon").trim().toLowerCase() === "standalone"
+      ? "standalone"
+      : "addon";
+    const subscriptionStatus = String(req.body?.subscription_status || req.body?.status || "active").trim().toLowerCase();
+    const active = ["active", "trialing"].includes(subscriptionStatus);
+    if (!locationId) return res.status(400).json({ error: "location_id is required." });
+
+    await ensureProfileEntitlementColumns();
+    await ensureProfilePublicAppUrlColumn();
+    const profileIdColumn = await getProfileIdColumn();
+    const existing = await pool.query(
+      `SELECT ${profileIdColumn} FROM profiles WHERE ${profileIdColumn} = $1 LIMIT 1`,
+      [locationId]
+    );
+    if (!existing.rows.length) {
+      await pool.query(
+        `INSERT INTO profiles (${profileIdColumn}, business_name, plan_name, addon_rental_unlocked)
+         VALUES ($1, $2, 'starter', $3)`,
+        [locationId, String(req.body?.business_name || "Rental Business").trim(), active]
+      );
+    } else {
+      await pool.query(
+        `UPDATE profiles SET addon_rental_unlocked = $2 WHERE ${profileIdColumn} = $1`,
+        [locationId, active]
+      );
+    }
+    await setRentalLicense(pool, locationId, licenseType, subscriptionStatus);
+
+    const host = `${req.protocol}://${req.get("host")}`;
+    return res.json({
+      success: true,
+      location_id: locationId,
+      license_type: licenseType,
+      subscription_status: active ? subscriptionStatus : "inactive",
+      rental_access_enabled: active,
+      rental_wizard_url: `${host}/rental-setup-wizard.html?location_id=${encodeURIComponent(locationId)}`,
+      rental_widget_url: `${host}/rental-book/${encodeURIComponent(locationId)}`,
+    });
+  } catch (err) {
+    console.error("GoHighLevel rental entitlement error:", err);
+    return res.status(500).json({ error: err.message || "Failed to update Rental SaaS access." });
   }
 });
 
@@ -16496,6 +16619,7 @@ async function createBookingRecord(input, {
   hourly_hours = null,
   selected_addons = []
   } = input;
+  const requestedBookingMode = normalizeBookingMode(booking_mode);
 
   if (!location_id || !vehicle_slot_id || !first_name || !last_name || !start_time) {
     throw new Error("Missing required booking fields.");
@@ -16522,8 +16646,17 @@ async function createBookingRecord(input, {
     ]);
   const resolvedPaymentProvider = normalizePaymentProvider(payment_provider || profile.payment_provider);
 
-  let fleetVehicle = null;
-  if (await tableExists("fleet_slots")) {
+  const rentalSettings = requestedBookingMode === "rental" ? await getRentalSettings(pool, location_id) : null;
+  const rentalVehicle = requestedBookingMode === "rental" ? await getRentalVehicle(pool, location_id, vehicle_slot_id) : null;
+  if (requestedBookingMode === "rental" && (!rentalSettings?.enabled || !rentalVehicle)) {
+    throw new Error("The selected rental vehicle is not available.");
+  }
+  let fleetVehicle = rentalVehicle ? {
+    ...rentalVehicle,
+    name: [rentalVehicle.vehicle_year, rentalVehicle.vehicle_make, rentalVehicle.vehicle_model].filter(Boolean).join(" ") || rentalVehicle.vehicle_type,
+    outbound_buffer_min: 0,
+  } : null;
+  if (!fleetVehicle && await tableExists("fleet_slots")) {
     const fleetLookup = await pool.query(
         `SELECT
            fs.calendar_id,
@@ -16598,10 +16731,10 @@ async function createBookingRecord(input, {
   const calendar_id = fleetVehicle?.calendar_id || null;
   const vehicle_type = fleetVehicle?.vehicle_type || fleetVehicle?.name || null;
   const vehicle_category = fleetVehicle?.vehicle_category || null;
-  const bookingModeNormalized = normalizeBookingMode(booking_mode);
+  const bookingModeNormalized = requestedBookingMode;
   const isHourlyBooking = bookingModeNormalized === "hourly" || bookingModeNormalized === "rental";
   const resolvedHourlyHoursForCalendar = isHourlyBooking
-    ? Math.max(4, Number(hourly_hours || 0) || 0)
+    ? Math.max(Number(rentalVehicle?.minimum_hours || 4), Number(hourly_hours || 0) || 0)
     : null;
 
   const routeMetrics = isHourlyBooking
@@ -16670,7 +16803,14 @@ async function createBookingRecord(input, {
       .split("|||")[0]
       .trim()
     || null;
-  const hourlyOption = isHourlyBooking
+  const hourlyOption = rentalVehicle
+    ? {
+        booking_description: [rentalVehicle.vehicle_year, rentalVehicle.vehicle_make, rentalVehicle.vehicle_model].filter(Boolean).join(" ") || rentalVehicle.vehicle_type,
+        vehicle_slot_id: rentalVehicle.vehicle_slot_id,
+        hourly_rate: rentalVehicle.hourly_rate,
+        minimum_hours: rentalVehicle.minimum_hours,
+      }
+    : isHourlyBooking
     ? resolveHourlyOption({
         hourlyBookings: safeParseJson(profile.hourly_bookings, []),
         selectedHourlyBooking: selected_hourly_booking,
@@ -17092,6 +17232,32 @@ app.post("/api/create-checkout-session", async (req, res) => {
       req.body.email = customerAccountSession.email || req.body.email;
       req.body.phone = customerAccountSession.phone || req.body.phone;
     }
+    let rentalSettings = null;
+    let rentalVehicle = null;
+    if (isRentalBooking) {
+      [rentalSettings, rentalVehicle] = await Promise.all([
+        getRentalSettings(pool, locationId),
+        getRentalVehicle(pool, locationId, vehicleSlotId),
+      ]);
+      if (!rentalSettings?.enabled || !rentalVehicle) {
+        return res.status(400).json({ error: "The selected rental vehicle is not available." });
+      }
+      const rentalHours = Number(req.body.hourly_hours || 0);
+      if (!Number.isFinite(rentalHours) || rentalHours < rentalVehicle.minimum_hours) {
+        return res.status(400).json({ error: `This vehicle requires at least ${rentalVehicle.minimum_hours} hours.` });
+      }
+      const rentalSubtotal = Number((rentalVehicle.hourly_rate * rentalHours).toFixed(2));
+      const rentalTax = Number((rentalSubtotal * (rentalSettings.tax_rate / 100)).toFixed(2));
+      const rentalTotal = Number((rentalSubtotal + rentalTax).toFixed(2));
+      const rentalDepositPercent = rentalVehicle.deposit_percent || rentalSettings.default_deposit_percent;
+      req.body.quoted_price = rentalSubtotal;
+      req.body.tax_amount = rentalTax;
+      req.body.total_price = rentalTotal;
+      req.body.deposit_percent = rentalDepositPercent;
+      req.body.deposit_amount = Number((rentalTotal * (rentalDepositPercent / 100)).toFixed(2));
+      req.body.selected_hourly_booking = rentalVehicle.vehicle_slot_id;
+      req.body.pricing_label = `${rentalVehicle.vehicle_type} at $${rentalVehicle.hourly_rate.toFixed(2)}/hr for ${rentalHours} hours`;
+    }
     if (requiresSavedPaymentMethod && req.body.card_on_file_consent !== true) {
       return res.status(400).json({ error: "Please authorize the saved payment method for approved service extensions and trip adjustments." });
     }
@@ -17135,8 +17301,12 @@ app.post("/api/create-checkout-session", async (req, res) => {
       "close_time",
     ]);
 
-    let fleetVehicle = null;
-    if (await tableExists("fleet_slots")) {
+    let fleetVehicle = rentalVehicle ? {
+      ...rentalVehicle,
+      name: [rentalVehicle.vehicle_year, rentalVehicle.vehicle_make, rentalVehicle.vehicle_model].filter(Boolean).join(" ") || rentalVehicle.vehicle_type,
+      outbound_buffer_min: 0,
+    } : null;
+    if (!fleetVehicle && await tableExists("fleet_slots")) {
       const fleetLookup = await pool.query(
         `SELECT
                 fs.calendar_id,
@@ -17185,15 +17355,16 @@ app.post("/api/create-checkout-session", async (req, res) => {
 
     if (["hourly", "rental"].includes(String(req.body.booking_mode || "").trim().toLowerCase())) {
       const hourlyHours = Number(req.body.hourly_hours || 0);
-      if (!Number.isFinite(hourlyHours) || hourlyHours < 4) {
-        return res.status(400).json({ error: "4 hour minimum." });
+      const requiredMinimum = isRentalBooking ? Number(rentalVehicle?.minimum_hours || 4) : 4;
+      if (!Number.isFinite(hourlyHours) || hourlyHours < requiredMinimum) {
+        return res.status(400).json({ error: `${requiredMinimum} hour minimum.` });
       }
     }
 
     const bookingModeNormalized = normalizeBookingMode(req.body.booking_mode);
     const isTimeBasedBooking = bookingModeNormalized === "hourly" || bookingModeNormalized === "rental";
     const hourlyHoursForCalendar = isTimeBasedBooking
-      ? Math.max(4, Number(req.body.hourly_hours || 0) || 0)
+      ? Math.max(Number(rentalVehicle?.minimum_hours || 4), Number(req.body.hourly_hours || 0) || 0)
       : null;
 
     const routeMetrics = isTimeBasedBooking
@@ -17377,9 +17548,11 @@ app.post("/api/create-checkout-session", async (req, res) => {
       practice: practiceMode ? "1" : "0",
     });
 
-    const checkoutTitle = payInFull
-      ? `Rideshare Chauffeur Reservation ${companyName} Payment`
-      : `Rideshare Chauffeur Reservation ${companyName} Deposit`;
+    const checkoutTitle = isRentalBooking
+      ? `${companyName} Rental ${payInFull ? "Payment" : "Deposit"}`
+      : (payInFull
+        ? `Rideshare Chauffeur Reservation ${companyName} Payment`
+        : `Rideshare Chauffeur Reservation ${companyName} Deposit`);
     const checkoutActionLabel = payInFull ? "Payment" : "Deposit";
     const driverProgramRouting = await getDriverPartnerProgramStripeRoutingForLocation(req.body.location_id || null, amountToCharge);
 

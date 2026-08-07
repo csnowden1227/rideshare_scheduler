@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Rental SaaS Setup</title>
+  <style>
+    :root{--ink:#13251f;--pine:#184b3d;--mint:#dff4e9;--cream:#f7f3e8;--line:#d9e1db;--rust:#b94f2c}
+    *{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 8% 4%,#e5f5eb 0,transparent 27%),linear-gradient(145deg,#fbfaf4,#eef3ed);color:var(--ink);font-family:Georgia,"Times New Roman",serif}.shell{max-width:1320px;margin:auto;padding:34px 22px 70px}.mast{display:flex;justify-content:space-between;gap:20px;align-items:flex-end;margin-bottom:28px}.eyebrow{font:800 11px/1.2 Verdana,sans-serif;letter-spacing:.18em;text-transform:uppercase;color:var(--rust)}h1{font-size:clamp(38px,6vw,72px);line-height:.94;margin:8px 0 0;letter-spacing:-.045em}.location{font:700 12px Verdana,sans-serif;background:#fff;border:1px solid var(--line);border-radius:999px;padding:10px 14px}.layout{display:grid;grid-template-columns:minmax(0,1fr) 350px;gap:24px}.panel{background:rgba(255,255,255,.9);border:1px solid var(--line);border-radius:28px;padding:24px;box-shadow:0 24px 60px rgba(26,53,43,.08)}.section-title{display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line);padding-bottom:14px;margin-bottom:18px}.section-title h2{margin:0;font-size:24px}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.field.full{grid-column:1/-1}.field label{display:block;font:800 10px Verdana,sans-serif;letter-spacing:.1em;text-transform:uppercase;margin:0 0 7px;color:#50655d}.field input,.field textarea,.field select{width:100%;border:1px solid #cbd8d0;border-radius:13px;padding:12px 13px;background:#fff;color:var(--ink);font:14px Verdana,sans-serif}.field textarea{min-height:84px;resize:vertical}.check{display:flex;align-items:center;gap:10px;font:700 13px Verdana,sans-serif}.check input{width:18px;height:18px}.vehicles{display:grid;gap:14px}.vehicle{border:1px solid var(--line);border-radius:20px;padding:18px;background:#fbfcf9}.vehicle-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}.vehicle-head strong{font-size:19px}.btn{border:0;border-radius:14px;min-height:46px;padding:12px 16px;font:900 11px Verdana,sans-serif;letter-spacing:.1em;text-transform:uppercase;cursor:pointer}.primary{background:var(--pine);color:#fff}.secondary{background:var(--mint);color:var(--pine)}.danger{background:#fff0eb;color:#9c351a}.sidebar{position:sticky;top:20px;display:grid;gap:16px;align-self:start}.link-card{background:#10231d;color:#fff;border-radius:24px;padding:20px}.link-card h3{font:800 10px Verdana,sans-serif;letter-spacing:.16em;text-transform:uppercase;color:#a8cfbe;margin:0 0 10px}.link-card code{display:block;word-break:break-all;font:11px/1.6 Consolas,monospace;color:#d8fbe9;background:#07130f;border-radius:12px;padding:12px;max-height:130px;overflow:auto}.link-card .btn{width:100%;margin-top:10px}.status{font:700 12px/1.6 Verdana,sans-serif;text-align:center;color:#587066}.status.error{color:#9c351a}.locked{display:none;background:#fff4dc;border:1px solid #efc878;border-radius:18px;padding:18px;font:13px/1.6 Verdana,sans-serif;color:#704716;margin-bottom:18px}@media(max-width:920px){.layout{grid-template-columns:1fr}.sidebar{position:static}.grid{grid-template-columns:1fr}.field.full{grid-column:auto}.mast{align-items:flex-start;flex-direction:column}}
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header class="mast"><div><div class="eyebrow">Standalone or Chauffeur SaaS Add-on</div><h1>Rental Studio</h1></div><div class="location">Location: <span id="location-label"></span></div></header>
+    <div id="locked" class="locked"></div>
+    <div class="layout">
+      <section class="panel">
+        <div class="section-title"><h2>Rental experience</h2><label class="check"><input id="enabled" type="checkbox"> Live</label></div>
+        <div class="grid">
+          <div class="field full"><label for="headline">Customer headline</label><input id="headline" value="Reserve a luxury rental"></div>
+          <div class="field full"><label for="intro">Introduction</label><textarea id="intro"></textarea></div>
+          <div class="field"><label for="minimum-age">Minimum renter age</label><input id="minimum-age" type="number" min="18" value="25"></div>
+          <div class="field"><label for="tax-rate">Rental tax (%)</label><input id="tax-rate" type="number" min="0" step=".01" value="0"></div>
+          <div class="field"><label for="deposit">Default deposit (%)</label><input id="deposit" type="number" min="0" max="100" step=".01" value="25"></div>
+          <div class="field"><label for="grace">Return grace period (minutes)</label><input id="grace" type="number" min="0" value="30"></div>
+          <div class="field"><label for="multiplier">Overage multiplier</label><input id="multiplier" type="number" min="1" step=".01" value="1.25"></div>
+          <div class="field full"><label for="terms">Rental and saved-card terms</label><textarea id="terms"></textarea></div>
+        </div>
+        <div class="section-title" style="margin-top:30px"><h2>Rental-only vehicles</h2><button id="add-vehicle" class="btn secondary" type="button">Add vehicle</button></div>
+        <div id="vehicles" class="vehicles"></div>
+      </section>
+      <aside class="sidebar">
+        <button id="save" class="btn primary" type="button">Sync Rental SaaS</button>
+        <div id="status" class="status">Load the account, add rental vehicles, then sync.</div>
+        <div class="link-card"><h3>GoHighLevel wizard link</h3><code id="wizard-link"></code><button class="btn secondary copy" data-target="wizard-link">Copy wizard link</button></div>
+        <div class="link-card"><h3>Hosted rental URL</h3><code id="hosted-link"></code><button class="btn secondary copy" data-target="hosted-link">Copy hosted URL</button><button id="preview" class="btn primary" type="button">Open rental widget</button></div>
+        <div class="link-card"><h3>Rental operations dashboard</h3><code id="operations-link">Generated after account load</code><button class="btn secondary copy" data-target="operations-link">Copy staff dashboard link</button></div>
+        <div class="link-card"><h3>Reusable embed code</h3><code id="embed-code"></code><button class="btn secondary copy" data-target="embed-code">Copy embed code</button></div>
+      </aside>
+    </div>
+  </main>
+  <template id="vehicle-template">
+    <article class="vehicle">
+      <div class="vehicle-head"><strong>Rental vehicle</strong><button class="btn danger remove" type="button">Remove</button></div>
+      <div class="grid">
+        <div class="field"><label>Category</label><input data-key="vehicle_type" placeholder="Exotic, luxury SUV, sedan"></div>
+        <div class="field"><label>Calendar ID</label><input data-key="calendar_id" placeholder="GoHighLevel calendar ID"></div>
+        <div class="field"><label>Year</label><input data-key="vehicle_year" maxlength="4"></div>
+        <div class="field"><label>Make</label><input data-key="vehicle_make" placeholder="Lamborghini"></div>
+        <div class="field"><label>Model</label><input data-key="vehicle_model" placeholder="Huracan"></div>
+        <div class="field"><label>Color</label><input data-key="vehicle_color"></div>
+        <div class="field"><label>Hourly rate ($)</label><input data-key="hourly_rate" type="number" min="0" step=".01"></div>
+        <div class="field"><label>Minimum hours</label><input data-key="minimum_hours" type="number" min="1" value="4"></div>
+        <div class="field"><label>Deposit override (%)</label><input data-key="deposit_percent" type="number" min="0" max="100" step=".01"></div>
+        <div class="field"><label>License plate (private setup)</label><input data-key="license_plate"></div>
+        <div class="field full"><label>Vehicle image URL</label><input data-key="image" placeholder="https://..."></div>
+        <div class="field full"><label>Description</label><textarea data-key="description"></textarea></div>
+        <label class="check"><input data-key="active" type="checkbox" checked> Available in widget</label>
+        <label class="check"><input data-key="featured" type="checkbox"> Featured vehicle</label>
+      </div>
+    </article>
+  </template>
+  <script>
+    const query = new URLSearchParams(location.search);
+    const locationId = String(query.get('location_id') || '').trim();
+    const token = String(query.get('token') || '').trim();
+    const origin = location.origin;
+    const headers = {'Content-Type':'application/json',...(token?{'X-Setup-Wizard-Token':token}:{})};
+    const numericKeys = new Set(['hourly_rate','minimum_hours','deposit_percent']);
+    const booleanKeys = new Set(['active','featured']);
+    document.getElementById('location-label').textContent = locationId || 'missing';
+    const wizardParams = new URLSearchParams({location_id:locationId}); if(token) wizardParams.set('token',token);
+    document.getElementById('wizard-link').textContent = `${origin}/rental-setup-wizard.html?${wizardParams}`;
+    document.getElementById('hosted-link').textContent = `${origin}/rental-book/${encodeURIComponent(locationId)}`;
+    document.getElementById('embed-code').textContent = `<div id="rental-booking-widget"></div>\n<script src="${origin}/rental-widget.js?loc=${encodeURIComponent(locationId)}"><\/script>`;
+
+    function setStatus(message,error=false){const el=document.getElementById('status');el.textContent=message;el.className=`status${error?' error':''}`}
+    function addVehicle(data={}){const node=document.getElementById('vehicle-template').content.firstElementChild.cloneNode(true);node.dataset.id=data.vehicle_slot_id||`${locationId}_rental_${Date.now()}`;node.querySelectorAll('[data-key]').forEach(input=>{const key=input.dataset.key;if(booleanKeys.has(key))input.checked=data[key]!==false;else input.value=data[key]??''});node.querySelector('.remove').onclick=()=>node.remove();document.getElementById('vehicles').appendChild(node)}
+    function collectVehicles(){return [...document.querySelectorAll('.vehicle')].map(row=>{const v={vehicle_slot_id:row.dataset.id};row.querySelectorAll('[data-key]').forEach(input=>{const key=input.dataset.key;v[key]=booleanKeys.has(key)?input.checked:(numericKeys.has(key)?Number(input.value||0):input.value.trim())});return v})}
+    function apply(data){const s=data.settings||{};if(s.operator_access_token)document.getElementById('operations-link').textContent=`${origin}/rental-operations.html?location_id=${encodeURIComponent(locationId)}&token=${encodeURIComponent(s.operator_access_token)}`;document.getElementById('enabled').checked=!!s.enabled;document.getElementById('headline').value=s.headline||'';document.getElementById('intro').value=s.intro_text||'';document.getElementById('minimum-age').value=s.minimum_age??25;document.getElementById('tax-rate').value=s.tax_rate??0;document.getElementById('deposit').value=s.default_deposit_percent??25;document.getElementById('grace').value=s.grace_minutes??30;document.getElementById('multiplier').value=s.overage_multiplier??1.25;document.getElementById('terms').value=s.terms_text||'';document.getElementById('vehicles').innerHTML='';(s.vehicles||[]).forEach(addVehicle);if(!(s.vehicles||[]).length)addVehicle()}
+    async function load(){if(!locationId)return setStatus('The rental wizard link is missing location_id.',true);try{const res=await fetch(`/api/rental-settings/${encodeURIComponent(locationId)}?token=${encodeURIComponent(token)}`,{headers,cache:'no-store'});const data=await res.json();if(!res.ok){if(data.code==='rental_addon_required'){const locked=document.getElementById('locked');locked.style.display='block';locked.textContent='Rental Management is not licensed for this location yet. Purchase the add-on for an existing chauffeur SaaS account or activate a standalone Rental SaaS subscription.'}throw new Error(data.error||'Unable to load rental setup.')}apply(data);setStatus('Rental configuration loaded.')}catch(error){setStatus(error.message,true)}}
+    async function save(){const button=document.getElementById('save');button.disabled=true;setStatus('Syncing rental configuration...');try{const payload={enabled:document.getElementById('enabled').checked,headline:document.getElementById('headline').value,intro_text:document.getElementById('intro').value,minimum_age:Number(document.getElementById('minimum-age').value),tax_rate:Number(document.getElementById('tax-rate').value),default_deposit_percent:Number(document.getElementById('deposit').value),grace_minutes:Number(document.getElementById('grace').value),overage_multiplier:Number(document.getElementById('multiplier').value),terms_text:document.getElementById('terms').value,vehicles:collectVehicles()};const res=await fetch(`/api/rental-settings/${encodeURIComponent(locationId)}?token=${encodeURIComponent(token)}`,{method:'PUT',headers,body:JSON.stringify(payload)});const data=await res.json();if(!res.ok)throw new Error(data.error||'Rental sync failed.');apply(data);setStatus('Rental SaaS synced. The hosted URL and embed now use these settings.')}catch(error){setStatus(error.message,true)}finally{button.disabled=false}}
+    document.getElementById('add-vehicle').onclick=()=>addVehicle();document.getElementById('save').onclick=save;document.getElementById('preview').onclick=()=>open(document.getElementById('hosted-link').textContent,'_blank','noopener');document.querySelectorAll('.copy').forEach(button=>button.onclick=async()=>{await navigator.clipboard.writeText(document.getElementById(button.dataset.target).textContent);setStatus('Copied to clipboard.')});load();
+  </script>
+</body>
+</html>
