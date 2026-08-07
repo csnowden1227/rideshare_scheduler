@@ -130,16 +130,28 @@
       document.getElementById("dashboard-button").href = withLocation("/customer-account-dashboard");
 
       function renderRideCard(ride) {
+        const rental = ride.booking_mode === "rental" ? ride.rental : null;
+        const rentalStatus = String(rental?.lifecycle_status || "").replaceAll("_", " ");
+        const rentalPanel = rental ? `
+          <div class="meta-block" style="grid-column:1/-1;background:var(--brand-accent);border-radius:16px;padding:14px;">
+            <span>Rental Status</span>
+            <strong style="text-transform:capitalize;">${escapeHtml(rentalStatus || "Reserved")}</strong>
+            <p style="margin:7px 0 0;">Scheduled return: ${escapeHtml(formatDateTime(rental.scheduled_return_at))}</p>
+            ${rental.lifecycle_status === "overdue" ? `<p style="margin:7px 0 0;color:#b42318;font-weight:800;">${escapeHtml(String(rental.billable_minutes || 0))} billable minutes · Live estimated overage ${escapeHtml(formatCurrency(rental.estimated_overage))}</p>` : ""}
+            ${rental.lifecycle_status === "active" ? `<p style="margin:7px 0 0;">Includes a ${escapeHtml(String(rental.grace_minutes || 30))}-minute grace period.</p>` : ""}
+            ${rental.estimate_is_live ? `<small>Estimate updates automatically and is finalized after the return is recorded and verified.</small>` : ""}
+          </div>` : "";
         return `
           <article class="ride-card">
             <div class="ride-head">
-              <h3>${escapeHtml(ride.vehicle_display_name || "Ride Reservation")}</h3>
-              <span class="pill">Upcoming</span>
+              <h3>${escapeHtml(ride.vehicle_display_name || (rental ? "Rental Reservation" : "Ride Reservation"))}</h3>
+              <span class="pill">${escapeHtml(rental ? (rentalStatus || "Reserved") : "Upcoming")}</span>
             </div>
             <div class="meta">
               <div class="meta-block"><span>Pickup Time</span><strong>${escapeHtml(formatDateTime(ride.start_time))}</strong></div>
               <div class="meta-block"><span>Route</span><p>${escapeHtml(ride.pickup_address || "")}<br />${escapeHtml(ride.dropoff_address || "")}</p></div>
               <div class="meta-block"><span>Total</span><strong>${escapeHtml(formatCurrency(ride.total_price))}</strong></div>
+              ${rentalPanel}
             </div>
             <div class="ride-actions">
               <a class="mini-button" href="${escapeHtml(buildRebookUrl(ride))}">Book Again</a>
@@ -166,6 +178,7 @@
       }
 
       loadUpcomingRides();
+      window.setInterval(loadUpcomingRides, 30000);
     })();
   </script>
 </body>

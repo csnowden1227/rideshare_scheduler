@@ -85,7 +85,7 @@
             <div class="fact"><span>Grace period</span><strong>30 minutes</strong></div>
             <div class="fact"><span>Billable overtime</span><strong id="billable-minutes">0 minutes</strong></div>
           </div>
-          <div style="margin-top:18px"><div class="label">Calculated Overage</div><div id="overage-amount" class="money">$0.00</div></div>
+          <div style="margin-top:18px"><div id="overage-label" class="label">Calculated Overage</div><div id="overage-amount" class="money">$0.00</div></div>
           <textarea id="charge-reason" placeholder="Charge reason. Required if amount is changed.">Rental overtime after verified return</textarea>
           <input id="charge-amount" type="number" min="0.50" step="0.01" placeholder="Charge amount" style="margin-top:10px" />
           <button id="charge-btn" class="charge" style="width:100%;margin-top:10px" disabled>Charge Saved Card</button>
@@ -108,7 +108,7 @@
     const dateTime = (value) => value ? new Date(value).toLocaleString() : "Not recorded";
     function showStatus(message, error = false) { status.textContent = message; status.className = `status${error ? " error" : ""}`; status.style.display = "block"; }
     async function requestJson(url, options = {}) {
-      const headers = { ...(options.headers || {}), "X-Setup-Wizard-Token": token };
+      const headers = { ...(options.headers || {}), "X-Rental-Operator-Token": token, "X-Setup-Wizard-Token": token };
       if (options.body) headers["Content-Type"] = "application/json";
       const response = await fetch(url, { ...options, headers });
       const data = await response.json().catch(() => ({}));
@@ -128,6 +128,7 @@
       document.getElementById("overage-rate").textContent = `${money(closeout.overageHourlyRate)}/hr`;
       document.getElementById("billable-minutes").textContent = `${Number(closeout.billableMinutes || 0)} minutes`;
       document.getElementById("overage-amount").textContent = money(closeout.amount);
+      document.getElementById("overage-label").textContent = closeout.estimate_is_live ? "Live Estimated Overage" : "Calculated Overage";
       document.getElementById("charge-amount").value = Number(closeout.amount || 0).toFixed(2);
       document.getElementById("charge-btn").disabled = closeout.lifecycle_status !== "verified" || Number(closeout.amount || 0) <= 0;
       const history = Array.isArray(closeout.status_history_json) ? closeout.status_history_json : [];
@@ -169,7 +170,10 @@
         await loadRental();
       } catch (error) { showStatus(error.message, true); }
     };
-    if (locationInput.value && bookingInput.value) loadRental();
+    if (locationInput.value && bookingInput.value) {
+      loadRental();
+      window.setInterval(loadRental, 30000);
+    }
   </script>
 </body>
 </html>

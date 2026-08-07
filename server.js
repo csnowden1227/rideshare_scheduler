@@ -3620,6 +3620,7 @@ async function fetchCustomerRidesForIdentity({
   phone = "",
   limit = 50,
 }) {
+  await ensureRentalManagementTables();
   const normalizedCustomerPhone = normalizePhoneNumber(phone || "") || "";
   const normalizedCustomerEmail = normalizeCustomerEmail(email || "");
   const normalizedCrmContactId = String(crmContactId || "").trim();
@@ -3650,7 +3651,14 @@ async function fetchCustomerRidesForIdentity({
        p.public_app_url,
        ts.id AS tracking_session_id,
        ts.customer_token AS tracking_customer_token,
-       ts.status AS tracking_status
+       ts.status AS tracking_status,
+       rc.lifecycle_status AS rental_lifecycle_status,
+       rc.scheduled_return_at AS rental_scheduled_return_at,
+       rc.customer_returned_at AS rental_customer_returned_at,
+       rc.return_verified_at AS rental_return_verified_at,
+       rc.booked_hourly_rate AS rental_booked_hourly_rate,
+       rc.grace_minutes AS rental_grace_minutes,
+       rc.overage_multiplier AS rental_overage_multiplier
      FROM bookings b
      LEFT JOIN profiles p ON p.${profileIdColumn} = b.location_id
      LEFT JOIN LATERAL (
@@ -3660,6 +3668,7 @@ async function fetchCustomerRidesForIdentity({
        ORDER BY s.updated_at DESC NULLS LAST, s.created_at DESC NULLS LAST, s.id DESC
        LIMIT 1
      ) ts ON TRUE
+     LEFT JOIN rental_closeouts rc ON rc.booking_id = b.id
      WHERE b.location_id = $1
        AND (
          ($2 <> '' AND COALESCE(b.crm_contact_id, '') = $2)
@@ -3687,7 +3696,19 @@ async function fetchCustomerRidesForIdentity({
     const startTimeMs = startTime && !Number.isNaN(startTime.getTime()) ? startTime.getTime() : null;
     const normalizedStatus = String(ride.status || "").trim().toLowerCase();
     const isCancelled = normalizedStatus === "cancelled" || normalizedStatus === "canceled";
-    const isUpcoming = !isCancelled && startTimeMs !== null && startTimeMs >= now;
+    const bookingMode = String(ride.booking_mode || "standard").trim().toLowerCase();
+    const rentalLifecycleStatus = String(ride.rental_lifecycle_status || "").trim().toLowerCase();
+    const isActiveRental = bookingMode === "rental" && ["active", "overdue", "returned"].includes(rentalLifecycleStatus);
+    const isUpcoming = !isCancelled && ((startTimeMs !== null && startTimeMs >= now) || isActiveRental);
+    const rentalCalculation = bookingMode === "rental" && ride.rental_scheduled_return_at
+      ? calculateRentalOverage({
+          scheduledReturnAt: ride.rental_scheduled_return_at,
+          customerReturnedAt: ride.rental_customer_returned_at || (isActiveRental ? new Date(now).toISOString() : null),
+          hourlyRate: ride.rental_booked_hourly_rate,
+          graceMinutes: ride.rental_grace_minutes,
+          multiplier: ride.rental_overage_multiplier,
+        })
+      : null;
     const paymentStatus = Number(ride.deposit_amount || 0) > 0 && Number(ride.balance_due || 0) > 0
       ? "paid_deposit"
       : (Number(ride.total_price || 0) > 0 ? "paid_in_full" : "unpaid");
@@ -3695,7 +3716,7 @@ async function fetchCustomerRidesForIdentity({
     return {
       booking_id: ride.id,
       status: normalizedStatus || "confirmed",
-      booking_mode: String(ride.booking_mode || "standard").trim() || "standard",
+      booking_mode: bookingMode || "standard",
       is_upcoming: isUpcoming,
       is_cancelled: isCancelled,
       start_time: ride.start_time || null,
@@ -3716,6 +3737,19 @@ async function fetchCustomerRidesForIdentity({
       ride_inbox_url: portalUrls.ride_inbox_url || null,
       ride_hub_url: portalUrls.ride_hub_url || null,
       review_and_tip_url: trackingUrls.follow_up_url || null,
+      rental: bookingMode === "rental" ? {
+        lifecycle_status: rentalLifecycleStatus || "reserved",
+        scheduled_return_at: ride.rental_scheduled_return_at || ride.end_time || null,
+        customer_returned_at: ride.rental_customer_returned_at || null,
+        return_verified_at: ride.rental_return_verified_at || null,
+        grace_minutes: Number(ride.rental_grace_minutes || 30),
+        overage_multiplier: Number(ride.rental_overage_multiplier || 1.25),
+        booked_hourly_rate: Number(ride.rental_booked_hourly_rate || 0),
+        billable_minutes: Number(rentalCalculation?.billableMinutes || 0),
+        estimated_overage: Number(rentalCalculation?.amount || 0),
+        estimate_is_live: isActiveRental && !ride.rental_customer_returned_at,
+        estimate_calculated_at: new Date(now).toISOString(),
+      } : null,
       customer: {
         first_name: ride.first_name || "",
         last_name: ride.last_name || "",
@@ -8636,6 +8670,31 @@ function requirePaymentOperatorToken(req, res, next) {
   return next();
 }
 
+async function requireRentalOperatorToken(req, res, next) {
+  try {
+    const masterToken = String(process.env.SETUP_WIZARD_TOKEN || "").trim();
+    const providedToken = String(
+      req.query?.token ||
+      req.headers["x-rental-operator-token"] ||
+      req.headers["x-setup-wizard-token"] ||
+      req.body?.operator_token ||
+      ""
+    ).trim();
+    if (masterToken && providedToken === masterToken) return next();
+
+    const locationId = String(req.query?.location_id || req.body?.location_id || "").trim();
+    if (!locationId || !providedToken) return res.status(403).send("Forbidden");
+    const settings = await getRentalSettings(pool, locationId, { includeInactive: true });
+    if (!settings?.operator_access_token || settings.operator_access_token !== providedToken) {
+      return res.status(403).send("Forbidden");
+    }
+    return next();
+  } catch (err) {
+    console.error("Rental operator authorization error:", err);
+    return res.status(500).send("Unable to verify rental operator access.");
+  }
+}
+
 app.use(express.json({ limit: "25mb" }));
 app.use(express.urlencoded({ extended: true, limit: "25mb" }));
 app.get("/setup-wizard.html", requireWizardToken, (req, res) => {
@@ -8772,10 +8831,10 @@ app.get("/insurance-manager.html", requireWizardToken, (req, res) => {
 app.get("/insurance-manager", requireWizardToken, (req, res) => {
   res.sendFile(path.join(__dirname, "public", "insurance-manager.html"));
 });
-app.get("/rental-closeout.html", requirePaymentOperatorToken, (req, res) => {
+app.get("/rental-closeout.html", requireRentalOperatorToken, (req, res) => {
   res.sendFile(path.join(__dirname, "public", "rental-closeout.html"));
 });
-app.get("/rental-closeout", requirePaymentOperatorToken, (req, res) => {
+app.get("/rental-closeout", requireRentalOperatorToken, (req, res) => {
   res.sendFile(path.join(__dirname, "public", "rental-closeout.html"));
 });
 app.get("/rideshare-onboarding.html", (req, res) => {
@@ -13393,6 +13452,12 @@ app.post("/api/saas/rental-license", async (req, res) => {
       );
     }
     await setRentalLicense(pool, locationId, licenseType, subscriptionStatus);
+    let rentalAccess = await getRentalSettings(pool, locationId, { includeInactive: true });
+    if (!rentalAccess?.operator_access_token) {
+      const operatorAccessToken = randomBytes(32).toString("hex");
+      await pool.query(`UPDATE rental_widget_settings SET operator_access_token=$2, updated_at=NOW() WHERE location_id=$1`, [locationId, operatorAccessToken]);
+      rentalAccess = { ...(rentalAccess || {}), operator_access_token: operatorAccessToken };
+    }
 
     const host = `${req.protocol}://${req.get("host")}`;
     return res.json({
@@ -13403,6 +13468,7 @@ app.post("/api/saas/rental-license", async (req, res) => {
       rental_access_enabled: active,
       rental_wizard_url: `${host}/rental-setup-wizard.html?location_id=${encodeURIComponent(locationId)}`,
       rental_widget_url: `${host}/rental-book/${encodeURIComponent(locationId)}`,
+      rental_operations_url: `${host}/rental-operations.html?location_id=${encodeURIComponent(locationId)}&token=${encodeURIComponent(rentalAccess.operator_access_token)}`,
     });
   } catch (err) {
     console.error("GoHighLevel rental entitlement error:", err);
@@ -16902,6 +16968,25 @@ async function createBookingRecord(input, {
 
   const booking_id = result.rows[0]?.id || null;
   const savedBookingMode = String(result.rows[0]?.booking_mode || booking_mode || "standard").trim() || "standard";
+  if (booking_id && bookingModeNormalized === "rental") {
+    await ensureRentalManagementTables();
+    await pool.query(
+      `INSERT INTO rental_closeouts (
+         booking_id, location_id, scheduled_return_at, booked_hourly_rate,
+         grace_minutes, overage_multiplier, status_history_json
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)
+       ON CONFLICT (booking_id) DO NOTHING`,
+      [
+        booking_id,
+        location_id,
+        end_time,
+        resolvedHourlyRate,
+        Number(rentalSettings?.grace_minutes || 30),
+        Number(rentalSettings?.overage_multiplier || 1.25),
+        JSON.stringify([{ status: "reserved", action: "rental_booked", server_recorded_at: new Date().toISOString() }]),
+      ]
+    );
+  }
   const waitlistBooking = Boolean(waitlistRecommended || calendarConflict);
   let calendarSync = null;
   let webhookDelivery = {
@@ -18863,17 +18948,225 @@ async function loadRentalCloseoutRecord({ bookingId, locationId, createIfMissing
     );
     closeout = overdueResult.rows[0] || closeout;
   }
+  const estimateIsLive = !closeout.customer_returned_at && ["active", "overdue"].includes(closeout.lifecycle_status);
   const calculation = calculateRentalOverage({
     scheduledReturnAt: closeout.scheduled_return_at,
-    customerReturnedAt: closeout.customer_returned_at,
+    customerReturnedAt: closeout.customer_returned_at || (estimateIsLive ? new Date().toISOString() : null),
     hourlyRate: closeout.booked_hourly_rate,
     graceMinutes: closeout.grace_minutes,
     multiplier: closeout.overage_multiplier,
   });
-  return { booking, closeout: { ...closeout, ...calculation }, tracking: trackingResult.rows[0] || null, charges: chargeResult.rows };
+  return {
+    booking,
+    closeout: {
+      ...closeout,
+      ...calculation,
+      estimate_is_live: estimateIsLive,
+      grace_ends_at: Number.isFinite(graceEndsAt) ? new Date(graceEndsAt).toISOString() : null,
+      estimate_calculated_at: new Date().toISOString(),
+    },
+    tracking: trackingResult.rows[0] || null,
+    charges: chargeResult.rows,
+  };
 }
 
-app.get("/api/rentals/:bookingId/closeout", requirePaymentOperatorToken, async (req, res) => {
+async function ensureRentalCloseoutsForConfirmedBookings(locationId = null) {
+  await ensureRentalManagementTables();
+  const values = [];
+  const locationFilter = locationId ? `AND b.location_id = $1` : "";
+  if (locationId) values.push(locationId);
+  await pool.query(
+    `INSERT INTO rental_closeouts (
+       booking_id, location_id, scheduled_return_at, booked_hourly_rate, status_history_json
+     )
+     SELECT b.id, b.location_id, b.end_time, b.hourly_rate,
+            jsonb_build_array(jsonb_build_object('status','reserved','action','rental_backfill','server_recorded_at',NOW()))
+     FROM bookings b
+     WHERE LOWER(COALESCE(b.booking_mode, '')) = 'rental'
+       AND LOWER(COALESCE(b.status, '')) = 'confirmed'
+       AND b.end_time IS NOT NULL
+       ${locationFilter}
+     ON CONFLICT (booking_id) DO NOTHING`,
+    values
+  );
+}
+
+function getRentalLiveCalculation(closeout = {}, asOf = new Date()) {
+  const lifecycleStatus = String(closeout.lifecycle_status || "reserved").toLowerCase();
+  const live = !closeout.customer_returned_at && ["active", "overdue"].includes(lifecycleStatus);
+  const calculation = calculateRentalOverage({
+    scheduledReturnAt: closeout.scheduled_return_at,
+    customerReturnedAt: closeout.customer_returned_at || (live ? asOf.toISOString() : null),
+    hourlyRate: closeout.booked_hourly_rate,
+    graceMinutes: closeout.grace_minutes,
+    multiplier: closeout.overage_multiplier,
+  });
+  const scheduledMs = new Date(closeout.scheduled_return_at).getTime();
+  const graceEndsMs = scheduledMs + Number(closeout.grace_minutes || 30) * 60000;
+  return {
+    ...calculation,
+    estimate_is_live: live,
+    grace_ends_at: Number.isFinite(graceEndsMs) ? new Date(graceEndsMs).toISOString() : null,
+    estimate_calculated_at: asOf.toISOString(),
+  };
+}
+
+function buildRentalReminder(row, now = new Date()) {
+  const scheduledMs = new Date(row.scheduled_return_at).getTime();
+  if (!Number.isFinite(scheduledMs)) return null;
+  const nowMs = now.getTime();
+  const minutesToReturn = (scheduledMs - nowMs) / 60000;
+  const graceMinutes = Number(row.grace_minutes || 30);
+  const graceEndsMs = scheduledMs + graceMinutes * 60000;
+  const overdueMinutes = Math.max(0, Math.floor((nowMs - graceEndsMs) / 60000));
+  const businessName = row.business_name || "Your rental provider";
+  const returnLabel = formatDisplayDateTime(row.scheduled_return_at) || row.scheduled_return_at;
+  const calculation = getRentalLiveCalculation(row, now);
+
+  if (minutesToReturn > 45 && minutesToReturn <= 65) {
+    return { key: "return_60_minutes", subject: `${businessName} rental return reminder`, message: `Your rental is due at ${returnLabel}. Please allow time to complete the return inspection.` };
+  }
+  if (minutesToReturn > 5 && minutesToReturn <= 20) {
+    return { key: "return_15_minutes", subject: `${businessName} rental due soon`, message: `Your rental is due at ${returnLabel}. A ${graceMinutes}-minute grace period applies before overage begins.` };
+  }
+  if (minutesToReturn <= 0 && nowMs < graceEndsMs) {
+    return { key: "return_due", subject: `${businessName} rental is due`, message: `Your rental return time has arrived. The grace period ends at ${formatDisplayDateTime(new Date(graceEndsMs).toISOString())}.` };
+  }
+  if (nowMs >= graceEndsMs && overdueMinutes < 60) {
+    return { key: "grace_expired", subject: `${businessName} rental is overdue`, message: `Your rental is overdue. Overage is now accruing by the minute at 1.25 times the original hourly rate. Current estimate: $${calculation.amount.toFixed(2)}.` };
+  }
+  if (overdueMinutes >= 60) {
+    const hourBucket = Math.floor(overdueMinutes / 60);
+    return { key: `overdue_hour_${hourBucket}`, subject: `${businessName} rental overage update`, message: `Your rental remains overdue by approximately ${overdueMinutes} minutes. Current estimated overage: $${calculation.amount.toFixed(2)}. Final charges are determined after the return is recorded and verified.` };
+  }
+  return null;
+}
+
+async function sendRentalReminder(row, reminder) {
+  if (!reminder) return { skipped: true };
+  const claim = await pool.query(
+    `INSERT INTO rental_notification_log (booking_id, location_id, notification_key, sms_status, email_status, attempts)
+     VALUES ($1,$2,$3,'pending','pending',1)
+     ON CONFLICT (booking_id, notification_key) DO UPDATE SET
+       attempts = rental_notification_log.attempts + 1,
+       updated_at = NOW()
+     WHERE (COALESCE(rental_notification_log.sms_status,'') IN ('pending','failed') OR COALESCE(rental_notification_log.email_status,'') IN ('pending','failed'))
+       AND rental_notification_log.updated_at < NOW() - INTERVAL '5 minutes'
+     RETURNING *`,
+    [row.booking_id, row.location_id, reminder.key]
+  );
+  const log = claim.rows[0];
+  if (!log) return { skipped: true, reason: "already_sent_or_claimed" };
+
+  try {
+    const contactId = row.crm_contact_id || await upsertCrmContact({
+      locationId: row.location_id,
+      firstName: row.first_name,
+      lastName: row.last_name,
+      email: row.customer_email || undefined,
+      phone: row.customer_phone || undefined,
+    });
+    if (contactId && !row.crm_contact_id) {
+      await pool.query(`UPDATE bookings SET crm_contact_id = $2 WHERE id = $1`, [row.booking_id, contactId]);
+    }
+    const smsResult = log.sms_status === "sent" || !row.customer_phone || !contactId
+      ? { success: log.sms_status === "sent", skipped: true }
+      : await sendCrmSmsToContact({ locationId: row.location_id, contactId, message: reminder.message });
+    const emailResult = log.email_status === "sent" || !row.customer_email || !contactId
+      ? { success: log.email_status === "sent", skipped: true }
+      : await sendCrmEmailToContact({
+          locationId: row.location_id,
+          contactId,
+          subject: reminder.subject,
+          message: reminder.message,
+          html: `<div style="font-family:Arial,sans-serif;line-height:1.7;color:#172554"><h2>${escapeHtml(reminder.subject)}</h2><p>${escapeHtml(reminder.message)}</p></div>`,
+        });
+    const smsStatus = smsResult.success ? "sent" : (smsResult.skipped ? "skipped" : "failed");
+    const emailStatus = emailResult.success ? "sent" : (emailResult.skipped ? "skipped" : "failed");
+    const errors = [smsResult.error, emailResult.error].filter(Boolean).join(" | ").slice(0, 1000) || null;
+    await pool.query(
+      `UPDATE rental_notification_log
+       SET sms_status=$2, email_status=$3, last_error=$4,
+           sent_at=CASE WHEN $2='sent' OR $3='sent' THEN COALESCE(sent_at,NOW()) ELSE sent_at END,
+           updated_at=NOW()
+       WHERE id=$1`,
+      [log.id, smsStatus, emailStatus, errors]
+    );
+    return { success: smsStatus === "sent" || emailStatus === "sent", sms_status: smsStatus, email_status: emailStatus };
+  } catch (err) {
+    await pool.query(`UPDATE rental_notification_log SET last_error=$2, updated_at=NOW() WHERE id=$1`, [log.id, String(err.message || err).slice(0, 1000)]).catch(() => {});
+    throw err;
+  }
+}
+
+async function processRentalOverdueSweep() {
+  await ensureRentalCloseoutsForConfirmedBookings();
+  const now = new Date();
+  const result = await pool.query(
+    `SELECT c.*, b.id AS booking_id, b.first_name, b.last_name, b.customer_email, b.customer_phone,
+            b.crm_contact_id, b.vehicle_type, p.business_name
+     FROM rental_closeouts c
+     INNER JOIN bookings b ON b.id = c.booking_id
+     LEFT JOIN profiles p ON p.location_id = c.location_id
+     WHERE c.lifecycle_status IN ('active','overdue')
+       AND c.scheduled_return_at <= NOW() + INTERVAL '70 minutes'
+     ORDER BY c.scheduled_return_at ASC
+     LIMIT 200`
+  );
+  let overdueCount = 0;
+  let notificationCount = 0;
+  for (const row of result.rows) {
+    const graceEndsMs = new Date(row.scheduled_return_at).getTime() + Number(row.grace_minutes || 30) * 60000;
+    if (row.lifecycle_status === "active" && Number.isFinite(graceEndsMs) && now.getTime() >= graceEndsMs) {
+      const event = [{ status: "overdue", action: "background_grace_period_expired", server_recorded_at: now.toISOString() }];
+      await pool.query(
+        `UPDATE rental_closeouts SET lifecycle_status='overdue', status_history_json=status_history_json || $2::jsonb, updated_at=NOW()
+         WHERE booking_id=$1 AND lifecycle_status='active'`,
+        [row.booking_id, JSON.stringify(event)]
+      );
+      row.lifecycle_status = "overdue";
+      overdueCount += 1;
+    }
+    const reminder = buildRentalReminder(row, now);
+    if (reminder) {
+      const sent = await sendRentalReminder(row, reminder).catch((err) => {
+        console.error("[rental-monitor] reminder failed", { bookingId: row.booking_id, key: reminder.key, error: err.message || err });
+        return null;
+      });
+      if (sent?.success) notificationCount += 1;
+    }
+  }
+  return { checked: result.rows.length, marked_overdue: overdueCount, notifications_sent: notificationCount };
+}
+
+app.get("/api/rental-operations", requireRentalOperatorToken, async (req, res) => {
+  try {
+    const locationId = String(req.query.location_id || "").trim();
+    if (!locationId) return res.status(400).json({ error: "location_id is required." });
+    await ensureRentalCloseoutsForConfirmedBookings(locationId);
+    const branding = await getCustomerPortalBranding(locationId);
+    const result = await pool.query(
+      `SELECT c.*, b.id AS booking_id, b.first_name, b.last_name, b.customer_email, b.customer_phone,
+              b.vehicle_slot_id, b.vehicle_type, b.start_time, b.end_time, b.status AS booking_status
+       FROM rental_closeouts c
+       INNER JOIN bookings b ON b.id = c.booking_id
+       WHERE c.location_id=$1
+         AND (LOWER(COALESCE(b.status, '')) = 'confirmed' OR c.lifecycle_status <> 'reserved')
+       ORDER BY CASE c.lifecycle_status WHEN 'overdue' THEN 0 WHEN 'active' THEN 1 WHEN 'returned' THEN 2 WHEN 'reserved' THEN 3 ELSE 4 END,
+                c.scheduled_return_at ASC
+       LIMIT 250`,
+      [locationId]
+    );
+    const now = new Date();
+    const rentals = result.rows.map((row) => ({ ...row, ...getRentalLiveCalculation(row, now) }));
+    return res.json({ success: true, branding, rentals, server_time: now.toISOString() });
+  } catch (err) {
+    console.error("Rental operations load error:", err);
+    return res.status(500).json({ error: err.message || "Failed to load rental operations." });
+  }
+});
+
+app.get("/api/rentals/:bookingId/closeout", requireRentalOperatorToken, async (req, res) => {
   try {
     const bookingId = Number(req.params.bookingId || 0);
     const locationId = String(req.query.location_id || "").trim();
@@ -18884,7 +19177,7 @@ app.get("/api/rentals/:bookingId/closeout", requirePaymentOperatorToken, async (
   }
 });
 
-app.post("/api/rentals/:bookingId/events", requirePaymentOperatorToken, async (req, res) => {
+app.post("/api/rentals/:bookingId/events", requireRentalOperatorToken, async (req, res) => {
   try {
     const bookingId = Number(req.params.bookingId || 0);
     const locationId = String(req.body.location_id || "").trim();
@@ -18938,7 +19231,7 @@ app.post("/api/rentals/:bookingId/events", requirePaymentOperatorToken, async (r
   }
 });
 
-app.post("/api/rentals/:bookingId/overage-charge", requirePaymentOperatorToken, async (req, res) => {
+app.post("/api/rentals/:bookingId/overage-charge", requireRentalOperatorToken, async (req, res) => {
   let chargeId = null;
   try {
     const bookingId = Number(req.params.bookingId || 0);
@@ -20939,6 +21232,11 @@ app.listen(PORT, () => {
       console.error("[calendar-sync] Failed to initialize confirmed booking backfill:", err);
     });
   }, 20_000);
+  setTimeout(() => {
+    processRentalOverdueSweep()
+      .then((result) => console.log("[rental-monitor] initial sweep", result))
+      .catch((err) => console.error("[rental-monitor] initial sweep failed:", err));
+  }, 120_000);
   setInterval(() => {
     processDailyInstantBookingNotifications().catch((err) => {
       console.error("[instant-booking] Daily notification loop error:", err);
@@ -20954,4 +21252,9 @@ app.listen(PORT, () => {
       console.error("[calendar-sync] Confirmed booking backfill loop error:", err);
     });
   }, 20 * 60 * 1000);
+  setInterval(() => {
+    processRentalOverdueSweep().catch((err) => {
+      console.error("[rental-monitor] sweep failed:", err);
+    });
+  }, 2 * 60 * 1000);
 });
