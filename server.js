@@ -17831,7 +17831,8 @@ app.post("/api/create-checkout-session", async (req, res) => {
       statusCode: err?.statusCode || null,
     };
     console.error("Stripe checkout session error:", stripeMessage, stripeContext);
-    return res.status(500).json({
+    const responseStatus = Number(err?.statusCode);
+    return res.status(responseStatus >= 400 && responseStatus < 600 ? responseStatus : 500).json({
       error: stripeMessage,
       stripe: stripeContext,
     });
