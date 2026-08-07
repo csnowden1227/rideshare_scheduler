@@ -3481,6 +3481,68 @@ async function ensureStripeCustomerForCustomerAccount(account) {
   };
 }
 
+async function findOrCreateRentalCustomerAccount({ locationId, firstName, lastName, email, phone }) {
+  await ensureCustomerAccountTables();
+  const normalizedLocationId = String(locationId || "").trim();
+  const normalizedFirstName = normalizeCustomerName(firstName);
+  const normalizedLastName = normalizeCustomerName(lastName);
+  const normalizedEmail = normalizeCustomerEmail(email);
+  const normalizedPhone = normalizePhoneNumber(phone || "") || String(phone || "").trim();
+  if (!normalizedLocationId || !normalizedFirstName || !normalizedLastName || !normalizedEmail || !normalizedPhone) {
+    const err = new Error("First name, last name, email, and mobile phone are required for a rental booking.");
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const existingResult = await pool.query(
+    `SELECT * FROM customer_accounts
+     WHERE location_id = $1 AND LOWER(email) = $2
+     LIMIT 1`,
+    [normalizedLocationId, normalizedEmail]
+  );
+  if (existingResult.rows.length) {
+    const updatedResult = await pool.query(
+      `UPDATE customer_accounts
+       SET first_name = COALESCE(NULLIF(first_name, ''), $2),
+           last_name = COALESCE(NULLIF(last_name, ''), $3),
+           phone = COALESCE(NULLIF(phone, ''), $4),
+           updated_at = NOW()
+       WHERE id = $1
+       RETURNING *`,
+      [existingResult.rows[0].id, normalizedFirstName, normalizedLastName, normalizedPhone]
+    );
+    return { account: updatedResult.rows[0], created: false };
+  }
+
+  const accountId = randomUUID();
+  const generatedPassword = randomBytes(32).toString("base64url");
+  const insertResult = await pool.query(
+    `INSERT INTO customer_accounts (
+       id, location_id, first_name, last_name, email, phone, password_hash
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7)
+     ON CONFLICT (location_id, (LOWER(email))) DO NOTHING
+     RETURNING *`,
+    [
+      accountId,
+      normalizedLocationId,
+      normalizedFirstName,
+      normalizedLastName,
+      normalizedEmail,
+      normalizedPhone,
+      hashCustomerPassword(generatedPassword),
+    ]
+  );
+  if (insertResult.rows.length) return { account: insertResult.rows[0], created: true };
+
+  const racedResult = await pool.query(
+    `SELECT * FROM customer_accounts
+     WHERE location_id = $1 AND LOWER(email) = $2
+     LIMIT 1`,
+    [normalizedLocationId, normalizedEmail]
+  );
+  return { account: racedResult.rows[0], created: false };
+}
+
 function mapSavedStripePaymentMethod(method, defaultPaymentMethodId = "") {
   const card = method?.card || {};
   const billingDetails = method?.billing_details || {};
@@ -17317,13 +17379,12 @@ app.post("/api/create-checkout-session", async (req, res) => {
         }
       : livePaymentProfile;
     const paymentProvider = paymentProfile.provider;
+    const isRentalBooking = normalizeBookingMode(req.body.booking_mode) === "rental";
     const customerAccountSession = await getCustomerAccountSessionFromRequest(req);
     const isPortalBooking = Boolean(customerAccountSession);
-    const requiresSavedPaymentMethod = isPortalBooking && !practiceMode;
-    const isRentalBooking = normalizeBookingMode(req.body.booking_mode) === "rental";
-    if (isRentalBooking && !isPortalBooking) {
-      return res.status(401).json({ error: "Car rentals must be booked through a signed-in customer portal so the required payment method and overtime authorization can be saved." });
-    }
+    const requiresSavedPaymentMethod = (isPortalBooking || isRentalBooking) && !practiceMode;
+    let paymentCustomerAccount = customerAccountSession;
+    let customerAccountCreated = false;
     if (isPortalBooking && String(customerAccountSession.location_id || "") !== String(locationId || "")) {
       return res.status(403).json({ error: "This portal session does not belong to the selected business." });
     }
@@ -17363,7 +17424,7 @@ app.post("/api/create-checkout-session", async (req, res) => {
       return res.status(400).json({ error: "Please authorize the saved payment method for approved service extensions and trip adjustments." });
     }
     if (requiresSavedPaymentMethod && normalizePaymentProvider(paymentProvider) !== "stripe") {
-      return res.status(400).json({ error: "Portal bookings require Stripe so a payment method can be saved securely for approved service extensions." });
+      return res.status(400).json({ error: "Rental and portal bookings require Stripe so the payment method can be saved securely for approved extensions and verified overage." });
     }
     let portalStripeCustomer = null;
 
@@ -17604,7 +17665,22 @@ app.post("/api/create-checkout-session", async (req, res) => {
     }
 
     if (requiresSavedPaymentMethod) {
-      portalStripeCustomer = await ensureStripeCustomerForCustomerAccount(customerAccountSession);
+      if (!paymentCustomerAccount && isRentalBooking) {
+        const accountResult = await findOrCreateRentalCustomerAccount({
+          locationId,
+          firstName: req.body.first_name,
+          lastName: req.body.last_name,
+          email: req.body.email,
+          phone: req.body.phone,
+        });
+        paymentCustomerAccount = accountResult.account;
+        customerAccountCreated = accountResult.created;
+        if (customerAccountCreated) {
+          const accountSession = await createCustomerAccountSession({ accountId: paymentCustomerAccount.id, locationId });
+          setCustomerSessionCookie(res, accountSession.token);
+        }
+      }
+      portalStripeCustomer = await ensureStripeCustomerForCustomerAccount(paymentCustomerAccount);
     }
 
     const bookingResult = await createBookingRecord(
@@ -17683,7 +17759,7 @@ app.post("/api/create-checkout-session", async (req, res) => {
           driver_program_location_id: String(req.body.location_id || ""),
         } : {}),
         ...(requiresSavedPaymentMethod ? {
-          customer_account_id: String(customerAccountSession.id),
+          customer_account_id: String(paymentCustomerAccount.id),
           card_authorization_version: CUSTOMER_CARD_AUTHORIZATION_VERSION,
         } : {}),
       },
@@ -17706,7 +17782,7 @@ app.post("/api/create-checkout-session", async (req, res) => {
            user_agent = EXCLUDED.user_agent`,
         [
           String(bookingId),
-          customerAccountSession.id,
+          paymentCustomerAccount.id,
           locationId,
           portalStripeCustomer.stripeCustomerId,
           CUSTOMER_CARD_AUTHORIZATION_VERSION,
@@ -17729,6 +17805,7 @@ app.post("/api/create-checkout-session", async (req, res) => {
       balance_due_deadline: balanceDueDeadline,
       payment_provider: paymentProvider,
       practice_mode: practiceMode,
+      customer_account_created: customerAccountCreated,
       booking: bookingResult.booking,
       waitlist_recommended: Boolean(calendarConflict),
     });
