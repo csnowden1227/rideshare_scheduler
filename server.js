@@ -234,14 +234,15 @@ let dispatchTablesReady = null;
 let tripTrackingTablesReady = null;
 let shortLinksTableReady = null;
 let customerAccountTablesReady = null;
+let rentalManagementTablesReady = null;
 let insuranceModuleTablesReady = null;
 let instantBookingNotificationTablesReady = null;
 let driverPartnerSetupAccessTokensReady = null;
 
 const CUSTOMER_ACCOUNT_SESSION_COOKIE = "crm_customer_session";
 const CUSTOMER_ACCOUNT_SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 30;
-const CUSTOMER_CARD_AUTHORIZATION_VERSION = "portal-extension-v1";
-const CUSTOMER_CARD_AUTHORIZATION_TEXT = "I authorize this business to save my payment method and charge it for approved additional service time, extensions, tolls, parking, or other agreed trip adjustments.";
+const CUSTOMER_CARD_AUTHORIZATION_VERSION = "portal-extension-v2";
+const CUSTOMER_CARD_AUTHORIZATION_TEXT = "I authorize this business to save my payment method and charge it for approved additional service time, extensions, tolls, parking, or other agreed trip adjustments. Car rental overtime has a 30-minute grace period and is billed by the minute at 1.25 times the original booked hourly rate.";
 const CUSTOMER_PASSWORD_RESET_TTL_MS = 1000 * 60 * 60;
 const DEFAULT_DRIVER_PARTNER_LOCATION_ID = "ouXMpSTMKm4kREXw3kzP";
 const DRIVER_PARTNER_PROGRAM_DEMO_LOCATION_IDS = new Set([DEFAULT_DRIVER_PARTNER_LOCATION_ID]);
@@ -525,6 +526,9 @@ async function ensureBookingSyncColumns() {
       await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS vehicle_slot_id TEXT`);
       await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS vehicle_type TEXT`);
       await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS calendar_id TEXT`);
+      await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS hourly_rate NUMERIC`);
+      await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS hourly_hours NUMERIC`);
+      await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS hourly_total NUMERIC`);
       await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS driver_assignment_sms_sent_at TIMESTAMPTZ`);
       await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS driver_paid_in_full_sms_sent_at TIMESTAMPTZ`);
       await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS driver_sms_last_attempt_at TIMESTAMPTZ`);
@@ -744,6 +748,66 @@ async function ensureCustomerAccountTables() {
     });
   }
   return customerAccountTablesReady;
+}
+
+async function ensureRentalManagementTables() {
+  if (!rentalManagementTablesReady) {
+    rentalManagementTablesReady = (async () => {
+      await ensureBookingSyncColumns();
+      await ensureCustomerAccountTables();
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS rental_closeouts (
+          booking_id BIGINT PRIMARY KEY REFERENCES bookings(id) ON DELETE CASCADE,
+          location_id TEXT NOT NULL,
+          lifecycle_status TEXT NOT NULL DEFAULT 'reserved',
+          scheduled_return_at TIMESTAMPTZ NOT NULL,
+          vehicle_checked_out_at TIMESTAMPTZ,
+          customer_returned_at TIMESTAMPTZ,
+          return_verified_at TIMESTAMPTZ,
+          checked_out_evidence JSONB NOT NULL DEFAULT '{}'::jsonb,
+          return_evidence JSONB NOT NULL DEFAULT '{}'::jsonb,
+          verification_evidence JSONB NOT NULL DEFAULT '{}'::jsonb,
+          booked_hourly_rate NUMERIC,
+          grace_minutes INTEGER NOT NULL DEFAULT 30,
+          overage_multiplier NUMERIC NOT NULL DEFAULT 1.25,
+          billable_minutes INTEGER NOT NULL DEFAULT 0,
+          calculated_overage_amount NUMERIC NOT NULL DEFAULT 0,
+          status_history_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_rental_closeouts_location ON rental_closeouts(location_id)`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_rental_closeouts_status ON rental_closeouts(lifecycle_status)`);
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS rental_overage_charges (
+          id TEXT PRIMARY KEY,
+          booking_id BIGINT NOT NULL REFERENCES bookings(id) ON DELETE CASCADE,
+          location_id TEXT NOT NULL,
+          customer_account_id TEXT NOT NULL REFERENCES customer_accounts(id) ON DELETE RESTRICT,
+          amount NUMERIC NOT NULL,
+          reason TEXT NOT NULL,
+          evidence_snapshot JSONB NOT NULL,
+          stripe_customer_id TEXT NOT NULL,
+          stripe_payment_method_id TEXT,
+          stripe_payment_intent_id TEXT,
+          stripe_receipt_url TEXT,
+          idempotency_key TEXT NOT NULL UNIQUE,
+          status TEXT NOT NULL DEFAULT 'pending',
+          failure_code TEXT,
+          failure_message TEXT,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `);
+      await pool.query(`ALTER TABLE rental_overage_charges ADD COLUMN IF NOT EXISTS stripe_receipt_url TEXT`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_rental_overage_charges_booking ON rental_overage_charges(booking_id, created_at DESC)`);
+    })().catch((err) => {
+      rentalManagementTablesReady = null;
+      throw err;
+    });
+  }
+  return rentalManagementTablesReady;
 }
 
 async function ensureDriverPartnerSetupAccessTokensTable() {
@@ -8517,6 +8581,18 @@ async function requireWizardToken(req, res, next) {
   return res.status(403).send("Forbidden");
 }
 
+function requirePaymentOperatorToken(req, res, next) {
+  const expectedToken = String(process.env.SETUP_WIZARD_TOKEN || "").trim();
+  if (!expectedToken) {
+    return res.status(503).send("Payment operator access is not configured.");
+  }
+  const providedToken = String(getWizardToken(req) || "").trim();
+  if (providedToken !== expectedToken) {
+    return res.status(403).send("Forbidden");
+  }
+  return next();
+}
+
 app.use(express.json({ limit: "25mb" }));
 app.use(express.urlencoded({ extended: true, limit: "25mb" }));
 app.get("/setup-wizard.html", requireWizardToken, (req, res) => {
@@ -8652,6 +8728,12 @@ app.get("/insurance-manager.html", requireWizardToken, (req, res) => {
 });
 app.get("/insurance-manager", requireWizardToken, (req, res) => {
   res.sendFile(path.join(__dirname, "public", "insurance-manager.html"));
+});
+app.get("/rental-closeout.html", requirePaymentOperatorToken, (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "rental-closeout.html"));
+});
+app.get("/rental-closeout", requirePaymentOperatorToken, (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "rental-closeout.html"));
 });
 app.get("/rideshare-onboarding.html", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "rideshare-onboarding.html"));
@@ -10758,6 +10840,7 @@ function normalizeBookingMode(value) {
     "fixed",
     "event",
     "hourly",
+    "rental",
   ]);
 
   return validModes.has(normalized)
@@ -11411,7 +11494,7 @@ function calculateRideSection({
     });
   }
 
-  if (mode === "hourly") {
+  if (mode === "hourly" || mode === "rental") {
     const hourlyOption =
       resolveHourlyOption({
         hourlyBookings,
@@ -11420,11 +11503,12 @@ function calculateRideSection({
           vehicle.vehicle_slot_id,
       });
 
-    return calculateHourlyPricing({
+    const hourlyResult = calculateHourlyPricing({
       hourlyOption,
       requestedHours: hourlyHours,
       vehicle,
     });
+    return mode === "rental" ? { ...hourlyResult, mode: "rental" } : hourlyResult;
   }
 
   const standardResult =
@@ -12440,7 +12524,7 @@ function buildCalendarLinks({ bookingId, title, description, location, startTime
   };
 }
 
-async function stripeFormRequest(pathname, params = {}, method = "POST", apiKey = envStripeSecretKey) {
+async function stripeFormRequest(pathname, params = {}, method = "POST", apiKey = envStripeSecretKey, extraHeaders = {}) {
   const normalizedKey = normalizeStripeSecretKey(apiKey);
   if (!normalizedKey) {
     throw new Error("Stripe is not configured on the backend.");
@@ -12457,6 +12541,7 @@ async function stripeFormRequest(pathname, params = {}, method = "POST", apiKey 
     headers: {
       Authorization: `Bearer ${normalizedKey}`,
       "Content-Type": "application/x-www-form-urlencoded",
+      ...extraHeaders,
     },
     body: method === "GET" ? undefined : body.toString(),
   });
@@ -16416,6 +16501,8 @@ async function createBookingRecord(input, {
     throw new Error("Missing required booking fields.");
   }
 
+  await ensureBookingSyncColumns();
+
     const profile = await getBookingProfileRow(location_id, [
       "crm_webhook_url",
       "business_name",
@@ -16512,7 +16599,7 @@ async function createBookingRecord(input, {
   const vehicle_type = fleetVehicle?.vehicle_type || fleetVehicle?.name || null;
   const vehicle_category = fleetVehicle?.vehicle_category || null;
   const bookingModeNormalized = normalizeBookingMode(booking_mode);
-  const isHourlyBooking = bookingModeNormalized === "hourly";
+  const isHourlyBooking = bookingModeNormalized === "hourly" || bookingModeNormalized === "rental";
   const resolvedHourlyHoursForCalendar = isHourlyBooking
     ? Math.max(4, Number(hourly_hours || 0) || 0)
     : null;
@@ -16583,7 +16670,7 @@ async function createBookingRecord(input, {
       .split("|||")[0]
       .trim()
     || null;
-  const hourlyOption = bookingModeNormalized === "hourly"
+  const hourlyOption = isHourlyBooking
     ? resolveHourlyOption({
         hourlyBookings: safeParseJson(profile.hourly_bookings, []),
         selectedHourlyBooking: selected_hourly_booking,
@@ -16636,9 +16723,12 @@ async function createBookingRecord(input, {
       deposit_percent,
       balance_due,
       status,
-      booking_mode
+      booking_mode,
+      hourly_rate,
+      hourly_hours,
+      hourly_total
     ) VALUES (
-      $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22
+      $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25
     )
     RETURNING id, booking_mode`,
     [
@@ -16663,7 +16753,10 @@ async function createBookingRecord(input, {
       numericDepositPercent,
       balance_due,
       bookingStatus,
-      booking_mode
+      booking_mode,
+      resolvedHourlyRate,
+      resolvedHourlyHours,
+      resolvedHourlyTotal
     ]
   );
 
@@ -16986,6 +17079,10 @@ app.post("/api/create-checkout-session", async (req, res) => {
     const customerAccountSession = await getCustomerAccountSessionFromRequest(req);
     const isPortalBooking = Boolean(customerAccountSession);
     const requiresSavedPaymentMethod = isPortalBooking && !practiceMode;
+    const isRentalBooking = normalizeBookingMode(req.body.booking_mode) === "rental";
+    if (isRentalBooking && !isPortalBooking) {
+      return res.status(401).json({ error: "Car rentals must be booked through a signed-in customer portal so the required payment method and overtime authorization can be saved." });
+    }
     if (isPortalBooking && String(customerAccountSession.location_id || "") !== String(locationId || "")) {
       return res.status(403).json({ error: "This portal session does not belong to the selected business." });
     }
@@ -17086,7 +17183,7 @@ app.post("/api/create-checkout-session", async (req, res) => {
       ) || null;
     }
 
-    if (String(req.body.booking_mode || "").trim().toLowerCase() === "hourly") {
+    if (["hourly", "rental"].includes(String(req.body.booking_mode || "").trim().toLowerCase())) {
       const hourlyHours = Number(req.body.hourly_hours || 0);
       if (!Number.isFinite(hourlyHours) || hourlyHours < 4) {
         return res.status(400).json({ error: "4 hour minimum." });
@@ -17094,11 +17191,12 @@ app.post("/api/create-checkout-session", async (req, res) => {
     }
 
     const bookingModeNormalized = normalizeBookingMode(req.body.booking_mode);
-    const hourlyHoursForCalendar = bookingModeNormalized === "hourly"
+    const isTimeBasedBooking = bookingModeNormalized === "hourly" || bookingModeNormalized === "rental";
+    const hourlyHoursForCalendar = isTimeBasedBooking
       ? Math.max(4, Number(req.body.hourly_hours || 0) || 0)
       : null;
 
-    const routeMetrics = bookingModeNormalized === "hourly"
+    const routeMetrics = isTimeBasedBooking
       ? {
           distanceMiles: 0,
           durationMinutes: 0,
@@ -17113,10 +17211,10 @@ app.post("/api/create-checkout-session", async (req, res) => {
           destinationLng: req.body.dropoff_lng,
           mapsApiKey: profile.maps_api_key || null,
         });
-    const generalBufferMinutes = bookingModeNormalized === "hourly"
+    const generalBufferMinutes = isTimeBasedBooking
       ? 0
       : (parseInt(fleetVehicle?.outbound_buffer_min, 10) || BOOKING_BUFFER_MINUTES);
-    const additionalTrafficBufferMinutes = bookingModeNormalized === "hourly"
+    const additionalTrafficBufferMinutes = isTimeBasedBooking
       ? 0
       : getAdditionalTrafficBufferMinutes({
           peakWindows: safeParseJson(profile.peak_windows),
@@ -17125,7 +17223,7 @@ app.post("/api/create-checkout-session", async (req, res) => {
           vehicleType: fleetVehicle?.vehicle_type || "",
         });
     // Hourly bookings use only the requested hours; standard bookings use route ETA plus buffers.
-    const bookingDurationMinutes = bookingModeNormalized === "hourly" && hourlyHoursForCalendar
+    const bookingDurationMinutes = isTimeBasedBooking && hourlyHoursForCalendar
       ? (hourlyHoursForCalendar * 60)
       : (routeMetrics.durationMinutes + generalBufferMinutes + additionalTrafficBufferMinutes);
     const calculatedEndTime = new Date(
@@ -18502,6 +18600,280 @@ app.get("/api/driver-dashboard/:location_id", async (req, res) => {
   }
 });
 
+function buildRentalEvidence(input = {}, req = null) {
+  const photos = Array.isArray(input.photos)
+    ? input.photos.slice(0, 8).map((value) => String(value || "").trim()).filter(Boolean)
+    : [];
+  const lat = Number(input.lat);
+  const lng = Number(input.lng);
+  return {
+    operator_name: String(input.operator_name || "").trim().slice(0, 200),
+    odometer: String(input.odometer || "").trim().slice(0, 100),
+    fuel_or_battery: String(input.fuel_or_battery || "").trim().slice(0, 100),
+    notes: String(input.notes || "").trim().slice(0, 2000),
+    lat: Number.isFinite(lat) ? lat : null,
+    lng: Number.isFinite(lng) ? lng : null,
+    photos,
+    server_recorded_at: new Date().toISOString(),
+    ip_address: req ? String(req.headers["x-forwarded-for"] || req.ip || "").split(",")[0].trim() || null : null,
+    user_agent: req ? String(req.get("user-agent") || "").slice(0, 1000) || null : null,
+  };
+}
+
+function calculateRentalOverage({ scheduledReturnAt, customerReturnedAt, hourlyRate, graceMinutes = 30, multiplier = 1.25 }) {
+  const scheduledMs = new Date(scheduledReturnAt).getTime();
+  const returnedMs = customerReturnedAt ? new Date(customerReturnedAt).getTime() : NaN;
+  const normalizedRate = Number(hourlyRate || 0);
+  if (!Number.isFinite(scheduledMs) || !Number.isFinite(returnedMs) || normalizedRate <= 0) {
+    return { billableMinutes: 0, overageHourlyRate: Number((normalizedRate * multiplier).toFixed(2)) || 0, amount: 0 };
+  }
+  const elapsedMinutes = Math.max(0, Math.ceil((returnedMs - scheduledMs) / 60000));
+  const billableMinutes = Math.max(0, elapsedMinutes - Math.max(0, Number(graceMinutes || 0)));
+  const overageHourlyRate = Number((normalizedRate * Number(multiplier || 1.25)).toFixed(2));
+  const amount = Number(((billableMinutes / 60) * overageHourlyRate).toFixed(2));
+  return { billableMinutes, overageHourlyRate, amount };
+}
+
+async function loadRentalCloseoutRecord({ bookingId, locationId, createIfMissing = true }) {
+  await ensureRentalManagementTables();
+  const bookingResult = await pool.query(
+    `SELECT id, location_id, booking_mode, first_name, last_name, customer_email, customer_phone,
+            vehicle_slot_id, vehicle_type, start_time, end_time, hourly_rate, hourly_hours, hourly_total, total_price
+     FROM bookings
+     WHERE id = $1 AND location_id = $2
+     LIMIT 1`,
+    [bookingId, locationId]
+  );
+  const booking = bookingResult.rows[0];
+  if (!booking) {
+    const err = new Error("Rental booking not found.");
+    err.statusCode = 404;
+    throw err;
+  }
+  if (normalizeBookingMode(booking.booking_mode) !== "rental") {
+    const err = new Error("This closeout protocol is available only for Car Rental bookings.");
+    err.statusCode = 400;
+    throw err;
+  }
+  if (createIfMissing) {
+    await pool.query(
+      `INSERT INTO rental_closeouts (
+         booking_id, location_id, scheduled_return_at, booked_hourly_rate, status_history_json
+       ) VALUES ($1, $2, $3, $4, $5::jsonb)
+       ON CONFLICT (booking_id) DO NOTHING`,
+      [booking.id, booking.location_id, booking.end_time, booking.hourly_rate, JSON.stringify([{ status: "reserved", server_recorded_at: new Date().toISOString() }])]
+    );
+  }
+  const closeoutResult = await pool.query(`SELECT * FROM rental_closeouts WHERE booking_id = $1 LIMIT 1`, [booking.id]);
+  const chargeResult = await pool.query(
+    `SELECT id, amount, reason, stripe_payment_intent_id, status, failure_code, failure_message, created_at, updated_at
+     FROM rental_overage_charges WHERE booking_id = $1 ORDER BY created_at DESC`,
+    [booking.id]
+  );
+  const trackingResult = await pool.query(
+    `SELECT status, current_lat, current_lng, last_location_at, status_history_json
+     FROM trip_tracking_sessions WHERE booking_id = $1 LIMIT 1`,
+    [booking.id]
+  ).catch(() => ({ rows: [] }));
+  let closeout = closeoutResult.rows[0];
+  const graceEndsAt = new Date(closeout.scheduled_return_at).getTime() + (Number(closeout.grace_minutes || 30) * 60000);
+  if (closeout.lifecycle_status === "active" && Number.isFinite(graceEndsAt) && Date.now() > graceEndsAt) {
+    const overdueEvent = [{ status: "overdue", action: "grace_period_expired", server_recorded_at: new Date().toISOString() }];
+    const overdueResult = await pool.query(
+      `UPDATE rental_closeouts
+       SET lifecycle_status = 'overdue',
+           status_history_json = status_history_json || $2::jsonb,
+           updated_at = NOW()
+       WHERE booking_id = $1 AND lifecycle_status = 'active'
+       RETURNING *`,
+      [booking.id, JSON.stringify(overdueEvent)]
+    );
+    closeout = overdueResult.rows[0] || closeout;
+  }
+  const calculation = calculateRentalOverage({
+    scheduledReturnAt: closeout.scheduled_return_at,
+    customerReturnedAt: closeout.customer_returned_at,
+    hourlyRate: closeout.booked_hourly_rate,
+    graceMinutes: closeout.grace_minutes,
+    multiplier: closeout.overage_multiplier,
+  });
+  return { booking, closeout: { ...closeout, ...calculation }, tracking: trackingResult.rows[0] || null, charges: chargeResult.rows };
+}
+
+app.get("/api/rentals/:bookingId/closeout", requirePaymentOperatorToken, async (req, res) => {
+  try {
+    const bookingId = Number(req.params.bookingId || 0);
+    const locationId = String(req.query.location_id || "").trim();
+    if (!bookingId || !locationId) return res.status(400).json({ error: "bookingId and location_id are required." });
+    return res.json({ success: true, ...(await loadRentalCloseoutRecord({ bookingId, locationId })) });
+  } catch (err) {
+    return res.status(err.statusCode || 500).json({ error: err.message || "Failed to load rental closeout." });
+  }
+});
+
+app.post("/api/rentals/:bookingId/events", requirePaymentOperatorToken, async (req, res) => {
+  try {
+    const bookingId = Number(req.params.bookingId || 0);
+    const locationId = String(req.body.location_id || "").trim();
+    const action = String(req.body.action || "").trim().toLowerCase();
+    const allowedActions = new Set(["vehicle_checked_out", "customer_returned", "return_verified"]);
+    if (!bookingId || !locationId || !allowedActions.has(action)) {
+      return res.status(400).json({ error: "A valid booking, location, and rental event are required." });
+    }
+    const current = await loadRentalCloseoutRecord({ bookingId, locationId });
+    const evidence = buildRentalEvidence(req.body.evidence || {}, req);
+    if (!evidence.operator_name) return res.status(400).json({ error: "Operator name is required for the evidence record." });
+    if (action !== "return_verified" && !evidence.odometer) {
+      return res.status(400).json({ error: "Odometer evidence is required." });
+    }
+    if (action === "customer_returned" && evidence.photos.length === 0 && (evidence.lat == null || evidence.lng == null)) {
+      return res.status(400).json({ error: "Return evidence requires GPS coordinates or at least one photo." });
+    }
+    const transitions = {
+      vehicle_checked_out: { from: ["reserved"], to: "active", timestamp: "vehicle_checked_out_at", evidence: "checked_out_evidence" },
+      customer_returned: { from: ["active", "overdue"], to: "returned", timestamp: "customer_returned_at", evidence: "return_evidence" },
+      return_verified: { from: ["returned"], to: "verified", timestamp: "return_verified_at", evidence: "verification_evidence" },
+    };
+    const transition = transitions[action];
+    if (!transition.from.includes(current.closeout.lifecycle_status)) {
+      return res.status(409).json({ error: `Cannot record ${action} while rental status is ${current.closeout.lifecycle_status}.` });
+    }
+    const event = { status: transition.to, action, ...evidence };
+    const rateOverride = Number(req.body.hourly_rate_override || 0);
+    if (!Number(current.closeout.booked_hourly_rate || 0) && rateOverride > 0) {
+      if (!evidence.notes) return res.status(400).json({ error: "A note is required when supplying a missing original hourly rate." });
+    }
+    await pool.query(
+      `UPDATE rental_closeouts
+       SET lifecycle_status = $2,
+           ${transition.timestamp} = NOW(),
+           ${transition.evidence} = $3::jsonb,
+           booked_hourly_rate = COALESCE(booked_hourly_rate, NULLIF($4, 0)),
+           status_history_json = status_history_json || $5::jsonb,
+           updated_at = NOW()
+       WHERE booking_id = $1`,
+      [bookingId, transition.to, JSON.stringify(evidence), rateOverride, JSON.stringify([event])]
+    );
+    const updated = await loadRentalCloseoutRecord({ bookingId, locationId });
+    await pool.query(
+      `UPDATE rental_closeouts SET billable_minutes = $2, calculated_overage_amount = $3 WHERE booking_id = $1`,
+      [bookingId, updated.closeout.billableMinutes, updated.closeout.amount]
+    );
+    return res.json({ success: true, ...updated });
+  } catch (err) {
+    return res.status(err.statusCode || 500).json({ error: err.message || "Failed to record rental event." });
+  }
+});
+
+app.post("/api/rentals/:bookingId/overage-charge", requirePaymentOperatorToken, async (req, res) => {
+  let chargeId = null;
+  try {
+    const bookingId = Number(req.params.bookingId || 0);
+    const locationId = String(req.body.location_id || "").trim();
+    const reason = String(req.body.reason || "Rental overtime after verified return").trim().slice(0, 1000);
+    const record = await loadRentalCloseoutRecord({ bookingId, locationId });
+    if (record.closeout.lifecycle_status !== "verified") {
+      return res.status(409).json({ error: "Staff must verify the vehicle return before charging overtime." });
+    }
+    const calculatedAmount = Number(record.closeout.amount || 0);
+    const requestedAmount = req.body.amount == null || req.body.amount === "" ? calculatedAmount : Number(req.body.amount);
+    if (!Number.isFinite(requestedAmount) || requestedAmount <= 0) {
+      return res.status(400).json({ error: "There is no positive overage amount to charge." });
+    }
+    if (Math.abs(requestedAmount - calculatedAmount) > 0.009 && !String(req.body.reason || "").trim()) {
+      return res.status(400).json({ error: "A reason is required when overriding the calculated overage amount." });
+    }
+    const authorizationResult = await pool.query(
+      `SELECT a.customer_account_id, a.stripe_customer_id, ca.stripe_customer_id AS account_stripe_customer_id
+       FROM customer_booking_payment_authorizations a
+       INNER JOIN customer_accounts ca ON ca.id = a.customer_account_id
+       WHERE a.booking_id = $1 AND a.location_id = $2
+       LIMIT 1`,
+      [String(bookingId), locationId]
+    );
+    const authorization = authorizationResult.rows[0];
+    if (!authorization) {
+      return res.status(409).json({ error: "This booking does not have a saved-card authorization. Send the customer a payment request instead." });
+    }
+    const stripeCustomerId = authorization.account_stripe_customer_id || authorization.stripe_customer_id;
+    const paymentProfile = await getStripeBillingConfigForCustomerAccount(locationId);
+    const customer = await stripeFormRequest(`/v1/customers/${encodeURIComponent(stripeCustomerId)}`, {}, "GET", paymentProfile.stripeSecretKey);
+    const methods = await stripeFormRequest(`/v1/payment_methods?customer=${encodeURIComponent(stripeCustomerId)}&type=card`, {}, "GET", paymentProfile.stripeSecretKey);
+    const defaultMethodId = String(customer?.invoice_settings?.default_payment_method || "").trim();
+    const paymentMethod = (methods?.data || []).find((method) => method.id === defaultMethodId) || methods?.data?.[0];
+    if (!paymentMethod?.id) return res.status(409).json({ error: "No saved card is available for this customer." });
+
+    const amountCents = Math.round(requestedAmount * 100);
+    const verifiedKey = new Date(record.closeout.return_verified_at).getTime();
+    const idempotencyKey = `rental-overage-${bookingId}-${verifiedKey}-${amountCents}`;
+    const evidenceSnapshot = {
+      booking: record.booking,
+      closeout: record.closeout,
+      tracking: record.tracking,
+      requested_amount: Number(requestedAmount.toFixed(2)),
+      reason,
+    };
+    const existingCharge = await pool.query(`SELECT * FROM rental_overage_charges WHERE idempotency_key = $1 LIMIT 1`, [idempotencyKey]);
+    if (existingCharge.rows[0]?.status === "succeeded" || existingCharge.rows[0]?.status === "failed") {
+      const succeeded = existingCharge.rows[0].status === "succeeded";
+      return res.status(succeeded ? 200 : 409).json({
+        success: succeeded,
+        charge: existingCharge.rows[0],
+        duplicate_prevented: true,
+        error: succeeded ? undefined : (existingCharge.rows[0].failure_message || "The prior charge attempt failed. Review the saved card before trying a new charge."),
+      });
+    }
+    chargeId = existingCharge.rows[0]?.id || randomUUID();
+    if (!existingCharge.rows.length) {
+      await pool.query(
+        `INSERT INTO rental_overage_charges (
+           id, booking_id, location_id, customer_account_id, amount, reason, evidence_snapshot,
+           stripe_customer_id, stripe_payment_method_id, idempotency_key
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9,$10)`,
+        [chargeId, bookingId, locationId, authorization.customer_account_id, requestedAmount, reason, JSON.stringify(evidenceSnapshot), stripeCustomerId, paymentMethod.id, idempotencyKey]
+      );
+    }
+    const paymentIntent = await stripeFormRequest(
+      "/v1/payment_intents",
+      {
+        amount: amountCents,
+        currency: "usd",
+        customer: stripeCustomerId,
+        payment_method: paymentMethod.id,
+        off_session: "true",
+        confirm: "true",
+        description: `Verified rental overtime for booking ${bookingId}`,
+        "metadata[booking_id]": String(bookingId),
+        "metadata[location_id]": locationId,
+        "metadata[rental_overage_charge_id]": chargeId,
+        "metadata[billable_minutes]": String(record.closeout.billableMinutes),
+        "metadata[booked_hourly_rate]": String(record.closeout.booked_hourly_rate),
+        "metadata[overage_multiplier]": String(record.closeout.overage_multiplier),
+        "expand[0]": "latest_charge",
+      },
+      "POST",
+      paymentProfile.stripeSecretKey,
+      { "Idempotency-Key": idempotencyKey }
+    );
+    const status = paymentIntent.status === "succeeded" ? "succeeded" : paymentIntent.status;
+    await pool.query(
+      `UPDATE rental_overage_charges
+       SET stripe_payment_intent_id = $2, status = $3, stripe_receipt_url = $4, updated_at = NOW()
+       WHERE id = $1`,
+      [chargeId, paymentIntent.id, status, paymentIntent.latest_charge?.receipt_url || null]
+    );
+    return res.status(status === "succeeded" ? 200 : 202).json({ success: status === "succeeded", payment_status: status, payment_intent_id: paymentIntent.id, receipt_url: paymentIntent.latest_charge?.receipt_url || null, amount: requestedAmount });
+  } catch (err) {
+    if (chargeId) {
+      await pool.query(
+        `UPDATE rental_overage_charges SET status = 'failed', failure_code = $2, failure_message = $3, updated_at = NOW() WHERE id = $1`,
+        [chargeId, String(err.code || err.raw?.code || "payment_failed"), String(err.message || "Payment failed").slice(0, 1000)]
+      ).catch(() => {});
+    }
+    return res.status(err.statusCode === 402 ? 402 : (err.statusCode || 500)).json({ error: err.message || "Failed to charge rental overage.", code: err.code || err.raw?.code || null });
+  }
+});
+
 app.get("/api/insurance/settings/:location_id", requireWizardToken, async (req, res) => {
   try {
     await ensureInsuranceModuleTables();
@@ -19297,7 +19669,7 @@ app.post("/api/widget-quote", async (req, res) => {
     }
 
     const bookingModeNormalized = normalizeBookingMode(booking_mode);
-    const isHourlyBooking = bookingModeNormalized === "hourly";
+    const isHourlyBooking = bookingModeNormalized === "hourly" || bookingModeNormalized === "rental";
     const requestedHourlyHours = toNumber(hourly_hours, 0);
     if (isHourlyBooking && requestedHourlyHours < 4) {
       return res.status(400).json({ error: "4 hour minimum." });
@@ -19394,9 +19766,9 @@ app.post("/api/widget-quote", async (req, res) => {
       fixed_surcharge_label: Number(quote.ride.surcharge || 0) > 0
         ? "Peak Time Surcharge"
         : null,
-      hourly_booking_name: quote.ride.mode === "hourly" ? quote.ride.hourly_booking_name || null : null,
-      hourly_booking_slot_id: quote.ride.mode === "hourly" ? quote.ride.vehicle_slot_id || null : null,
-      hourly_hours: quote.ride.mode === "hourly" ? quote.ride.hourly_hours || null : null,
+      hourly_booking_name: ["hourly", "rental"].includes(quote.ride.mode) ? quote.ride.hourly_booking_name || null : null,
+      hourly_booking_slot_id: ["hourly", "rental"].includes(quote.ride.mode) ? quote.ride.vehicle_slot_id || null : null,
+      hourly_hours: ["hourly", "rental"].includes(quote.ride.mode) ? quote.ride.hourly_hours || null : null,
       event_name: quote.ride.mode === "event" ? quote.ride.event_name || null : null,
       event_date: quote.ride.mode === "event" ? quote.ride.event_date || null : null,
       event_multiplier: quote.ride.mode === "event" ? Number(quote.ride.multiplier || 1) : 1,

@@ -738,6 +738,10 @@
     return document.getElementById("cd_booking_mode")?.value || "standard";
   }
 
+  function isTimeBasedBookingMode(mode = selectedBookingMode()) {
+    return mode === "hourly" || mode === "rental";
+  }
+
   function fixedRateByName(name) {
     const target = String(name || "").trim();
     if (!target) return null;
@@ -871,12 +875,12 @@
     const bookingMode = selectedBookingMode();
     const hourlySelect = document.getElementById("cd_hourly_booking");
     const hourlyHoursWrap = document.getElementById("cd_hourly_hours_wrap");
-    const hourlyWrap = document.getElementById("cd_hourly_wrap");
-    if (hourlyWrap) hourlyWrap.style.display = bookingMode === "hourly" ? "block" : "none";
-    if (hourlyHoursWrap) hourlyHoursWrap.style.display = bookingMode === "hourly" ? "block" : "none";
+    const hourlyWrap = document.getElementById("cd_hourly_booking_wrap");
+    if (hourlyWrap) hourlyWrap.style.display = isTimeBasedBookingMode(bookingMode) ? "block" : "none";
+    if (hourlyHoursWrap) hourlyHoursWrap.style.display = isTimeBasedBookingMode(bookingMode) ? "block" : "none";
     if (!hourlySelect) return;
 
-    if (bookingMode !== "hourly") {
+    if (!isTimeBasedBookingMode(bookingMode)) {
       hourlySelect.value = "";
       return;
     }
@@ -1295,7 +1299,7 @@
     const mode = selectedBookingMode();
     const eventWrap = document.getElementById("cd_event_wrap");
     const fixedWrap = document.getElementById("cd_fixed_destination_wrap");
-    const hourlyWrap = document.getElementById("cd_hourly_wrap");
+    const hourlyWrap = document.getElementById("cd_hourly_booking_wrap");
     const hourlyHoursWrap = document.getElementById("cd_hourly_hours_wrap");
     const eventSelect = document.getElementById("cd_special_event");
     const fixedSelect = document.getElementById("cd_fixed_destination");
@@ -1303,12 +1307,12 @@
 
     if (eventWrap) eventWrap.style.display = mode === "event" ? "block" : "none";
     if (fixedWrap) fixedWrap.style.display = mode === "fixed" ? "block" : "none";
-    if (hourlyWrap) hourlyWrap.style.display = mode === "hourly" ? "block" : "none";
-    if (hourlyHoursWrap) hourlyHoursWrap.style.display = mode === "hourly" ? "block" : "none";
+    if (hourlyWrap) hourlyWrap.style.display = isTimeBasedBookingMode(mode) ? "block" : "none";
+    if (hourlyHoursWrap) hourlyHoursWrap.style.display = isTimeBasedBookingMode(mode) ? "block" : "none";
 
     if (mode !== "event" && eventSelect) eventSelect.value = "";
     if (mode !== "fixed" && fixedSelect) fixedSelect.value = "";
-    if (mode !== "hourly" && hourlySelect) hourlySelect.value = "";
+    if (!isTimeBasedBookingMode(mode) && hourlySelect) hourlySelect.value = "";
   }
 
   async function render() {
@@ -1331,6 +1335,7 @@
         <div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.14em;color:#065f46;">Required Card On File</div>
         <div style="margin-top:9px;font-size:13px;line-height:1.6;color:#065f46;">
           Stripe securely saves the payment method used at checkout. Card details are never stored by ${escapeHtml(state.config?.business_name || "this business")}.
+          Car rentals include a 30-minute grace period; overtime is billed by the minute at 1.25 times the original booked hourly rate.
         </div>
         <label style="display:flex;gap:10px;align-items:flex-start;margin-top:12px;font-size:13px;color:#064e3b;font-weight:600;cursor:pointer;">
           <input id="cd_card_on_file_consent" type="checkbox" style="margin-top:3px;width:16px;height:16px;" />
@@ -1434,7 +1439,7 @@
                   <div style="max-width:220px;"><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:8px;"># of Passengers</label><input id="cd_passenger_count" type="number" min="1" value="1" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;" /></div>
                 </div>
                 ${showServiceModeControls ? `<div style="display:grid;grid-template-columns:1fr;gap:12px;margin-top:12px;">
-                  <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Route/Service Option</label><select id="cd_booking_mode" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;"><option value="standard">Standard Booking</option><option value="fixed">Fixed Destinations</option><option value="event">Events</option><option value="hourly">Executive Luxury Chauffeur</option></select></div>
+                  <div><label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Route/Service Option</label><select id="cd_booking_mode" style="width:100%;padding:13px 14px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;"><option value="standard">Standard Booking</option><option value="fixed">Fixed Destinations</option><option value="event">Events</option><option value="hourly">Executive Luxury Chauffeur</option>${state.customerAccount ? '<option value="rental">Car Rental</option>' : ""}</select></div>
                 </div>` : `<input id="cd_booking_mode" type="hidden" value="hourly" />`}
                 <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-top:12px;">
                   ${showServiceModeControls ? `<div id="cd_event_wrap" style="display:none;">${eventSelect || ""}</div>` : ""}
@@ -1872,11 +1877,11 @@
       }
     }
 
-    if (payload.booking_mode === "hourly" && !hourlyConfig) {
+    if (isTimeBasedBookingMode(payload.booking_mode) && !hourlyConfig) {
       throw new Error("Select an hourly reservation option to continue.");
     }
 
-    if (payload.booking_mode === "hourly" && hourlyHours < 4) {
+    if (isTimeBasedBookingMode(payload.booking_mode) && hourlyHours < 4) {
       throw new Error("4 hour minimum.");
     }
 
@@ -1899,7 +1904,8 @@
     if (hourlyConfig) {
       const hourlyRate = toNumber(hourlyConfig.hourly_rate, 0);
       rideSubtotal = hourlyRate * hourlyHours;
-      pricingLabel = `${hourlyConfig.booking_description || "Executive Luxury Chauffeur"} at ${money(hourlyRate)}/hr for ${hourlyHours} hour${hourlyHours === 1 ? "" : "s"}`;
+      const serviceLabel = payload.booking_mode === "rental" ? "Car Rental" : (hourlyConfig.booking_description || "Executive Luxury Chauffeur");
+      pricingLabel = `${serviceLabel} at ${money(hourlyRate)}/hr for ${hourlyHours} hour${hourlyHours === 1 ? "" : "s"}`;
     }
     if (fixedRate) {
       if (fixedSurcharge > 0) {
