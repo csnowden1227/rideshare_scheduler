@@ -13480,9 +13480,11 @@ app.post("/api/saas/rental-license", async (req, res) => {
       license_type: licenseType,
       subscription_status: active ? subscriptionStatus : "inactive",
       rental_access_enabled: active,
-      rental_wizard_url: `${host}/rental-setup-wizard.html?location_id=${encodeURIComponent(locationId)}`,
+      rental_wizard_url: `${host}/rental-setup-wizard.html?location_id=${encodeURIComponent(locationId)}&token=${encodeURIComponent(rentalAccess.operator_access_token)}`,
       rental_widget_url: `${host}/rental-book/${encodeURIComponent(locationId)}`,
       rental_operations_url: `${host}/rental-operations.html?location_id=${encodeURIComponent(locationId)}&token=${encodeURIComponent(rentalAccess.operator_access_token)}`,
+      customer_portal_url: `${host}/customer-login?location_id=${encodeURIComponent(locationId)}`,
+      rental_embed_code: `<div id="rental-booking-widget"></div>\n<script src="${host}/rental-widget.js?loc=${encodeURIComponent(locationId)}"></script>`,
     });
   } catch (err) {
     console.error("GoHighLevel rental entitlement error:", err);

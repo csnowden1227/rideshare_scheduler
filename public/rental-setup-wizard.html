@@ -34,6 +34,7 @@
         <div id="status" class="status">Load the account, add rental vehicles, then sync.</div>
         <div class="link-card"><h3>GoHighLevel wizard link</h3><code id="wizard-link"></code><button class="btn secondary copy" data-target="wizard-link">Copy wizard link</button></div>
         <div class="link-card"><h3>Public website rental URL</h3><code id="hosted-link"></code><small style="display:block;margin-top:9px;color:#a8cfbe;line-height:1.5">Use this for the SaaS user's public Book a Rental button.</small><button class="btn secondary copy" data-target="hosted-link">Copy hosted URL</button><button id="preview" class="btn primary" type="button">Open rental widget</button></div>
+        <div class="link-card"><h3>Customer portal signup / login</h3><code id="portal-link"></code><small style="display:block;margin-top:9px;color:#a8cfbe;line-height:1.5">Use this public link for customers to create or access their portal before booking.</small><button class="btn secondary copy" data-target="portal-link">Copy portal URL</button></div>
         <div class="link-card"><h3>Private GHL staff dashboard</h3><code id="operations-link">Generated after account load</code><small style="display:block;margin-top:9px;color:#f4c7b8;line-height:1.5">Staff only. Add this as a private GoHighLevel custom menu link. Do not publish it on the public website.</small><button class="btn secondary copy" data-target="operations-link">Copy staff dashboard link</button></div>
         <div class="link-card"><h3>Reusable embed code</h3><code id="embed-code"></code><button class="btn secondary copy" data-target="embed-code">Copy embed code</button></div>
       </aside>
@@ -72,6 +73,7 @@
     const wizardParams = new URLSearchParams({location_id:locationId}); if(token) wizardParams.set('token',token);
     document.getElementById('wizard-link').textContent = `${origin}/rental-setup-wizard.html?${wizardParams}`;
     document.getElementById('hosted-link').textContent = `${origin}/rental-book/${encodeURIComponent(locationId)}`;
+    document.getElementById('portal-link').textContent = `${origin}/customer-login?location_id=${encodeURIComponent(locationId)}`;
     document.getElementById('embed-code').textContent = `<div id="rental-booking-widget"></div>\n<script src="${origin}/rental-widget.js?loc=${encodeURIComponent(locationId)}"><\/script>`;
 
     function setStatus(message,error=false){const el=document.getElementById('status');el.textContent=message;el.className=`status${error?' error':''}`}
